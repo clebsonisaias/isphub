@@ -56,14 +56,45 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
     tipoPorSgpCodigo.set(t.descricao.trim(), t.id);
   }
 
+  /**
+   * Resolve o tipoOsId pelo mapa; se o motivo nao existir no catalogo
+   * (o endpoint de catalogo do SGP nao expoe todo motivo ja usado
+   * historicamente — confirmado em producao: "Corretiva", "Preventiva" etc
+   * aparecem em OS reais mas nunca no catalogo importado), cria um TipoOs
+   * novo na hora em vez de deixar a OS orfa pra sempre. O admin pode depois
+   * ajustar categoria/SLA normalmente na tela de Tipos de OS.
+   */
+  async function resolverOuCriarTipoOsId(tipoCodigo: string, tipoDescricao?: string | null): Promise<string> {
+    const chave = tipoCodigo.trim();
+    const existente = tipoPorSgpCodigo.get(chave);
+    if (existente) return existente;
+
+    const novo = await prisma.tipoOs.create({
+      data: {
+        provedorId,
+        sgpCodigo: chave,
+        descricao: tipoDescricao?.trim() || chave,
+        categoria: "ocorrencia",
+        visivel: true,
+      },
+    });
+    tipoPorSgpCodigo.set(novo.sgpCodigo, novo.id);
+    tipoPorSgpCodigo.set(novo.descricao.trim(), novo.id);
+    return novo.id;
+  }
+
   // --- 2. Ordens de Servico ---
   const inicioOs = Date.now();
-  const motivosNaoResolvidos = new Set<string>();
+  const tiposAutoCriados = new Set<string>();
   try {
     const ordens = await connector.listServiceOrders();
     for (const raw of ordens) {
-      const tipoOsId = raw.tipoCodigo ? tipoPorSgpCodigo.get(raw.tipoCodigo.trim()) : undefined;
-      if (raw.tipoCodigo && !tipoOsId) motivosNaoResolvidos.add(raw.tipoCodigo.trim());
+      let tipoOsId: string | undefined;
+      if (raw.tipoCodigo) {
+        const jaExistia = tipoPorSgpCodigo.has(raw.tipoCodigo.trim());
+        tipoOsId = await resolverOuCriarTipoOsId(raw.tipoCodigo, raw.tipoDescricao);
+        if (!jaExistia) tiposAutoCriados.add(raw.tipoCodigo.trim());
+      }
       const campos = {
         tipoOsId,
         status: mapSgpOsStatus(raw.statusCode),
@@ -94,8 +125,8 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
       });
     }
     const msgTipos =
-      motivosNaoResolvidos.size > 0
-        ? `${motivosNaoResolvidos.size} motivo(s) sem tipo correspondente no catalogo: ${Array.from(motivosNaoResolvidos).slice(0, 15).join(" | ")}`
+      tiposAutoCriados.size > 0
+        ? `${tiposAutoCriados.size} tipo(s) de OS criado(s) automaticamente (nao estavam no catalogo importado): ${Array.from(tiposAutoCriados).slice(0, 15).join(" | ")}`
         : undefined;
     await logSync(provedorId, "pull", "os", true, ordens.length, inicioOs, msgTipos);
   } catch (err) {
