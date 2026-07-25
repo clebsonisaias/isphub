@@ -8,6 +8,10 @@ COPY . .
 
 RUN npm ci
 
+# Gera o Prisma Client explicitamente — o postinstall automatico do Prisma
+# nao roda de forma confiavel dentro do build do Coolify neste monorepo.
+RUN npm run prisma:generate -w @isphub/api
+
 RUN npm run build -w @isphub/shared
 RUN npm run build -w @isphub/api
 
