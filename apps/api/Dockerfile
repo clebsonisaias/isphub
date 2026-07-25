@@ -19,4 +19,4 @@ WORKDIR /repo/apps/api
 
 EXPOSE 4000
 
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/server.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/seed.js && node dist/server.js"]
