@@ -1,0 +1,23 @@
+{
+  "name": "isphub",
+  "private": true,
+  "version": "0.0.0",
+  "description": "ISPhub — plataforma de terceirizacao de campo para provedores de internet (integracao SGP)",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build:shared": "npm run build -w @isphub/shared",
+    "dev:api": "npm run dev -w @isphub/api",
+    "dev:web": "npm run dev -w @isphub/web",
+    "build": "npm run build:shared && npm run build -w @isphub/api && npm run build -w @isphub/web",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}

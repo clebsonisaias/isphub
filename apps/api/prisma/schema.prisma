@@ -1,0 +1,221 @@
+// ISPhub — schema do banco espelho.
+// Toda entidade operacional carrega provedorId: e o que sustenta a fila
+// unificada (todos os provedores) e, ao mesmo tempo, o destaque/filtro por
+// provedor (badge com cor + logo) na UI.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  admin
+  gestor
+  tecnico
+  provedor
+}
+
+enum ErpTipo {
+  SGP
+}
+
+enum CategoriaTipoOs {
+  ocorrencia
+  instalacao
+}
+
+enum OsStatus {
+  aberta
+  em_deslocamento
+  em_execucao
+  concluida
+  cancelada
+  pendente
+}
+
+model Provedor {
+  id        String   @id @default(uuid())
+  nome      String
+  cor       String   @default("#6366f1")
+  logoUrl   String?
+  ativo     Boolean  @default(true)
+  criadoEm  DateTime @default(now())
+
+  erpConfigs      ErpConfig[]
+  tiposOs         TipoOs[]
+  ordensServico   OrdemServico[]
+  ocorrencias     Ocorrencia[]
+  tecnicos        Tecnico[]
+  usuarios        Usuario[]
+  syncLogs        SyncLog[]
+
+  @@map("provedores")
+}
+
+/// Credenciais de acesso ao ERP de um provedor. O token e armazenado
+/// criptografado (AES-256-GCM) — ver src/lib/crypto.ts — nunca em claro.
+model ErpConfig {
+  id                       String    @id @default(uuid())
+  provedorId               String
+  provedor                 Provedor  @relation(fields: [provedorId], references: [id], onDelete: Cascade)
+  tipo                     ErpTipo   @default(SGP)
+  url                      String
+  app                      String
+  /// Token criptografado (iv:authTag:ciphertext em base64).
+  tokenCifrado             String
+  intervaloPollingSegundos Int       @default(180)
+  ativo                    Boolean   @default(true)
+  ultimaSyncEm             DateTime?
+  ultimaSyncOk             Boolean?
+  ultimaSyncMensagem       String?
+  criadoEm                 DateTime  @default(now())
+  atualizadoEm             DateTime  @updatedAt
+
+  @@unique([provedorId, tipo])
+  @@map("erp_configs")
+}
+
+/// Tipo de OS/ocorrencia importado do catalogo do ERP e exibido no ISPhub.
+model TipoOs {
+  id         String           @id @default(uuid())
+  provedorId String
+  provedor   Provedor         @relation(fields: [provedorId], references: [id], onDelete: Cascade)
+  sgpCodigo  String
+  descricao  String
+  categoria  CategoriaTipoOs  @default(ocorrencia)
+  visivel    Boolean          @default(true)
+  /// Prazo de SLA em horas; null = sem SLA definido para este tipo.
+  slaHoras   Int?
+
+  ordensServico OrdemServico[]
+
+  @@unique([provedorId, sgpCodigo])
+  @@map("tipos_os")
+}
+
+model Tecnico {
+  id           String   @id @default(uuid())
+  provedorId   String?
+  provedor     Provedor? @relation(fields: [provedorId], references: [id], onDelete: SetNull)
+  sgpTecnicoId String?
+  nome         String
+  ativo        Boolean  @default(true)
+  usuarioId    String?  @unique
+  usuario      Usuario? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+
+  ordensServico OrdemServico[]
+  atribuicoes   Atribuicao[]
+
+  @@unique([provedorId, sgpTecnicoId])
+  @@map("tecnicos")
+}
+
+/// Ordem de Servico espelhada do ERP do provedor.
+model OrdemServico {
+  id              String           @id @default(uuid())
+  provedorId      String
+  provedor        Provedor         @relation(fields: [provedorId], references: [id], onDelete: Cascade)
+  sgpOsId         String
+  tipoOsId        String?
+  tipoOs          TipoOs?          @relation(fields: [tipoOsId], references: [id], onDelete: SetNull)
+  status          OsStatus         @default(aberta)
+  prioridade      Int              @default(2)
+  clienteNome     String?
+  clienteDocumento String?
+  contratoId      String?
+  protocolo       String?
+  conteudo        String?
+  observacao      String?
+  logradouro      String?
+  numero          String?
+  bairro          String?
+  cidade          String?
+  lat             Float?
+  lng             Float?
+  dataAgendamento DateTime?
+  tecnicoId       String?
+  tecnico         Tecnico?         @relation(fields: [tecnicoId], references: [id], onDelete: SetNull)
+  criadoEm        DateTime         @default(now())
+  atualizadoEm    DateTime         @updatedAt
+  sincronizadoEm  DateTime         @default(now())
+
+  atribuicoes Atribuicao[]
+
+  @@unique([provedorId, sgpOsId])
+  @@index([provedorId, status])
+  @@index([status, dataAgendamento])
+  @@map("ordens_servico")
+}
+
+/// Ocorrencia espelhada do ERP do provedor.
+model Ocorrencia {
+  id              String    @id @default(uuid())
+  provedorId      String
+  provedor        Provedor  @relation(fields: [provedorId], references: [id], onDelete: Cascade)
+  sgpNumero       String
+  tipo            String?
+  status          String?
+  conteudo        String?
+  responsavel     String?
+  contratoId      String?
+  dataCadastro    DateTime?
+  dataAgendamento DateTime?
+  sincronizadoEm  DateTime  @default(now())
+
+  @@unique([provedorId, sgpNumero])
+  @@index([provedorId, status])
+  @@map("ocorrencias")
+}
+
+model Usuario {
+  id           String   @id @default(uuid())
+  nome         String
+  email        String   @unique
+  senhaHash    String
+  role         UserRole
+  /// Preenchido apenas para role=provedor (escopa o acesso a um unico provedor).
+  provedorId   String?
+  provedor     Provedor? @relation(fields: [provedorId], references: [id], onDelete: SetNull)
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now())
+
+  tecnico Tecnico?
+
+  @@map("usuarios")
+}
+
+/// Despacho de uma OS para um tecnico (historico de atribuicoes).
+model Atribuicao {
+  id             String        @id @default(uuid())
+  ordemServicoId String
+  ordemServico   OrdemServico  @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
+  tecnicoId      String
+  tecnico        Tecnico       @relation(fields: [tecnicoId], references: [id], onDelete: Cascade)
+  atribuidoEm    DateTime      @default(now())
+  atribuidoPor   String?
+
+  @@index([ordemServicoId])
+  @@index([tecnicoId])
+  @@map("atribuicoes")
+}
+
+/// Auditoria de cada ciclo de sync (pull) e write-back (push) por provedor.
+model SyncLog {
+  id         String   @id @default(uuid())
+  provedorId String
+  provedor   Provedor @relation(fields: [provedorId], references: [id], onDelete: Cascade)
+  direcao    String   // "pull" | "push"
+  recurso    String   // "os" | "ocorrencia" | "tipos" | "tecnicos" | ...
+  ok         Boolean
+  mensagem   String?
+  quantidade Int?
+  iniciadoEm DateTime @default(now())
+  duracaoMs  Int?
+
+  @@index([provedorId, iniciadoEm])
+  @@map("sync_logs")
+}

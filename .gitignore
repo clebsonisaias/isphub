@@ -1,0 +1,34 @@
+# deps
+node_modules/
+
+# builds
+dist/
+build/
+*.tsbuildinfo
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# prisma
+apps/api/prisma/*.db
+
+# logs
+*.log
+npm-debug.log*
+
+# uploads (fotos/evidencias locais)
+apps/api/uploads/
+
+# playwright
+/apps/web/test-results/
+/apps/web/playwright-report/
+/apps/web/blob-report/
+
+# os
+.DS_Store
+
+# editor
+.vscode/
+.idea/

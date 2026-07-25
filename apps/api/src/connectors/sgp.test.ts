@@ -1,0 +1,166 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createSgpConnector } from "./sgp.js";
+
+const creds = { url: "https://sgp.exemplo.com.br", app: "isphub", token: "tok-abc123" };
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+}
+
+describe("createSgpConnector", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("testConnection retorna ok quando o catalogo de tipos responde 200", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([{ codigo: "1", descricao: "Sem conexao" }]));
+
+    const conn = createSgpConnector(creds);
+    const resultado = await conn.testConnection();
+
+    expect(resultado.ok).toBe(true);
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/api/os/ocorrencia/tipo/list/");
+    expect(String(url)).toContain(`app=${creds.app}`);
+    expect((options.headers as Record<string, string>).Authorization).toBe(`Token ${creds.token}`);
+  });
+
+  it("testConnection retorna ok:false quando o SGP responde erro (incluindo o fallback de token na query)", async () => {
+    // sgpGet tenta token no header primeiro; em 401/403 refaz com token na query.
+    // Aqui simulamos credenciais realmente invalidas: as duas tentativas falham.
+    fetchMock
+      .mockResolvedValueOnce(new Response("credenciais invalidas", { status: 401 }))
+      .mockResolvedValueOnce(new Response("credenciais invalidas", { status: 401 }));
+
+    const conn = createSgpConnector(creds);
+    const resultado = await conn.testConnection();
+
+    expect(resultado.ok).toBe(false);
+    expect(resultado.message).toContain("401");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("listOsTypes normaliza codigo/descricao a partir de um array bruto", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        { codigo: "1", descricao: "Sem conexao" },
+        { codigo: "2", descricao: "Instalacao nova" },
+      ]),
+    );
+
+    const conn = createSgpConnector(creds);
+    const tipos = await conn.listOsTypes();
+
+    expect(tipos).toEqual([
+      { sgpCodigo: "1", descricao: "Sem conexao" },
+      { sgpCodigo: "2", descricao: "Instalacao nova" },
+    ]);
+  });
+
+  it("listServiceOrders normaliza campos, endereco e lat/lng a partir de endereco_ll", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        paginacao: { total: 1 },
+        ordens_servicos: [
+          {
+            os_id: "555",
+            os_status: 0,
+            motivo: "1",
+            os_conteudo: "Cliente sem sinal",
+            cliente_nome: "Maria Silva",
+            contrato_id: "999",
+            endereco_logradouro: "Rua das Flores",
+            endereco_numero: "123",
+            endereco_bairro: "Centro",
+            endereco_cidade: "Natal",
+            endereco_ll: "-5.79448,-35.211",
+            os_data_agendamento: "2026-07-25 09:00:00",
+            os_tecnico_responsavel_id: "10",
+          },
+        ],
+      }),
+    );
+
+    const conn = createSgpConnector(creds);
+    const [os] = await conn.listServiceOrders();
+
+    expect(os.sgpOsId).toBe("555");
+    expect(os.statusCode).toBe(0);
+    expect(os.clienteNome).toBe("Maria Silva");
+    expect(os.endereco.lat).toBeCloseTo(-5.79448);
+    expect(os.endereco.lng).toBeCloseTo(-35.211);
+    expect(os.tecnicoSgpId).toBe("10");
+
+    // Requisicao de listagem usa POST JSON (app+token no corpo), nao form-urlencoded.
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/api/ura/ordemservico/list/");
+    expect(options.method).toBe("POST");
+    expect(options.headers["Content-Type"]).toBe("application/json");
+    const body = JSON.parse(options.body as string);
+    expect(body.app).toBe(creds.app);
+    expect(body.token).toBe(creds.token);
+  });
+
+  it("listServiceOrders retorna endereco sem lat/lng quando endereco_ll esta ausente", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ ordens_servicos: [{ os_id: "1", os_status: 0 }] }),
+    );
+
+    const conn = createSgpConnector(creds);
+    const [os] = await conn.listServiceOrders();
+
+    expect(os.endereco.lat).toBeNull();
+    expect(os.endereco.lng).toBeNull();
+  });
+
+  it("setOnTheWay chama o endpoint /acaminho/ com app+token no corpo", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true }));
+
+    const conn = createSgpConnector(creds);
+    await conn.setOnTheWay("555");
+
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/api/os/acaminho/id/555/");
+    const body = new URLSearchParams(options.body as string);
+    expect(body.get("app")).toBe(creds.app);
+    expect(body.get("token")).toBe(creds.token);
+  });
+
+  it("updateOsStatus envia o codigo de status numerico no corpo form-urlencoded", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true }));
+
+    const conn = createSgpConnector(creds);
+    await conn.updateOsStatus("555", 1);
+
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/api/os/update/id/555/");
+    const body = new URLSearchParams(options.body as string);
+    expect(body.get("os_status")).toBe("1");
+  });
+
+  it("addOsNote envia o texto da anotacao", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true }));
+
+    const conn = createSgpConnector(creds);
+    await conn.addOsNote("555", "Cliente reagendou");
+
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/api/os/anotacoes/add/id/555/");
+    const body = new URLSearchParams(options.body as string);
+    expect(body.get("anotacao")).toBe("Cliente reagendou");
+  });
+
+  it("propaga erro com o corpo da resposta quando o SGP falha numa escrita", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("OS ja encerrada", { status: 422 }));
+
+    const conn = createSgpConnector(creds);
+    await expect(conn.updateOsStatus("555", 1)).rejects.toThrow(/422/);
+  });
+});

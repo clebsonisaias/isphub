@@ -1,0 +1,81 @@
+import { test, expect, type Page } from "@playwright/test";
+
+const ADMIN = { email: "e2e-admin@isphub.test", senha: "e2e-senha-123" };
+const GESTOR = { email: "e2e-gestor@isphub.test", senha: "e2e-senha-123" };
+const MOCK_SGP = "http://localhost:4569";
+
+async function login(page: Page, creds: { email: string; senha: string }) {
+  await page.goto("/login");
+  await page.getByPlaceholder("voce@provedor.com.br").fill(creds.email);
+  await page.getByPlaceholder("••••••••").fill(creds.senha);
+  await page.getByRole("button", { name: "Entrar" }).click();
+  await expect(page).toHaveURL("/");
+}
+
+test.describe("login por papel", () => {
+  test("admin ve o atalho de Administração e consegue acessar /admin", async ({ page }) => {
+    await login(page, ADMIN);
+    await expect(page.getByRole("link", { name: "Administração" })).toBeVisible();
+
+    await page.getByRole("link", { name: "Administração" }).click();
+    await expect(page).toHaveURL("/admin");
+    await expect(page.getByRole("heading", { name: "Provedores" })).toBeVisible();
+  });
+
+  test("gestor nao ve o atalho de Administração e e bloqueado em /admin", async ({ page }) => {
+    await login(page, GESTOR);
+    await expect(page.getByRole("link", { name: "Administração" })).toHaveCount(0);
+
+    await page.goto("/admin");
+    await expect(page.getByText("Voce nao tem permissao para acessar esta pagina.")).toBeVisible();
+  });
+});
+
+test("cadastro de provedor", async ({ page }) => {
+  await login(page, ADMIN);
+  await page.goto("/admin");
+
+  const nomeUnico = `Provedor Teste ${Date.now()}`;
+  await page.getByRole("button", { name: "Novo provedor" }).click();
+  await page.getByPlaceholder("Ex: Provedor Norte Telecom").fill(nomeUnico);
+  await page.getByRole("button", { name: "Selecionar cor #22c55e" }).click();
+  await page.getByRole("button", { name: "Criar provedor" }).click();
+
+  await expect(page.getByText("Provedor criado")).toBeVisible();
+  await expect(page.getByRole("heading", { name: nomeUnico })).toBeVisible();
+});
+
+test("fluxo despacho -> status: marcar a caminho e concluir uma OS, refletindo no SGP", async ({
+  page,
+  request,
+}) => {
+  // Zera o log do SGP fixture para isolar as chamadas feitas por este teste.
+  await request.post(`${MOCK_SGP}/_test/reset`);
+
+  await login(page, ADMIN);
+
+  // Escopa a fila ao provedor semeado pelo global-setup e abre a OS fixture.
+  await page.getByRole("combobox").selectOption({ label: "E2E Provider" });
+  const card = page.getByText("Cliente E2E").locator("xpath=ancestor::button[1]");
+  await expect(card).toBeVisible();
+  await card.click();
+
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("Cliente E2E")).toBeVisible();
+
+  const statusBadge = dialog.getByTestId("status-badge");
+
+  // 1) Despacho: marcar a caminho.
+  await dialog.getByRole("button", { name: "Marcar a caminho" }).click();
+  await expect(statusBadge).toHaveText("A caminho");
+
+  // 2) Mudar status para concluida.
+  await dialog.getByRole("combobox").first().selectOption({ label: "Concluida" });
+  await dialog.getByRole("button", { name: "Atualizar status" }).click();
+  await expect(statusBadge).toHaveText("Concluida");
+
+  // Confirma que as duas acoes de fato chegaram no SGP (write-back real, nao so local).
+  const log = await (await request.get(`${MOCK_SGP}/_test/log`)).json();
+  expect(log.some((e: any) => e.acao === "acaminho" && e.osId === "e2e-os-1")).toBe(true);
+  expect(log.some((e: any) => e.acao === "status" && e.osId === "e2e-os-1" && e.osStatus === "1")).toBe(true);
+});
