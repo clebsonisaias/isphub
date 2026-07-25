@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { OsStatus, OS_STATUS_ABERTOS, UserRole, type DashboardMetrics } from "@isphub/shared";
+import { CategoriaTipoOs, OsStatus, OS_STATUS_ABERTOS, UserRole, type DashboardMetrics } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -21,7 +21,7 @@ dashboardRouter.get(
     const provedorId = req.user!.role === UserRole.PROVEDOR ? req.user!.provedorId ?? "__nenhum__" : undefined;
     const where = provedorId ? { provedorId } : {};
 
-    const [totalAbertas, totalConcluidas, ordensAbertasComSla, provedores, statusGroups, tecnicoGroups] =
+    const [totalAbertas, totalConcluidas, ordensAbertasComSla, provedores, statusGroups, tecnicoGroups, ordensCategoria] =
       await Promise.all([
         prisma.ordemServico.count({ where: { ...where, status: { in: OS_STATUS_ABERTOS } } }),
         prisma.ordemServico.count({ where: { ...where, status: OsStatus.CONCLUIDA } }),
@@ -35,6 +35,12 @@ dashboardRouter.get(
           by: ["tecnicoId"],
           where: { ...where, tecnicoId: { not: null } },
           _count: { _all: true },
+        }),
+        // Categoria vem da relacao tipoOs, que o groupBy do Prisma nao agrega
+        // direto — buscamos status+categoria e somamos em memoria (volume MVP).
+        prisma.ordemServico.findMany({
+          where,
+          select: { status: true, tipoOs: { select: { categoria: true } } },
         }),
       ]);
 
@@ -56,6 +62,26 @@ dashboardRouter.get(
     );
 
     const porStatus = statusGroups.map((g) => ({ status: g.status as OsStatus, total: g._count._all }));
+
+    // Agrega abertas/concluidas por categoria do tipo de OS (ocorrencia /
+    // instalacao / sem_categoria para OS cujo tipo ainda nao foi classificado).
+    const abertosSet = new Set<string>(OS_STATUS_ABERTOS);
+    const catAcc = new Map<CategoriaTipoOs | "sem_categoria", { abertas: number; concluidas: number }>();
+    for (const os of ordensCategoria) {
+      const cat = (os.tipoOs?.categoria as CategoriaTipoOs | undefined) ?? "sem_categoria";
+      const atual = catAcc.get(cat) ?? { abertas: 0, concluidas: 0 };
+      if (abertosSet.has(os.status)) atual.abertas += 1;
+      else if (os.status === OsStatus.CONCLUIDA) atual.concluidas += 1;
+      catAcc.set(cat, atual);
+    }
+    const ordemCategoria: (CategoriaTipoOs | "sem_categoria")[] = [
+      CategoriaTipoOs.OCORRENCIA,
+      CategoriaTipoOs.INSTALACAO,
+      "sem_categoria",
+    ];
+    const porCategoria = ordemCategoria
+      .filter((c) => catAcc.has(c))
+      .map((categoria) => ({ categoria, ...catAcc.get(categoria)! }));
 
     const tecnicoIds = tecnicoGroups.map((g) => g.tecnicoId).filter((id): id is string => !!id);
     const tecnicos = tecnicoIds.length
@@ -79,6 +105,7 @@ dashboardRouter.get(
       totalConcluidas,
       porProvedor,
       porStatus,
+      porCategoria,
       porTecnico,
       slaEstourado,
     };

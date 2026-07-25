@@ -170,6 +170,7 @@ export interface DashboardMetrics {
   totalConcluidas: number;
   porProvedor: { provedorId: string; provedorNome: string; cor: string; abertas: number; concluidas: number }[];
   porStatus: { status: OsStatus; total: number }[];
+  porCategoria: { categoria: CategoriaTipoOs | "sem_categoria"; abertas: number; concluidas: number }[];
   porTecnico: { tecnicoId: string; tecnicoNome: string; abertas: number; concluidas: number }[];
   slaEstourado: number;
 }
