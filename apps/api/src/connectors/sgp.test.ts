@@ -297,4 +297,61 @@ describe("createSgpConnector", () => {
     const conn = createSgpConnector(creds);
     await expect(conn.updateOsStatus("555", 1)).rejects.toThrow(/422/);
   });
+
+  describe("checkConnectionStatus", () => {
+    it("reconhece 'Serviço Offline' e retorna online:false (payload real do SGP)", async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({
+          status: 0,
+          razaoSocial: "EMPRESA TESTE - VARIOS CONTRATOS",
+          staus: 2,
+          cpfCnpj: "68.857.751/0001-62",
+          msg: "Serviço Offline",
+          contratoId: 308,
+        }),
+      );
+
+      const conn = createSgpConnector(creds);
+      const resultado = await conn.checkConnectionStatus("308");
+
+      expect(resultado.online).toBe(false);
+      expect(resultado.mensagem).toBe("Serviço Offline");
+
+      const [url, options] = fetchMock.mock.calls[0];
+      expect(String(url)).toContain("/api/ura/verificaacesso/");
+      const body = new URLSearchParams(options.body as string);
+      expect(body.get("contrato")).toBe("308");
+      expect(body.get("app")).toBe(creds.app);
+      expect(body.get("token")).toBe(creds.token);
+    });
+
+    it("reconhece 'Serviço Online' e retorna online:true", async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ status: 0, msg: "Serviço Online", contratoId: 308 }));
+
+      const conn = createSgpConnector(creds);
+      const resultado = await conn.checkConnectionStatus("308");
+
+      expect(resultado.online).toBe(true);
+    });
+
+    it("retorna online:null quando a mensagem nao e reconhecida, sem lancar erro", async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ status: 0, msg: "Contrato nao encontrado" }));
+
+      const conn = createSgpConnector(creds);
+      const resultado = await conn.checkConnectionStatus("999999");
+
+      expect(resultado.online).toBeNull();
+      expect(resultado.mensagem).toBe("Contrato nao encontrado");
+    });
+
+    it("retorna online:null (nao lanca) quando o SGP responde erro de rede/HTTP", async () => {
+      fetchMock.mockResolvedValueOnce(new Response("erro interno", { status: 500 }));
+
+      const conn = createSgpConnector(creds);
+      const resultado = await conn.checkConnectionStatus("308");
+
+      expect(resultado.online).toBeNull();
+      expect(resultado.mensagem).toContain("500");
+    });
+  });
 });

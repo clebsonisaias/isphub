@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ProvedorBadge } from "@/components/ProvedorBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ContratoStatusBadge } from "@/components/ContratoStatusBadge";
+import { ConexaoStatus } from "@/components/ConexaoStatus";
 import { ordensServicoApi, tecnicosApi } from "@/lib/filaApi";
 import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
@@ -120,6 +121,7 @@ export function OrdemServicoDetailDialog({
             <ProvedorBadge provedor={os.provedor} />
             <StatusBadge status={os.status} />
             <ContratoStatusBadge status={os.contratoStatus} />
+            <ConexaoStatus provedorId={os.provedorId} contratoId={os.contratoId} />
           </div>
           <DialogTitle>{os.clienteNome ?? "Cliente não identificado"}</DialogTitle>
           <DialogDescription>

@@ -287,5 +287,24 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
         anotacao: texto,
       });
     },
+
+    async checkConnectionStatus(contratoId: string) {
+      try {
+        // Resposta real do SGP: { status, razaoSocial, staus, cpfCnpj, msg, contratoId }.
+        // "msg" (ex.: "Serviço Offline"/"Serviço Online") e o sinal mais confiavel e
+        // legivel — os campos status/staus nao tem semantica documentada aqui, entao
+        // nao arriscamos derivar o online/offline deles.
+        const data = await sgpPostForm(creds, "/api/ura/verificaacesso/", { contrato: contratoId });
+        const msg = pickString(data, "msg");
+        let online: boolean | null = null;
+        if (msg) {
+          if (/offline/i.test(msg)) online = false;
+          else if (/online/i.test(msg)) online = true;
+        }
+        return { online, mensagem: msg };
+      } catch (err) {
+        return { online: null, mensagem: err instanceof Error ? err.message : String(err) };
+      }
+    },
   };
 }

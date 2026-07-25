@@ -2,6 +2,7 @@ import type { FilaItem } from "@isphub/shared";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ProvedorBadge } from "@/components/ProvedorBadge";
 import { ContratoStatusBadge } from "@/components/ContratoStatusBadge";
+import { ConexaoStatus } from "@/components/ConexaoStatus";
 
 type OcorrenciaItem = Extract<FilaItem, { kind: "ocorrencia" }>;
 
@@ -23,6 +24,7 @@ export function OcorrenciaDetailDialog({ item, onClose }: { item: OcorrenciaItem
               {item.status ?? "—"}
             </span>
             <ContratoStatusBadge status={item.contratoStatus} />
+            <ConexaoStatus provedorId={item.provedorId} contratoId={item.contratoId} />
           </div>
           <DialogTitle>{item.clienteNome ?? "Cliente não identificado"}</DialogTitle>
           <DialogDescription>

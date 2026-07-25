@@ -76,6 +76,14 @@ export interface ListOccurrenceParams {
   limit?: number;
 }
 
+/** Status de conexao consultado ao vivo no ERP (nao faz parte do sync em massa). */
+export interface ConnectionStatus {
+  /** null = indeterminado (ERP nao respondeu com um sinal claro de online/offline). */
+  online: boolean | null;
+  /** Mensagem original do ERP (ex.: "Serviço Offline"), mostrada ao usuario. */
+  mensagem: string | null;
+}
+
 /**
  * Contrato de integracao com um ERP. Cada ERP (SGP, e futuros) implementa esta
  * interface; o nucleo do ISPhub (sync + write-back) so conhece este contrato,
@@ -107,6 +115,11 @@ export interface ErpConnector {
 
   /** Adiciona uma anotacao/andamento na OS. */
   addOsNote(sgpOsId: string, texto: string): Promise<void>;
+
+  // ---- consultas ao vivo (sob demanda, fora do sync em massa) ----
+
+  /** Verifica se o servico do contrato esta online/offline agora. */
+  checkConnectionStatus(contratoId: string): Promise<ConnectionStatus>;
 }
 
 /** Fabrica de conector a partir de credenciais (um por provedor). */

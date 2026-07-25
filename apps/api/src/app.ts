@@ -11,6 +11,7 @@ import { filaRouter } from "./routes/fila.js";
 import { ordensServicoRouter } from "./routes/ordensServico.js";
 import { dashboardRouter } from "./routes/dashboard.js";
 import { tecnicosRouter } from "./routes/tecnicos.js";
+import { conexaoRouter } from "./routes/conexao.js";
 
 export function createApp() {
   const app = express();
@@ -28,6 +29,7 @@ export function createApp() {
   app.use("/provedores/:provedorId/tipos-os", tiposOsRouter);
   app.use("/provedores/:provedorId/sync", syncRouter);
   app.use("/provedores/:provedorId/tecnicos", tecnicosRouter);
+  app.use("/provedores/:provedorId/conexao", conexaoRouter);
   app.use("/fila", filaRouter);
   app.use("/ordens-servico", ordensServicoRouter);
   app.use("/dashboard", dashboardRouter);
