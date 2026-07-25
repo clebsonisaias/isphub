@@ -116,6 +116,23 @@ function pick(obj: Record<string, any>, ...keys: string[]): any {
 }
 
 /**
+ * Como pick(), mas sempre retorna string (ou null). O SGP nao e consistente
+ * quanto ao tipo de campos "de identificador" — contrato_id, motivo,
+ * os_tecnico_responsavel_id etc podem vir como numero JSON em vez de string
+ * dependendo do endpoint/instancia. Toda coluna do Prisma que armazena um
+ * desses campos e String?, entao qualquer uso desses campos como valor a
+ * persistir (nao como codigo a comparar em memoria) deve passar por aqui —
+ * sem isso, o Prisma rejeita o upsert em runtime (contratoId numerico ja
+ * quebrou o sync em producao) ou, pior, um Map.get() com chave de tipo
+ * errado falha silenciosamente (tipoCodigo/tecnicoSgpId comparados contra
+ * mapas sempre populados com chaves string).
+ */
+function pickString(obj: Record<string, any>, ...keys: string[]): string | null {
+  const value = pick(obj, ...keys);
+  return value === null || value === undefined ? null : String(value);
+}
+
+/**
  * Normaliza uma OS do SGP para o formato neutro do conector.
  * Defensivo quanto a nomes de campo: o SGP tem variantes entre a familia
  * "URA" e a familia "central/chamado" (ex.: os_id vs id, os_conteudo vs
@@ -127,40 +144,40 @@ function normalizeOs(raw: Record<string, any>): RawOs {
 
   return {
     sgpOsId: String(pick(raw, "os_id", "id")),
-    tipoCodigo: pick(raw, "motivo_id", "motivo", "os_tipo_id"),
-    tipoDescricao: pick(raw, "motivo_descricao", "tipo", "os_tipo"),
+    tipoCodigo: pickString(raw, "motivo_id", "motivo", "os_tipo_id"),
+    tipoDescricao: pickString(raw, "motivo_descricao", "tipo", "os_tipo"),
     statusCode: Number(pick(raw, "os_status", "status") ?? 0),
     prioridade: raw.os_prioridade ? Number(raw.os_prioridade) : null,
-    clienteNome: pick(raw, "cliente_nome", "cliente", "razaosocial"),
-    clienteDocumento: pick(raw, "cliente_cpfcnpj", "cpfcnpj"),
-    contratoId: pick(raw, "contrato_id", "contrato"),
-    protocolo: pick(raw, "os_protocolo", "protocolo"),
-    conteudo: pick(raw, "os_conteudo", "conteudo"),
-    observacao: pick(raw, "os_observacao", "observacao"),
+    clienteNome: pickString(raw, "cliente_nome", "cliente", "razaosocial"),
+    clienteDocumento: pickString(raw, "cliente_cpfcnpj", "cpfcnpj"),
+    contratoId: pickString(raw, "contrato_id", "contrato"),
+    protocolo: pickString(raw, "os_protocolo", "protocolo"),
+    conteudo: pickString(raw, "os_conteudo", "conteudo"),
+    observacao: pickString(raw, "os_observacao", "observacao"),
     endereco: {
-      logradouro: pick(raw, "endereco_logradouro"),
-      numero: pick(raw, "endereco_numero"),
-      bairro: pick(raw, "endereco_bairro"),
-      cidade: pick(raw, "endereco_cidade"),
+      logradouro: pickString(raw, "endereco_logradouro"),
+      numero: pickString(raw, "endereco_numero"),
+      bairro: pickString(raw, "endereco_bairro"),
+      cidade: pickString(raw, "endereco_cidade"),
       lat,
       lng,
     },
-    dataAgendamento: pick(raw, "os_data_agendamento", "data_agendamento"),
-    tecnicoSgpId: pick(raw, "os_tecnico_responsavel_id", "tecnico_id"),
-    tecnicoNome: pick(raw, "os_tecnico_responsavel", "tecnico"),
+    dataAgendamento: pickString(raw, "os_data_agendamento", "data_agendamento"),
+    tecnicoSgpId: pickString(raw, "os_tecnico_responsavel_id", "tecnico_id"),
+    tecnicoNome: pickString(raw, "os_tecnico_responsavel", "tecnico"),
   };
 }
 
 function normalizeOccurrence(raw: Record<string, any>): RawOccurrence {
   return {
     sgpNumero: String(pick(raw, "numero", "os_id", "id")),
-    tipo: pick(raw, "tipo"),
-    status: pick(raw, "status"),
-    conteudo: pick(raw, "conteudo"),
-    responsavel: pick(raw, "responsavel"),
-    contratoId: pick(raw, "contrato"),
-    dataCadastro: pick(raw, "data_cadastro"),
-    dataAgendamento: pick(raw, "data_agendamento"),
+    tipo: pickString(raw, "tipo"),
+    status: pickString(raw, "status"),
+    conteudo: pickString(raw, "conteudo"),
+    responsavel: pickString(raw, "responsavel"),
+    contratoId: pickString(raw, "contrato"),
+    dataCadastro: pickString(raw, "data_cadastro"),
+    dataAgendamento: pickString(raw, "data_agendamento"),
   };
 }
 

@@ -108,6 +108,49 @@ describe("createSgpConnector", () => {
     expect(body.token).toBe(creds.token);
   });
 
+  it("listServiceOrders converte contrato_id/motivo/tecnico numericos para string (regressao de producao)", async () => {
+    // Um SGP real (CITmax) retorna esses campos como numero JSON, nao string,
+    // o que quebrava prisma.ordemServico.upsert() ("Expected String or Null,
+    // provided Int") e fazia o Map lookup de tipo/tecnico falhar em silencio.
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        ordens_servicos: [
+          {
+            os_id: "6740",
+            os_status: 0,
+            motivo: 1,
+            contrato_id: 1268,
+            os_tecnico_responsavel_id: 10,
+            cliente_cpfcnpj: 12345678900,
+          },
+        ],
+      }),
+    );
+
+    const conn = createSgpConnector(creds);
+    const [os] = await conn.listServiceOrders();
+
+    expect(os.contratoId).toBe("1268");
+    expect(typeof os.contratoId).toBe("string");
+    expect(os.tipoCodigo).toBe("1");
+    expect(typeof os.tipoCodigo).toBe("string");
+    expect(os.tecnicoSgpId).toBe("10");
+    expect(typeof os.tecnicoSgpId).toBe("string");
+    expect(os.clienteDocumento).toBe("12345678900");
+  });
+
+  it("listOccurrences converte contrato numerico para string (regressao de producao)", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ ocorrencias: [{ numero: "260724151100", contrato: 97, status: "Encerrada" }] }),
+    );
+
+    const conn = createSgpConnector(creds);
+    const [ocorrencia] = await conn.listOccurrences();
+
+    expect(ocorrencia.contratoId).toBe("97");
+    expect(typeof ocorrencia.contratoId).toBe("string");
+  });
+
   it("listServiceOrders retorna endereco sem lat/lng quando endereco_ll esta ausente", async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ ordens_servicos: [{ os_id: "1", os_status: 0 }] }),
