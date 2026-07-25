@@ -1,4 +1,4 @@
-import type { CategoriaTipoOs, OsPrioridade, OsStatus } from "./status.js";
+import type { OsPrioridade, OsStatus } from "./status.js";
 import type { UserRole } from "./roles.js";
 
 /** ERPs suportados. SGP e o primeiro; outros plugam no mesmo contrato. */
@@ -32,6 +32,29 @@ export interface ErpConfigPublic {
   ultimaSyncMensagem?: string | null;
 }
 
+/**
+ * Categoria canonica da ISPhub (global, nao por provedor) — taxonomia unica
+ * pra unificar os "motivos"/tipos de OS de cada SGP, que cada provedor nomeia
+ * diferente (ex.: "Instalacao" x "Novo cliente" x "Ativacao" sao a mesma
+ * categoria em provedores distintos).
+ */
+export interface Categoria {
+  id: string;
+  nome: string;
+  cor: string;
+  /** Nome de icone lucide (ex.: "wrench", "wifi-off"). */
+  icone?: string | null;
+  /** Palavras-chave (normalizadas) usadas no auto-mapeamento por descricao. */
+  palavrasChave: string[];
+  /** SLA herdado por tipos mapeados sem SLA proprio definido. */
+  slaHorasPadrao?: number | null;
+  ordem: number;
+  ativo: boolean;
+}
+
+/** Vista resumida da categoria, embutida em TipoOs/FilaItem (sem palavrasChave/ativo). */
+export type CategoriaResumo = Pick<Categoria, "id" | "nome" | "cor" | "icone" | "slaHorasPadrao">;
+
 /** Tipo de OS/ocorrencia importado do SGP e exibido no ISPhub. */
 export interface TipoOs {
   id: string;
@@ -39,10 +62,12 @@ export interface TipoOs {
   /** Codigo do tipo no SGP. */
   sgpCodigo: string;
   descricao: string;
-  categoria: CategoriaTipoOs;
+  /** null = "Nao classificado" (aguardando mapeamento manual ou auto-match). */
+  categoriaId: string | null;
+  categoria?: CategoriaResumo | null;
   /** Se aparece na fila unificada. */
   visivel: boolean;
-  /** Prazo de SLA em horas (base do semaforo). null = sem SLA definido. */
+  /** Prazo de SLA em horas (base do semaforo). null = sem SLA proprio (usa o padrao da categoria). */
   slaHoras?: number | null;
 }
 
@@ -64,7 +89,8 @@ export interface OrdemServico {
   sgpOsId: string;
   tipoOsId?: string | null;
   tipoDescricao?: string | null;
-  categoria?: CategoriaTipoOs | null;
+  /** null = tipo sem categoria mapeada ainda ("Não classificado"). */
+  categoria?: CategoriaResumo | null;
   status: OsStatus;
   prioridade: OsPrioridade;
   clienteNome?: string | null;
@@ -154,7 +180,8 @@ export interface FilaFiltros {
   status?: OsStatus[];
   tipoOsId?: string;
   tecnicoId?: string;
-  categoria?: CategoriaTipoOs;
+  /** "sem_categoria" filtra tipos ainda nao mapeados a nenhuma categoria. */
+  categoriaId?: string | "sem_categoria";
   /** Busca livre (cliente, protocolo, endereco). */
   busca?: string;
   /** ISO date range. */
@@ -170,7 +197,14 @@ export interface DashboardMetrics {
   totalConcluidas: number;
   porProvedor: { provedorId: string; provedorNome: string; cor: string; abertas: number; concluidas: number }[];
   porStatus: { status: OsStatus; total: number }[];
-  porCategoria: { categoria: CategoriaTipoOs | "sem_categoria"; abertas: number; concluidas: number }[];
+  porCategoria: {
+    categoriaId: string | null;
+    nome: string;
+    cor: string;
+    icone?: string | null;
+    abertas: number;
+    concluidas: number;
+  }[];
   porTecnico: { tecnicoId: string; tecnicoNome: string; abertas: number; concluidas: number }[];
   slaEstourado: number;
 }

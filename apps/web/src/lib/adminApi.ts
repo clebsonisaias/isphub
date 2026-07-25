@@ -1,4 +1,4 @@
-import type { ErpConfigPublic, Provedor, TipoOs } from "@isphub/shared";
+import type { Categoria, ErpConfigPublic, Provedor, TipoOs } from "@isphub/shared";
 import { api } from "@/lib/apiClient";
 
 export const provedoresApi = {
@@ -26,10 +26,22 @@ export const tiposOsApi = {
   atualizar: (
     provedorId: string,
     tipoId: string,
-    data: Partial<{ visivel: boolean; slaHoras: number | null; categoria: "ocorrencia" | "instalacao" }>,
+    data: Partial<{ visivel: boolean; slaHoras: number | null; categoriaId: string | null }>,
   ) => api.patch<TipoOs>(`/provedores/${provedorId}/tipos-os/${tipoId}`, data),
+  autoClassificar: (provedorId: string) =>
+    api.post<{ analisados: number; classificados: number }>(`/provedores/${provedorId}/tipos-os/auto-classificar`),
 };
 
 export const syncApi = {
   disparar: (provedorId: string) => api.post<{ ok: boolean; message?: string }>(`/provedores/${provedorId}/sync`),
+};
+
+export const categoriasApi = {
+  listar: () => api.get<Categoria[]>("/categorias"),
+  criar: (
+    data: Pick<Categoria, "nome" | "cor"> &
+      Partial<Pick<Categoria, "icone" | "palavrasChave" | "slaHorasPadrao" | "ordem" | "ativo">>,
+  ) => api.post<Categoria>("/categorias", data),
+  atualizar: (id: string, data: Partial<Omit<Categoria, "id">>) => api.put<Categoria>(`/categorias/${id}`, data),
+  remover: (id: string) => api.delete<Categoria | void>(`/categorias/${id}`),
 };

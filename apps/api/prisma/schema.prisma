@@ -23,11 +23,6 @@ enum ErpTipo {
   SGP
 }
 
-enum CategoriaTipoOs {
-  ocorrencia
-  instalacao
-}
-
 enum OsStatus {
   aberta
   em_deslocamento
@@ -79,17 +74,44 @@ model ErpConfig {
   @@map("erp_configs")
 }
 
+/// Categoria canonica da ISPhub (global, nao por provedor) — taxonomia unica
+/// pra unificar os "motivos"/tipos de OS de cada SGP, que cada provedor nomeia
+/// diferente (ex.: "Instalacao" x "Novo cliente" x "Ativacao" sao a mesma
+/// categoria em provedores distintos). Ver [[categoriaMatch.ts]] para o
+/// auto-mapeamento por palavra-chave.
+model Categoria {
+  id             String   @id @default(uuid())
+  nome           String   @unique
+  cor            String   @default("#6366f1")
+  /// Nome de icone lucide (ex.: "wrench", "wifi-off"). Opcional.
+  icone          String?
+  /// Palavras-chave (normalizadas: minusculas, sem acento/emoji) usadas pelo
+  /// auto-mapeamento pra sugerir esta categoria a partir da descricao do tipo.
+  palavrasChave  String[] @default([])
+  /// SLA herdado por tipos mapeados sem SLA proprio definido.
+  slaHorasPadrao Int?
+  ordem          Int      @default(0)
+  ativo          Boolean  @default(true)
+  criadoEm       DateTime @default(now())
+
+  tiposOs TipoOs[]
+
+  @@map("categorias")
+}
+
 /// Tipo de OS/ocorrencia importado do catalogo do ERP e exibido no ISPhub.
 model TipoOs {
-  id         String           @id @default(uuid())
-  provedorId String
-  provedor   Provedor         @relation(fields: [provedorId], references: [id], onDelete: Cascade)
-  sgpCodigo  String
-  descricao  String
-  categoria  CategoriaTipoOs  @default(ocorrencia)
-  visivel    Boolean          @default(true)
-  /// Prazo de SLA em horas; null = sem SLA definido para este tipo.
-  slaHoras   Int?
+  id          String     @id @default(uuid())
+  provedorId  String
+  provedor    Provedor   @relation(fields: [provedorId], references: [id], onDelete: Cascade)
+  sgpCodigo   String
+  descricao   String
+  /// null = "Nao classificado" (aguardando mapeamento manual ou auto-match).
+  categoriaId String?
+  categoria   Categoria? @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
+  visivel     Boolean    @default(true)
+  /// Prazo de SLA em horas; null = sem SLA proprio (usa o padrao da categoria).
+  slaHoras    Int?
 
   ordensServico OrdemServico[]
 

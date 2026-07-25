@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { CategoriaTipoOs, OsStatus, OS_STATUS_ABERTOS, UserRole, type DashboardMetrics } from "@isphub/shared";
+import { OsStatus, OS_STATUS_ABERTOS, UserRole, type DashboardMetrics } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -27,7 +27,12 @@ dashboardRouter.get(
         prisma.ordemServico.count({ where: { ...where, status: OsStatus.CONCLUIDA } }),
         prisma.ordemServico.findMany({
           where: { ...where, status: { in: OS_STATUS_ABERTOS } },
-          select: { dataAgendamento: true, dataCadastro: true, criadoEm: true, tipoOs: { select: { slaHoras: true } } },
+          select: {
+            dataAgendamento: true,
+            dataCadastro: true,
+            criadoEm: true,
+            tipoOs: { select: { slaHoras: true, categoria: { select: { slaHorasPadrao: true } } } },
+          },
         }),
         prisma.provedor.findMany({ where: provedorId ? { id: provedorId } : {} }),
         prisma.ordemServico.groupBy({ by: ["status"], where, _count: { _all: true } }),
@@ -40,15 +45,19 @@ dashboardRouter.get(
         // direto — buscamos status+categoria e somamos em memoria (volume MVP).
         prisma.ordemServico.findMany({
           where,
-          select: { status: true, tipoOs: { select: { categoria: true } } },
+          select: {
+            status: true,
+            tipoOs: { select: { categoria: { select: { id: true, nome: true, cor: true, icone: true } } } },
+          },
         }),
       ]);
 
     const slaEstourado = ordensAbertasComSla.filter(
       (os) =>
-        calcularSla({ slaHoras: os.tipoOs?.slaHoras, dataBase: os.dataAgendamento ?? os.dataCadastro ?? os.criadoEm })
-          .semaforo ===
-        "vermelho",
+        calcularSla({
+          slaHoras: os.tipoOs?.slaHoras ?? os.tipoOs?.categoria?.slaHorasPadrao,
+          dataBase: os.dataAgendamento ?? os.dataCadastro ?? os.criadoEm,
+        }).semaforo === "vermelho",
     ).length;
 
     const porProvedor = await Promise.all(
@@ -63,25 +72,34 @@ dashboardRouter.get(
 
     const porStatus = statusGroups.map((g) => ({ status: g.status as OsStatus, total: g._count._all }));
 
-    // Agrega abertas/concluidas por categoria do tipo de OS (ocorrencia /
-    // instalacao / sem_categoria para OS cujo tipo ainda nao foi classificado).
+    // Agrega abertas/concluidas por categoria canonica do tipo de OS. Chave
+    // null = "Nao classificado" (tipo sem categoria mapeada ainda).
     const abertosSet = new Set<string>(OS_STATUS_ABERTOS);
-    const catAcc = new Map<CategoriaTipoOs | "sem_categoria", { abertas: number; concluidas: number }>();
+    const catAcc = new Map<
+      string | null,
+      { categoriaId: string | null; nome: string; cor: string; icone: string | null; abertas: number; concluidas: number }
+    >();
     for (const os of ordensCategoria) {
-      const cat = (os.tipoOs?.categoria as CategoriaTipoOs | undefined) ?? "sem_categoria";
-      const atual = catAcc.get(cat) ?? { abertas: 0, concluidas: 0 };
+      const categoria = os.tipoOs?.categoria ?? null;
+      const chave = categoria?.id ?? null;
+      const atual = catAcc.get(chave) ?? {
+        categoriaId: chave,
+        nome: categoria?.nome ?? "Não classificado",
+        cor: categoria?.cor ?? "#94a3b8",
+        icone: categoria?.icone ?? null,
+        abertas: 0,
+        concluidas: 0,
+      };
       if (abertosSet.has(os.status)) atual.abertas += 1;
       else if (os.status === OsStatus.CONCLUIDA) atual.concluidas += 1;
-      catAcc.set(cat, atual);
+      catAcc.set(chave, atual);
     }
-    const ordemCategoria: (CategoriaTipoOs | "sem_categoria")[] = [
-      CategoriaTipoOs.OCORRENCIA,
-      CategoriaTipoOs.INSTALACAO,
-      "sem_categoria",
-    ];
-    const porCategoria = ordemCategoria
-      .filter((c) => catAcc.has(c))
-      .map((categoria) => ({ categoria, ...catAcc.get(categoria)! }));
+    // "Nao classificado" sempre por ultimo; as demais na ordem que apareceram.
+    const porCategoria = [...catAcc.values()].sort((a, b) => {
+      if (a.categoriaId === null) return 1;
+      if (b.categoriaId === null) return -1;
+      return 0;
+    });
 
     const tecnicoIds = tecnicoGroups.map((g) => g.tecnicoId).filter((id): id is string => !!id);
     const tecnicos = tecnicoIds.length

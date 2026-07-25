@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import type { Provedor } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
+import { AdminNav } from "@/components/admin/AdminNav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,6 +46,7 @@ export function ProvedoresPage() {
 
   return (
     <AppShell>
+      <AdminNav />
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Provedores</h1>

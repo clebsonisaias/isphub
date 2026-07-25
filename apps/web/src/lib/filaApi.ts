@@ -14,7 +14,7 @@ function buildQuery(filtros: FilaFiltros): string {
   if (filtros.status?.length) params.set("status", filtros.status.join(","));
   if (filtros.tipoOsId) params.set("tipoOsId", filtros.tipoOsId);
   if (filtros.tecnicoId) params.set("tecnicoId", filtros.tecnicoId);
-  if (filtros.categoria) params.set("categoria", filtros.categoria);
+  if (filtros.categoriaId) params.set("categoriaId", filtros.categoriaId);
   if (filtros.busca) params.set("busca", filtros.busca);
   if (filtros.de) params.set("de", filtros.de);
   if (filtros.ate) params.set("ate", filtros.ate);

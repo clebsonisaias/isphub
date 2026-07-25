@@ -30,12 +30,6 @@ export enum OsPrioridade {
   ALTA = 3,
 }
 
-/** Categoria do tipo de OS, para diferenciar ocorrencias de instalacoes. */
-export enum CategoriaTipoOs {
-  OCORRENCIA = "ocorrencia",
-  INSTALACAO = "instalacao",
-}
-
 /** Converte um codigo de status do SGP para o enum interno. */
 export function mapSgpOsStatus(code: number | string | null | undefined): OsStatus {
   switch (Number(code)) {

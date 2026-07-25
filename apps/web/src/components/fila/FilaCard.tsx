@@ -4,8 +4,9 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { SlaBadge } from "@/components/SlaBadge";
 import { ContratoStatusBadge } from "@/components/ContratoStatusBadge";
 import { PRIORIDADE_LABEL } from "@/lib/filaFacets";
+import { iconeCategoria } from "@/lib/categoriaIcons";
 import { cn } from "@/lib/utils";
-import { Clock, ChevronRight } from "lucide-react";
+import { Clock, ChevronRight, HelpCircle } from "lucide-react";
 
 /** Cor da barra lateral do card, pelo semáforo de SLA (só OS tem SLA). */
 function corRail(item: FilaItem): string {
@@ -62,6 +63,29 @@ function abertaHa(iso: string | null, agora: number): string | null {
   if (h < 24) return `${h}h ${min % 60}min`;
   const dias = Math.floor(h / 24);
   return `${dias}d ${h % 24}h`;
+}
+
+/** Chip com a categoria canonica do tipo de OS (ou "Não classificado", em destaque). */
+function CategoriaChip({ item }: { item: FilaItem }) {
+  if (item.kind !== "os") return null;
+  if (!item.categoria) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning">
+        <HelpCircle className="size-3" />
+        Não classificado
+      </span>
+    );
+  }
+  const Icone = iconeCategoria(item.categoria.icone);
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium"
+      style={{ borderColor: `${item.categoria.cor}40`, backgroundColor: `${item.categoria.cor}18`, color: item.categoria.cor }}
+    >
+      <Icone className="size-3" />
+      {item.categoria.nome}
+    </span>
+  );
 }
 
 function Campo({ label, valor }: { label: string; valor?: string | null }) {
@@ -136,6 +160,7 @@ export function FilaCard({ item, agora, onClick }: { item: FilaItem; agora: numb
             </span>
           )}
           <ContratoStatusBadge status={item.contratoStatus} />
+          <CategoriaChip item={item} />
           {item.kind === "os" && <SlaBadge sla={item.sla} />}
         </div>
 

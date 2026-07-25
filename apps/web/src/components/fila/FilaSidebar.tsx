@@ -1,20 +1,21 @@
-import type { Provedor } from "@isphub/shared";
-import { CategoriaTipoOs, OsPrioridade, OsStatus } from "@isphub/shared";
+import type { Categoria, Provedor } from "@isphub/shared";
+import { OsPrioridade, OsStatus } from "@isphub/shared";
 import { cn } from "@/lib/utils";
 import {
-  CATEGORIA_LABEL,
   OS_STATUS_LABEL,
   PRIORIDADE_LABEL,
   STATUS_ORDEM,
   type FilaFacetCounts,
   type FilaFacetState,
 } from "@/lib/filaFacets";
-import { LayoutList, Wrench, AlertCircle } from "lucide-react";
+import { iconeCategoria } from "@/lib/categoriaIcons";
+import { LayoutList, Wrench, AlertCircle, HelpCircle } from "lucide-react";
 
 interface Props {
   filtros: FilaFacetState;
   facetas: FilaFacetCounts;
   provedores: Provedor[];
+  categorias: Categoria[];
   mostrarProvedores: boolean;
   onChange: (patch: Partial<FilaFacetState>) => void;
 }
@@ -72,7 +73,7 @@ function Secao({ titulo, children }: { titulo: string; children: React.ReactNode
   );
 }
 
-export function FilaSidebar({ filtros, facetas, provedores, mostrarProvedores, onChange }: Props) {
+export function FilaSidebar({ filtros, facetas, provedores, categorias, mostrarProvedores, onChange }: Props) {
   const totalKind = facetas.porKind.os + facetas.porKind.ocorrencia;
 
   return (
@@ -139,18 +140,31 @@ export function FilaSidebar({ filtros, facetas, provedores, mostrarProvedores, o
       <Secao titulo="Categoria">
         <LinhaFiltro
           label="Todas"
-          ativo={filtros.categoria === "todas"}
-          onClick={() => onChange({ categoria: "todas" })}
+          ativo={filtros.categoriaId === "todas"}
+          onClick={() => onChange({ categoriaId: "todas" })}
         />
-        {[CategoriaTipoOs.OCORRENCIA, CategoriaTipoOs.INSTALACAO].map((c) => (
+        {categorias.map((c) => {
+          const Icone = iconeCategoria(c.icone);
+          return (
+            <LinhaFiltro
+              key={c.id}
+              label={c.nome}
+              icon={<Icone className="size-3.5 shrink-0" style={{ color: c.cor }} />}
+              count={facetas.porCategoria.get(c.id) ?? 0}
+              ativo={filtros.categoriaId === c.id}
+              onClick={() => onChange({ categoriaId: c.id })}
+            />
+          );
+        })}
+        {((facetas.porCategoria.get("sem_categoria") ?? 0) > 0 || filtros.categoriaId === "sem_categoria") && (
           <LinhaFiltro
-            key={c}
-            label={CATEGORIA_LABEL[c]}
-            count={facetas.porCategoria.get(c) ?? 0}
-            ativo={filtros.categoria === c}
-            onClick={() => onChange({ categoria: c })}
+            label="Não classificado"
+            icon={<HelpCircle className="size-3.5 shrink-0 text-warning" />}
+            count={facetas.porCategoria.get("sem_categoria") ?? 0}
+            ativo={filtros.categoriaId === "sem_categoria"}
+            onClick={() => onChange({ categoriaId: "sem_categoria" })}
           />
-        ))}
+        )}
       </Secao>
 
       {mostrarProvedores && provedores.length > 0 && (

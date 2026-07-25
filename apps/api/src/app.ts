@@ -5,6 +5,7 @@ import { env } from "./config/env.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { authRouter } from "./routes/auth.js";
 import { provedoresRouter } from "./routes/provedores.js";
+import { categoriasRouter } from "./routes/categorias.js";
 import { erpConfigRouter } from "./routes/erpConfig.js";
 import { tiposOsRouter } from "./routes/tiposOs.js";
 import { syncRouter } from "./routes/sync.js";
@@ -27,6 +28,7 @@ export function createApp() {
 
   app.use("/auth", authRouter);
   app.use("/provedores", provedoresRouter);
+  app.use("/categorias", categoriasRouter);
   app.use("/provedores/:provedorId/erp-config", erpConfigRouter);
   app.use("/provedores/:provedorId/tipos-os", tiposOsRouter);
   app.use("/provedores/:provedorId/sync", syncRouter);

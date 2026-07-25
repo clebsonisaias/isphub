@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import type { ErpConfigPublic, Provedor, TipoOs } from "@isphub/shared";
+import type { Categoria, ErpConfigPublic, Provedor, TipoOs } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,10 +9,10 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { erpConfigApi, provedoresApi, syncApi, tiposOsApi } from "@/lib/adminApi";
+import { categoriasApi, erpConfigApi, provedoresApi, syncApi, tiposOsApi } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
-import { ArrowLeft, CheckCircle2, Download, RefreshCw, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Download, RefreshCw, Sparkles, XCircle } from "lucide-react";
 
 function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
@@ -224,13 +224,17 @@ function SgpConfigForm({ provedorId }: { provedorId: string }) {
 function TiposOsManager({ provedorId }: { provedorId: string }) {
   const { toast } = useToast();
   const [tipos, setTipos] = useState<TipoOs[]>([]);
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [importando, setImportando] = useState(false);
+  const [classificando, setClassificando] = useState(false);
 
   async function carregar() {
     setCarregando(true);
     try {
-      setTipos(await tiposOsApi.listar(provedorId));
+      const [tiposResp, categoriasResp] = await Promise.all([tiposOsApi.listar(provedorId), categoriasApi.listar()]);
+      setTipos(tiposResp);
+      setCategorias(categoriasResp);
     } catch (err) {
       toast({ titulo: "Erro ao carregar tipos de OS", descricao: mensagem(err), variante: "erro" });
     } finally {
@@ -241,6 +245,8 @@ function TiposOsManager({ provedorId }: { provedorId: string }) {
   useEffect(() => {
     void carregar();
   }, [provedorId]);
+
+  const naoClassificados = tipos.filter((t) => !t.categoriaId).length;
 
   async function handleImportar() {
     setImportando(true);
@@ -255,8 +261,29 @@ function TiposOsManager({ provedorId }: { provedorId: string }) {
     }
   }
 
-  async function atualizarTipo(tipo: TipoOs, patch: Partial<TipoOs>) {
-    setTipos((prev) => prev.map((t) => (t.id === tipo.id ? { ...t, ...patch } : t)));
+  async function handleAutoClassificar() {
+    setClassificando(true);
+    try {
+      const r = await tiposOsApi.autoClassificar(provedorId);
+      toast({
+        titulo: `${r.classificados} de ${r.analisados} tipo(s) classificado(s) automaticamente`,
+        descricao: r.analisados - r.classificados > 0 ? "O restante segue 'Não classificado' — mapeie manualmente." : undefined,
+        variante: "sucesso",
+      });
+      void carregar();
+    } catch (err) {
+      toast({ titulo: "Erro ao auto-classificar", descricao: mensagem(err), variante: "erro" });
+    } finally {
+      setClassificando(false);
+    }
+  }
+
+  async function atualizarTipo(tipo: TipoOs, patch: Partial<Pick<TipoOs, "visivel" | "slaHoras" | "categoriaId">>) {
+    const categoria =
+      "categoriaId" in patch ? (categorias.find((c) => c.id === patch.categoriaId) ?? null) : undefined;
+    setTipos((prev) =>
+      prev.map((t) => (t.id === tipo.id ? { ...t, ...patch, ...(categoria !== undefined ? { categoria } : {}) } : t)),
+    );
     try {
       await tiposOsApi.atualizar(provedorId, tipo.id, patch);
     } catch (err) {
@@ -271,13 +298,23 @@ function TiposOsManager({ provedorId }: { provedorId: string }) {
         <div>
           <CardTitle>Tipos de OS</CardTitle>
           <CardDescription>
-            Catalogo de tipos vindo do SGP. Controle quais aparecem no painel e defina o prazo de SLA de cada um.
+            Catalogo de tipos vindo do SGP. Mapeie cada um a uma{" "}
+            <Link to="/admin/categorias" className="underline hover:text-foreground">
+              categoria
+            </Link>
+            , controle quais aparecem no painel e ajuste o SLA quando precisar fugir do padrão da categoria.
           </CardDescription>
         </div>
-        <Button variant="outline" onClick={handleImportar} disabled={importando}>
-          <Download className={importando ? "animate-pulse" : ""} />
-          {importando ? "Importando..." : "Importar do SGP"}
-        </Button>
+        <div className="flex shrink-0 gap-2">
+          <Button variant="outline" onClick={handleAutoClassificar} disabled={classificando || naoClassificados === 0}>
+            <Sparkles className={classificando ? "animate-pulse" : ""} />
+            {classificando ? "Classificando..." : `Auto-classificar${naoClassificados ? ` (${naoClassificados})` : ""}`}
+          </Button>
+          <Button variant="outline" onClick={handleImportar} disabled={importando}>
+            <Download className={importando ? "animate-pulse" : ""} />
+            {importando ? "Importando..." : "Importar do SGP"}
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         {carregando ? (
@@ -304,12 +341,20 @@ function TiposOsManager({ provedorId }: { provedorId: string }) {
                   <TableCell>{tipo.descricao}</TableCell>
                   <TableCell>
                     <select
-                      value={tipo.categoria}
-                      onChange={(e) => atualizarTipo(tipo, { categoria: e.target.value as TipoOs["categoria"] })}
-                      className="rounded-md border border-input bg-secondary/40 px-2 py-1 text-sm"
+                      value={tipo.categoriaId ?? ""}
+                      onChange={(e) => atualizarTipo(tipo, { categoriaId: e.target.value || null })}
+                      className={`rounded-md border px-2 py-1 text-sm ${
+                        tipo.categoriaId
+                          ? "border-input bg-secondary/40"
+                          : "border-warning/40 bg-warning/10 text-warning"
+                      }`}
                     >
-                      <option value="ocorrencia">Ocorrência</option>
-                      <option value="instalacao">Instalação</option>
+                      <option value="">Não classificado</option>
+                      {categorias.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.nome}
+                        </option>
+                      ))}
                     </select>
                   </TableCell>
                   <TableCell>
@@ -319,7 +364,7 @@ function TiposOsManager({ provedorId }: { provedorId: string }) {
                       max={720}
                       className="h-8 w-20"
                       value={tipo.slaHoras ?? ""}
-                      placeholder="—"
+                      placeholder={tipo.categoria?.slaHorasPadrao ? `${tipo.categoria.slaHorasPadrao}` : "—"}
                       onChange={(e) =>
                         atualizarTipo(tipo, { slaHoras: e.target.value ? Number(e.target.value) : null })
                       }

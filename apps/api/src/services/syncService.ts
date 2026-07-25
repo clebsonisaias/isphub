@@ -1,6 +1,7 @@
 import { mapSgpOsStatus } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { buildConnector } from "./erpConnectorService.js";
+import { sugerirCategoriaId } from "./categoriaMatch.js";
 
 /**
  * Motor de sincronizacao: puxa tecnicos, OS e ocorrencias do SGP de um
@@ -56,6 +57,10 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
     tipoPorSgpCodigo.set(t.descricao.trim(), t.id);
   }
 
+  // Categorias ativas, pra sugerir automaticamente a categoria de tipos
+  // auto-criados abaixo (motivo que o SGP manda mas nao esta no catalogo).
+  const categoriasAtivas = await prisma.categoria.findMany({ where: { ativo: true } });
+
   /**
    * Resolve o tipoOsId pelo mapa; se o motivo nao existir no catalogo
    * (o endpoint de catalogo do SGP nao expoe todo motivo ja usado
@@ -69,12 +74,13 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
     const existente = tipoPorSgpCodigo.get(chave);
     if (existente) return existente;
 
+    const descricao = tipoDescricao?.trim() || chave;
     const novo = await prisma.tipoOs.create({
       data: {
         provedorId,
         sgpCodigo: chave,
-        descricao: tipoDescricao?.trim() || chave,
-        categoria: "ocorrencia",
+        descricao,
+        categoriaId: sugerirCategoriaId(descricao, categoriasAtivas),
         visivel: true,
       },
     });

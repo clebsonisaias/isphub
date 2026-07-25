@@ -10,6 +10,7 @@ import { MapaPage } from "@/pages/MapaPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { ProvedoresPage } from "@/pages/admin/ProvedoresPage";
 import { ProvedorDetailPage } from "@/pages/admin/ProvedorDetailPage";
+import { CategoriasPage } from "@/pages/admin/CategoriasPage";
 
 function App() {
   return (
@@ -56,6 +57,14 @@ function App() {
                 element={
                   <RequireAuth roles={[UserRole.ADMIN]}>
                     <ProvedorDetailPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/admin/categorias"
+                element={
+                  <RequireAuth roles={[UserRole.ADMIN]}>
+                    <CategoriasPage />
                   </RequireAuth>
                 }
               />

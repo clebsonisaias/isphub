@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
-import { CategoriaTipoOs, OsStatus, UserRole, type FilaItem } from "@isphub/shared";
+import { OsStatus, UserRole, type FilaItem } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -19,7 +19,8 @@ const filtrosSchema = z.object({
     .transform((s) => (s ? (s.split(",") as OsStatus[]) : undefined)),
   tipoOsId: z.string().uuid().optional(),
   tecnicoId: z.string().uuid().optional(),
-  categoria: z.enum(["ocorrencia", "instalacao"]).optional(),
+  /** "sem_categoria" filtra OS cujo tipo ainda nao foi mapeado a nenhuma categoria. */
+  categoriaId: z.union([z.string().uuid(), z.literal("sem_categoria")]).optional(),
   busca: z.string().optional(),
   de: z.string().datetime().optional(),
   ate: z.string().datetime().optional(),
@@ -49,7 +50,8 @@ filaRouter.get(
     if (f.status?.length) osWhere.status = { in: f.status };
     if (f.tipoOsId) osWhere.tipoOsId = f.tipoOsId;
     if (f.tecnicoId) osWhere.tecnicoId = f.tecnicoId;
-    if (f.categoria) osWhere.tipoOs = { categoria: f.categoria };
+    if (f.categoriaId === "sem_categoria") osWhere.tipoOs = { categoriaId: null };
+    else if (f.categoriaId) osWhere.tipoOs = { categoriaId: f.categoriaId };
     if (f.de || f.ate) {
       osWhere.dataAgendamento = {};
       if (f.de) osWhere.dataAgendamento.gte = new Date(f.de);
@@ -67,7 +69,7 @@ filaRouter.get(
 
     const ordens = await prisma.ordemServico.findMany({
       where: osWhere,
-      include: { provedor: true, tipoOs: true, tecnico: true },
+      include: { provedor: true, tipoOs: { include: { categoria: true } }, tecnico: true },
       orderBy: [{ dataAgendamento: "asc" }, { criadoEm: "desc" }],
       take: 500,
     });
@@ -75,7 +77,7 @@ filaRouter.get(
     // Ocorrencias so entram na fila quando o filtro nao usa dimensoes
     // exclusivas de OS (tipo/tecnico/categoria), que elas nao possuem.
     let ocorrencias: Prisma.OcorrenciaGetPayload<{ include: { provedor: true } }>[] = [];
-    if (!f.tipoOsId && !f.tecnicoId && !f.categoria) {
+    if (!f.tipoOsId && !f.tecnicoId && !f.categoriaId) {
       const ocoWhere: any = { provedorId };
       if (f.busca) {
         ocoWhere.OR = [
@@ -114,7 +116,15 @@ filaRouter.get(
       sgpOsId: os.sgpOsId,
       tipoOsId: os.tipoOsId,
       tipoDescricao: os.tipoOs?.descricao ?? null,
-      categoria: (os.tipoOs?.categoria as CategoriaTipoOs | undefined) ?? null,
+      categoria: os.tipoOs?.categoria
+        ? {
+            id: os.tipoOs.categoria.id,
+            nome: os.tipoOs.categoria.nome,
+            cor: os.tipoOs.categoria.cor,
+            icone: os.tipoOs.categoria.icone,
+            slaHorasPadrao: os.tipoOs.categoria.slaHorasPadrao,
+          }
+        : null,
       status: os.status as OsStatus,
       prioridade: os.prioridade as 1 | 2 | 3,
       clienteNome: os.clienteNome,
@@ -144,7 +154,13 @@ filaRouter.get(
       // dataCadastro (data real de abertura no SGP) e uma base de SLA mais
       // fiel que criadoEm, que so reflete quando o ISPhub sincronizou pela
       // primeira vez — importante pra OS antigas importadas so agora.
-      sla: calcularSla({ slaHoras: os.tipoOs?.slaHoras, dataBase: os.dataAgendamento ?? os.dataCadastro ?? os.criadoEm }),
+      // SLA efetivo: o do tipo, com fallback pro padrao da categoria (menos
+      // configuracao manual por tipo — so precisa mexer quando o tipo foge
+      // do padrao da propria categoria).
+      sla: calcularSla({
+        slaHoras: os.tipoOs?.slaHoras ?? os.tipoOs?.categoria?.slaHorasPadrao,
+        dataBase: os.dataAgendamento ?? os.dataCadastro ?? os.criadoEm,
+      }),
     }));
 
     const itensOco: FilaItem[] = ocorrencias.map((o) => ({

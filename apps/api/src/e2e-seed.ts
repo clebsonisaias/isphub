@@ -61,7 +61,6 @@ async function main() {
       provedorId: provedor.id,
       sgpCodigo: "1",
       descricao: "Sem conexao",
-      categoria: "ocorrencia",
       visivel: true,
       slaHoras: 24,
     },

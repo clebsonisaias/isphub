@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CategoriaTipoOs, type DashboardMetrics } from "@isphub/shared";
+import type { DashboardMetrics } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -9,16 +9,11 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { dashboardApi } from "@/lib/dashboardApi";
 import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
+import { iconeCategoria } from "@/lib/categoriaIcons";
 
 function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
 }
-
-const CATEGORIA_LABEL: Record<CategoriaTipoOs | "sem_categoria", string> = {
-  [CategoriaTipoOs.OCORRENCIA]: "Ocorrência",
-  [CategoriaTipoOs.INSTALACAO]: "Instalação",
-  sem_categoria: "Sem categoria",
-};
 
 /** Stat tile: label + valor grande com count-up. Cor reservada para leitura de estado (ok/critico). */
 function StatTile({ label, value, tone = "default" }: { label: string; value: number; tone?: "default" | "critico" }) {
@@ -157,7 +152,7 @@ export function DashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle>Por categoria</CardTitle>
-            <CardDescription>OS abertas e concluídas por categoria (ocorrência x instalação).</CardDescription>
+            <CardDescription>OS abertas e concluídas por categoria canônica da ISPhub.</CardDescription>
           </CardHeader>
           <CardContent>
             {metrics.porCategoria.length === 0 ? (
@@ -172,23 +167,31 @@ export function DashboardPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {metrics.porCategoria.map((c) => (
-                    <TableRow key={c.categoria}>
-                      <TableCell>{CATEGORIA_LABEL[c.categoria]}</TableCell>
-                      <TableCell className="w-32">
-                        <div className="flex items-center gap-2">
-                          <span className="w-6 text-right tabular-nums">{c.abertas}</span>
-                          <MiniMeter value={c.abertas} max={maxCategoria} colorClassName="bg-primary" />
-                        </div>
-                      </TableCell>
-                      <TableCell className="w-32">
-                        <div className="flex items-center gap-2">
-                          <span className="w-6 text-right tabular-nums">{c.concluidas}</span>
-                          <MiniMeter value={c.concluidas} max={maxCategoria} colorClassName="bg-success" />
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {metrics.porCategoria.map((c) => {
+                    const Icone = iconeCategoria(c.icone);
+                    return (
+                      <TableRow key={c.categoriaId ?? "sem_categoria"}>
+                        <TableCell>
+                          <span className="inline-flex items-center gap-1.5" style={{ color: c.categoriaId ? c.cor : undefined }}>
+                            <Icone className="size-3.5" />
+                            <span className={c.categoriaId ? "text-foreground" : "text-muted-foreground"}>{c.nome}</span>
+                          </span>
+                        </TableCell>
+                        <TableCell className="w-32">
+                          <div className="flex items-center gap-2">
+                            <span className="w-6 text-right tabular-nums">{c.abertas}</span>
+                            <MiniMeter value={c.abertas} max={maxCategoria} colorClassName="bg-primary" />
+                          </div>
+                        </TableCell>
+                        <TableCell className="w-32">
+                          <div className="flex items-center gap-2">
+                            <span className="w-6 text-right tabular-nums">{c.concluidas}</span>
+                            <MiniMeter value={c.concluidas} max={maxCategoria} colorClassName="bg-success" />
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             )}

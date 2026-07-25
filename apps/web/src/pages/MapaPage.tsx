@@ -131,6 +131,11 @@ export function MapaPage() {
                       <StatusBadge status={item.status} />
                       <ContratoStatusBadge status={item.contratoStatus} />
                     </div>
+                    {item.categoria && (
+                      <span className="inline-flex w-fit items-center gap-1 text-xs font-medium" style={{ color: item.categoria.cor }}>
+                        {item.categoria.nome}
+                      </span>
+                    )}
                     <p className="font-medium">{item.clienteNome ?? "Cliente não identificado"}</p>
                     <p className="text-muted-foreground">
                       {item.endereco.logradouro

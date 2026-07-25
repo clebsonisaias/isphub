@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createScope, animate, stagger, type Scope } from "animejs";
-import { UserRole, type FilaItem, type Provedor } from "@isphub/shared";
+import { UserRole, type Categoria, type FilaItem, type Provedor } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { filaApi } from "@/lib/filaApi";
-import { provedoresApi } from "@/lib/adminApi";
+import { categoriasApi, provedoresApi } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
 import { OrdemServicoDetailDialog } from "@/components/OrdemServicoDetailDialog";
 import { OcorrenciaDetailDialog } from "@/components/OcorrenciaDetailDialog";
@@ -47,6 +47,7 @@ export function PainelPage() {
   const ehProvedor = usuario?.role === UserRole.PROVEDOR;
 
   const [provedores, setProvedores] = useState<Provedor[]>([]);
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [itens, setItens] = useState<FilaItem[]>([]);
   const [carregando, setCarregando] = useState(true);
 
@@ -68,6 +69,10 @@ export function PainelPage() {
 
   useEffect(() => {
     provedoresApi.listar().then(setProvedores).catch(() => {});
+    categoriasApi
+      .listar()
+      .then((cats) => setCategorias(cats.filter((c) => c.ativo)))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -146,6 +151,7 @@ export function PainelPage() {
       filtros={filtros}
       facetas={facetas}
       provedores={provedores}
+      categorias={categorias}
       mostrarProvedores={!ehProvedor}
       onChange={(patch) => {
         patchFiltro(patch);
