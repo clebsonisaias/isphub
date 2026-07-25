@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { USER_ROLE_LABEL, UserRole } from "@isphub/shared";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { cn } from "@/lib/utils";
 import { LogOut, Map, LayoutGrid, BarChart3, Settings } from "lucide-react";
 
@@ -60,17 +61,20 @@ export function AppShell({ children }: { children: ReactNode }) {
             </nav>
           )}
 
-          {usuario && (
-            <div className="flex shrink-0 items-center gap-3">
+          <div className="flex shrink-0 items-center gap-3">
+            {usuario && (
               <div className="hidden text-right leading-tight sm:block">
                 <p className="text-sm font-medium text-foreground">{usuario.nome}</p>
                 <p className="text-xs text-muted-foreground">{USER_ROLE_LABEL[usuario.role]}</p>
               </div>
+            )}
+            <ThemeToggle />
+            {usuario && (
               <Button variant="ghost" size="icon" onClick={logout} title="Sair" aria-label="Sair">
                 <LogOut />
               </Button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </header>
 

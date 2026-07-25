@@ -2,9 +2,11 @@
 @plugin "tailwindcss-animate";
 
 /*
- * ISPhub — tema dark com gradiente azul->roxo (identidade visual da marca).
- * Produto dark-first por escolha de design (sem alternancia light/dark no
- * MVP); tokens seguem a convencao shadcn/ui para os componentes de UI.
+ * ISPhub — tema claro (padrao) e escuro, alternavel (ver ThemeContext).
+ * Gradiente azul->roxo da marca preservado nos dois. Claro inspirado num
+ * padrao de dashboard operacional (fundo cinza-azulado bem claro, cards
+ * brancos, badges de status em pilula) — mesma familia visual do Painel
+ * Unificado. Tokens seguem a convencao shadcn/ui para os componentes de UI.
  */
 
 @theme inline {
@@ -36,7 +38,40 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
+/* Claro (padrao). Cores de status/semanticas mais escuras que no dark —
+   precisam de contraste >=4.5:1 como TEXTO solido sobre fundo quase branco,
+   nao so como preenchimento translucido. */
 :root {
+  --background: oklch(0.97 0.007 264);
+  --foreground: oklch(0.24 0.03 264);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.24 0.03 264);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.24 0.03 264);
+  --primary: oklch(0.52 0.19 289);
+  --primary-foreground: oklch(0.98 0 0);
+  --secondary: oklch(0.94 0.012 264);
+  --secondary-foreground: oklch(0.32 0.03 264);
+  --muted: oklch(0.95 0.008 264);
+  --muted-foreground: oklch(0.47 0.02 264);
+  --accent: oklch(0.92 0.03 275);
+  --accent-foreground: oklch(0.32 0.03 264);
+  --destructive: oklch(0.5 0.2 25);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(0.88 0.012 264);
+  --input: oklch(0.88 0.012 264);
+  --ring: oklch(0.52 0.19 289);
+  --success: oklch(0.45 0.13 145);
+  --warning: oklch(0.5 0.15 70);
+  --radius: 0.75rem;
+
+  /* Gradiente da marca (logo ISPhub): azul -> roxo. Igual nos dois temas. */
+  --brand-from: #3b82f6;
+  --brand-to: #8b5cf6;
+}
+
+/* Escuro — inalterado (ja validado). Ativado via [data-theme="dark"] no <html>. */
+[data-theme="dark"] {
   --background: oklch(0.14 0.02 264);
   --foreground: oklch(0.97 0.005 264);
   --card: oklch(0.18 0.02 264);
@@ -58,14 +93,13 @@
   --ring: oklch(0.62 0.19 289);
   --success: oklch(0.72 0.17 145);
   --warning: oklch(0.8 0.16 85);
-  --radius: 0.75rem;
-
-  /* Gradiente da marca (logo ISPhub): azul -> roxo. */
-  --brand-from: #3b82f6;
-  --brand-to: #8b5cf6;
 }
 
 html {
+  color-scheme: light;
+}
+
+html[data-theme="dark"] {
   color-scheme: dark;
 }
 
@@ -73,6 +107,7 @@ body {
   @apply bg-background text-foreground antialiased;
   font-family: "Inter", system-ui, -apple-system, sans-serif;
   margin: 0;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 #root {

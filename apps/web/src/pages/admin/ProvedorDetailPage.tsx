@@ -199,7 +199,7 @@ function SgpConfigForm({ provedorId }: { provedorId: string }) {
         </div>
 
         {resultadoTeste && !resultadoTeste.ok && (
-          <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive-foreground/90">
+          <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {resultadoTeste.message}
           </p>
         )}

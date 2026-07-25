@@ -27,6 +27,21 @@ function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
 }
 
+/** Faixa colorida na borda esquerda do card, pelo semaforo de SLA (so OS tem SLA). */
+function corUrgencia(item: FilaItem): string {
+  if (item.kind !== "os") return "var(--border)";
+  switch (item.sla.semaforo) {
+    case "vermelho":
+      return "var(--destructive)";
+    case "amarelo":
+      return "var(--warning)";
+    case "verde":
+      return "var(--success)";
+    default:
+      return "var(--border)";
+  }
+}
+
 const STATUS_FILTRAVEIS = Object.values(OsStatus);
 
 export function PainelPage() {
@@ -203,6 +218,7 @@ export function PainelPage() {
               key={`${item.kind}-${item.id}`}
               type="button"
               onClick={() => setSelecionado(item)}
+              style={{ borderLeftColor: corUrgencia(item), borderLeftWidth: 4 }}
               className="fila-item flex cursor-pointer flex-col gap-2 rounded-lg border border-border bg-card p-4 text-left opacity-0 transition-colors hover:border-primary/40 sm:flex-row sm:items-center sm:justify-between"
             >
               <div className="flex min-w-0 flex-col gap-1.5">
