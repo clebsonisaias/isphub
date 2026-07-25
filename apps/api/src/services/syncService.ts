@@ -58,11 +58,14 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
 
   // --- 2. Ordens de Servico ---
   const inicioOs = Date.now();
+  const motivosNaoResolvidos = new Set<string>();
   try {
     const ordens = await connector.listServiceOrders();
     for (const raw of ordens) {
+      const tipoOsId = raw.tipoCodigo ? tipoPorSgpCodigo.get(raw.tipoCodigo.trim()) : undefined;
+      if (raw.tipoCodigo && !tipoOsId) motivosNaoResolvidos.add(raw.tipoCodigo.trim());
       const campos = {
-        tipoOsId: raw.tipoCodigo ? tipoPorSgpCodigo.get(raw.tipoCodigo.trim()) : undefined,
+        tipoOsId,
         status: mapSgpOsStatus(raw.statusCode),
         prioridade: raw.prioridade ?? 2,
         clienteNome: raw.clienteNome,
@@ -90,7 +93,11 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
         update: { ...campos, sincronizadoEm: new Date() },
       });
     }
-    await logSync(provedorId, "pull", "os", true, ordens.length, inicioOs);
+    const msgTipos =
+      motivosNaoResolvidos.size > 0
+        ? `${motivosNaoResolvidos.size} motivo(s) sem tipo correspondente no catalogo: ${Array.from(motivosNaoResolvidos).slice(0, 15).join(" | ")}`
+        : undefined;
+    await logSync(provedorId, "pull", "os", true, ordens.length, inicioOs, msgTipos);
   } catch (err) {
     ok = false;
     mensagemFinal = mensagem(err);
