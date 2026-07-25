@@ -76,6 +76,9 @@ export async function atribuirTecnico(ordemServicoId: string, tecnicoId: string,
 
   const tecnico = await prisma.tecnico.findUnique({ where: { id: tecnicoId } });
   if (!tecnico) throw new HttpError(404, "Tecnico nao encontrado");
+  if (tecnico.provedorId && tecnico.provedorId !== os.provedorId) {
+    throw new HttpError(409, "Tecnico pertence a outro provedor");
+  }
 
   await prisma.atribuicao.create({
     data: { ordemServicoId, tecnicoId, atribuidoPor },

@@ -15,7 +15,12 @@ const provedorSchema = z.object({
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/, "cor deve ser um hex de 6 digitos, ex: #6366f1")
     .default("#6366f1"),
-  logoUrl: z.string().url().nullable().optional(),
+  logoUrl: z
+    .string()
+    .url()
+    .refine((v) => /^https?:\/\//i.test(v), "logoUrl deve ser http(s)")
+    .nullable()
+    .optional(),
   ativo: z.boolean().optional(),
 });
 

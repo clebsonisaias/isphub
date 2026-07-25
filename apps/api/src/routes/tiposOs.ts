@@ -67,10 +67,11 @@ tiposOsRouter.patch(
   "/:id",
   asyncHandler(async (req, res) => {
     const data = patchSchema.parse(req.body);
-    const tipo = await prisma.tipoOs
-      .update({ where: { id: req.params.id }, data })
-      .catch(() => null);
-    if (!tipo) throw new HttpError(404, "Tipo de OS nao encontrado");
+    const existente = await prisma.tipoOs.findFirst({
+      where: { id: req.params.id, provedorId: req.params.provedorId },
+    });
+    if (!existente) throw new HttpError(404, "Tipo de OS nao encontrado");
+    const tipo = await prisma.tipoOs.update({ where: { id: req.params.id }, data });
     res.json(tipo);
   }),
 );

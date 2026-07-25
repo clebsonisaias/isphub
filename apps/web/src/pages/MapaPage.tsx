@@ -20,14 +20,21 @@ function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
 }
 
-/** Pin colorido com a cor do provedor (evita depender dos icones default do Leaflet). */
+/**
+ * Pin colorido com a cor do provedor (evita depender dos icones default do
+ * Leaflet). Monta o elemento via DOM API (nao interpolando `cor` numa string
+ * HTML) para nao depender so da validacao do backend contra a cor conter markup.
+ */
 function pinIcon(cor: string) {
-  return L.divIcon({
-    className: "",
-    html: `<span style="display:block;width:16px;height:16px;border-radius:9999px;background:${cor};border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,.5)"></span>`,
-    iconSize: [16, 16],
-    iconAnchor: [8, 8],
-  });
+  const span = document.createElement("span");
+  span.style.display = "block";
+  span.style.width = "16px";
+  span.style.height = "16px";
+  span.style.borderRadius = "9999px";
+  span.style.backgroundColor = cor;
+  span.style.border = "2px solid white";
+  span.style.boxShadow = "0 1px 4px rgba(0,0,0,.5)";
+  return L.divIcon({ className: "", html: span, iconSize: [16, 16], iconAnchor: [8, 8] });
 }
 
 const BRASIL_CENTER: [number, number] = [-15.78, -47.93];

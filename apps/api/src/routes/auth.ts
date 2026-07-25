@@ -1,4 +1,5 @@
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import type { UsuarioPublic } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
@@ -7,6 +8,15 @@ import { requireAuth } from "../middleware/auth.js";
 import { signToken, verifyPassword } from "../services/authService.js";
 
 export const authRouter = Router();
+
+/** Limita tentativas de login por IP para dificultar credential stuffing/brute force. */
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Muitas tentativas de login. Tente novamente em alguns minutos." },
+});
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -31,6 +41,7 @@ function toPublic(u: {
 
 authRouter.post(
   "/login",
+  loginLimiter,
   asyncHandler(async (req, res) => {
     const { email, senha } = loginSchema.parse(req.body);
 
