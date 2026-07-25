@@ -1,16 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createScope, animate, stagger, type Scope } from "animejs";
-import {
-  OS_STATUS_LABEL,
-  OsStatus,
-  UserRole,
-  type FilaItem,
-  type Provedor,
-} from "@isphub/shared";
+import { UserRole, type FilaItem, type Provedor } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
-import { ProvedorBadge } from "@/components/ProvedorBadge";
-import { StatusBadge } from "@/components/StatusBadge";
-import { SlaBadge, SLA_PRIORIDADE } from "@/components/SlaBadge";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/context/AuthContext";
@@ -20,55 +11,57 @@ import { provedoresApi } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
 import { OrdemServicoDetailDialog } from "@/components/OrdemServicoDetailDialog";
 import { OcorrenciaDetailDialog } from "@/components/OcorrenciaDetailDialog";
-import { ContratoStatusBadge } from "@/components/ContratoStatusBadge";
-import { Search } from "lucide-react";
+import { FilaSidebar } from "@/components/fila/FilaSidebar";
+import { FilaCard } from "@/components/fila/FilaCard";
+import {
+  FILA_FACET_INICIAL,
+  calcularFacetas,
+  filtrarFila,
+  ordenarFila,
+  type FilaFacetState,
+  type OrdenacaoFila,
+} from "@/lib/filaFacets";
+import { Search, SlidersHorizontal, ChevronLeft, ChevronRight, AlarmClock, Inbox, ListChecks } from "lucide-react";
 
 function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
 }
 
-/** Faixa colorida na borda esquerda do card, pelo semaforo de SLA (so OS tem SLA). */
-function corUrgencia(item: FilaItem): string {
-  if (item.kind !== "os") return "var(--border)";
-  switch (item.sla.semaforo) {
-    case "vermelho":
-      return "var(--destructive)";
-    case "amarelo":
-      return "var(--warning)";
-    case "verde":
-      return "var(--success)";
-    default:
-      return "var(--border)";
-  }
-}
+const TAMANHOS_PAGINA = [10, 20, 50];
 
-const STATUS_FILTRAVEIS = Object.values(OsStatus);
+function EstatCard({ icon, valor, label, tom }: { icon: React.ReactNode; valor: number; label: string; tom: string }) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 shadow-sm">
+      <span className={`flex size-9 items-center justify-center rounded-lg ${tom}`}>{icon}</span>
+      <div className="leading-tight">
+        <p className="text-xl font-bold tabular-nums text-foreground">{valor}</p>
+        <p className="text-xs text-muted-foreground">{label}</p>
+      </div>
+    </div>
+  );
+}
 
 export function PainelPage() {
   const { usuario } = useAuth();
   const { toast } = useToast();
+  const ehProvedor = usuario?.role === UserRole.PROVEDOR;
 
   const [provedores, setProvedores] = useState<Provedor[]>([]);
-  const [provedorId, setProvedorId] = useState<string>("");
-  const [statusAtivos, setStatusAtivos] = useState<Set<OsStatus>>(new Set());
+  const [itens, setItens] = useState<FilaItem[]>([]);
+  const [carregando, setCarregando] = useState(true);
+
+  const [filtros, setFiltros] = useState<FilaFacetState>(FILA_FACET_INICIAL);
   const [busca, setBusca] = useState("");
   const [buscaDebounced, setBuscaDebounced] = useState("");
+  const [ordenacao, setOrdenacao] = useState<OrdenacaoFila>("urgencia");
+  const [pageSize, setPageSize] = useState(20);
+  const [page, setPage] = useState(1);
+  const [sidebarMobile, setSidebarMobile] = useState(false);
 
-  const [itens, setItens] = useState<FilaItem[]>([]);
-  const [total, setTotal] = useState(0);
-  const [carregando, setCarregando] = useState(true);
   const [selecionado, setSelecionado] = useState<FilaItem | null>(null);
-  const [ordenarPorUrgencia, setOrdenarPorUrgencia] = useState(true);
-
-  const itensExibidos = useMemo(() => {
-    if (!ordenarPorUrgencia) return itens;
-    // SLA estourado (vermelho) primeiro, depois atenção, depois no prazo; ocorrências (sem SLA) por último.
-    return [...itens].sort((a, b) => {
-      const pa = a.kind === "os" ? SLA_PRIORIDADE[a.sla.semaforo] : SLA_PRIORIDADE.sem_sla;
-      const pb = b.kind === "os" ? SLA_PRIORIDADE[b.sla.semaforo] : SLA_PRIORIDADE.sem_sla;
-      return pa - pb;
-    });
-  }, [itens, ordenarPorUrgencia]);
+  const [refetch, setRefetch] = useState(0);
+  // "Aberta há" recalcula a cada minuto sem re-fetch.
+  const [agora, setAgora] = useState(() => Date.now());
 
   const listRef = useRef<HTMLDivElement>(null);
   const scope = useRef<Scope | null>(null);
@@ -78,34 +71,61 @@ export function PainelPage() {
   }, []);
 
   useEffect(() => {
+    const t = setInterval(() => setAgora(Date.now()), 60000);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
     const t = setTimeout(() => setBuscaDebounced(busca), 350);
     return () => clearTimeout(t);
   }, [busca]);
 
-  async function carregar() {
+  // Carrega um lote generoso e faz faceta/ordenação/paginação no cliente
+  // (contadores da sidebar sempre exatos). Só a busca vai ao servidor.
+  useEffect(() => {
+    let cancelado = false;
     setCarregando(true);
-    try {
-      const resp = await filaApi.listar({
-        provedorId: provedorId || undefined,
-        status: statusAtivos.size ? Array.from(statusAtivos) : undefined,
-        busca: buscaDebounced || undefined,
-        pageSize: 50,
+    filaApi
+      .listar({ busca: buscaDebounced || undefined, pageSize: 500 })
+      .then((resp) => {
+        if (!cancelado) setItens(resp.itens);
+      })
+      .catch((err) => {
+        if (!cancelado) toast({ titulo: "Erro ao carregar a fila", descricao: mensagem(err), variante: "erro" });
+      })
+      .finally(() => {
+        if (!cancelado) setCarregando(false);
       });
-      setItens(resp.itens);
-      setTotal(resp.total);
-    } catch (err) {
-      toast({ titulo: "Erro ao carregar a fila", descricao: mensagem(err), variante: "erro" });
-    } finally {
-      setCarregando(false);
-    }
+    return () => {
+      cancelado = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buscaDebounced, refetch]);
+
+  const facetas = useMemo(() => calcularFacetas(itens, filtros), [itens, filtros]);
+  const filtrados = useMemo(() => ordenarFila(filtrarFila(itens, filtros), ordenacao), [itens, filtros, ordenacao]);
+
+  const estat = useMemo(() => {
+    const abertas = itens.filter((i) => i.kind === "os" && i.status !== "concluida" && i.status !== "cancelada").length;
+    const estourado = itens.filter((i) => i.kind === "os" && i.sla.semaforo === "vermelho").length;
+    return { total: itens.length, abertas, estourado };
+  }, [itens]);
+
+  const totalPaginas = Math.max(1, Math.ceil(filtrados.length / pageSize));
+  const pageSegura = Math.min(page, totalPaginas);
+  const inicio = (pageSegura - 1) * pageSize;
+  const paginaItens = filtrados.slice(inicio, inicio + pageSize);
+
+  // Volta pra página 1 quando filtro/busca/tamanho muda.
+  useEffect(() => {
+    setPage(1);
+  }, [filtros, ordenacao, pageSize, buscaDebounced]);
+
+  function patchFiltro(patch: Partial<FilaFacetState>) {
+    setFiltros((prev) => ({ ...prev, ...patch }));
   }
 
-  useEffect(() => {
-    void carregar();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [provedorId, statusAtivos, buscaDebounced]);
-
-  // Micro-interacao: entrada escalonada dos itens da fila a cada atualizacao da lista.
+  // Entrada escalonada dos cards a cada re-render da página exibida.
   useEffect(() => {
     if (carregando || !listRef.current) return;
     scope.current?.revert();
@@ -113,151 +133,177 @@ export function PainelPage() {
       animate(".fila-item", {
         opacity: [0, 1],
         translateY: [8, 0],
-        duration: 350,
-        delay: stagger(25, { start: 0 }),
+        duration: 300,
+        delay: stagger(22, { start: 0 }),
         ease: "outQuad",
       });
     });
     return () => scope.current?.revert();
-  }, [itensExibidos, carregando]);
+  }, [paginaItens, carregando]);
 
-  function toggleStatus(s: OsStatus) {
-    setStatusAtivos((prev) => {
-      const next = new Set(prev);
-      if (next.has(s)) next.delete(s);
-      else next.add(s);
-      return next;
-    });
-  }
-
-  const provedorSelecionado = useMemo(() => provedores.find((p) => p.id === provedorId), [provedores, provedorId]);
+  const sidebar = (
+    <FilaSidebar
+      filtros={filtros}
+      facetas={facetas}
+      provedores={provedores}
+      mostrarProvedores={!ehProvedor}
+      onChange={(patch) => {
+        patchFiltro(patch);
+        setSidebarMobile(false);
+      }}
+    />
+  );
 
   return (
     <AppShell>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Painel Unificado</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Painel Unificado</h1>
           <p className="text-sm text-muted-foreground">
-            {total} {total === 1 ? "item" : "itens"} na fila
-            {provedorSelecionado ? ` — ${provedorSelecionado.nome}` : " de todos os provedores"}
+            Ocorrências e ordens de serviço de {ehProvedor ? "seu provedor" : "todos os provedores"}
           </p>
+        </div>
+        <div className="hidden gap-2 sm:flex">
+          <EstatCard
+            icon={<Inbox className="size-4" />}
+            valor={estat.total}
+            label="na fila"
+            tom="bg-primary/10 text-primary"
+          />
+          <EstatCard
+            icon={<ListChecks className="size-4" />}
+            valor={estat.abertas}
+            label="OS abertas"
+            tom="bg-secondary text-foreground"
+          />
+          <EstatCard
+            icon={<AlarmClock className="size-4" />}
+            valor={estat.estourado}
+            label="SLA estourado"
+            tom="bg-destructive/10 text-destructive"
+          />
         </div>
       </div>
 
-      <div className="mb-4 flex flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative w-full max-w-xs">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-              placeholder="Cliente, protocolo, endereço..."
-              className="pl-8"
-            />
-          </div>
+      <div className="flex flex-col gap-5 lg:flex-row">
+        {/* Sidebar de filtros */}
+        <aside className="lg:w-60 lg:shrink-0">
+          <div className="hidden lg:sticky lg:top-20 lg:block">{sidebar}</div>
 
-          {usuario?.role !== UserRole.PROVEDOR && (
+          {/* Toggle mobile */}
+          <button
+            type="button"
+            onClick={() => setSidebarMobile((v) => !v)}
+            className="flex w-full items-center justify-between rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium lg:hidden"
+          >
+            <span className="flex items-center gap-2">
+              <SlidersHorizontal className="size-4" />
+              Filtros
+            </span>
+            <ChevronRight className={`size-4 transition-transform ${sidebarMobile ? "rotate-90" : ""}`} />
+          </button>
+          {sidebarMobile && <div className="mt-2 rounded-lg border border-border bg-card p-2 lg:hidden">{sidebar}</div>}
+        </aside>
+
+        {/* Conteúdo */}
+        <div className="min-w-0 flex-1">
+          {/* Toolbar */}
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <div className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                placeholder="Cliente, protocolo, contrato, endereço..."
+                className="pl-8"
+              />
+            </div>
+
             <select
-              value={provedorId}
-              onChange={(e) => setProvedorId(e.target.value)}
-              className="h-10 rounded-md border border-input bg-secondary/40 px-3 text-sm"
+              value={ordenacao}
+              onChange={(e) => setOrdenacao(e.target.value as OrdenacaoFila)}
+              className="h-10 rounded-md border border-input bg-card px-3 text-sm"
+              aria-label="Ordenar por"
             >
-              <option value="">Todos os provedores</option>
-              {provedores.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.nome}
+              <option value="urgencia">Ordenar: urgência</option>
+              <option value="recentes">Ordenar: mais recentes</option>
+            </select>
+
+            <select
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+              className="h-10 rounded-md border border-input bg-card px-3 text-sm"
+              aria-label="Itens por página"
+            >
+              {TAMANHOS_PAGINA.map((n) => (
+                <option key={n} value={n}>
+                  {n} por página
                 </option>
               ))}
             </select>
+          </div>
+
+          {/* Contador + paginação */}
+          <div className="mb-3 flex items-center justify-between text-sm text-muted-foreground">
+            <span>
+              {filtrados.length === 0
+                ? "Nenhum item"
+                : `Mostrando ${inicio + 1}–${Math.min(inicio + pageSize, filtrados.length)} de ${filtrados.length}`}
+            </span>
+            {totalPaginas > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={pageSegura <= 1}
+                  className="flex size-8 items-center justify-center rounded-md border border-border disabled:opacity-40 enabled:hover:bg-secondary"
+                  aria-label="Página anterior"
+                >
+                  <ChevronLeft className="size-4" />
+                </button>
+                <span className="px-1 tabular-nums">
+                  {pageSegura} / {totalPaginas}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(totalPaginas, p + 1))}
+                  disabled={pageSegura >= totalPaginas}
+                  className="flex size-8 items-center justify-center rounded-md border border-border disabled:opacity-40 enabled:hover:bg-secondary"
+                  aria-label="Próxima página"
+                >
+                  <ChevronRight className="size-4" />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Lista */}
+          {carregando ? (
+            <div className="flex flex-col gap-2">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="h-28 animate-pulse rounded-xl border border-border bg-card" />
+              ))}
+            </div>
+          ) : paginaItens.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center text-sm text-muted-foreground">
+                Nenhum item encontrado com os filtros atuais.
+              </CardContent>
+            </Card>
+          ) : (
+            <div ref={listRef} className="flex flex-col gap-2.5">
+              {paginaItens.map((item) => (
+                <FilaCard
+                  key={`${item.kind}-${item.id}`}
+                  item={item}
+                  agora={agora}
+                  onClick={() => setSelecionado(item)}
+                />
+              ))}
+            </div>
           )}
         </div>
-
-        <div className="flex flex-wrap gap-1.5">
-          {STATUS_FILTRAVEIS.map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => toggleStatus(s)}
-              className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                statusAtivos.has(s)
-                  ? "border-primary bg-primary/15 text-primary"
-                  : "border-border bg-transparent text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {OS_STATUS_LABEL[s]}
-            </button>
-          ))}
-
-          <button
-            type="button"
-            onClick={() => setOrdenarPorUrgencia((v) => !v)}
-            className={`ml-auto rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-              ordenarPorUrgencia
-                ? "border-warning bg-warning/15 text-warning"
-                : "border-border bg-transparent text-muted-foreground hover:text-foreground"
-            }`}
-            title="Prioriza itens com SLA estourado ou perto do prazo"
-          >
-            Ordenar por urgência
-          </button>
-        </div>
       </div>
-
-      {carregando ? (
-        <p className="text-sm text-muted-foreground">Carregando...</p>
-      ) : itensExibidos.length === 0 ? (
-        <Card>
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            Nenhum item encontrado com os filtros atuais.
-          </CardContent>
-        </Card>
-      ) : (
-        <div ref={listRef} className="flex flex-col gap-2">
-          {itensExibidos.map((item) => (
-            <button
-              key={`${item.kind}-${item.id}`}
-              type="button"
-              onClick={() => setSelecionado(item)}
-              style={{ borderLeftColor: corUrgencia(item), borderLeftWidth: 4 }}
-              className="fila-item flex cursor-pointer flex-col gap-2 rounded-lg border border-border bg-card p-4 text-left opacity-0 transition-colors hover:border-primary/40 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div className="flex min-w-0 flex-col gap-1.5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <ProvedorBadge provedor={item.provedor} />
-                  {item.kind === "os" ? (
-                    <StatusBadge status={item.status} />
-                  ) : (
-                    <span className="rounded-full border border-border bg-secondary/50 px-2.5 py-0.5 text-xs text-muted-foreground">
-                      Ocorrência · {item.status ?? "—"}
-                    </span>
-                  )}
-                  <ContratoStatusBadge status={item.contratoStatus} />
-                  <span className="text-xs text-muted-foreground">
-                    {item.kind === "os" ? item.tipoDescricao ?? "OS " + item.sgpOsId : "Nº " + item.sgpNumero}
-                  </span>
-                </div>
-                <p className="truncate text-sm font-medium text-foreground">
-                  {item.kind === "os" ? item.clienteNome ?? "Cliente não identificado" : item.conteudo ?? "—"}
-                </p>
-                {(item.kind === "os" ? item.endereco.logradouro : null) ? (
-                  <p className="truncate text-xs text-muted-foreground">
-                    {(item as Extract<FilaItem, { kind: "os" }>).endereco.logradouro},{" "}
-                    {(item as Extract<FilaItem, { kind: "os" }>).endereco.numero} —{" "}
-                    {(item as Extract<FilaItem, { kind: "os" }>).endereco.bairro}
-                  </p>
-                ) : (
-                  item.pop && <p className="truncate text-xs text-muted-foreground">Localização (POP): {item.pop}</p>
-                )}
-              </div>
-              <div className="flex shrink-0 flex-col items-start gap-1 text-xs text-muted-foreground sm:items-end">
-                {item.kind === "os" && <SlaBadge sla={item.sla} />}
-                {item.kind === "os" && item.tecnicoNome && <span>Técnico: {item.tecnicoNome}</span>}
-                {item.dataAgendamento && <span>{new Date(item.dataAgendamento).toLocaleString("pt-BR")}</span>}
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
 
       {selecionado && selecionado.kind === "os" && (
         <OrdemServicoDetailDialog
@@ -265,7 +311,7 @@ export function PainelPage() {
           onClose={() => setSelecionado(null)}
           onAtualizado={() => {
             setSelecionado(null);
-            void carregar();
+            setRefetch((n) => n + 1);
           }}
         />
       )}

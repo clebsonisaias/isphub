@@ -1,0 +1,177 @@
+import type { Provedor } from "@isphub/shared";
+import { CategoriaTipoOs, OsPrioridade, OsStatus } from "@isphub/shared";
+import { cn } from "@/lib/utils";
+import {
+  CATEGORIA_LABEL,
+  OS_STATUS_LABEL,
+  PRIORIDADE_LABEL,
+  STATUS_ORDEM,
+  type FilaFacetCounts,
+  type FilaFacetState,
+} from "@/lib/filaFacets";
+import { LayoutList, Wrench, AlertCircle } from "lucide-react";
+
+interface Props {
+  filtros: FilaFacetState;
+  facetas: FilaFacetCounts;
+  provedores: Provedor[];
+  mostrarProvedores: boolean;
+  onChange: (patch: Partial<FilaFacetState>) => void;
+}
+
+/** Uma linha "rótulo … contagem", clicável, com estado ativo destacado. */
+function LinhaFiltro({
+  label,
+  count,
+  ativo,
+  onClick,
+  cor,
+  icon,
+}: {
+  label: string;
+  count?: number;
+  ativo: boolean;
+  onClick: () => void;
+  cor?: string;
+  icon?: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors",
+        ativo ? "bg-primary/10 font-semibold text-primary" : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
+      )}
+    >
+      {cor && <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: cor }} />}
+      {icon}
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {count != null && (
+        <span
+          className={cn(
+            "shrink-0 rounded-full px-1.5 text-xs tabular-nums",
+            ativo ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground",
+          )}
+        >
+          {count}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function Secao({ titulo, children }: { titulo: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <p className="px-2.5 pb-1 pt-3 text-[0.7rem] font-semibold uppercase tracking-wider text-muted-foreground/70">
+        {titulo}
+      </p>
+      {children}
+    </div>
+  );
+}
+
+export function FilaSidebar({ filtros, facetas, provedores, mostrarProvedores, onChange }: Props) {
+  const totalKind = facetas.porKind.os + facetas.porKind.ocorrencia;
+
+  return (
+    <nav className="flex flex-col gap-1">
+      <Secao titulo="Tipo">
+        <LinhaFiltro
+          label="Todos os itens"
+          count={totalKind}
+          ativo={filtros.kind === "todos"}
+          onClick={() => onChange({ kind: "todos" })}
+          icon={<LayoutList className="size-4 shrink-0" />}
+        />
+        <LinhaFiltro
+          label="Ordens de Serviço"
+          count={facetas.porKind.os}
+          ativo={filtros.kind === "os"}
+          onClick={() => onChange({ kind: "os" })}
+          icon={<Wrench className="size-4 shrink-0" />}
+        />
+        <LinhaFiltro
+          label="Ocorrências"
+          count={facetas.porKind.ocorrencia}
+          ativo={filtros.kind === "ocorrencia"}
+          onClick={() => onChange({ kind: "ocorrencia" })}
+          icon={<AlertCircle className="size-4 shrink-0" />}
+        />
+      </Secao>
+
+      <Secao titulo="Status">
+        <LinhaFiltro
+          label="Todos"
+          count={facetas.porStatus.size ? [...facetas.porStatus.values()].reduce((a, b) => a + b, 0) : 0}
+          ativo={filtros.status === "todos"}
+          onClick={() => onChange({ status: "todos" })}
+        />
+        {STATUS_ORDEM.filter((s) => (facetas.porStatus.get(s) ?? 0) > 0 || filtros.status === s).map((s) => (
+          <LinhaFiltro
+            key={s}
+            label={OS_STATUS_LABEL[s as OsStatus]}
+            count={facetas.porStatus.get(s) ?? 0}
+            ativo={filtros.status === s}
+            onClick={() => onChange({ status: s })}
+          />
+        ))}
+      </Secao>
+
+      <Secao titulo="Prioridade">
+        <LinhaFiltro
+          label="Todas"
+          ativo={filtros.prioridade === "todas"}
+          onClick={() => onChange({ prioridade: "todas" })}
+        />
+        {[OsPrioridade.ALTA, OsPrioridade.NORMAL, OsPrioridade.BAIXA].map((p) => (
+          <LinhaFiltro
+            key={p}
+            label={PRIORIDADE_LABEL[p]}
+            count={facetas.porPrioridade.get(p) ?? 0}
+            ativo={filtros.prioridade === p}
+            onClick={() => onChange({ prioridade: p })}
+          />
+        ))}
+      </Secao>
+
+      <Secao titulo="Categoria">
+        <LinhaFiltro
+          label="Todas"
+          ativo={filtros.categoria === "todas"}
+          onClick={() => onChange({ categoria: "todas" })}
+        />
+        {[CategoriaTipoOs.OCORRENCIA, CategoriaTipoOs.INSTALACAO].map((c) => (
+          <LinhaFiltro
+            key={c}
+            label={CATEGORIA_LABEL[c]}
+            count={facetas.porCategoria.get(c) ?? 0}
+            ativo={filtros.categoria === c}
+            onClick={() => onChange({ categoria: c })}
+          />
+        ))}
+      </Secao>
+
+      {mostrarProvedores && provedores.length > 0 && (
+        <Secao titulo="Provedores">
+          <LinhaFiltro
+            label="Todos"
+            ativo={filtros.provedorId === "todos"}
+            onClick={() => onChange({ provedorId: "todos" })}
+          />
+          {provedores.map((p) => (
+            <LinhaFiltro
+              key={p.id}
+              label={p.nome}
+              cor={p.cor}
+              count={facetas.porProvedor.get(p.id) ?? 0}
+              ativo={filtros.provedorId === p.id}
+              onClick={() => onChange({ provedorId: p.id })}
+            />
+          ))}
+        </Secao>
+      )}
+    </nav>
+  );
+}
