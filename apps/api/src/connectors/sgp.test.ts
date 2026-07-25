@@ -151,6 +151,97 @@ describe("createSgpConnector", () => {
     expect(typeof ocorrencia.contratoId).toBe("string");
   });
 
+  it("listServiceOrders extrai motivo/pop/contrato_status/data+hora do payload real do SGP (CITmax)", async () => {
+    // Payload real capturado em producao (via SGP_DEBUG_RAW) — o SGP so manda
+    // o "motivo" como texto (sem motivo_id), separa data e hora em campos
+    // distintos, e nao manda nenhum campo de endereco de rua.
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        ordens_servicos: [
+          {
+            cliente: "MAXSON SAVELLE ALEXANDRE SILVA",
+            contrato: 1268,
+            contrato_status: "Cancelado",
+            contrato_status_id: 3,
+            ocorrencia: "260724105700",
+            id: 6740,
+            status: "Aberta",
+            status_id: 0,
+            data_cadastro: "2026-07-24",
+            hora_cadastro: "10:57:51",
+            data_agendamento: "",
+            hora_agendamento: "",
+            data_finalizacao: "",
+            hora_finalizacao: "",
+            tipo: "Externa",
+            tipo_id: 1,
+            motivo: "🚨 Retirada 🚨",
+            pop: "Macaíba",
+            conteudo: "Cancelamento do Contrato 1268 do cliente 1141.",
+            responsavel: "",
+            tecnicos_auxiliares: [],
+            usuario: "joelma",
+            usuario_finalizacao: "",
+            classificacoes: [],
+          },
+        ],
+      }),
+    );
+
+    const conn = createSgpConnector(creds);
+    const [os] = await conn.listServiceOrders();
+
+    expect(os.tipoCodigo).toBe("🚨 Retirada 🚨");
+    expect(os.contratoStatus).toBe("Cancelado");
+    expect(os.pop).toBe("Macaíba");
+    expect(os.usuario).toBe("joelma");
+    expect(os.dataCadastro).toBe("2026-07-24T10:57:51");
+    expect(os.dataAgendamento).toBeNull();
+  });
+
+  it("listOccurrences extrai cliente/pop/metodo/data_finalizacao do payload real do SGP (CITmax)", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        ocorrencias: [
+          {
+            id: 41178,
+            cliente: "IGREJA BATISTA LAGOINHA NATAL",
+            contrato: 97,
+            contrato_status: "Ativo",
+            contrato_status_id: 1,
+            pop: "Macaíba",
+            numero: "260724151100",
+            status: "Encerrada",
+            status_id: 1,
+            data_cadastro: "2026-07-24",
+            data_agendamento: "",
+            data_finalizacao: "2026-07-24",
+            tipo: "💰 Financeiro - Outros",
+            metodo: "Telefone",
+            conteudo: "Envio de Fatura via URA",
+            responsavel: "",
+            usuario: "system",
+            usuario_finalizacao: "",
+            servico: [],
+            comentarios: [],
+            ordens_servicos: [],
+          },
+        ],
+      }),
+    );
+
+    const conn = createSgpConnector(creds);
+    const [ocorrencia] = await conn.listOccurrences();
+
+    expect(ocorrencia.clienteNome).toBe("IGREJA BATISTA LAGOINHA NATAL");
+    expect(ocorrencia.contratoStatus).toBe("Ativo");
+    expect(ocorrencia.pop).toBe("Macaíba");
+    expect(ocorrencia.metodo).toBe("Telefone");
+    expect(ocorrencia.usuario).toBe("system");
+    expect(ocorrencia.dataCadastro).toBe("2026-07-24");
+    expect(ocorrencia.dataFinalizacao).toBe("2026-07-24");
+  });
+
   it("listServiceOrders retorna endereco sem lat/lng quando endereco_ll esta ausente", async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ ordens_servicos: [{ os_id: "1", os_status: 0 }] }),

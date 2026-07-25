@@ -74,6 +74,14 @@ export interface OrdemServico {
   conteudo?: string | null;
   observacao?: string | null;
   endereco: Endereco;
+  /** Localidade/POP do SGP (ex.: "Macaíba") — nao ha endereco de rua nas listagens do SGP. */
+  pop?: string | null;
+  /** Status do contrato no SGP (ex.: "Ativo", "Cancelado") — alerta antes de despachar. */
+  contratoStatus?: string | null;
+  /** Usuario do SGP que registrou a OS. */
+  usuario?: string | null;
+  /** Data/hora reais de abertura no SGP — distinta de criadoEm (data do 1o sync). */
+  dataCadastro?: string | null;
   dataAgendamento?: string | null;
   tecnicoId?: string | null;
   tecnicoNome?: string | null;
@@ -91,9 +99,15 @@ export interface Ocorrencia {
   status?: string | null;
   conteudo?: string | null;
   responsavel?: string | null;
+  clienteNome?: string | null;
   contratoId?: string | null;
+  contratoStatus?: string | null;
+  pop?: string | null;
+  metodo?: string | null;
+  usuario?: string | null;
   dataCadastro?: string | null;
   dataAgendamento?: string | null;
+  dataFinalizacao?: string | null;
   sincronizadoEm: string;
 }
 

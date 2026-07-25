@@ -27,7 +27,7 @@ dashboardRouter.get(
         prisma.ordemServico.count({ where: { ...where, status: OsStatus.CONCLUIDA } }),
         prisma.ordemServico.findMany({
           where: { ...where, status: { in: OS_STATUS_ABERTOS } },
-          select: { dataAgendamento: true, criadoEm: true, tipoOs: { select: { slaHoras: true } } },
+          select: { dataAgendamento: true, dataCadastro: true, criadoEm: true, tipoOs: { select: { slaHoras: true } } },
         }),
         prisma.provedor.findMany({ where: provedorId ? { id: provedorId } : {} }),
         prisma.ordemServico.groupBy({ by: ["status"], where, _count: { _all: true } }),
@@ -40,7 +40,8 @@ dashboardRouter.get(
 
     const slaEstourado = ordensAbertasComSla.filter(
       (os) =>
-        calcularSla({ slaHoras: os.tipoOs?.slaHoras, dataBase: os.dataAgendamento ?? os.criadoEm }).semaforo ===
+        calcularSla({ slaHoras: os.tipoOs?.slaHoras, dataBase: os.dataAgendamento ?? os.dataCadastro ?? os.criadoEm })
+          .semaforo ===
         "vermelho",
     ).length;
 

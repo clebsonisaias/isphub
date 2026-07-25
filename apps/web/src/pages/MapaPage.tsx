@@ -6,6 +6,7 @@ import type { FilaItem, Provedor } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ProvedorBadge } from "@/components/ProvedorBadge";
+import { ContratoStatusBadge } from "@/components/ContratoStatusBadge";
 import { UserRole } from "@isphub/shared";
 import { useAuth } from "@/context/AuthContext";
 import { filaApi } from "@/lib/filaApi";
@@ -118,11 +119,18 @@ export function MapaPage() {
               >
                 <Popup>
                   <div className="flex flex-col gap-1.5 text-sm">
-                    <ProvedorBadge provedor={item.provedor} />
-                    <StatusBadge status={item.status} />
+                    <div className="flex flex-wrap items-center gap-1">
+                      <ProvedorBadge provedor={item.provedor} />
+                      <StatusBadge status={item.status} />
+                      <ContratoStatusBadge status={item.contratoStatus} />
+                    </div>
                     <p className="font-medium">{item.clienteNome ?? "Cliente não identificado"}</p>
                     <p className="text-muted-foreground">
-                      {item.endereco.logradouro}, {item.endereco.numero} — {item.endereco.bairro}
+                      {item.endereco.logradouro
+                        ? `${item.endereco.logradouro}, ${item.endereco.numero} — ${item.endereco.bairro}`
+                        : item.pop
+                          ? `Localização (POP): ${item.pop}`
+                          : "Localização não informada"}
                     </p>
                   </div>
                 </Popup>

@@ -136,6 +136,20 @@ model OrdemServico {
   cidade          String?
   lat             Float?
   lng             Float?
+  /// Localidade/POP do SGP (ex.: "Macaíba") — o SGP nao expoe endereco de
+  /// rua nas listagens de OS/ocorrencia, isso e o dado de localizacao mais
+  /// fino disponivel.
+  pop             String?
+  /// Status do contrato no SGP no momento do sync (ex.: "Ativo",
+  /// "Cancelado"). Usado para alertar o gestor/tecnico antes de despachar
+  /// para um contrato ja cancelado/suspenso.
+  contratoStatus  String?
+  /// Usuario do SGP que registrou a OS (auditoria).
+  usuario         String?
+  /// Data/hora reais de abertura no SGP (data_cadastro+hora_cadastro) —
+  /// distinta de criadoEm, que so reflete quando o ISPhub sincronizou pela
+  /// primeira vez.
+  dataCadastro    DateTime?
   dataAgendamento DateTime?
   tecnicoId       String?
   tecnico         Tecnico?         @relation(fields: [tecnicoId], references: [id], onDelete: SetNull)
@@ -153,18 +167,30 @@ model OrdemServico {
 
 /// Ocorrencia espelhada do ERP do provedor.
 model Ocorrencia {
-  id              String    @id @default(uuid())
-  provedorId      String
-  provedor        Provedor  @relation(fields: [provedorId], references: [id], onDelete: Cascade)
-  sgpNumero       String
-  tipo            String?
-  status          String?
-  conteudo        String?
-  responsavel     String?
-  contratoId      String?
-  dataCadastro    DateTime?
-  dataAgendamento DateTime?
-  sincronizadoEm  DateTime  @default(now())
+  id               String    @id @default(uuid())
+  provedorId       String
+  provedor         Provedor  @relation(fields: [provedorId], references: [id], onDelete: Cascade)
+  sgpNumero        String
+  tipo             String?
+  status           String?
+  conteudo         String?
+  responsavel      String?
+  /// Nome do cliente dono do contrato (o SGP manda no proprio registro da
+  /// ocorrencia, nao precisa de lookup extra).
+  clienteNome      String?
+  contratoId       String?
+  /// Status do contrato no momento do sync (ex.: "Ativo", "Cancelado").
+  contratoStatus   String?
+  /// Localidade/POP do SGP — mesma ressalva de OrdemServico.pop.
+  pop              String?
+  /// Canal pelo qual a ocorrencia foi registrada (ex.: "Telefone", "URA").
+  metodo           String?
+  /// Usuario do SGP que registrou a ocorrencia (auditoria).
+  usuario          String?
+  dataCadastro     DateTime?
+  dataAgendamento  DateTime?
+  dataFinalizacao  DateTime?
+  sincronizadoEm   DateTime  @default(now())
 
   @@unique([provedorId, sgpNumero])
   @@index([provedorId, status])

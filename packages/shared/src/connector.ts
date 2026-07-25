@@ -30,10 +30,14 @@ export interface RawOs {
   clienteNome?: string | null;
   clienteDocumento?: string | null;
   contratoId?: string | null;
+  contratoStatus?: string | null;
   protocolo?: string | null;
   conteudo?: string | null;
   observacao?: string | null;
   endereco: Endereco;
+  pop?: string | null;
+  usuario?: string | null;
+  dataCadastro?: string | null;
   dataAgendamento?: string | null;
   tecnicoSgpId?: string | null;
   tecnicoNome?: string | null;
@@ -46,9 +50,15 @@ export interface RawOccurrence {
   status?: string | null;
   conteudo?: string | null;
   responsavel?: string | null;
+  clienteNome?: string | null;
   contratoId?: string | null;
+  contratoStatus?: string | null;
+  pop?: string | null;
+  metodo?: string | null;
+  usuario?: string | null;
   dataCadastro?: string | null;
   dataAgendamento?: string | null;
+  dataFinalizacao?: string | null;
 }
 
 export interface ListOsParams {

@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from "@/components/ui/button";
 import { ProvedorBadge } from "@/components/ProvedorBadge";
 import { StatusBadge } from "@/components/StatusBadge";
+import { ContratoStatusBadge } from "@/components/ContratoStatusBadge";
 import { ordensServicoApi, tecnicosApi } from "@/lib/filaApi";
 import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
@@ -118,6 +119,7 @@ export function OrdemServicoDetailDialog({
           <div className="flex flex-wrap items-center gap-2">
             <ProvedorBadge provedor={os.provedor} />
             <StatusBadge status={os.status} />
+            <ContratoStatusBadge status={os.contratoStatus} />
           </div>
           <DialogTitle>{os.clienteNome ?? "Cliente não identificado"}</DialogTitle>
           <DialogDescription>
@@ -137,10 +139,16 @@ export function OrdemServicoDetailDialog({
                 : undefined
             }
           />
+          <Info label="Localização (POP)" value={os.pop} />
+          <Info
+            label="Aberta em"
+            value={os.dataCadastro ? new Date(os.dataCadastro).toLocaleString("pt-BR") : undefined}
+          />
           <Info
             label="Agendamento"
             value={os.dataAgendamento ? new Date(os.dataAgendamento).toLocaleString("pt-BR") : undefined}
           />
+          <Info label="Registrado por" value={os.usuario} />
         </div>
 
         {os.conteudo && (

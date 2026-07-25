@@ -42,58 +42,52 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
   const tecnicosLocais = await prisma.tecnico.findMany({ where: { provedorId } });
   const tecnicoPorSgpId = new Map(tecnicosLocais.filter((t) => t.sgpTecnicoId).map((t) => [t.sgpTecnicoId!, t.id]));
 
-  // Mapa sgpCodigo -> tipoOs.id, para resolver tipoOsId das OS.
+  // Mapa (sgpCodigo OU descricao) -> tipoOs.id, para resolver tipoOsId das OS.
+  // O catalogo de tipos do SGP e indexado por codigo numerico, mas a
+  // listagem de OS (/api/ura/ordemservico/list/) so devolve o "motivo" como
+  // texto (ex.: "🚨 Retirada 🚨"), sem o codigo — entao o casamento por
+  // codigo sozinho nunca acha nada nesse caso. Indexamos pelos dois para
+  // cobrir tanto instancias do SGP que mandam codigo quanto as que so mandam
+  // a descricao.
   const tiposLocais = await prisma.tipoOs.findMany({ where: { provedorId } });
-  const tipoPorSgpCodigo = new Map(tiposLocais.map((t) => [t.sgpCodigo, t.id]));
+  const tipoPorSgpCodigo = new Map<string, string>();
+  for (const t of tiposLocais) {
+    tipoPorSgpCodigo.set(t.sgpCodigo, t.id);
+    tipoPorSgpCodigo.set(t.descricao.trim(), t.id);
+  }
 
   // --- 2. Ordens de Servico ---
   const inicioOs = Date.now();
   try {
     const ordens = await connector.listServiceOrders();
     for (const raw of ordens) {
+      const campos = {
+        tipoOsId: raw.tipoCodigo ? tipoPorSgpCodigo.get(raw.tipoCodigo.trim()) : undefined,
+        status: mapSgpOsStatus(raw.statusCode),
+        prioridade: raw.prioridade ?? 2,
+        clienteNome: raw.clienteNome,
+        clienteDocumento: raw.clienteDocumento,
+        contratoId: raw.contratoId,
+        contratoStatus: raw.contratoStatus,
+        protocolo: raw.protocolo,
+        conteudo: raw.conteudo,
+        observacao: raw.observacao,
+        logradouro: raw.endereco.logradouro,
+        numero: raw.endereco.numero,
+        bairro: raw.endereco.bairro,
+        cidade: raw.endereco.cidade,
+        lat: raw.endereco.lat,
+        lng: raw.endereco.lng,
+        pop: raw.pop,
+        usuario: raw.usuario,
+        dataCadastro: raw.dataCadastro ? new Date(raw.dataCadastro) : null,
+        dataAgendamento: raw.dataAgendamento ? new Date(raw.dataAgendamento) : null,
+        tecnicoId: raw.tecnicoSgpId ? tecnicoPorSgpId.get(raw.tecnicoSgpId) : undefined,
+      };
       await prisma.ordemServico.upsert({
         where: { provedorId_sgpOsId: { provedorId, sgpOsId: raw.sgpOsId } },
-        create: {
-          provedorId,
-          sgpOsId: raw.sgpOsId,
-          tipoOsId: raw.tipoCodigo ? tipoPorSgpCodigo.get(raw.tipoCodigo) : undefined,
-          status: mapSgpOsStatus(raw.statusCode),
-          prioridade: raw.prioridade ?? 2,
-          clienteNome: raw.clienteNome,
-          clienteDocumento: raw.clienteDocumento,
-          contratoId: raw.contratoId,
-          protocolo: raw.protocolo,
-          conteudo: raw.conteudo,
-          observacao: raw.observacao,
-          logradouro: raw.endereco.logradouro,
-          numero: raw.endereco.numero,
-          bairro: raw.endereco.bairro,
-          cidade: raw.endereco.cidade,
-          lat: raw.endereco.lat,
-          lng: raw.endereco.lng,
-          dataAgendamento: raw.dataAgendamento ? new Date(raw.dataAgendamento) : null,
-          tecnicoId: raw.tecnicoSgpId ? tecnicoPorSgpId.get(raw.tecnicoSgpId) : undefined,
-        },
-        update: {
-          tipoOsId: raw.tipoCodigo ? tipoPorSgpCodigo.get(raw.tipoCodigo) : undefined,
-          status: mapSgpOsStatus(raw.statusCode),
-          prioridade: raw.prioridade ?? 2,
-          clienteNome: raw.clienteNome,
-          clienteDocumento: raw.clienteDocumento,
-          contratoId: raw.contratoId,
-          protocolo: raw.protocolo,
-          conteudo: raw.conteudo,
-          observacao: raw.observacao,
-          logradouro: raw.endereco.logradouro,
-          numero: raw.endereco.numero,
-          bairro: raw.endereco.bairro,
-          cidade: raw.endereco.cidade,
-          lat: raw.endereco.lat,
-          lng: raw.endereco.lng,
-          dataAgendamento: raw.dataAgendamento ? new Date(raw.dataAgendamento) : null,
-          tecnicoId: raw.tecnicoSgpId ? tecnicoPorSgpId.get(raw.tecnicoSgpId) : undefined,
-          sincronizadoEm: new Date(),
-        },
+        create: { provedorId, sgpOsId: raw.sgpOsId, ...campos },
+        update: { ...campos, sincronizadoEm: new Date() },
       });
     }
     await logSync(provedorId, "pull", "os", true, ordens.length, inicioOs);
@@ -108,29 +102,25 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
   try {
     const ocorrencias = await connector.listOccurrences();
     for (const raw of ocorrencias) {
+      const campos = {
+        tipo: raw.tipo,
+        status: raw.status,
+        conteudo: raw.conteudo,
+        responsavel: raw.responsavel,
+        clienteNome: raw.clienteNome,
+        contratoId: raw.contratoId,
+        contratoStatus: raw.contratoStatus,
+        pop: raw.pop,
+        metodo: raw.metodo,
+        usuario: raw.usuario,
+        dataCadastro: raw.dataCadastro ? new Date(raw.dataCadastro) : null,
+        dataAgendamento: raw.dataAgendamento ? new Date(raw.dataAgendamento) : null,
+        dataFinalizacao: raw.dataFinalizacao ? new Date(raw.dataFinalizacao) : null,
+      };
       await prisma.ocorrencia.upsert({
         where: { provedorId_sgpNumero: { provedorId, sgpNumero: raw.sgpNumero } },
-        create: {
-          provedorId,
-          sgpNumero: raw.sgpNumero,
-          tipo: raw.tipo,
-          status: raw.status,
-          conteudo: raw.conteudo,
-          responsavel: raw.responsavel,
-          contratoId: raw.contratoId,
-          dataCadastro: raw.dataCadastro ? new Date(raw.dataCadastro) : null,
-          dataAgendamento: raw.dataAgendamento ? new Date(raw.dataAgendamento) : null,
-        },
-        update: {
-          tipo: raw.tipo,
-          status: raw.status,
-          conteudo: raw.conteudo,
-          responsavel: raw.responsavel,
-          contratoId: raw.contratoId,
-          dataCadastro: raw.dataCadastro ? new Date(raw.dataCadastro) : null,
-          dataAgendamento: raw.dataAgendamento ? new Date(raw.dataAgendamento) : null,
-          sincronizadoEm: new Date(),
-        },
+        create: { provedorId, sgpNumero: raw.sgpNumero, ...campos },
+        update: { ...campos, sincronizadoEm: new Date() },
       });
     }
     await logSync(provedorId, "pull", "ocorrencia", true, ocorrencias.length, inicioOcorrencias);

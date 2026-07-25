@@ -19,6 +19,8 @@ import { filaApi } from "@/lib/filaApi";
 import { provedoresApi } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
 import { OrdemServicoDetailDialog } from "@/components/OrdemServicoDetailDialog";
+import { OcorrenciaDetailDialog } from "@/components/OcorrenciaDetailDialog";
+import { ContratoStatusBadge } from "@/components/ContratoStatusBadge";
 import { Search } from "lucide-react";
 
 function mensagem(err: unknown): string {
@@ -200,10 +202,8 @@ export function PainelPage() {
             <button
               key={`${item.kind}-${item.id}`}
               type="button"
-              onClick={() => (item.kind === "os" ? setSelecionado(item) : undefined)}
-              className={`fila-item flex flex-col gap-2 rounded-lg border border-border bg-card p-4 text-left opacity-0 transition-colors sm:flex-row sm:items-center sm:justify-between ${
-                item.kind === "os" ? "cursor-pointer hover:border-primary/40" : "cursor-default"
-              }`}
+              onClick={() => setSelecionado(item)}
+              className="fila-item flex cursor-pointer flex-col gap-2 rounded-lg border border-border bg-card p-4 text-left opacity-0 transition-colors hover:border-primary/40 sm:flex-row sm:items-center sm:justify-between"
             >
               <div className="flex min-w-0 flex-col gap-1.5">
                 <div className="flex flex-wrap items-center gap-2">
@@ -215,6 +215,7 @@ export function PainelPage() {
                       Ocorrência · {item.status ?? "—"}
                     </span>
                   )}
+                  <ContratoStatusBadge status={item.contratoStatus} />
                   <span className="text-xs text-muted-foreground">
                     {item.kind === "os" ? item.tipoDescricao ?? "OS " + item.sgpOsId : "Nº " + item.sgpNumero}
                   </span>
@@ -222,10 +223,14 @@ export function PainelPage() {
                 <p className="truncate text-sm font-medium text-foreground">
                   {item.kind === "os" ? item.clienteNome ?? "Cliente não identificado" : item.conteudo ?? "—"}
                 </p>
-                {item.kind === "os" && item.endereco.logradouro && (
+                {(item.kind === "os" ? item.endereco.logradouro : null) ? (
                   <p className="truncate text-xs text-muted-foreground">
-                    {item.endereco.logradouro}, {item.endereco.numero} — {item.endereco.bairro}
+                    {(item as Extract<FilaItem, { kind: "os" }>).endereco.logradouro},{" "}
+                    {(item as Extract<FilaItem, { kind: "os" }>).endereco.numero} —{" "}
+                    {(item as Extract<FilaItem, { kind: "os" }>).endereco.bairro}
                   </p>
+                ) : (
+                  item.pop && <p className="truncate text-xs text-muted-foreground">Localização (POP): {item.pop}</p>
                 )}
               </div>
               <div className="flex shrink-0 flex-col items-start gap-1 text-xs text-muted-foreground sm:items-end">
@@ -247,6 +252,9 @@ export function PainelPage() {
             void carregar();
           }}
         />
+      )}
+      {selecionado && selecionado.kind === "ocorrencia" && (
+        <OcorrenciaDetailDialog item={selecionado} onClose={() => setSelecionado(null)} />
       )}
     </AppShell>
   );

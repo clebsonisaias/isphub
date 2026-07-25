@@ -133,6 +133,20 @@ function pickString(obj: Record<string, any>, ...keys: string[]): string | null 
 }
 
 /**
+ * Combina um par data/hora do SGP (ex.: data_cadastro="2026-07-24" +
+ * hora_cadastro="10:57:51") num datetime unico. O SGP separa esses campos
+ * nas listagens de OS; sem a hora, "data de abertura" sempre cairia em
+ * meia-noite, perdendo o horario real do evento. Se so a data vier
+ * preenchida, retorna so a data (parseable por new Date() mesmo assim).
+ */
+function combineDateHora(obj: Record<string, any>, dataKey: string, horaKey: string): string | null {
+  const data = pickString(obj, dataKey);
+  if (!data) return null;
+  const hora = pickString(obj, horaKey);
+  return hora ? `${data}T${hora}` : data;
+}
+
+/**
  * Normaliza uma OS do SGP para o formato neutro do conector.
  * Defensivo quanto a nomes de campo: o SGP tem variantes entre a familia
  * "URA" e a familia "central/chamado" (ex.: os_id vs id, os_conteudo vs
@@ -144,13 +158,18 @@ function normalizeOs(raw: Record<string, any>): RawOs {
 
   return {
     sgpOsId: String(pick(raw, "os_id", "id")),
+    // "motivo" e a categoria fina (ex.: "🚨 Retirada 🚨") e e o que o SGP
+    // real manda como texto, sem codigo — por isso vem antes de "tipo" (a
+    // classificacao grosseira "Interna"/"Externa"). O casamento com o
+    // catalogo de TipoOs (syncService.ts) aceita tanto codigo quanto texto.
     tipoCodigo: pickString(raw, "motivo_id", "motivo", "os_tipo_id"),
-    tipoDescricao: pickString(raw, "motivo_descricao", "tipo", "os_tipo"),
+    tipoDescricao: pickString(raw, "motivo", "motivo_descricao", "tipo", "os_tipo"),
     statusCode: Number(pick(raw, "os_status", "status") ?? 0),
     prioridade: raw.os_prioridade ? Number(raw.os_prioridade) : null,
     clienteNome: pickString(raw, "cliente_nome", "cliente", "razaosocial"),
     clienteDocumento: pickString(raw, "cliente_cpfcnpj", "cpfcnpj"),
     contratoId: pickString(raw, "contrato_id", "contrato"),
+    contratoStatus: pickString(raw, "contrato_status"),
     protocolo: pickString(raw, "os_protocolo", "protocolo"),
     conteudo: pickString(raw, "os_conteudo", "conteudo"),
     observacao: pickString(raw, "os_observacao", "observacao"),
@@ -162,7 +181,12 @@ function normalizeOs(raw: Record<string, any>): RawOs {
       lat,
       lng,
     },
-    dataAgendamento: pickString(raw, "os_data_agendamento", "data_agendamento"),
+    // O SGP nao manda endereco de rua nas listagens — "pop" (localidade/base,
+    // ex.: "Macaíba") e o dado de localizacao mais fino disponivel.
+    pop: pickString(raw, "pop"),
+    usuario: pickString(raw, "usuario"),
+    dataCadastro: combineDateHora(raw, "data_cadastro", "hora_cadastro"),
+    dataAgendamento: combineDateHora(raw, "data_agendamento", "hora_agendamento") ?? pickString(raw, "os_data_agendamento"),
     tecnicoSgpId: pickString(raw, "os_tecnico_responsavel_id", "tecnico_id"),
     tecnicoNome: pickString(raw, "os_tecnico_responsavel", "tecnico"),
   };
@@ -175,9 +199,15 @@ function normalizeOccurrence(raw: Record<string, any>): RawOccurrence {
     status: pickString(raw, "status"),
     conteudo: pickString(raw, "conteudo"),
     responsavel: pickString(raw, "responsavel"),
+    clienteNome: pickString(raw, "cliente", "cliente_nome"),
     contratoId: pickString(raw, "contrato"),
-    dataCadastro: pickString(raw, "data_cadastro"),
-    dataAgendamento: pickString(raw, "data_agendamento"),
+    contratoStatus: pickString(raw, "contrato_status"),
+    pop: pickString(raw, "pop"),
+    metodo: pickString(raw, "metodo"),
+    usuario: pickString(raw, "usuario"),
+    dataCadastro: combineDateHora(raw, "data_cadastro", "hora_cadastro"),
+    dataAgendamento: combineDateHora(raw, "data_agendamento", "hora_agendamento"),
+    dataFinalizacao: combineDateHora(raw, "data_finalizacao", "hora_finalizacao"),
   };
 }
 

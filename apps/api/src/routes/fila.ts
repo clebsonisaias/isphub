@@ -120,6 +120,7 @@ filaRouter.get(
       clienteNome: os.clienteNome,
       clienteDocumento: os.clienteDocumento,
       contratoId: os.contratoId,
+      contratoStatus: os.contratoStatus,
       protocolo: os.protocolo,
       conteudo: os.conteudo,
       observacao: os.observacao,
@@ -131,13 +132,19 @@ filaRouter.get(
         lat: os.lat,
         lng: os.lng,
       },
+      pop: os.pop,
+      usuario: os.usuario,
+      dataCadastro: os.dataCadastro?.toISOString() ?? null,
       dataAgendamento: os.dataAgendamento?.toISOString() ?? null,
       tecnicoId: os.tecnicoId,
       tecnicoNome: os.tecnico?.nome ?? null,
       criadoEm: os.criadoEm.toISOString(),
       atualizadoEm: os.atualizadoEm.toISOString(),
       sincronizadoEm: os.sincronizadoEm.toISOString(),
-      sla: calcularSla({ slaHoras: os.tipoOs?.slaHoras, dataBase: os.dataAgendamento ?? os.criadoEm }),
+      // dataCadastro (data real de abertura no SGP) e uma base de SLA mais
+      // fiel que criadoEm, que so reflete quando o ISPhub sincronizou pela
+      // primeira vez — importante pra OS antigas importadas so agora.
+      sla: calcularSla({ slaHoras: os.tipoOs?.slaHoras, dataBase: os.dataAgendamento ?? os.dataCadastro ?? os.criadoEm }),
     }));
 
     const itensOco: FilaItem[] = ocorrencias.map((o) => ({
@@ -157,9 +164,15 @@ filaRouter.get(
       status: o.status,
       conteudo: o.conteudo,
       responsavel: o.responsavel,
+      clienteNome: o.clienteNome,
       contratoId: o.contratoId,
+      contratoStatus: o.contratoStatus,
+      pop: o.pop,
+      metodo: o.metodo,
+      usuario: o.usuario,
       dataCadastro: o.dataCadastro?.toISOString() ?? null,
       dataAgendamento: o.dataAgendamento?.toISOString() ?? null,
+      dataFinalizacao: o.dataFinalizacao?.toISOString() ?? null,
       sincronizadoEm: o.sincronizadoEm.toISOString(),
     }));
 
