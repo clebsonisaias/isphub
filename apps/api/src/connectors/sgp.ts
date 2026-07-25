@@ -225,7 +225,9 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
         offset: params.offset,
         limit: params.limit,
       });
-      return asArray(data, "ordens_servicos", "resultados").map(normalizeOs);
+      const raw = asArray(data, "ordens_servicos", "resultados");
+      if (process.env.SGP_DEBUG_RAW) console.log("[sgp-debug] os[0] raw:", JSON.stringify(raw[0]));
+      return raw.map(normalizeOs);
     },
 
     async listOccurrences(params: ListOccurrenceParams = {}): Promise<RawOccurrence[]> {
@@ -235,7 +237,9 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
         offset: params.offset,
         limit: params.limit,
       });
-      return asArray(data, "ocorrencias", "resultados").map(normalizeOccurrence);
+      const raw = asArray(data, "ocorrencias", "resultados");
+      if (process.env.SGP_DEBUG_RAW) console.log("[sgp-debug] ocorrencia[0] raw:", JSON.stringify(raw[0]));
+      return raw.map(normalizeOccurrence);
     },
 
     async setOnTheWay(sgpOsId: string): Promise<void> {
