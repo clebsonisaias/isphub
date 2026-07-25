@@ -85,6 +85,23 @@ export interface ConnectionStatus {
 }
 
 /**
+ * Detalhes tecnicos consultados ao vivo no ERP (endereco completo + sinal
+ * da ONU + status de conexao) — nao fazem parte do sync em massa porque o
+ * SGP nao expoe endereco de rua nem sinal nas listagens de OS/ocorrencia,
+ * so num endpoint de consulta de cliente separado.
+ */
+export interface DetalhesTecnicos {
+  endereco: Endereco | null;
+  online: boolean | null;
+  /** Potencia optica recebida pela ONU, em dBm (valores normais: -8 a -27; abaixo disso indica problema no sinal). */
+  sinalRxDbm: number | null;
+  /** Potencia optica transmitida pela ONU, em dBm. */
+  sinalTxDbm: number | null;
+  oltNome: string | null;
+  mensagem: string | null;
+}
+
+/**
  * Contrato de integracao com um ERP. Cada ERP (SGP, e futuros) implementa esta
  * interface; o nucleo do ISPhub (sync + write-back) so conhece este contrato,
  * nunca os detalhes de cada API.
@@ -120,6 +137,9 @@ export interface ErpConnector {
 
   /** Verifica se o servico do contrato esta online/offline agora. */
   checkConnectionStatus(contratoId: string): Promise<ConnectionStatus>;
+
+  /** Endereco completo + sinal da ONU + conexao do contrato, direto do cadastro do cliente. */
+  getDetalhesTecnicos(contratoId: string): Promise<DetalhesTecnicos>;
 }
 
 /** Fabrica de conector a partir de credenciais (um por provedor). */

@@ -357,4 +357,101 @@ describe("createSgpConnector", () => {
       expect(resultado.mensagem).toContain("500");
     });
   });
+
+  describe("getDetalhesTecnicos", () => {
+    it("extrai endereco, sinal ONU e status de conexao do payload real (doc oficial /api/ura/clientes/)", async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({
+          paginacao: { offset: 0, limit: 100, parcial: 1, total: 1 },
+          clientes: [
+            {
+              nome: "MARIA SILVA",
+              cpfcnpj: "00000000000",
+              contratos: [
+                {
+                  contrato: 75,
+                  status: "Ativo",
+                  servicos: [
+                    {
+                      id: 1,
+                      tipo: "internet",
+                      login: "LOGIN",
+                      onu: {
+                        rx: "-19.500",
+                        tx: "2.500",
+                        olt_nome: "OLT-MACAIBA-01",
+                        conexao: { status: "online", ip: "10.0.0.5" },
+                      },
+                      endereco: {
+                        logradouro: "Rua das Flores",
+                        numero: 123,
+                        bairro: "Centro",
+                        cidade: "Macaíba",
+                        uf: "RN",
+                        cep: "59280-000",
+                        latitude: "-5.8555",
+                        longitude: "-35.3555",
+                      },
+                    },
+                  ],
+                },
+              ],
+              endereco: { logradouro: "Endereco do cliente (fallback)", bairro: "Outro bairro" },
+            },
+          ],
+        }),
+      );
+
+      const conn = createSgpConnector(creds);
+      const resultado = await conn.getDetalhesTecnicos("75");
+
+      expect(resultado.online).toBe(true);
+      expect(resultado.sinalRxDbm).toBeCloseTo(-19.5);
+      expect(resultado.sinalTxDbm).toBeCloseTo(2.5);
+      expect(resultado.oltNome).toBe("OLT-MACAIBA-01");
+      // Prefere o endereco do servico (mais especifico) ao do cliente.
+      expect(resultado.endereco?.logradouro).toBe("Rua das Flores");
+      expect(resultado.endereco?.bairro).toBe("Centro");
+      expect(resultado.endereco?.lat).toBeCloseTo(-5.8555);
+      expect(resultado.endereco?.lng).toBeCloseTo(-35.3555);
+
+      const [url, options] = fetchMock.mock.calls[0];
+      expect(String(url)).toContain("/api/ura/clientes/");
+      const body = new URLSearchParams(options.body as string);
+      expect(body.get("contrato")).toBe("75");
+    });
+
+    it("cai pro endereco do cliente quando o servico nao tem endereco proprio", async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({
+          clientes: [
+            {
+              nome: "CLIENTE X",
+              contratos: [{ contrato: 1, servicos: [{ id: 1 }] }],
+              endereco: { logradouro: "Av. Central", bairro: "Vila Nova" },
+            },
+          ],
+        }),
+      );
+
+      const conn = createSgpConnector(creds);
+      const resultado = await conn.getDetalhesTecnicos("1");
+
+      expect(resultado.endereco?.logradouro).toBe("Av. Central");
+      expect(resultado.endereco?.bairro).toBe("Vila Nova");
+      expect(resultado.online).toBeNull();
+      expect(resultado.sinalRxDbm).toBeNull();
+    });
+
+    it("retorna vazio (sem lancar) quando o contrato nao existe", async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ clientes: [] }));
+
+      const conn = createSgpConnector(creds);
+      const resultado = await conn.getDetalhesTecnicos("999999");
+
+      expect(resultado.endereco).toBeNull();
+      expect(resultado.online).toBeNull();
+      expect(resultado.mensagem).toContain("nao encontrado");
+    });
+  });
 });

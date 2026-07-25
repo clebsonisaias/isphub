@@ -1,5 +1,13 @@
 import { useEffect, useState } from "react";
-import { OS_STATUS_LABEL, OS_STATUS_ABERTOS, OsStatus, type FilaItem, type Tecnico } from "@isphub/shared";
+import {
+  OS_STATUS_LABEL,
+  OS_STATUS_ABERTOS,
+  OsStatus,
+  type DetalhesTecnicos,
+  type Endereco,
+  type FilaItem,
+  type Tecnico,
+} from "@isphub/shared";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ProvedorBadge } from "@/components/ProvedorBadge";
@@ -34,6 +42,7 @@ export function OrdemServicoDetailDialog({
   const [textoAnotacao, setTextoAnotacao] = useState("");
   const [acaoEmCurso, setAcaoEmCurso] = useState<string | null>(null);
   const [houveMudanca, setHouveMudanca] = useState(false);
+  const [detalhesLive, setDetalhesLive] = useState<DetalhesTecnicos | null>(null);
 
   useEffect(() => {
     tecnicosApi
@@ -121,7 +130,7 @@ export function OrdemServicoDetailDialog({
             <ProvedorBadge provedor={os.provedor} />
             <StatusBadge status={os.status} />
             <ContratoStatusBadge status={os.contratoStatus} />
-            <ConexaoStatus provedorId={os.provedorId} contratoId={os.contratoId} />
+            <ConexaoStatus provedorId={os.provedorId} contratoId={os.contratoId} onDetalhes={setDetalhesLive} />
           </div>
           <DialogTitle>{os.clienteNome ?? "Cliente não identificado"}</DialogTitle>
           <DialogDescription>
@@ -135,11 +144,7 @@ export function OrdemServicoDetailDialog({
           <Info label="Técnico" value={os.tecnicoNome} />
           <Info
             label="Endereço"
-            value={
-              os.endereco.logradouro
-                ? `${os.endereco.logradouro}, ${os.endereco.numero ?? "s/n"} — ${os.endereco.bairro ?? ""}`
-                : undefined
-            }
+            value={enderecoTexto(detalhesLive?.endereco ?? null) ?? enderecoTexto(os.endereco)}
           />
           <Info label="Localização (POP)" value={os.pop} />
           <Info
@@ -243,6 +248,12 @@ export function OrdemServicoDetailDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+function enderecoTexto(endereco: Endereco | null): string | undefined {
+  if (!endereco?.logradouro) return undefined;
+  const bairro = endereco.bairro ? ` — ${endereco.bairro}` : "";
+  return `${endereco.logradouro}, ${endereco.numero ?? "s/n"}${bairro}`;
 }
 
 function Info({ label, value }: { label: string; value?: string | null }) {

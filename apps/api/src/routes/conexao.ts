@@ -31,3 +31,27 @@ conexaoRouter.get(
     res.json(resultado);
   }),
 );
+
+/**
+ * Detalhes tecnicos completos do contrato (endereco de rua, sinal da ONU em
+ * dBm, status de conexao) — consulta ao vivo, sob demanda, ao abrir o
+ * detalhe de uma OS/ocorrencia. Complementa /:contratoId (que so traz
+ * online/offline) com dados que o SGP so expoe no cadastro do cliente.
+ */
+conexaoRouter.get(
+  "/:contratoId/detalhes",
+  asyncHandler(async (req, res) => {
+    const { provedorId, contratoId } = req.params;
+
+    if (req.user!.role === UserRole.PROVEDOR && req.user!.provedorId !== provedorId) {
+      throw new HttpError(403, "Acesso restrito ao proprio provedor");
+    }
+
+    const config = await prisma.erpConfig.findFirst({ where: { provedorId, tipo: "SGP", ativo: true } });
+    if (!config) throw new HttpError(404, "Integracao SGP nao configurada/ativa para este provedor");
+
+    const connector = buildConnector(config);
+    const resultado = await connector.getDetalhesTecnicos(contratoId);
+    res.json(resultado);
+  }),
+);

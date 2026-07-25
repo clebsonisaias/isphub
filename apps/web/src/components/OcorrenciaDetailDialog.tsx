@@ -1,4 +1,5 @@
-import type { FilaItem } from "@isphub/shared";
+import { useState } from "react";
+import type { DetalhesTecnicos, Endereco, FilaItem } from "@isphub/shared";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ProvedorBadge } from "@/components/ProvedorBadge";
 import { ContratoStatusBadge } from "@/components/ContratoStatusBadge";
@@ -6,14 +7,23 @@ import { ConexaoStatus } from "@/components/ConexaoStatus";
 
 type OcorrenciaItem = Extract<FilaItem, { kind: "ocorrencia" }>;
 
+function enderecoTexto(endereco: Endereco | null): string | undefined {
+  if (!endereco?.logradouro) return undefined;
+  const bairro = endereco.bairro ? ` — ${endereco.bairro}` : "";
+  return `${endereco.logradouro}, ${endereco.numero ?? "s/n"}${bairro}`;
+}
+
 /**
  * Detalhe de Ocorrencia — somente leitura (o SGP nao expoe write-back para
  * ocorrencias na API do ISPhub, so para OS; ver plano). Mostra tudo que o
  * SGP realmente manda: cliente, datas de abertura/finalizacao, localizacao
- * (POP — o SGP nao tem endereco de rua nessas listagens), metodo de
- * contato, responsavel e status do contrato.
+ * (POP na listagem; endereco de rua completo so aparece apos "Verificar
+ * conexão", que consulta o cadastro do cliente no SGP), metodo de contato,
+ * responsavel e status do contrato.
  */
 export function OcorrenciaDetailDialog({ item, onClose }: { item: OcorrenciaItem; onClose: () => void }) {
+  const [detalhesLive, setDetalhesLive] = useState<DetalhesTecnicos | null>(null);
+
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-xl">
@@ -24,7 +34,7 @@ export function OcorrenciaDetailDialog({ item, onClose }: { item: OcorrenciaItem
               {item.status ?? "—"}
             </span>
             <ContratoStatusBadge status={item.contratoStatus} />
-            <ConexaoStatus provedorId={item.provedorId} contratoId={item.contratoId} />
+            <ConexaoStatus provedorId={item.provedorId} contratoId={item.contratoId} onDetalhes={setDetalhesLive} />
           </div>
           <DialogTitle>{item.clienteNome ?? "Cliente não identificado"}</DialogTitle>
           <DialogDescription>
@@ -34,6 +44,7 @@ export function OcorrenciaDetailDialog({ item, onClose }: { item: OcorrenciaItem
 
         <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
           <Info label="Contrato" value={item.contratoId} />
+          <Info label="Endereço" value={enderecoTexto(detalhesLive?.endereco ?? null)} />
           <Info label="Localização (POP)" value={item.pop} />
           <Info label="Método" value={item.metodo} />
           <Info label="Responsável" value={item.responsavel} />

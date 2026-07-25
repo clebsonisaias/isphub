@@ -335,5 +335,56 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
         return { online: null, mensagem: err instanceof Error ? err.message : String(err) };
       }
     },
+
+    async getDetalhesTecnicos(contratoId: string) {
+      const vazio = { endereco: null, online: null, sinalRxDbm: null, sinalTxDbm: null, oltNome: null };
+      try {
+        // /api/ura/clientes/ ("Cliente - Listar" na doc oficial) e o unico
+        // endpoint do SGP que devolve, no mesmo payload: endereco de rua
+        // completo (o resto da API so tem "pop"), sinal optico da ONU
+        // (servico.onu.rx/tx, em dBm) e status de conexao
+        // (servico.onu.conexao.status: "online"/"offline"). Preferimos o
+        // endereco do SERVICO (mais especifico) ao do cliente (fallback).
+        const data = await sgpPostForm(creds, "/api/ura/clientes/", { contrato: contratoId, limit: 1 });
+        const cliente = Array.isArray(data?.clientes) ? data.clientes[0] : undefined;
+        if (!cliente) return { ...vazio, mensagem: "Cliente nao encontrado para este contrato" };
+
+        const servico = cliente.contratos?.[0]?.servicos?.[0];
+        const enderecoRaw = servico?.endereco ?? cliente.endereco;
+        const onu = servico?.onu;
+
+        const endereco = enderecoRaw
+          ? {
+              logradouro: pickString(enderecoRaw, "logradouro"),
+              numero: pickString(enderecoRaw, "numero"),
+              bairro: pickString(enderecoRaw, "bairro"),
+              cidade: pickString(enderecoRaw, "cidade"),
+              lat: enderecoRaw.latitude != null ? Number(enderecoRaw.latitude) || null : null,
+              lng: enderecoRaw.longitude != null ? Number(enderecoRaw.longitude) || null : null,
+            }
+          : null;
+
+        let online: boolean | null = null;
+        const conexaoStatusStr: string | null = onu?.conexao?.status ? String(onu.conexao.status) : null;
+        if (conexaoStatusStr) {
+          if (/offline/i.test(conexaoStatusStr)) online = false;
+          else if (/online/i.test(conexaoStatusStr)) online = true;
+        }
+
+        const sinalRxDbm = onu?.rx != null && onu.rx !== "" ? Number(onu.rx) : null;
+        const sinalTxDbm = onu?.tx != null && onu.tx !== "" ? Number(onu.tx) : null;
+
+        return {
+          endereco,
+          online,
+          sinalRxDbm: Number.isFinite(sinalRxDbm) ? sinalRxDbm : null,
+          sinalTxDbm: Number.isFinite(sinalTxDbm) ? sinalTxDbm : null,
+          oltNome: pickString(onu ?? {}, "olt_nome"),
+          mensagem: null,
+        };
+      } catch (err) {
+        return { ...vazio, mensagem: err instanceof Error ? err.message : String(err) };
+      }
+    },
   };
 }
