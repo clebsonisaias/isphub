@@ -68,6 +68,32 @@ async function sgpPostJson(creds: ErpCredentials, path: string, params: Record<s
   return parseJsonOrThrow(res, path);
 }
 
+/**
+ * multipart/form-data (Content-Type: multipart/form-data, boundary automatico
+ * via FormData nativo). Alguns endpoints do SGP (ex.: verificaacesso, ver
+ * documentacao oficial) sao documentados com `curl --form`, que e multipart
+ * por padrao — diferente do form-urlencoded usado pelo restante da API.
+ */
+async function sgpPostMultipart(
+  creds: ErpCredentials,
+  path: string,
+  params: Record<string, unknown> = {},
+  timeoutMs = TIMEOUT_MS,
+) {
+  const body = new FormData();
+  body.set("app", creds.app);
+  body.set("token", creds.token);
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null) body.set(k, String(v));
+  }
+  const res = await fetch(`${baseUrl(creds)}${path}`, {
+    method: "POST",
+    body,
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  return parseJsonOrThrow(res, path);
+}
+
 async function sgpGet(creds: ErpCredentials, path: string, params: Record<string, unknown> = {}) {
   const qs = new URLSearchParams({ app: creds.app });
   for (const [k, v] of Object.entries(params)) {
@@ -294,7 +320,10 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
         // "msg" (ex.: "Serviço Offline"/"Serviço Online") e o sinal mais confiavel e
         // legivel — os campos status/staus nao tem semantica documentada aqui, entao
         // nao arriscamos derivar o online/offline deles.
-        const data = await sgpPostForm(creds, "/api/ura/verificaacesso/", { contrato: contratoId });
+        // Documentado com `curl --form` (multipart), diferente do form-urlencoded
+        // usado no resto da API — e uma consulta ao vivo (PPPoE/RADIUS), por isso
+        // timeout maior que o padrao de 15s.
+        const data = await sgpPostMultipart(creds, "/api/ura/verificaacesso/", { contrato: contratoId }, 30_000);
         const msg = pickString(data, "msg");
         let online: boolean | null = null;
         if (msg) {

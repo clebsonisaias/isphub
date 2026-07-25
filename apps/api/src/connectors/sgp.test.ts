@@ -319,7 +319,10 @@ describe("createSgpConnector", () => {
 
       const [url, options] = fetchMock.mock.calls[0];
       expect(String(url)).toContain("/api/ura/verificaacesso/");
-      const body = new URLSearchParams(options.body as string);
+      // Documentado com `curl --form` (multipart), diferente do form-urlencoded
+      // usado no resto do conector.
+      const body = options.body as FormData;
+      expect(body).toBeInstanceOf(FormData);
       expect(body.get("contrato")).toBe("308");
       expect(body.get("app")).toBe(creds.app);
       expect(body.get("token")).toBe(creds.token);
