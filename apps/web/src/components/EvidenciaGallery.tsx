@@ -41,12 +41,12 @@ function Thumbnail({ ordemServicoId, evidencia }: { ordemServicoId: string; evid
       target="_blank"
       rel="noreferrer"
       className="flex aspect-square items-center justify-center overflow-hidden rounded-lg border border-border bg-secondary/30"
-      title={evidencia.legenda ?? undefined}
+      title={evidencia.descricao ?? undefined}
     >
       {erro ? (
         <ImageOff className="size-5 text-muted-foreground" />
       ) : url ? (
-        <img src={url} alt={evidencia.legenda ?? "Evidência"} className="size-full object-cover" />
+        <img src={url} alt={evidencia.descricao ?? "Evidência"} className="size-full object-cover" />
       ) : (
         <div className="size-full animate-pulse bg-secondary" />
       )}

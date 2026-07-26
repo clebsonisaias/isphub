@@ -179,7 +179,6 @@ model OrdemServico {
 
   atribuicoes   Atribuicao[]
   eventos       OsEvento[]
-  evidencias    Evidencia[]
   notificacoes  Notificacao[]
 
   @@unique([provedorId, sgpOsId])
@@ -236,7 +235,6 @@ model Usuario {
   ordensServico OrdemServico[]
   atribuicoes   Atribuicao[]
   eventos       OsEvento[]
-  evidencias    Evidencia[]
   notificacoes  Notificacao[]
 
   @@map("usuarios")
@@ -257,30 +255,11 @@ model Atribuicao {
   @@map("atribuicoes")
 }
 
-/// Foto de evidencia anexada a uma OS. Local-only na ISPhub (o SGP nao expoe
-/// endpoint de upload de imagem) — guardada direto no Postgres (bytea) pra nao
-/// depender de volume/S3 no deploy atual.
-model Evidencia {
-  id             String       @id @default(uuid())
-  ordemServicoId String
-  ordemServico   OrdemServico @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
-  autorId        String?
-  autor          Usuario?     @relation(fields: [autorId], references: [id], onDelete: SetNull)
-  legenda        String?
-  mimeType       String
-  tamanhoBytes   Int
-  dados          Bytes
-  criadoEm       DateTime     @default(now())
-
-  eventos OsEvento[]
-
-  @@index([ordemServicoId])
-  @@map("evidencias")
-}
-
 /// Timeline de uma OS: toda acao feita dentro do ISPhub (status, anotacao,
 /// atribuicao, foto) vira um evento aqui. So nasce de acao humana — a criacao
-/// da OS via sync nao gera evento.
+/// da OS via sync nao gera evento. Fotos (tipo=foto) sao hospedadas no
+/// proprio SGP (ver connectors/sgp.ts addOsImage/listOsImages) — o evento so
+/// guarda a descricao, sem FK local pra nenhum arquivo.
 model OsEvento {
   id             String       @id @default(uuid())
   ordemServicoId String
@@ -289,8 +268,6 @@ model OsEvento {
   autorId        String?
   autor          Usuario?     @relation(fields: [autorId], references: [id], onDelete: SetNull)
   descricao      String
-  evidenciaId    String?
-  evidencia      Evidencia?   @relation(fields: [evidenciaId], references: [id], onDelete: SetNull)
   criadoEm       DateTime     @default(now())
 
   @@index([ordemServicoId, criadoEm])

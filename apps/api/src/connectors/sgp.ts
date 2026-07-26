@@ -6,6 +6,8 @@ import type {
   RawOccurrence,
   RawOs,
   RawOsType,
+  SgpImagem,
+  SgpImagemArquivo,
 } from "@isphub/shared";
 
 /**
@@ -69,12 +71,14 @@ async function sgpPostJson(creds: ErpCredentials, path: string, params: Record<s
 
 /**
  * multipart/form-data (Content-Type: multipart/form-data, boundary automatico
- * via FormData nativo). Alguns endpoints do SGP (ex.: verificaacesso, ver
- * documentacao oficial) sao documentados com `curl --form`, que e multipart
- * por padrao — diferente do form-urlencoded usado pelo restante da API.
+ * via FormData nativo). Alguns endpoints do SGP (ex.: verificaacesso, anexar
+ * imagem — ver documentacao oficial) sao documentados com `curl --form`, que
+ * e multipart por padrao — diferente do form-urlencoded usado pelo resto da
+ * API. `method` e parametrizavel porque "Anexar Imagem" e um PUT, nao POST.
  */
-async function sgpPostMultipart(
+async function sgpMultipart(
   creds: ErpCredentials,
+  method: "POST" | "PUT",
   path: string,
   params: Record<string, unknown> = {},
   timeoutMs = TIMEOUT_MS,
@@ -86,11 +90,33 @@ async function sgpPostMultipart(
     if (v !== undefined && v !== null) body.set(k, String(v));
   }
   const res = await fetch(`${baseUrl(creds)}${path}`, {
-    method: "POST",
+    method,
     body,
     signal: AbortSignal.timeout(timeoutMs),
   });
   return parseJsonOrThrow(res, path);
+}
+
+/** Como sgpGet, mas devolve os bytes crus (pra proxy de arquivo/imagem) em vez de tentar parsear JSON. */
+async function sgpGetBinary(
+  creds: ErpCredentials,
+  path: string,
+  params: Record<string, unknown> = {},
+): Promise<{ contentType: string; bytes: Uint8Array } | null> {
+  const qs = new URLSearchParams({ app: creds.app, token: creds.token });
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null) qs.set(k, String(v));
+  }
+  const res = await fetch(`${baseUrl(creds)}${path}?${qs.toString()}`, {
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+  if (!res.ok) return null;
+  const contentType = res.headers.get("content-type") ?? "application/octet-stream";
+  // Se o SGP responder JSON (ex.: erro disfarçado de 200, ou anexo inexistente),
+  // nao e um arquivo de verdade — trata como "nao encontrado".
+  if (contentType.includes("application/json")) return null;
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  return { contentType, bytes };
 }
 
 async function sgpGet(creds: ErpCredentials, path: string, params: Record<string, unknown> = {}) {
@@ -237,6 +263,29 @@ function normalizeOccurrence(raw: Record<string, any>): RawOccurrence {
   };
 }
 
+/**
+ * Formata uma data ISO no padrao que o SGP espera em campos de escrita:
+ * "AAAA-MM-DD HH:mm:ss", sempre em horario de Brasilia — o container roda
+ * em UTC (sem TZ configurada), e o SGP e um sistema brasileiro, entao usar
+ * o timezone do processo (`Date#getHours` etc) mandaria a hora errada.
+ */
+function formatarDataSgp(iso: string): string {
+  const d = new Date(iso);
+  const partes = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  })
+    .formatToParts(d)
+    .reduce<Record<string, string>>((acc, p) => ({ ...acc, [p.type]: p.value }), {});
+  return `${partes.year}-${partes.month}-${partes.day} ${partes.hour}:${partes.minute}:${partes.second}`;
+}
+
 function asArray(payload: any, ...possibleKeys: string[]): any[] {
   if (Array.isArray(payload)) return payload;
   for (const k of possibleKeys) {
@@ -294,9 +343,10 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
       await sgpPostForm(creds, `/api/os/acaminho/id/${encodeURIComponent(sgpOsId)}/`);
     },
 
-    async updateOsStatus(sgpOsId: string, statusCode: number): Promise<void> {
+    async updateOsStatus(sgpOsId: string, statusCode: number, dataFinalizacao?: string): Promise<void> {
       await sgpPostForm(creds, `/api/os/update/id/${encodeURIComponent(sgpOsId)}/`, {
         os_status: statusCode,
+        os_data_finalizacao: dataFinalizacao ? formatarDataSgp(dataFinalizacao) : undefined,
       });
     },
 
@@ -315,7 +365,7 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
         // Documentado com `curl --form` (multipart), diferente do form-urlencoded
         // usado no resto da API — e uma consulta ao vivo (PPPoE/RADIUS), por isso
         // timeout maior que o padrao de 15s.
-        const data = await sgpPostMultipart(creds, "/api/ura/verificaacesso/", { contrato: contratoId }, 30_000);
+        const data = await sgpMultipart(creds, "POST", "/api/ura/verificaacesso/", { contrato: contratoId }, 30_000);
         const msg = pickString(data, "msg");
         let online: boolean | null = null;
         if (msg) {
@@ -377,6 +427,32 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
       } catch (err) {
         return { ...vazio, mensagem: err instanceof Error ? err.message : String(err) };
       }
+    },
+
+    async addOsImage(sgpOsId: string, imagemBase64: string, descricao?: string): Promise<void> {
+      // Documentado com curl --form (multipart); campo e "image_b64" (o texto
+      // descritivo da doc chama de "image_base64", mas o exemplo de curl usa
+      // "image_b64" — seguimos o exemplo, mais confiavel que a prosa).
+      await sgpMultipart(creds, "PUT", `/api/os/imagem/id/${encodeURIComponent(sgpOsId)}/add/`, {
+        image_b64: imagemBase64,
+        descricao,
+      });
+    },
+
+    async listOsImages(sgpOsId: string): Promise<SgpImagem[]> {
+      const data = await sgpGet(creds, `/api/os/imagem/id/${encodeURIComponent(sgpOsId)}/list/`);
+      return asArray(data, "imagens", "resultados").map((item) => ({
+        id: String(pick(item, "id")),
+        descricao: pickString(item, "descricao"),
+        usuario: pickString(item, "usuario"),
+        arquivo: pickString(item, "arquivo"),
+      }));
+    },
+
+    async getOsImageFile(anexoId: string): Promise<SgpImagemArquivo | null> {
+      // "Visualizar Anexo por ID" — unico endpoint desta familia que devolve
+      // o arquivo em si (binario), nao um JSON de metadados.
+      return sgpGetBinary(creds, `/api/os/imagem/${encodeURIComponent(anexoId)}`);
     },
   };
 }

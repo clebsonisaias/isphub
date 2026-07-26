@@ -195,19 +195,20 @@ export interface OsEvento {
   tipo: OsEventoTipo;
   autorNome?: string | null;
   descricao: string;
-  /** Presente quando tipo="foto" — id da Evidencia associada. */
-  evidenciaId?: string | null;
   criadoEm: string;
 }
 
-/** Metadados de uma foto de evidencia anexada a uma OS (sem os bytes). */
+/**
+ * Foto de evidencia anexada a uma OS — hospedada no proprio SGP (a ISPhub
+ * nao guarda os bytes, so consulta ao vivo). Shape espelha o que o SGP
+ * devolve em "Ordem de Servico - Imagens": sem tamanho/mimeType/data, so o
+ * que a API de fato expoe.
+ */
 export interface EvidenciaResumo {
   id: string;
-  legenda?: string | null;
-  mimeType: string;
-  tamanhoBytes: number;
-  autorNome?: string | null;
-  criadoEm: string;
+  descricao?: string | null;
+  usuario?: string | null;
+  arquivo?: string | null;
 }
 
 /** Notificacao in-app de um usuario. */

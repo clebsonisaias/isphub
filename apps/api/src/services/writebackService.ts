@@ -1,4 +1,4 @@
-import { OS_STATUS_LABEL, OsStatus, UserRole, toSgpOsStatus, type OsEventoTipo } from "@isphub/shared";
+import { OS_STATUS_LABEL, OsStatus, SgpOsStatus, UserRole, toSgpOsStatus, type OsEventoTipo } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../middleware/errorHandler.js";
 import { buildConnector } from "./erpConnectorService.js";
@@ -56,7 +56,11 @@ export async function mudarStatus(ordemServicoId: string, novoStatus: OsStatus, 
     if (codigo === undefined) {
       throw new HttpError(400, `Status "${novoStatus}" nao tem equivalente de escrita no SGP`);
     }
-    await connector.updateOsStatus(os.sgpOsId, codigo);
+    // Ao encerrar (concluida/cancelada mapeiam pro mesmo "Encerrada" no SGP),
+    // manda a data de finalizacao — sem isso o SGP fecha a OS sem registrar
+    // quando de fato terminou.
+    const dataFinalizacao = codigo === SgpOsStatus.ENCERRADA ? new Date().toISOString() : undefined;
+    await connector.updateOsStatus(os.sgpOsId, codigo, dataFinalizacao);
   }
 
   const descricao = `Status alterado: ${OS_STATUS_LABEL[os.status as OsStatus]} → ${OS_STATUS_LABEL[novoStatus]}`;
@@ -86,6 +90,34 @@ export async function adicionarAnotacao(ordemServicoId: string, texto: string, a
     evento(os.id, "anotacao", autorId, texto),
   ]);
   return osAtualizada;
+}
+
+/**
+ * Foto de evidencia — hospedada no proprio SGP (endpoints reais de imagem,
+ * ver connectors/sgp.ts). A ISPhub nao guarda os bytes: so grava o evento na
+ * timeline local e, pra listar/exibir, consulta o SGP ao vivo (mesmo padrao
+ * de checkConnectionStatus/getDetalhesTecnicos).
+ */
+export async function adicionarEvidencia(
+  ordemServicoId: string,
+  imagemBase64: string,
+  autorId: string,
+  legenda?: string,
+) {
+  const { os, connector } = await loadOsWithConnector(ordemServicoId);
+  await connector.addOsImage(os.sgpOsId, imagemBase64, legenda);
+  await evento(os.id, "foto", autorId, legenda ? `Foto adicionada: ${legenda}` : "Foto adicionada");
+  return connector.listOsImages(os.sgpOsId);
+}
+
+export async function listarEvidencias(ordemServicoId: string) {
+  const { os, connector } = await loadOsWithConnector(ordemServicoId);
+  return connector.listOsImages(os.sgpOsId);
+}
+
+export async function obterArquivoEvidencia(ordemServicoId: string, anexoId: string) {
+  const { connector } = await loadOsWithConnector(ordemServicoId);
+  return connector.getOsImageFile(anexoId);
 }
 
 /**

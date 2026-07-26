@@ -44,9 +44,10 @@ export const ordensServicoApi = {
   eventos: (id: string) => api.get<OsEvento[]>(`/ordens-servico/${id}/eventos`),
   evidencias: {
     listar: (id: string) => api.get<EvidenciaResumo[]>(`/ordens-servico/${id}/evidencias`),
+    /** Devolve a lista completa e atualizada de fotos (o SGP e a fonte da verdade, nao ha "a nova" isolada). */
     adicionar: (id: string, imagem: ImagemComprimida, legenda?: string) =>
-      api.post<EvidenciaResumo>(`/ordens-servico/${id}/evidencias`, { ...imagem, legenda }),
-    urlArquivo: (id: string, evidenciaId: string) => `/ordens-servico/${id}/evidencias/${evidenciaId}/arquivo`,
+      api.post<EvidenciaResumo[]>(`/ordens-servico/${id}/evidencias`, { ...imagem, legenda }),
+    urlArquivo: (id: string, anexoId: string) => `/ordens-servico/${id}/evidencias/${anexoId}/arquivo`,
   },
 };
 

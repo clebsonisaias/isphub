@@ -96,6 +96,23 @@ export interface DetalhesTecnicos {
 }
 
 /**
+ * Foto anexada a uma OS no SGP (evidencia de execucao). Hospedada no proprio
+ * SGP — a ISPhub nao guarda os bytes, so consulta ao vivo (mesmo padrao de
+ * checkConnectionStatus/getDetalhesTecnicos).
+ */
+export interface SgpImagem {
+  id: string;
+  descricao: string | null;
+  usuario: string | null;
+  arquivo: string | null;
+}
+
+export interface SgpImagemArquivo {
+  contentType: string;
+  bytes: Uint8Array;
+}
+
+/**
  * Contrato de integracao com um ERP. Cada ERP (SGP, e futuros) implementa esta
  * interface; o nucleo do ISPhub (sync + write-back) so conhece este contrato,
  * nunca os detalhes de cada API.
@@ -118,8 +135,12 @@ export interface ErpConnector {
   /** Marca a OS como "a caminho" (tecnico em deslocamento). */
   setOnTheWay(sgpOsId: string): Promise<void>;
 
-  /** Atualiza o status da OS no ERP (codigo numerico do ERP). */
-  updateOsStatus(sgpOsId: string, statusCode: number): Promise<void>;
+  /**
+   * Atualiza o status da OS no ERP (codigo numerico do ERP). `dataFinalizacao`
+   * (formato "AAAA-MM-DD HH:mm:ss") e enviada ao encerrar a OS (status
+   * ENCERRADA), pra o SGP registrar quando de fato foi concluida/cancelada.
+   */
+  updateOsStatus(sgpOsId: string, statusCode: number, dataFinalizacao?: string): Promise<void>;
 
   /** Adiciona uma anotacao/andamento na OS. */
   addOsNote(sgpOsId: string, texto: string): Promise<void>;
@@ -131,6 +152,15 @@ export interface ErpConnector {
 
   /** Endereco completo + sinal da ONU + conexao do contrato, direto do cadastro do cliente. */
   getDetalhesTecnicos(contratoId: string): Promise<DetalhesTecnicos>;
+
+  /** Anexa uma foto de evidencia a OS, hospedada no proprio SGP. */
+  addOsImage(sgpOsId: string, imagemBase64: string, descricao?: string): Promise<void>;
+
+  /** Lista as fotos anexadas a uma OS (sem os bytes). */
+  listOsImages(sgpOsId: string): Promise<SgpImagem[]>;
+
+  /** Baixa os bytes de uma foto anexada, pra proxy autenticado ao front. */
+  getOsImageFile(anexoId: string): Promise<SgpImagemArquivo | null>;
 }
 
 /** Fabrica de conector a partir de credenciais (um por provedor). */
