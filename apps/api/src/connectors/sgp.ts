@@ -1,4 +1,5 @@
 import { SgpOsStatus } from "@isphub/shared";
+import { env } from "../config/env.js";
 import type {
   ErpConnector,
   ErpCredentials,
@@ -404,7 +405,7 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
         limit: params.limit,
       });
       const raw = asArray(data, "ordens_servicos", "resultados");
-      if (process.env.SGP_DEBUG_RAW) console.log("[sgp-debug] os[0] raw:", JSON.stringify(raw[0]));
+      if (env.SGP_DEBUG_RAW) console.log("[sgp-debug] os[0] raw:", JSON.stringify(raw[0]));
       return raw.map(normalizeOs);
     },
 
@@ -416,7 +417,7 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
         limit: params.limit,
       });
       const raw = asArray(data, "ocorrencias", "resultados");
-      if (process.env.SGP_DEBUG_RAW) console.log("[sgp-debug] ocorrencia[0] raw:", JSON.stringify(raw[0]));
+      if (env.SGP_DEBUG_RAW) console.log("[sgp-debug] ocorrencia[0] raw:", JSON.stringify(raw[0]));
       return raw.map(normalizeOccurrence);
     },
 
