@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import type { UserRole } from "@isphub/shared";
 import { useAuth } from "@/context/AuthContext";
+import { BrandLoader } from "@/components/BrandLoader";
 
 /** Protege uma rota: exige sessao valida e, opcionalmente, um dos papeis informados. */
 export function RequireAuth({ children, roles }: { children: ReactNode; roles?: UserRole[] }) {
@@ -9,9 +10,7 @@ export function RequireAuth({ children, roles }: { children: ReactNode; roles?: 
   const location = useLocation();
 
   if (carregando) {
-    return (
-      <div className="flex min-h-svh items-center justify-center text-sm text-muted-foreground">Carregando...</div>
-    );
+    return <BrandLoader />;
   }
 
   if (!usuario) {

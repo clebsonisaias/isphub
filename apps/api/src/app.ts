@@ -16,6 +16,7 @@ import { dashboardRouter } from "./routes/dashboard.js";
 import { tecnicosRouter } from "./routes/tecnicos.js";
 import { conexaoRouter } from "./routes/conexao.js";
 import { notificacoesRouter } from "./routes/notificacoes.js";
+import { horaRouter } from "./routes/hora.js";
 
 export function createApp() {
   const app = express();
@@ -34,6 +35,7 @@ export function createApp() {
   app.use("/usuarios", usuariosRouter);
   app.use("/tecnicos", tecnicosRouter);
   app.use("/notificacoes", notificacoesRouter);
+  app.use("/hora", horaRouter);
   app.use("/provedores/:provedorId/erp-config", erpConfigRouter);
   app.use("/provedores/:provedorId/tipos-os", tiposOsRouter);
   app.use("/provedores/:provedorId/sync", syncRouter);

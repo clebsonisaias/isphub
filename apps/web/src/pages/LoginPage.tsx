@@ -1,5 +1,6 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { animate } from "animejs";
 import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/lib/apiClient";
 import { BrandMark } from "@/components/BrandMark";
@@ -9,6 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
+const REDUZIR_MOVIMENTO = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
 export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -17,6 +20,33 @@ export function LoginPage() {
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  // Entrada do card logo depois da animacao do glifo de marca.
+  useEffect(() => {
+    if (!cardRef.current) return;
+    if (REDUZIR_MOVIMENTO()) {
+      cardRef.current.style.opacity = "1";
+      return;
+    }
+    animate(cardRef.current, {
+      opacity: [0, 1],
+      translateY: [16, 0],
+      duration: 500,
+      delay: 500,
+      ease: "outQuad",
+    });
+  }, []);
+
+  // Shake sutil no card ao errar login — feedback imediato, sem depender so da cor do texto.
+  useEffect(() => {
+    if (!erro || !cardRef.current || REDUZIR_MOVIMENTO()) return;
+    animate(cardRef.current, {
+      translateX: [0, -8, 8, -6, 6, 0],
+      duration: 400,
+      ease: "inOutSine",
+    });
+  }, [erro]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -47,7 +77,7 @@ export function LoginPage() {
       <div className="relative z-10 flex w-full max-w-sm flex-col items-center gap-8">
         <BrandMark />
 
-        <Card className="w-full">
+        <Card ref={cardRef} className="w-full opacity-0">
           <CardHeader>
             <CardTitle>Entrar</CardTitle>
             <CardDescription>Acesse o painel do ISPhub com seu e-mail e senha.</CardDescription>

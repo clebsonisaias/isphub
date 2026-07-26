@@ -1,3 +1,5 @@
+import { useEffect, useRef } from "react";
+import { animate } from "animejs";
 import type { SlaInfo } from "@isphub/shared";
 import { cn } from "@/lib/utils";
 
@@ -16,10 +18,29 @@ export function SlaBadge({ sla }: { sla: SlaInfo }) {
   const s = SLA_STYLE[sla.semaforo];
   const detalhe =
     sla.semaforo !== "sem_sla" && typeof sla.minutosRestantes === "number" ? formatMinutos(sla.minutosRestantes) : null;
+  const estourado = sla.semaforo === "vermelho";
+  const dotRef = useRef<HTMLSpanElement>(null);
+
+  // SLA estourado pulsa pra chamar atencao — respeita prefers-reduced-motion.
+  useEffect(() => {
+    if (!estourado || !dotRef.current) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const anim = animate(dotRef.current, {
+      scale: [1, 1.7],
+      opacity: [1, 0.35],
+      duration: 900,
+      loop: true,
+      alternate: true,
+      ease: "inOutSine",
+    });
+    return () => {
+      anim.pause();
+    };
+  }, [estourado]);
 
   return (
     <span className={cn("inline-flex items-center gap-1.5 text-xs font-medium", s.texto)}>
-      <span className={cn("size-2 rounded-full", s.dot)} />
+      <span ref={dotRef} className={cn("size-2 rounded-full", s.dot)} />
       {s.label}
       {detalhe && <span className="text-muted-foreground">({detalhe})</span>}
     </span>

@@ -5,6 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { NotificationBell } from "@/components/NotificationBell";
+import { HeaderClock } from "@/components/HeaderClock";
 import { cn } from "@/lib/utils";
 import { APP_BUILD_DATE, APP_VERSION_LABEL } from "@/lib/version";
 import { LogOut, Map, LayoutGrid, BarChart3, Settings } from "lucide-react";
@@ -70,6 +71,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           )}
 
           <div className="flex shrink-0 items-center gap-3">
+            {usuario && <HeaderClock />}
             {usuario && (
               <Link
                 to="/perfil"
