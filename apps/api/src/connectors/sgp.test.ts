@@ -509,4 +509,115 @@ describe("createSgpConnector", () => {
       expect(resultado.online).toBe(false);
     });
   });
+
+  describe("fotos de evidencia (hospedadas no SGP)", () => {
+    // Payloads confirmados ao vivo contra o SGP real (CITmax) — upload de uma
+    // imagem de teste na OS 5537 devolveu exatamente o shape abaixo.
+    const imagemRealSgp = {
+      id: "640",
+      descricao: "Teste automatizado ISPhub",
+      usuario: "system",
+      arquivo: "ocorrencia/31550/Anexo_OS_5537_-_1.png",
+    };
+
+    it("addOsImage envia image_b64 + descricao como multipart PUT (campo confirmado no SGP real)", async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ status: 1 }));
+
+      const conn = createSgpConnector(creds);
+      await conn.addOsImage("5537", "QUJD", "Foto do poste");
+
+      const [url, options] = fetchMock.mock.calls[0];
+      expect(String(url)).toContain("/api/os/imagem/id/5537/add/");
+      expect(options.method).toBe("PUT");
+      const body = options.body as FormData;
+      expect(body).toBeInstanceOf(FormData);
+      // "image_b64" (exemplo de curl da doc), nao "image_base64" (prosa da doc)
+      // — confirmado ao vivo: o SGP aceitou e criou o anexo.
+      expect(body.get("image_b64")).toBe("QUJD");
+      expect(body.get("descricao")).toBe("Foto do poste");
+      expect(body.get("app")).toBe(creds.app);
+      expect(body.get("token")).toBe(creds.token);
+    });
+
+    it("addOsImage rejeita quando o SGP recusa com erro no corpo (HTTP 200)", async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ erro: "Imagem invalida" }));
+
+      const conn = createSgpConnector(creds);
+      await expect(conn.addOsImage("5537", "QUJD")).rejects.toThrow(/Imagem invalida/);
+    });
+
+    it("listOsImages normaliza o payload real do SGP (id/descricao/usuario/arquivo)", async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ imagens: [imagemRealSgp] }));
+
+      const conn = createSgpConnector(creds);
+      const imagens = await conn.listOsImages("5537");
+
+      expect(imagens).toHaveLength(1);
+      expect(imagens[0].id).toBe("640");
+      expect(imagens[0].descricao).toBe("Teste automatizado ISPhub");
+      expect(imagens[0].usuario).toBe("system");
+      expect(imagens[0].arquivo).toBe("ocorrencia/31550/Anexo_OS_5537_-_1.png");
+
+      const [url] = fetchMock.mock.calls[0];
+      expect(String(url)).toContain("/api/os/imagem/id/5537/list/");
+    });
+
+    it("listOsImages converte id numerico pra string (o SGP nao e consistente no tipo)", async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ imagens: [{ ...imagemRealSgp, id: 640 }] }));
+
+      const conn = createSgpConnector(creds);
+      const imagens = await conn.listOsImages("5537");
+
+      expect(imagens[0].id).toBe("640");
+    });
+
+    it("listOsImages devolve lista vazia quando a OS nao tem foto (confirmado no SGP real)", async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ imagens: [] }));
+
+      const conn = createSgpConnector(creds);
+      expect(await conn.listOsImages("5537")).toEqual([]);
+    });
+
+    it("getOsImageFile corrige o Content-Type pelos magic bytes (o SGP diz png mas manda JPEG)", async () => {
+      // Cenario real: o SGP salva todo anexo como .png e responde image/png,
+      // mas o conteudo e o JPEG que foi enviado (assinatura FF D8 FF).
+      const jpegBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46]);
+      fetchMock.mockResolvedValueOnce(
+        new Response(jpegBytes, { status: 200, headers: { "content-type": "image/png" } }),
+      );
+
+      const conn = createSgpConnector(creds);
+      const arquivo = await conn.getOsImageFile("640");
+
+      expect(arquivo).not.toBeNull();
+      expect(arquivo!.contentType).toBe("image/jpeg");
+      expect(arquivo!.bytes.slice(0, 3)).toEqual(new Uint8Array([0xff, 0xd8, 0xff]));
+    });
+
+    it("getOsImageFile mantem image/png quando os bytes sao PNG de verdade", async () => {
+      const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+      fetchMock.mockResolvedValueOnce(
+        new Response(pngBytes, { status: 200, headers: { "content-type": "image/png" } }),
+      );
+
+      const conn = createSgpConnector(creds);
+      const arquivo = await conn.getOsImageFile("640");
+
+      expect(arquivo!.contentType).toBe("image/png");
+    });
+
+    it("getOsImageFile trata resposta JSON como 'nao encontrado' (erro disfarcado de 200)", async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ erro: "Anexo inexistente" }));
+
+      const conn = createSgpConnector(creds);
+      expect(await conn.getOsImageFile("999999")).toBeNull();
+    });
+
+    it("getOsImageFile devolve null quando o SGP responde erro HTTP", async () => {
+      fetchMock.mockResolvedValueOnce(new Response("nao encontrado", { status: 404 }));
+
+      const conn = createSgpConnector(creds);
+      expect(await conn.getOsImageFile("999999")).toBeNull();
+    });
+  });
 });

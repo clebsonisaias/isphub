@@ -116,6 +116,38 @@ async function sgpMultipart(
   return parseJsonOrThrow(res, path);
 }
 
+/**
+ * Detecta o tipo real de uma imagem pelos "magic bytes" do inicio do arquivo.
+ * Necessario porque o SGP salva todo anexo com extensao .png e responde
+ * `Content-Type: image/png` independente do formato de verdade — confirmado
+ * ao vivo em producao: um JPEG enviado volta nomeado "...png" e declarado
+ * como png, mas com bytes JPEG (FF D8 FF). Navegador aguenta (faz sniffing
+ * em <img>), mas o arquivo baixado fica com tipo mentindo sobre o conteudo.
+ * Retorna null quando nao reconhece a assinatura (aí vale o que o SGP disse).
+ */
+function detectarMimeTypeImagem(bytes: Uint8Array): string | null {
+  if (bytes.length < 4) return null;
+  const [b0, b1, b2, b3] = bytes;
+  if (b0 === 0xff && b1 === 0xd8 && b2 === 0xff) return "image/jpeg";
+  if (b0 === 0x89 && b1 === 0x50 && b2 === 0x4e && b3 === 0x47) return "image/png";
+  if (b0 === 0x47 && b1 === 0x49 && b2 === 0x46 && b3 === 0x38) return "image/gif";
+  // WebP: "RIFF" .... "WEBP"
+  if (
+    b0 === 0x52 &&
+    b1 === 0x49 &&
+    b2 === 0x46 &&
+    b3 === 0x46 &&
+    bytes.length >= 12 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  ) {
+    return "image/webp";
+  }
+  return null;
+}
+
 /** Como sgpGet, mas devolve os bytes crus (pra proxy de arquivo/imagem) em vez de tentar parsear JSON. */
 async function sgpGetBinary(
   creds: ErpCredentials,
@@ -130,12 +162,13 @@ async function sgpGetBinary(
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   if (!res.ok) return null;
-  const contentType = res.headers.get("content-type") ?? "application/octet-stream";
+  const contentTypeSgp = res.headers.get("content-type") ?? "application/octet-stream";
   // Se o SGP responder JSON (ex.: erro disfarçado de 200, ou anexo inexistente),
   // nao e um arquivo de verdade — trata como "nao encontrado".
-  if (contentType.includes("application/json")) return null;
+  if (contentTypeSgp.includes("application/json")) return null;
   const bytes = new Uint8Array(await res.arrayBuffer());
-  return { contentType, bytes };
+  // Os bytes mandam mais que o cabecalho do SGP (ver detectarMimeTypeImagem).
+  return { contentType: detectarMimeTypeImagem(bytes) ?? contentTypeSgp, bytes };
 }
 
 async function sgpGet(creds: ErpCredentials, path: string, params: Record<string, unknown> = {}) {
