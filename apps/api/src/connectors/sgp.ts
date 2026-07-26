@@ -453,6 +453,12 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
         const sinalRxDbm = onu?.rx != null && onu.rx !== "" ? Number(onu.rx) : null;
         const sinalTxDbm = onu?.tx != null && onu.tx !== "" ? Number(onu.tx) : null;
 
+        // DIAGNOSTICO TEMPORARIO: online sempre null em producao (campo
+        // esperado onu.conexao.status nunca aparece) — expoe o "onu" bruto
+        // (so dados tecnicos de rede, sem PII de cliente) pra achar o campo
+        // real. Remover apos a correcao.
+        if (process.env.SGP_DEBUG_ONU) console.log("[sgp-debug] onu raw:", JSON.stringify(onu), "servico raw:", JSON.stringify(servico));
+
         return {
           endereco,
           online,
