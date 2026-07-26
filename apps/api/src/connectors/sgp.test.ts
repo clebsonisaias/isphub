@@ -286,6 +286,7 @@ describe("createSgpConnector", () => {
     expect(String(url)).toContain("/api/os/update/id/5537/");
     const body = new URLSearchParams(options.body as string);
     expect(body.get("os_conteudo")).toBe("Descricao corrigida pelo gestor");
+    // diagnostico temporario: variacoes de nome enviadas juntas
     // Nao pode mandar os_status junto: reescrever a descricao nao deve mexer
     // no status da OS.
     expect(body.get("os_status")).toBeNull();
