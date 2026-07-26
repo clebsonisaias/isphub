@@ -3,6 +3,7 @@ import { ProvedorBadge } from "@/components/ProvedorBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { SlaBadge } from "@/components/SlaBadge";
 import { ContratoStatusBadge } from "@/components/ContratoStatusBadge";
+import { ConexaoBadge } from "@/components/fila/ConexaoBadge";
 import { PRIORIDADE_LABEL } from "@/lib/filaFacets";
 import { iconeCategoria } from "@/lib/categoriaIcons";
 import { cn } from "@/lib/utils";
@@ -162,6 +163,7 @@ export function FilaCard({ item, agora, onClick }: { item: FilaItem; agora: numb
           <ContratoStatusBadge status={item.contratoStatus} />
           <CategoriaChip item={item} />
           {item.kind === "os" && <SlaBadge sla={item.sla} />}
+          <ConexaoBadge provedorId={item.provedorId} contratoId={item.contratoId} />
         </div>
 
         <div className="flex flex-wrap items-baseline gap-x-2">

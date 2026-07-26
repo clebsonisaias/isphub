@@ -68,7 +68,7 @@ export function HeaderClock() {
   return (
     <div
       ref={rootRef}
-      className="hidden items-center gap-1.5 rounded-full border border-border bg-secondary/40 px-3 py-1 text-xs text-muted-foreground opacity-0 md:flex"
+      className="hidden items-center gap-1.5 rounded-full border border-border bg-secondary/40 px-3 py-1 text-xs text-muted-foreground opacity-0 lg:flex"
       title={`Hora de rede — ${cidade}`}
     >
       <Clock3 className="size-3.5 shrink-0" />

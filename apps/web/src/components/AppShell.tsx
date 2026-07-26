@@ -25,57 +25,62 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-svh bg-background">
       <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-4 px-4">
+        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-1 px-2 sm:gap-4 sm:px-4">
           <Link to="/" className="flex shrink-0 items-center gap-2 text-lg font-bold tracking-tight">
             <span>
               <span className="brand-gradient-text">ISP</span>
               <span className="text-foreground">hub</span>
             </span>
-            <span className="hidden rounded-full border border-border bg-secondary/60 px-1.5 py-0.5 text-[0.65rem] font-medium tabular-nums text-muted-foreground sm:inline">
-              v{APP_VERSION_LABEL.replace(/^v/, "").split(" · ")[0]}
+            <span
+              className="hidden rounded-full border border-border bg-secondary/60 px-1.5 py-0.5 text-[0.65rem] font-medium tabular-nums text-muted-foreground sm:inline"
+              title={APP_BUILD_DATE ? `Build ${APP_BUILD_DATE}` : undefined}
+            >
+              {APP_VERSION_LABEL}
             </span>
           </Link>
 
           {usuario && (
-            <nav className="flex items-center gap-1">
+            <nav className="flex min-w-0 items-center gap-0.5 sm:gap-1">
               {NAV_ITEMS.filter((item) => !item.ocultoPara.includes(usuario.role)).map(({ to, label, icon: Icon }) => (
                 <Link
                   key={to}
                   to={to}
+                  title={label}
                   className={cn(
-                    "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                    "flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium transition-colors xl:px-3",
                     location.pathname === to
                       ? "bg-secondary text-foreground"
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  <Icon className="size-4" />
-                  <span className="hidden sm:inline">{label}</span>
+                  <Icon className="size-4 shrink-0" />
+                  <span className="hidden xl:inline">{label}</span>
                 </Link>
               ))}
               {usuario.role === UserRole.ADMIN && (
                 <Link
                   to="/admin"
+                  title="Administração"
                   className={cn(
-                    "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                    "flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium transition-colors xl:px-3",
                     location.pathname.startsWith("/admin")
                       ? "bg-secondary text-foreground"
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  <Settings className="size-4" />
-                  <span className="hidden sm:inline">Administração</span>
+                  <Settings className="size-4 shrink-0" />
+                  <span className="hidden xl:inline">Administração</span>
                 </Link>
               )}
             </nav>
           )}
 
-          <div className="flex shrink-0 items-center gap-3">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-3">
             {usuario && <HeaderClock />}
             {usuario && (
               <Link
                 to="/perfil"
-                className="hidden text-right leading-tight transition-colors hover:text-primary sm:block"
+                className="hidden text-right leading-tight transition-colors hover:text-primary xl:block"
                 title="Meu perfil"
               >
                 <p className="text-sm font-medium text-foreground">{usuario.nome}</p>
