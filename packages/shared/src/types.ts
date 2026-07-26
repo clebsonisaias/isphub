@@ -187,7 +187,7 @@ export interface FilaFiltros {
 }
 
 /** Tipo de evento na timeline de uma OS. */
-export type OsEventoTipo = "atribuicao" | "status" | "anotacao" | "foto";
+export type OsEventoTipo = "atribuicao" | "status" | "anotacao" | "foto" | "edicao";
 
 /** Evento da timeline de uma OS (status, anotacao, atribuicao, foto). */
 export interface OsEvento {

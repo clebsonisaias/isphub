@@ -91,6 +91,28 @@ export async function mudarStatus(ordemServicoId: string, novoStatus: OsStatus, 
   return osAtualizada;
 }
 
+/**
+ * Reescreve a descricao (conteudo) da OS no SGP e espelha localmente.
+ * Diferente de adicionarAnotacao (que acrescenta ao historico), aqui o texto
+ * original e substituido — por isso a timeline guarda o valor anterior, que
+ * o SGP nao versiona.
+ */
+export async function editarConteudo(ordemServicoId: string, conteudo: string, autorId: string) {
+  const { os, connector } = await loadOsWithConnector(ordemServicoId);
+  await chamarSgp(() => connector.updateOsConteudo(os.sgpOsId, conteudo));
+
+  const anterior = os.conteudo?.trim();
+  const descricao = anterior ? `Descrição editada (antes: "${anterior}")` : "Descrição preenchida";
+  const [, osAtualizada] = await prisma.$transaction([
+    prisma.ordemServico.update({
+      where: { id: os.id },
+      data: { conteudo, sincronizadoEm: new Date(), conteudoAlteradoEm: new Date() },
+    }),
+    evento(os.id, "edicao", autorId, descricao),
+  ]);
+  return osAtualizada;
+}
+
 export async function adicionarAnotacao(ordemServicoId: string, texto: string, autorId: string) {
   const { os, connector } = await loadOsWithConnector(ordemServicoId);
   await chamarSgp(() => connector.addOsNote(os.sgpOsId, texto));

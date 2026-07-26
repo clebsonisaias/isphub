@@ -449,6 +449,15 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
       }
     },
 
+    async updateOsConteudo(sgpOsId: string, conteudo: string): Promise<void> {
+      // Mesmo endpoint de alteracao usado pelo status — o SGP aceita reescrever
+      // varios campos da OS por ele. O nome do campo segue a convencao dos
+      // demais ("os_" + nome do campo na listagem, que devolve "conteudo").
+      const path = `/api/os/update/id/${encodeURIComponent(sgpOsId)}/`;
+      const data = await sgpPostForm(creds, path, { os_conteudo: conteudo });
+      assertSgpEscritaOk(data, path);
+    },
+
     async addOsNote(sgpOsId: string, texto: string): Promise<void> {
       const path = `/api/os/anotacoes/add/id/${encodeURIComponent(sgpOsId)}/`;
       const data = await sgpPostForm(creds, path, { anotacao: texto });

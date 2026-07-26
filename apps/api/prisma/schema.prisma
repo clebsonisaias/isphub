@@ -38,6 +38,7 @@ enum OsEventoTipo {
   status
   anotacao
   foto
+  edicao
 }
 
 model Provedor {
@@ -184,6 +185,11 @@ model OrdemServico {
   /// escrita, entao o sync so volta a confiar na leitura dele apos a janela
   /// de graca (ver syncService.ts).
   observacaoAlteradaEm DateTime?
+  /// Quando a descricao/conteudo da OS foi editada por acao humana — mesma
+  /// janela de graca do statusAlteradoEm/observacaoAlteradaEm (ver
+  /// syncService.ts), pra edicao nao ser desfeita pelo proximo sync antes do
+  /// SGP refletir a escrita na propria leitura.
+  conteudoAlteradoEm DateTime?
   criadoEm        DateTime         @default(now())
   atualizadoEm    DateTime         @updatedAt
   sincronizadoEm  DateTime         @default(now())

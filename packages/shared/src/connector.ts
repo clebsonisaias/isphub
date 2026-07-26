@@ -145,6 +145,9 @@ export interface ErpConnector {
   /** Adiciona uma anotacao/andamento na OS. */
   addOsNote(sgpOsId: string, texto: string): Promise<void>;
 
+  /** Reescreve a descricao/conteudo da OS no ERP. */
+  updateOsConteudo(sgpOsId: string, conteudo: string): Promise<void>;
+
   // ---- consultas ao vivo (sob demanda, fora do sync em massa) ----
 
   /** Verifica se o servico do contrato esta online/offline agora. */

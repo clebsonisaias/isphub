@@ -117,7 +117,13 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
     // nao so das recem-alteradas.
     const osConhecidas = await prisma.ordemServico.findMany({
       where: { provedorId },
-      select: { sgpOsId: true, status: true, statusAlteradoEm: true, observacaoAlteradaEm: true },
+      select: {
+        sgpOsId: true,
+        status: true,
+        statusAlteradoEm: true,
+        observacaoAlteradaEm: true,
+        conteudoAlteradoEm: true,
+      },
     });
     const limiteProtecao = Date.now() - CAMPO_PROTEGIDO_MS;
     const statusProtegido = new Set(
@@ -126,6 +132,11 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
     const observacaoProtegida = new Set(
       osConhecidas
         .filter((o) => o.observacaoAlteradaEm && o.observacaoAlteradaEm.getTime() > limiteProtecao)
+        .map((o) => o.sgpOsId),
+    );
+    const conteudoProtegido = new Set(
+      osConhecidas
+        .filter((o) => o.conteudoAlteradoEm && o.conteudoAlteradoEm.getTime() > limiteProtecao)
         .map((o) => o.sgpOsId),
     );
     const statusLocalPorSgpId = new Map(osConhecidas.map((o) => [o.sgpOsId, o.status as OsStatus]));
@@ -158,7 +169,7 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
         contratoId: raw.contratoId,
         contratoStatus: raw.contratoStatus,
         protocolo: raw.protocolo,
-        conteudo: raw.conteudo,
+        ...(conteudoProtegido.has(raw.sgpOsId) ? {} : { conteudo: raw.conteudo }),
         ...(observacaoProtegida.has(raw.sgpOsId) ? {} : { observacao: raw.observacao }),
         logradouro: raw.endereco.logradouro,
         numero: raw.endereco.numero,
