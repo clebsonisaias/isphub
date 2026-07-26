@@ -2,13 +2,14 @@ import { useEffect, useState } from "react";
 import type { OsEvento } from "@isphub/shared";
 import { ordensServicoApi } from "@/lib/filaApi";
 import { ApiError } from "@/lib/apiClient";
-import { UserPlus, RefreshCw, MessageSquare, Camera, type LucideIcon } from "lucide-react";
+import { UserPlus, RefreshCw, MessageSquare, Camera, Pencil, type LucideIcon } from "lucide-react";
 
 const ICONE_POR_TIPO: Record<OsEvento["tipo"], LucideIcon> = {
   atribuicao: UserPlus,
   status: RefreshCw,
   anotacao: MessageSquare,
   foto: Camera,
+  edicao: Pencil,
 };
 
 function mensagem(err: unknown): string {

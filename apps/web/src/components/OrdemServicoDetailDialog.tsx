@@ -21,7 +21,7 @@ import { ordensServicoApi, tecnicosApi, type TecnicoResumo } from "@/lib/filaApi
 import { ApiError } from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-import { Navigation } from "lucide-react";
+import { Navigation, Pencil } from "lucide-react";
 
 type OsItem = Extract<FilaItem, { kind: "os" }>;
 
@@ -46,6 +46,8 @@ export function OrdemServicoDetailDialog({
   const [tecnicoSelecionado, setTecnicoSelecionado] = useState("");
   const [novoStatus, setNovoStatus] = useState<OsStatus>(item.status);
   const [textoAnotacao, setTextoAnotacao] = useState("");
+  const [editandoConteudo, setEditandoConteudo] = useState(false);
+  const [rascunhoConteudo, setRascunhoConteudo] = useState("");
   const [acaoEmCurso, setAcaoEmCurso] = useState<string | null>(null);
   const [houveMudanca, setHouveMudanca] = useState(false);
   const [detalhesLive, setDetalhesLive] = useState<DetalhesTecnicos | null>(null);
@@ -85,6 +87,23 @@ export function OrdemServicoDetailDialog({
       marcarMudanca();
     } catch (err) {
       toast({ titulo: "Erro ao atualizar status", descricao: mensagem(err), variante: "erro" });
+    } finally {
+      setAcaoEmCurso(null);
+    }
+  }
+
+  async function handleSalvarConteudo() {
+    const texto = rascunhoConteudo.trim();
+    if (!texto) return;
+    setAcaoEmCurso("conteudo");
+    try {
+      const atualizado = await ordensServicoApi.editarConteudo(os.id, texto);
+      setOs((prev) => ({ ...prev, conteudo: atualizado.conteudo }));
+      setEditandoConteudo(false);
+      toast({ titulo: "Descrição atualizada no SGP", variante: "sucesso" });
+      marcarMudanca();
+    } catch (err) {
+      toast({ titulo: "Erro ao editar descrição", descricao: mensagem(err), variante: "erro" });
     } finally {
       setAcaoEmCurso(null);
     }
@@ -174,11 +193,54 @@ export function OrdemServicoDetailDialog({
               <Info label="Registrado por" value={os.usuario} />
             </div>
 
-            {os.conteudo && (
-              <div className="mt-3 rounded-md border border-border bg-secondary/30 p-3 text-sm text-muted-foreground">
-                {os.conteudo}
-              </div>
-            )}
+            <div className="mt-3">
+              {editandoConteudo ? (
+                <div className="flex flex-col gap-2">
+                  <textarea
+                    value={rascunhoConteudo}
+                    onChange={(e) => setRascunhoConteudo(e.target.value)}
+                    rows={4}
+                    autoFocus
+                    aria-label="Descrição da OS"
+                    className="w-full resize-y rounded-md border border-input bg-secondary/40 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="brand"
+                      size="sm"
+                      onClick={handleSalvarConteudo}
+                      disabled={acaoEmCurso !== null || !rascunhoConteudo.trim() || rascunhoConteudo === (os.conteudo ?? "")}
+                    >
+                      {acaoEmCurso === "conteudo" ? "Salvando..." : "Salvar descrição"}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setEditandoConteudo(false)}
+                      disabled={acaoEmCurso !== null}
+                    >
+                      Cancelar
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="group relative rounded-md border border-border bg-secondary/30 p-3 pr-10 text-sm text-muted-foreground">
+                  {os.conteudo || <span className="italic">Sem descrição</span>}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRascunhoConteudo(os.conteudo ?? "");
+                      setEditandoConteudo(true);
+                    }}
+                    title="Editar descrição (envia ao SGP)"
+                    aria-label="Editar descrição"
+                    className="absolute right-2 top-2 rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-secondary hover:text-foreground"
+                  >
+                    <Pencil className="size-3.5" />
+                  </button>
+                </div>
+              )}
+            </div>
             {os.observacao && (
               <div className="mt-3 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
                 <span className="font-medium">Última anotação: </span>
