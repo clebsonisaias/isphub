@@ -5,9 +5,8 @@ WORKDIR /repo
 # git e usado em vite.config.ts (gitShortSha) pra cravar o hash do commit no
 # build — sem isso o badge de versao do header mostra sempre "dev" e nao da
 # pra saber se um deploy real aconteceu (alpine nao vem com git por padrao).
-RUN apk add --no-cache git && git config --global --add safe.directory '*'
 COPY . .
-RUN echo "--- diagnostico git ---" && ls -la .git 2>&1 | head -5 && git status 2>&1 | head -5 && git rev-parse --short HEAD 2>&1 && echo "--- fim diagnostico ---"
+RUN echo "--- diagnostico env ---" && env | sort && echo "--- fim diagnostico ---"
 
 # VITE_API_URL e lido em build-time pelo Vite (import.meta.env) — precisa
 # ser passado como build arg pelo Coolify, apontando pra URL publica da API.
