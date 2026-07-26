@@ -70,20 +70,6 @@ ordensServicoRouter.post(
   }),
 );
 
-const conteudoSchema = z.object({ conteudo: z.string().min(1).max(5000) });
-
-/** Reescreve a descricao da OS (write-back pro SGP, ver writebackService). */
-ordensServicoRouter.patch(
-  "/:id/conteudo",
-  requireRole(...acoesRoles),
-  asyncHandler(async (req, res) => {
-    await assertAcesso(req, req.params.id);
-    const { conteudo } = conteudoSchema.parse(req.body);
-    const os = await writeback.editarConteudo(req.params.id, conteudo, req.user!.sub);
-    res.json(os);
-  }),
-);
-
 const atribuirSchema = z.object({ tecnicoId: z.string().uuid() });
 
 ordensServicoRouter.post(

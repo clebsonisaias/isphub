@@ -40,9 +40,6 @@ export const ordensServicoApi = {
   aCaminho: (id: string) => api.post<OrdemServico>(`/ordens-servico/${id}/acaminho`),
   mudarStatus: (id: string, status: OsStatus) => api.patch<OrdemServico>(`/ordens-servico/${id}/status`, { status }),
   anotar: (id: string, texto: string) => api.post<OrdemServico>(`/ordens-servico/${id}/anotacoes`, { texto }),
-  /** Reescreve a descrição da OS (write-back pro SGP). */
-  editarConteudo: (id: string, conteudo: string) =>
-    api.patch<OrdemServico>(`/ordens-servico/${id}/conteudo`, { conteudo }),
   atribuir: (id: string, tecnicoId: string) => api.post<OrdemServico>(`/ordens-servico/${id}/atribuir`, { tecnicoId }),
   eventos: (id: string) => api.get<OsEvento[]>(`/ordens-servico/${id}/eventos`),
   evidencias: {

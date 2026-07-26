@@ -276,29 +276,6 @@ describe("createSgpConnector", () => {
     expect(body.get("os_status")).toBe("1");
   });
 
-  it("updateOsConteudo reescreve a descricao pelo mesmo endpoint de alteracao da OS", async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse({ status: 1 }));
-
-    const conn = createSgpConnector(creds);
-    await conn.updateOsConteudo("5537", "Descricao corrigida pelo gestor");
-
-    const [url, options] = fetchMock.mock.calls[0];
-    expect(String(url)).toContain("/api/os/update/id/5537/");
-    const body = new URLSearchParams(options.body as string);
-    expect(body.get("os_conteudo")).toBe("Descricao corrigida pelo gestor");
-    // diagnostico temporario: variacoes de nome enviadas juntas
-    // Nao pode mandar os_status junto: reescrever a descricao nao deve mexer
-    // no status da OS.
-    expect(body.get("os_status")).toBeNull();
-  });
-
-  it("updateOsConteudo rejeita quando o SGP recusa com erro no corpo (HTTP 200)", async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse({ erro: "OS encerrada nao pode ser editada" }));
-
-    const conn = createSgpConnector(creds);
-    await expect(conn.updateOsConteudo("5537", "x")).rejects.toThrow(/nao pode ser editada/);
-  });
-
   it("addOsNote envia o texto da anotacao", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true }));
 

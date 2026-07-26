@@ -142,11 +142,16 @@ export interface ErpConnector {
    */
   updateOsStatus(sgpOsId: string, statusCode: number, dataFinalizacao?: string): Promise<void>;
 
-  /** Adiciona uma anotacao/andamento na OS. */
+  /**
+   * Adiciona uma anotacao/andamento na OS.
+   *
+   * Nao existe contraparte de EDICAO da descricao (`conteudo`) da OS: a API do
+   * SGP so expoe acrescentar anotacao. Confirmado ao vivo em producao — o
+   * endpoint de update aceita `os_conteudo` com HTTP 200 e nenhum erro, mas
+   * ignora o campo silenciosamente (a leitura seguinte devolve o texto
+   * antigo). Por isso a descricao e somente-leitura no ISPhub.
+   */
   addOsNote(sgpOsId: string, texto: string): Promise<void>;
-
-  /** Reescreve a descricao/conteudo da OS no ERP. */
-  updateOsConteudo(sgpOsId: string, conteudo: string): Promise<void>;
 
   // ---- consultas ao vivo (sob demanda, fora do sync em massa) ----
 

@@ -449,27 +449,6 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
       }
     },
 
-    async updateOsConteudo(sgpOsId: string, conteudo: string): Promise<void> {
-      // Mesmo endpoint de alteracao usado pelo status — o SGP aceita reescrever
-      // varios campos da OS por ele. O nome do campo segue a convencao dos
-      // demais ("os_" + nome do campo na listagem, que devolve "conteudo").
-      const path = `/api/os/update/id/${encodeURIComponent(sgpOsId)}/`;
-      // DIAGNOSTICO: "os_conteudo" sozinho foi aceito com HTTP 200 mas
-      // ignorado silenciosamente (o sync seguinte trouxe o texto antigo de
-      // volta). Manda as variacoes plausiveis de nome de uma vez pra
-      // descobrir se alguma pega — o SGP ignora campo desconhecido sem
-      // reclamar, entao mandar varios e seguro. Remover apos concluir.
-      const data = await sgpPostForm(creds, path, {
-        os_conteudo: conteudo,
-        conteudo: conteudo,
-        os_descricao: conteudo,
-        descricao: conteudo,
-        os_observacao: conteudo,
-      });
-      assertSgpEscritaOk(data, path);
-      if (process.env.SGP_DEBUG_UPDATE) console.log("[sgp-debug] update conteudo resp:", JSON.stringify(data));
-    },
-
     async addOsNote(sgpOsId: string, texto: string): Promise<void> {
       const path = `/api/os/anotacoes/add/id/${encodeURIComponent(sgpOsId)}/`;
       const data = await sgpPostForm(creds, path, { anotacao: texto });
