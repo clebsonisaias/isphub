@@ -435,9 +435,15 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
     async updateOsStatus(sgpOsId: string, statusCode: number, dataFinalizacao?: string): Promise<void> {
       const path = `/api/os/update/id/${encodeURIComponent(sgpOsId)}/`;
       try {
-        const data = await sgpPostForm(creds, path, {
+        // JSON, nao form-urlencoded: a doc oficial de "Alterar Ordem de
+        // Servico" e explicita (`Content-Type: application/json`). Enviado
+        // como form, o SGP responde 200 e ignora o corpo inteiro — o status
+        // simplesmente nao mudava, sem erro nenhum pra denunciar.
+        const data = await sgpPostJson(creds, path, {
           os_status: statusCode,
           os_data_finalizacao: dataFinalizacao ? formatarDataSgp(dataFinalizacao) : undefined,
+          // Registra quando a alteracao partiu do ISPhub.
+          os_data_alteracao: formatarDataSgp(new Date().toISOString()),
         });
         assertSgpEscritaOk(data, path);
       } catch (err) {

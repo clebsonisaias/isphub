@@ -296,16 +296,32 @@ describe("createSgpConnector", () => {
     expect(body.get("token")).toBe(creds.token);
   });
 
-  it("updateOsStatus envia o codigo de status numerico no corpo form-urlencoded", async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true }));
+  it("updateOsStatus envia JSON (nao form-urlencoded) — a doc de 'Alterar OS' exige application/json", async () => {
+    // Regressao real: enviado como form-urlencoded, o SGP responde 200 e
+    // ignora o corpo inteiro — o status simplesmente nao mudava, sem erro.
+    fetchMock.mockResolvedValueOnce(jsonResponse({ msg: "OS alterada com sucesso", os_id: 555 }));
 
     const conn = createSgpConnector(creds);
     await conn.updateOsStatus("555", 1);
 
     const [url, options] = fetchMock.mock.calls[0];
     expect(String(url)).toContain("/api/os/update/id/555/");
-    const body = new URLSearchParams(options.body as string);
-    expect(body.get("os_status")).toBe("1");
+    expect(options.headers["Content-Type"]).toBe("application/json");
+    const body = JSON.parse(options.body as string);
+    expect(body.os_status).toBe(1);
+    expect(typeof body.os_status).toBe("number");
+    expect(body.app).toBe(creds.app);
+    expect(body.token).toBe(creds.token);
+  });
+
+  it("updateOsStatus manda os_data_finalizacao ao encerrar, no formato do SGP", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ msg: "OS alterada com sucesso" }));
+
+    const conn = createSgpConnector(creds);
+    await conn.updateOsStatus("555", 1, "2026-07-26T12:00:00.000Z");
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.os_data_finalizacao).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
   });
 
   it("addOsNote envia o texto da anotacao", async () => {
