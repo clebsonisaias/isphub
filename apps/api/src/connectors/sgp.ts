@@ -44,6 +44,24 @@ async function parseJsonOrThrow(res: Response, path: string): Promise<any> {
   }
 }
 
+/**
+ * Alguns endpoints de escrita do SGP recusam a operacao por regra de negocio
+ * (ex.: encerrar OS de contrato cancelado) mas ainda respondem HTTP 200 —
+ * parseJsonOrThrow so valida o status HTTP, entao sem isso a recusa vira
+ * "sucesso" pro resto do sistema (writebackService confirma a mudanca local
+ * achando que o SGP aceitou). Cobre as convencoes mais comuns de erro em
+ * corpo 200 desse tipo de API (erro/error, sucesso:false/success:false).
+ */
+function assertSgpEscritaOk(data: any, path: string): void {
+  if (data == null || typeof data !== "object") return;
+  const erro = pickString(data, "erro", "error");
+  if (erro) throw new SgpError(`SGP recusou a escrita em ${path}: ${erro}`);
+  if (data.sucesso === false || data.success === false) {
+    const msg = pickString(data, "msg", "mensagem") ?? "recusado pelo SGP";
+    throw new SgpError(`SGP recusou a escrita em ${path}: ${msg}`);
+  }
+}
+
 async function sgpPostForm(creds: ErpCredentials, path: string, params: Record<string, unknown> = {}) {
   const body = new URLSearchParams({ app: creds.app, token: creds.token });
   for (const [k, v] of Object.entries(params)) {
@@ -340,20 +358,24 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
     },
 
     async setOnTheWay(sgpOsId: string): Promise<void> {
-      await sgpPostForm(creds, `/api/os/acaminho/id/${encodeURIComponent(sgpOsId)}/`);
+      const path = `/api/os/acaminho/id/${encodeURIComponent(sgpOsId)}/`;
+      const data = await sgpPostForm(creds, path);
+      assertSgpEscritaOk(data, path);
     },
 
     async updateOsStatus(sgpOsId: string, statusCode: number, dataFinalizacao?: string): Promise<void> {
-      await sgpPostForm(creds, `/api/os/update/id/${encodeURIComponent(sgpOsId)}/`, {
+      const path = `/api/os/update/id/${encodeURIComponent(sgpOsId)}/`;
+      const data = await sgpPostForm(creds, path, {
         os_status: statusCode,
         os_data_finalizacao: dataFinalizacao ? formatarDataSgp(dataFinalizacao) : undefined,
       });
+      assertSgpEscritaOk(data, path);
     },
 
     async addOsNote(sgpOsId: string, texto: string): Promise<void> {
-      await sgpPostForm(creds, `/api/os/anotacoes/add/id/${encodeURIComponent(sgpOsId)}/`, {
-        anotacao: texto,
-      });
+      const path = `/api/os/anotacoes/add/id/${encodeURIComponent(sgpOsId)}/`;
+      const data = await sgpPostForm(creds, path, { anotacao: texto });
+      assertSgpEscritaOk(data, path);
     },
 
     async checkConnectionStatus(contratoId: string) {
@@ -433,10 +455,9 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
       // Documentado com curl --form (multipart); campo e "image_b64" (o texto
       // descritivo da doc chama de "image_base64", mas o exemplo de curl usa
       // "image_b64" — seguimos o exemplo, mais confiavel que a prosa).
-      await sgpMultipart(creds, "PUT", `/api/os/imagem/id/${encodeURIComponent(sgpOsId)}/add/`, {
-        image_b64: imagemBase64,
-        descricao,
-      });
+      const path = `/api/os/imagem/id/${encodeURIComponent(sgpOsId)}/add/`;
+      const data = await sgpMultipart(creds, "PUT", path, { image_b64: imagemBase64, descricao });
+      assertSgpEscritaOk(data, path);
     },
 
     async listOsImages(sgpOsId: string): Promise<SgpImagem[]> {

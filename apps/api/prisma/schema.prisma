@@ -173,6 +173,11 @@ model OrdemServico {
   /// Marca quando o alerta de "SLA estourado" ja foi disparado pra esta OS —
   /// evita notificar de novo a cada tick do slaAlertScheduler.
   slaNotificadoEm DateTime?
+  /// Quando o status foi alterado por acao humana no ISPhub (writebackService),
+  /// nao pelo sync. Usado pra sync nao sobrescrever, por uma janela de graca,
+  /// um status recem-confirmado com o SGP enquanto a leitura do SGP ainda
+  /// nao refletiu a escrita (consistencia eventual do lado do SGP).
+  statusAlteradoEm DateTime?
   criadoEm        DateTime         @default(now())
   atualizadoEm    DateTime         @updatedAt
   sincronizadoEm  DateTime         @default(now())

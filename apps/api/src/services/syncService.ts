@@ -14,6 +14,17 @@ import { sugerirCategoriaId } from "./categoriaMatch.js";
  * pelo despacho feito dentro do ISPhub (writebackService.atribuirTecnico) —
  * o sync nunca escreve nesse campo, so no informativo "tecnicoSgpNome".
  */
+
+/**
+ * Janela de graca em que o sync nao sobrescreve o status de uma OS cujo
+ * status acabou de ser alterado por acao humana (writebackService) — cobre a
+ * consistencia eventual do lado do SGP (a escrita foi aceita, mas a leitura
+ * usada aqui pra sincronizar ainda pode devolver o valor antigo por alguns
+ * ciclos). Nao e permanente: passada a janela, o SGP volta a ser a fonte da
+ * verdade normalmente.
+ */
+const STATUS_PROTEGIDO_MS = 5 * 60_000;
+
 export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; message?: string }> {
   const config = await prisma.erpConfig.findFirst({
     where: { provedorId, tipo: "SGP", ativo: true },
@@ -76,6 +87,15 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
   const inicioOs = Date.now();
   const tiposAutoCriados = new Set<string>();
   try {
+    // OS cujo status foi alterado ha pouco por acao humana no ISPhub — o
+    // upsert abaixo nao sobrescreve o status dessas enquanto durar a janela
+    // de graca, pra nao reverter uma mudanca real antes do SGP confirmar.
+    const recemAlteradas = await prisma.ordemServico.findMany({
+      where: { provedorId, statusAlteradoEm: { gte: new Date(Date.now() - STATUS_PROTEGIDO_MS) } },
+      select: { sgpOsId: true },
+    });
+    const statusProtegido = new Set(recemAlteradas.map((o) => o.sgpOsId));
+
     const ordens = await connector.listServiceOrders();
     for (const raw of ordens) {
       let tipoOsId: string | undefined;
@@ -84,9 +104,10 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
         tipoOsId = await resolverOuCriarTipoOsId(raw.tipoCodigo, raw.tipoDescricao);
         if (!jaExistia) tiposAutoCriados.add(raw.tipoCodigo.trim());
       }
+      const statusSgp = mapSgpOsStatus(raw.statusCode);
       const campos = {
         tipoOsId,
-        status: mapSgpOsStatus(raw.statusCode),
+        ...(statusProtegido.has(raw.sgpOsId) ? {} : { status: statusSgp }),
         prioridade: raw.prioridade ?? 2,
         clienteNome: raw.clienteNome,
         clienteDocumento: raw.clienteDocumento,
@@ -109,7 +130,7 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
       };
       await prisma.ordemServico.upsert({
         where: { provedorId_sgpOsId: { provedorId, sgpOsId: raw.sgpOsId } },
-        create: { provedorId, sgpOsId: raw.sgpOsId, ...campos },
+        create: { provedorId, sgpOsId: raw.sgpOsId, status: statusSgp, ...campos },
         update: { ...campos, sincronizadoEm: new Date() },
       });
     }

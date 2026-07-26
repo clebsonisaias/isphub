@@ -295,6 +295,34 @@ describe("createSgpConnector", () => {
     await expect(conn.updateOsStatus("555", 1)).rejects.toThrow(/422/);
   });
 
+  it("updateOsStatus rejeita quando o SGP recusa por regra de negocio mas responde HTTP 200 com 'erro' no corpo", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ erro: "Não é possível encerrar OS de contrato cancelado" }));
+
+    const conn = createSgpConnector(creds);
+    await expect(conn.updateOsStatus("555", 1)).rejects.toThrow(/contrato cancelado/);
+  });
+
+  it("updateOsStatus rejeita quando o SGP responde HTTP 200 com sucesso:false", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ sucesso: false, msg: "Operação não permitida" }));
+
+    const conn = createSgpConnector(creds);
+    await expect(conn.updateOsStatus("555", 1)).rejects.toThrow(/Operação não permitida/);
+  });
+
+  it("setOnTheWay rejeita quando o SGP responde HTTP 200 com erro no corpo", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: "OS não pertence a este contrato" }));
+
+    const conn = createSgpConnector(creds);
+    await expect(conn.setOnTheWay("555")).rejects.toThrow(/não pertence/);
+  });
+
+  it("addOsNote rejeita quando o SGP responde HTTP 200 com erro no corpo", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ success: false }));
+
+    const conn = createSgpConnector(creds);
+    await expect(conn.addOsNote("555", "texto")).rejects.toThrow(/recusado pelo SGP/);
+  });
+
   describe("checkConnectionStatus", () => {
     it("reconhece 'Serviço Offline' e retorna online:false (payload real do SGP)", async () => {
       fetchMock.mockResolvedValueOnce(

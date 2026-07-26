@@ -38,7 +38,7 @@ export async function marcarACaminho(ordemServicoId: string, autorId: string) {
   const [, osAtualizada] = await prisma.$transaction([
     prisma.ordemServico.update({
       where: { id: os.id },
-      data: { status: OsStatus.EM_DESLOCAMENTO, sincronizadoEm: new Date() },
+      data: { status: OsStatus.EM_DESLOCAMENTO, sincronizadoEm: new Date(), statusAlteradoEm: new Date() },
     }),
     evento(os.id, "status", autorId, "Marcado como a caminho"),
   ]);
@@ -67,7 +67,7 @@ export async function mudarStatus(ordemServicoId: string, novoStatus: OsStatus, 
   const [, osAtualizada] = await prisma.$transaction([
     prisma.ordemServico.update({
       where: { id: os.id },
-      data: { status: novoStatus, sincronizadoEm: new Date() },
+      data: { status: novoStatus, sincronizadoEm: new Date(), statusAlteradoEm: new Date() },
     }),
     evento(os.id, "status", autorId, descricao),
   ]);
