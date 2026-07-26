@@ -113,7 +113,7 @@ export function OrdemServicoDetailDialog({
       const atualizado = await ordensServicoApi.atribuir(os.id, tecnicoSelecionado);
       const tecnico = tecnicos.find((t) => t.id === tecnicoSelecionado);
       setOs((prev) => ({ ...prev, tecnicoId: atualizado.tecnicoId, tecnicoNome: tecnico?.nome ?? prev.tecnicoNome }));
-      toast({ titulo: "Técnico atribuído", variante: "sucesso" });
+      toast({ titulo: "Técnico atribuído", descricao: "Despacho interno do ISPhub — o SGP não é alterado.", variante: "sucesso" });
       marcarMudanca();
     } catch (err) {
       toast({ titulo: "Erro ao atribuir técnico", descricao: mensagem(err), variante: "erro" });

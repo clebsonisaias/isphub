@@ -178,6 +178,12 @@ model OrdemServico {
   /// um status recem-confirmado com o SGP enquanto a leitura do SGP ainda
   /// nao refletiu a escrita (consistencia eventual do lado do SGP).
   statusAlteradoEm DateTime?
+  /// Quando a observacao (eco local da ultima anotacao) foi alterada por
+  /// acao humana — mesma logica do statusAlteradoEm, mas pro campo
+  /// observacao: o SGP nao expoe historico de anotacoes pra confirmar a
+  /// escrita, entao o sync so volta a confiar na leitura dele apos a janela
+  /// de graca (ver syncService.ts).
+  observacaoAlteradaEm DateTime?
   criadoEm        DateTime         @default(now())
   atualizadoEm    DateTime         @updatedAt
   sincronizadoEm  DateTime         @default(now())

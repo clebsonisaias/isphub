@@ -99,10 +99,12 @@ export async function adicionarAnotacao(ordemServicoId: string, texto: string, a
   // completo de anotacoes de forma pratica para o espelho, entao guardamos
   // a ultima anotacao em `observacao` (referencia rapida na UI) e o texto
   // completo tambem vira um OsEvento (historico real, na aba Historico).
+  // observacaoAlteradaEm protege esse eco contra o sync sobrescrever com um
+  // valor desatualizado antes do SGP confirmar (mesma logica do status).
   const [, osAtualizada] = await prisma.$transaction([
     prisma.ordemServico.update({
       where: { id: os.id },
-      data: { observacao: texto, sincronizadoEm: new Date() },
+      data: { observacao: texto, sincronizadoEm: new Date(), observacaoAlteradaEm: new Date() },
     }),
     evento(os.id, "anotacao", autorId, texto),
   ]);

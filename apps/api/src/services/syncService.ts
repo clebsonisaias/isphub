@@ -1,4 +1,4 @@
-import { mapSgpOsStatus, SgpOsStatus, type RawOs } from "@isphub/shared";
+import { mapSgpOsStatus, OsStatus, SgpOsStatus, type RawOs } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { buildConnector } from "./erpConnectorService.js";
 import { sugerirCategoriaId } from "./categoriaMatch.js";
@@ -16,14 +16,36 @@ import { sugerirCategoriaId } from "./categoriaMatch.js";
  */
 
 /**
- * Janela de graca em que o sync nao sobrescreve o status de uma OS cujo
- * status acabou de ser alterado por acao humana (writebackService) — cobre a
- * consistencia eventual do lado do SGP (a escrita foi aceita, mas a leitura
- * usada aqui pra sincronizar ainda pode devolver o valor antigo por alguns
- * ciclos). Nao e permanente: passada a janela, o SGP volta a ser a fonte da
- * verdade normalmente.
+ * Janela de graca em que o sync nao sobrescreve um campo que acabou de ser
+ * alterado por acao humana (writebackService) — cobre a consistencia
+ * eventual do lado do SGP (a escrita foi aceita, mas a leitura usada aqui
+ * pra sincronizar ainda pode devolver o valor antigo por alguns ciclos).
+ * Nao e permanente: passada a janela, o SGP volta a ser a fonte da verdade
+ * normalmente. Usada tanto pro status quanto pra observacao (eco de
+ * anotacao).
  */
-const STATUS_PROTEGIDO_MS = 5 * 60_000;
+const CAMPO_PROTEGIDO_MS = 5 * 60_000;
+
+/**
+ * Reconcilia o status bruto do SGP com o status local atual pra dois casos
+ * que o SGP estruturalmente nao consegue distinguir/expressar:
+ *  - Cancelada: o SGP so tem "Encerrada" (codigo 1), sem separar cancelado
+ *    de concluido — se o local ja sabe que foi cancelada e o SGP diz
+ *    "Encerrada" (que mapSgpOsStatus traduz pra Concluida), isso nao
+ *    contradiz o cancelamento, entao mantem Cancelada.
+ *  - A caminho: o SGP nao tem status pra isso (endpoint /acaminho/ separado,
+ *    nao mexe no os_status), entao "A caminho" localmente e um refinamento
+ *    de "Aberta" do lado do SGP — se o SGP ainda diz "Aberta", isso nao
+ *    contradiz "a caminho", entao mantem. Qualquer outro codigo (progresso
+ *    real, ex.: Em execucao) sobrescreve normalmente.
+ * Sem isso, toda OS cancelada virava "Concluida" e todo "a caminho" virava
+ * "Aberta" de volta assim que a janela de protecao expirava.
+ */
+export function reconciliarStatus(statusSgp: OsStatus, statusLocalAtual: OsStatus | undefined): OsStatus {
+  if (statusLocalAtual === OsStatus.CANCELADA && statusSgp === OsStatus.CONCLUIDA) return OsStatus.CANCELADA;
+  if (statusLocalAtual === OsStatus.EM_DESLOCAMENTO && statusSgp === OsStatus.ABERTA) return OsStatus.EM_DESLOCAMENTO;
+  return statusSgp;
+}
 
 export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; message?: string }> {
   const config = await prisma.erpConfig.findFirst({
@@ -87,14 +109,26 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
   const inicioOs = Date.now();
   const tiposAutoCriados = new Set<string>();
   try {
-    // OS cujo status foi alterado ha pouco por acao humana no ISPhub — o
-    // upsert abaixo nao sobrescreve o status dessas enquanto durar a janela
-    // de graca, pra nao reverter uma mudanca real antes do SGP confirmar.
-    const recemAlteradas = await prisma.ordemServico.findMany({
-      where: { provedorId, statusAlteradoEm: { gte: new Date(Date.now() - STATUS_PROTEGIDO_MS) } },
-      select: { sgpOsId: true },
+    // Estado local de toda OS ja conhecida deste provedor: usado tanto pra
+    // saber quais campos estao numa janela de protecao (statusAlteradoEm /
+    // observacaoAlteradaEm, alterados ha pouco por acao humana) quanto pra
+    // reconciliar o status bruto do SGP com o que o local ja sabe (ver
+    // reconciliarStatus) — precisa do status atual de qualquer OS existente,
+    // nao so das recem-alteradas.
+    const osConhecidas = await prisma.ordemServico.findMany({
+      where: { provedorId },
+      select: { sgpOsId: true, status: true, statusAlteradoEm: true, observacaoAlteradaEm: true },
     });
-    const statusProtegido = new Set(recemAlteradas.map((o) => o.sgpOsId));
+    const limiteProtecao = Date.now() - CAMPO_PROTEGIDO_MS;
+    const statusProtegido = new Set(
+      osConhecidas.filter((o) => o.statusAlteradoEm && o.statusAlteradoEm.getTime() > limiteProtecao).map((o) => o.sgpOsId),
+    );
+    const observacaoProtegida = new Set(
+      osConhecidas
+        .filter((o) => o.observacaoAlteradaEm && o.observacaoAlteradaEm.getTime() > limiteProtecao)
+        .map((o) => o.sgpOsId),
+    );
+    const statusLocalPorSgpId = new Map(osConhecidas.map((o) => [o.sgpOsId, o.status as OsStatus]));
 
     // O SGP nao documenta o comportamento do filtro "status" quando ausente —
     // na pratica, uma OS que foi encerrada direto no SGP (fora do ISPhub)
@@ -114,7 +148,7 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
         tipoOsId = await resolverOuCriarTipoOsId(raw.tipoCodigo, raw.tipoDescricao);
         if (!jaExistia) tiposAutoCriados.add(raw.tipoCodigo.trim());
       }
-      const statusSgp = mapSgpOsStatus(raw.statusCode);
+      const statusSgp = reconciliarStatus(mapSgpOsStatus(raw.statusCode), statusLocalPorSgpId.get(raw.sgpOsId));
       const campos = {
         tipoOsId,
         ...(statusProtegido.has(raw.sgpOsId) ? {} : { status: statusSgp }),
@@ -125,7 +159,7 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
         contratoStatus: raw.contratoStatus,
         protocolo: raw.protocolo,
         conteudo: raw.conteudo,
-        observacao: raw.observacao,
+        ...(observacaoProtegida.has(raw.sgpOsId) ? {} : { observacao: raw.observacao }),
         logradouro: raw.endereco.logradouro,
         numero: raw.endereco.numero,
         bairro: raw.endereco.bairro,
