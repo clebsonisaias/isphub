@@ -289,10 +289,29 @@ describe("createSgpConnector", () => {
   });
 
   it("propaga erro com o corpo da resposta quando o SGP falha numa escrita", async () => {
-    fetchMock.mockResolvedValueOnce(new Response("OS ja encerrada", { status: 422 }));
+    fetchMock.mockResolvedValueOnce(new Response("Falha de validacao no cadastro", { status: 422 }));
 
     const conn = createSgpConnector(creds);
     await expect(conn.updateOsStatus("555", 1)).rejects.toThrow(/422/);
+  });
+
+  it("updateOsStatus trata 'OS ja foi encerrada' como sucesso idempotente quando o alvo era Encerrada (payload real do SGP)", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ msg: "OS já foi encerrada", os_id: 6186 }), { status: 422 }),
+    );
+
+    const conn = createSgpConnector(creds);
+    await expect(conn.updateOsStatus("6186", 1)).resolves.toBeUndefined();
+  });
+
+  it("updateOsStatus NAO trata 'ja foi encerrada' como sucesso quando o alvo nao era Encerrada", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ msg: "OS já foi encerrada" }), { status: 422 }),
+    );
+
+    const conn = createSgpConnector(creds);
+    // statusCode 2 = Em execucao, nao Encerrada — a recusa deve propagar normalmente.
+    await expect(conn.updateOsStatus("6186", 2)).rejects.toThrow(/encerrada/);
   });
 
   it("updateOsStatus rejeita quando o SGP recusa por regra de negocio mas responde HTTP 200 com 'erro' no corpo", async () => {

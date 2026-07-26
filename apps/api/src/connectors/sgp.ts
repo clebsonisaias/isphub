@@ -1,3 +1,4 @@
+import { SgpOsStatus } from "@isphub/shared";
 import type {
   ErpConnector,
   ErpCredentials,
@@ -365,11 +366,25 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
 
     async updateOsStatus(sgpOsId: string, statusCode: number, dataFinalizacao?: string): Promise<void> {
       const path = `/api/os/update/id/${encodeURIComponent(sgpOsId)}/`;
-      const data = await sgpPostForm(creds, path, {
-        os_status: statusCode,
-        os_data_finalizacao: dataFinalizacao ? formatarDataSgp(dataFinalizacao) : undefined,
-      });
-      assertSgpEscritaOk(data, path);
+      try {
+        const data = await sgpPostForm(creds, path, {
+          os_status: statusCode,
+          os_data_finalizacao: dataFinalizacao ? formatarDataSgp(dataFinalizacao) : undefined,
+        });
+        assertSgpEscritaOk(data, path);
+      } catch (err) {
+        // O SGP recusa reencerrar uma OS que ja esta encerrada do lado dele
+        // (ex.: espelho local desatualizado porque o sync nao volta a puxar
+        // uma OS que ja saiu da listagem de abertas, ou ela foi encerrada
+        // direto no SGP fora do ISPhub). Se o alvo era Encerrada e o SGP
+        // confirma que ja e esse o estado real, trata como sucesso
+        // idempotente em vez de erro — o writeback entao corrige o espelho
+        // local pro estado que o SGP diz ser verdade, em vez de deixar a OS
+        // presa pra sempre mostrando um erro toda vez que alguem tenta.
+        const msg = err instanceof Error ? err.message : String(err);
+        const jaEncerrada = statusCode === SgpOsStatus.ENCERRADA && /j[áa]\s*(foi\s+)?encerrada/i.test(msg);
+        if (!jaEncerrada) throw err;
+      }
     },
 
     async addOsNote(sgpOsId: string, texto: string): Promise<void> {
