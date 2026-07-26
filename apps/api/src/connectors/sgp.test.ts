@@ -403,53 +403,58 @@ describe("createSgpConnector", () => {
   });
 
   describe("getDetalhesTecnicos", () => {
-    it("extrai endereco, sinal ONU e status de conexao do payload real (doc oficial /api/ura/clientes/)", async () => {
-      fetchMock.mockResolvedValueOnce(
-        jsonResponse({
-          paginacao: { offset: 0, limit: 100, parcial: 1, total: 1 },
-          clientes: [
-            {
-              nome: "MARIA SILVA",
-              cpfcnpj: "00000000000",
-              contratos: [
-                {
-                  contrato: 75,
-                  status: "Ativo",
-                  servicos: [
-                    {
-                      id: 1,
-                      tipo: "internet",
-                      login: "LOGIN",
-                      onu: {
-                        rx: "-19.500",
-                        tx: "2.500",
-                        olt_nome: "OLT-MACAIBA-01",
-                        conexao: { status: "online", ip: "10.0.0.5" },
+    // O payload real de /api/ura/clientes/ nao tem nenhum campo de status de
+    // conexao dentro de "onu" (confirmado ao vivo em producao) — por isso
+    // getDetalhesTecnicos chama /api/ura/verificaacesso/ em paralelo (a
+    // mesma consulta de checkConnectionStatus) pra obter online/offline.
+    // Os testes abaixo mockam as duas chamadas, na ordem em que o codigo as
+    // dispara dentro do Promise.all: /clientes/ primeiro, /verificaacesso/ depois.
+
+    it("extrai endereco e sinal ONU do payload real (doc oficial /api/ura/clientes/) e online do verificaacesso", async () => {
+      fetchMock
+        .mockResolvedValueOnce(
+          jsonResponse({
+            paginacao: { offset: 0, limit: 100, parcial: 1, total: 1 },
+            clientes: [
+              {
+                nome: "MARIA SILVA",
+                cpfcnpj: "00000000000",
+                contratos: [
+                  {
+                    contrato: 75,
+                    status: "Ativo",
+                    servicos: [
+                      {
+                        id: 1,
+                        tipo: "internet",
+                        login: "LOGIN",
+                        onu: { rx: "-19.500", tx: "2.500", olt_nome: "OLT-MACAIBA-01" },
+                        endereco: {
+                          logradouro: "Rua das Flores",
+                          numero: 123,
+                          bairro: "Centro",
+                          cidade: "Macaíba",
+                          uf: "RN",
+                          cep: "59280-000",
+                          latitude: "-5.8555",
+                          longitude: "-35.3555",
+                        },
                       },
-                      endereco: {
-                        logradouro: "Rua das Flores",
-                        numero: 123,
-                        bairro: "Centro",
-                        cidade: "Macaíba",
-                        uf: "RN",
-                        cep: "59280-000",
-                        latitude: "-5.8555",
-                        longitude: "-35.3555",
-                      },
-                    },
-                  ],
-                },
-              ],
-              endereco: { logradouro: "Endereco do cliente (fallback)", bairro: "Outro bairro" },
-            },
-          ],
-        }),
-      );
+                    ],
+                  },
+                ],
+                endereco: { logradouro: "Endereco do cliente (fallback)", bairro: "Outro bairro" },
+              },
+            ],
+          }),
+        )
+        .mockResolvedValueOnce(jsonResponse({ status: 0, msg: "Serviço Online", contratoId: 75 }));
 
       const conn = createSgpConnector(creds);
       const resultado = await conn.getDetalhesTecnicos("75");
 
       expect(resultado.online).toBe(true);
+      expect(resultado.mensagem).toBe("Serviço Online");
       expect(resultado.sinalRxDbm).toBeCloseTo(-19.5);
       expect(resultado.sinalTxDbm).toBeCloseTo(2.5);
       expect(resultado.oltNome).toBe("OLT-MACAIBA-01");
@@ -459,24 +464,29 @@ describe("createSgpConnector", () => {
       expect(resultado.endereco?.lat).toBeCloseTo(-5.8555);
       expect(resultado.endereco?.lng).toBeCloseTo(-35.3555);
 
-      const [url, options] = fetchMock.mock.calls[0];
-      expect(String(url)).toContain("/api/ura/clientes/");
-      const body = new URLSearchParams(options.body as string);
-      expect(body.get("contrato")).toBe("75");
+      const [urlClientes, optionsClientes] = fetchMock.mock.calls[0];
+      expect(String(urlClientes)).toContain("/api/ura/clientes/");
+      const bodyClientes = new URLSearchParams(optionsClientes.body as string);
+      expect(bodyClientes.get("contrato")).toBe("75");
+
+      const [urlAcesso] = fetchMock.mock.calls[1];
+      expect(String(urlAcesso)).toContain("/api/ura/verificaacesso/");
     });
 
     it("cai pro endereco do cliente quando o servico nao tem endereco proprio", async () => {
-      fetchMock.mockResolvedValueOnce(
-        jsonResponse({
-          clientes: [
-            {
-              nome: "CLIENTE X",
-              contratos: [{ contrato: 1, servicos: [{ id: 1 }] }],
-              endereco: { logradouro: "Av. Central", bairro: "Vila Nova" },
-            },
-          ],
-        }),
-      );
+      fetchMock
+        .mockResolvedValueOnce(
+          jsonResponse({
+            clientes: [
+              {
+                nome: "CLIENTE X",
+                contratos: [{ contrato: 1, servicos: [{ id: 1 }] }],
+                endereco: { logradouro: "Av. Central", bairro: "Vila Nova" },
+              },
+            ],
+          }),
+        )
+        .mockResolvedValueOnce(jsonResponse({ status: 0, msg: "Contrato nao encontrado" }));
 
       const conn = createSgpConnector(creds);
       const resultado = await conn.getDetalhesTecnicos("1");
@@ -487,15 +497,16 @@ describe("createSgpConnector", () => {
       expect(resultado.sinalRxDbm).toBeNull();
     });
 
-    it("retorna vazio (sem lancar) quando o contrato nao existe", async () => {
-      fetchMock.mockResolvedValueOnce(jsonResponse({ clientes: [] }));
+    it("retorna vazio (sem lancar) quando o contrato nao existe, mas ainda tenta online do verificaacesso", async () => {
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse({ clientes: [] }))
+        .mockResolvedValueOnce(jsonResponse({ status: 0, msg: "Serviço Offline" }));
 
       const conn = createSgpConnector(creds);
       const resultado = await conn.getDetalhesTecnicos("999999");
 
       expect(resultado.endereco).toBeNull();
-      expect(resultado.online).toBeNull();
-      expect(resultado.mensagem).toContain("nao encontrado");
+      expect(resultado.online).toBe(false);
     });
   });
 });

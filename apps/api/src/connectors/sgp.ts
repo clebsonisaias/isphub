@@ -166,6 +166,35 @@ async function sgpGet(creds: ErpCredentials, path: string, params: Record<string
   return parseJsonOrThrow(res, path);
 }
 
+/**
+ * Consulta ao vivo (PPPoE/RADIUS) se o servico do contrato esta online —
+ * usada tanto por checkConnectionStatus (sozinha) quanto por
+ * getDetalhesTecnicos (em paralelo com o endereco/sinal, ver abaixo).
+ * Resposta real do SGP: { status, razaoSocial, staus, cpfCnpj, msg,
+ * contratoId }. "msg" (ex.: "Serviço Offline"/"Serviço Online") e o sinal
+ * mais confiavel e legivel — os campos status/staus nao tem semantica
+ * documentada aqui, entao nao arriscamos derivar o online/offline deles.
+ * Documentado com `curl --form` (multipart), diferente do form-urlencoded
+ * usado no resto da API — timeout maior que o padrao de 15s.
+ */
+async function verificarAcesso(
+  creds: ErpCredentials,
+  contratoId: string,
+): Promise<{ online: boolean | null; mensagem: string | null }> {
+  try {
+    const data = await sgpMultipart(creds, "POST", "/api/ura/verificaacesso/", { contrato: contratoId }, 30_000);
+    const msg = pickString(data, "msg");
+    let online: boolean | null = null;
+    if (msg) {
+      if (/offline/i.test(msg)) online = false;
+      else if (/online/i.test(msg)) online = true;
+    }
+    return { online, mensagem: msg };
+  } catch (err) {
+    return { online: null, mensagem: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 /** Extrai "lat,lng" de campos de endereco do SGP (ex.: "endereco_ll"). */
 function parseLatLng(value: unknown): { lat: number | null; lng: number | null } {
   if (typeof value !== "string" || !value.includes(",")) return { lat: null, lng: null };
@@ -394,39 +423,27 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
     },
 
     async checkConnectionStatus(contratoId: string) {
-      try {
-        // Resposta real do SGP: { status, razaoSocial, staus, cpfCnpj, msg, contratoId }.
-        // "msg" (ex.: "Serviço Offline"/"Serviço Online") e o sinal mais confiavel e
-        // legivel — os campos status/staus nao tem semantica documentada aqui, entao
-        // nao arriscamos derivar o online/offline deles.
-        // Documentado com `curl --form` (multipart), diferente do form-urlencoded
-        // usado no resto da API — e uma consulta ao vivo (PPPoE/RADIUS), por isso
-        // timeout maior que o padrao de 15s.
-        const data = await sgpMultipart(creds, "POST", "/api/ura/verificaacesso/", { contrato: contratoId }, 30_000);
-        const msg = pickString(data, "msg");
-        let online: boolean | null = null;
-        if (msg) {
-          if (/offline/i.test(msg)) online = false;
-          else if (/online/i.test(msg)) online = true;
-        }
-        return { online, mensagem: msg };
-      } catch (err) {
-        return { online: null, mensagem: err instanceof Error ? err.message : String(err) };
-      }
+      return verificarAcesso(creds, contratoId);
     },
 
     async getDetalhesTecnicos(contratoId: string) {
       const vazio = { endereco: null, online: null, sinalRxDbm: null, sinalTxDbm: null, oltNome: null };
       try {
-        // /api/ura/clientes/ ("Cliente - Listar" na doc oficial) e o unico
-        // endpoint do SGP que devolve, no mesmo payload: endereco de rua
-        // completo (o resto da API so tem "pop"), sinal optico da ONU
-        // (servico.onu.rx/tx, em dBm) e status de conexao
-        // (servico.onu.conexao.status: "online"/"offline"). Preferimos o
-        // endereco do SERVICO (mais especifico) ao do cliente (fallback).
-        const data = await sgpPostForm(creds, "/api/ura/clientes/", { contrato: contratoId, limit: 1 });
-        const cliente = Array.isArray(data?.clientes) ? data.clientes[0] : undefined;
-        if (!cliente) return { ...vazio, mensagem: "Cliente nao encontrado para este contrato" };
+        // /api/ura/clientes/ ("Cliente - Listar" na doc oficial) devolve, no
+        // mesmo payload: endereco de rua completo (o resto da API so tem
+        // "pop") e sinal optico da ONU (servico.onu.rx/tx, em dBm). Nao tem
+        // status de conexao (confirmado com payload real: o objeto "onu" nao
+        // tem nenhum campo online/offline) — por isso /api/ura/verificaacesso/
+        // (mesmo endpoint de checkConnectionStatus) e chamado em paralelo,
+        // pra devolver endereco+sinal+online num unico resultado sem dobrar
+        // o numero de chamadas que o front precisa fazer por card da fila.
+        // Preferimos o endereco do SERVICO (mais especifico) ao do cliente.
+        const [dataCliente, acesso] = await Promise.all([
+          sgpPostForm(creds, "/api/ura/clientes/", { contrato: contratoId, limit: 1 }),
+          verificarAcesso(creds, contratoId),
+        ]);
+        const cliente = Array.isArray(dataCliente?.clientes) ? dataCliente.clientes[0] : undefined;
+        if (!cliente) return { ...vazio, online: acesso.online, mensagem: acesso.mensagem ?? "Cliente nao encontrado para este contrato" };
 
         const servico = cliente.contratos?.[0]?.servicos?.[0];
         const enderecoRaw = servico?.endereco ?? cliente.endereco;
@@ -443,29 +460,16 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
             }
           : null;
 
-        let online: boolean | null = null;
-        const conexaoStatusStr: string | null = onu?.conexao?.status ? String(onu.conexao.status) : null;
-        if (conexaoStatusStr) {
-          if (/offline/i.test(conexaoStatusStr)) online = false;
-          else if (/online/i.test(conexaoStatusStr)) online = true;
-        }
-
         const sinalRxDbm = onu?.rx != null && onu.rx !== "" ? Number(onu.rx) : null;
         const sinalTxDbm = onu?.tx != null && onu.tx !== "" ? Number(onu.tx) : null;
 
-        // DIAGNOSTICO TEMPORARIO: online sempre null em producao (campo
-        // esperado onu.conexao.status nunca aparece) — expoe o "onu" bruto
-        // (so dados tecnicos de rede, sem PII de cliente) pra achar o campo
-        // real. Remover apos a correcao.
-        if (process.env.SGP_DEBUG_ONU) console.log("[sgp-debug] onu raw:", JSON.stringify(onu), "servico raw:", JSON.stringify(servico));
-
         return {
           endereco,
-          online,
+          online: acesso.online,
           sinalRxDbm: Number.isFinite(sinalRxDbm) ? sinalRxDbm : null,
           sinalTxDbm: Number.isFinite(sinalTxDbm) ? sinalTxDbm : null,
           oltNome: pickString(onu ?? {}, "olt_nome"),
-          mensagem: null,
+          mensagem: acesso.mensagem,
         };
       } catch (err) {
         return { ...vazio, mensagem: err instanceof Error ? err.message : String(err) };
