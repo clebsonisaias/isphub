@@ -56,6 +56,8 @@ export function PainelPage() {
   const [provedores, setProvedores] = useState<Provedor[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [itens, setItens] = useState<FilaItem[]>([]);
+  // Contagem real por grupo (do banco): nao depende do que coube na pagina.
+  const [totais, setTotais] = useState({ osAbertas: 0, osFechadas: 0, osSlaEstourado: 0 });
   const [carregando, setCarregando] = useState(true);
 
   const [visao, setVisao] = useState<"fila" | "concluidas">("fila");
@@ -99,9 +101,18 @@ export function PainelPage() {
     let cancelado = false;
     setCarregando(true);
     filaApi
-      .listar({ busca: buscaDebounced || undefined, pageSize: 500 })
+      .listar({
+        busca: buscaDebounced || undefined,
+        pageSize: 500,
+        // So o grupo da aba ativa: sem isso, uma base com muita OS encerrada
+        // consome o teto de registros e esconde as abertas.
+        grupo: visao === "concluidas" ? "fechados" : "abertos",
+      })
       .then((resp) => {
-        if (!cancelado) setItens(resp.itens);
+        if (!cancelado) {
+          setItens(resp.itens);
+          setTotais(resp.totais);
+        }
       })
       .catch((err) => {
         if (!cancelado) toast({ titulo: "Erro ao carregar a fila", descricao: mensagem(err), variante: "erro" });
@@ -113,18 +124,16 @@ export function PainelPage() {
       cancelado = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [buscaDebounced, refetch]);
+  }, [visao, buscaDebounced, refetch]);
 
   // Concluídas ficam numa aba separada da fila operacional — evita misturar
   // trabalho já encerrado com o que ainda precisa de ação, tanto na lista
   // quanto nos contadores/filtros da sidebar (que passam a refletir só a
   // aba ativa).
-  const contagemPorAba = useMemo(() => {
-    let fila = 0;
-    let concluidas = 0;
-    for (const i of itens) (estaFinalizado(i) ? concluidas++ : fila++);
-    return { fila, concluidas };
-  }, [itens]);
+  // O servidor ja devolve so o grupo da aba; o filtro aqui e defesa em
+  // profundidade (e cobre a ocorrencia, cujo "fechado" e ter data de
+  // finalizacao). Os contadores das abas vem dos totais do banco, nao do
+  // que coube na pagina.
   const itensDaAba = useMemo(
     () => itens.filter((i) => estaFinalizado(i) === (visao === "concluidas")),
     [itens, visao],
@@ -140,17 +149,14 @@ export function PainelPage() {
   // aberta/a caminho/em execucao/pendente). Concluidas entram num contador
   // proprio, so pra controle — misturar as duas escondia o numero que de
   // fato importa pra operacao do dia.
-  const estat = useMemo(() => {
-    const ordens = itens.filter((i) => i.kind === "os");
-    const abertas = ordens.filter((i) => OS_STATUS_ABERTOS.includes(i.status));
-    return {
-      abertas: abertas.length,
-      // SLA so faz sentido pra trabalho pendente: uma OS ja encerrada nao
-      // esta estourando prazo nenhum, entao nao infla o alerta.
-      estourado: abertas.filter((i) => i.sla.semaforo === "vermelho").length,
-      concluidas: ordens.length - abertas.length,
-    };
-  }, [itens]);
+  // Vem do banco (nao do lote carregado): o alerta de SLA e o numero de
+  // abertas precisam valer em qualquer aba e independem da paginacao. O SLA
+  // conta so as abertas — OS encerrada nao esta estourando prazo nenhum.
+  const estat = {
+    abertas: totais.osAbertas,
+    estourado: totais.osSlaEstourado,
+    concluidas: totais.osFechadas,
+  };
 
   const totalPaginas = Math.max(1, Math.ceil(filtrados.length / pageSize));
   const pageSegura = Math.min(page, totalPaginas);
@@ -255,8 +261,8 @@ export function PainelPage() {
         <div className="min-w-0 flex-1">
           <Tabs value={visao} onValueChange={(v) => setVisao(v as "fila" | "concluidas")} className="mb-4">
             <TabsList>
-              <TabsTrigger value="fila">Fila ({contagemPorAba.fila})</TabsTrigger>
-              <TabsTrigger value="concluidas">Concluídas ({contagemPorAba.concluidas})</TabsTrigger>
+              <TabsTrigger value="fila">Fila ({totais.osAbertas})</TabsTrigger>
+              <TabsTrigger value="concluidas">Concluídas ({totais.osFechadas})</TabsTrigger>
             </TabsList>
           </Tabs>
 

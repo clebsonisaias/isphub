@@ -14,6 +14,8 @@ interface FilaResponse {
   page: number;
   pageSize: number;
   itens: FilaItem[];
+  /** Contagem real por grupo (do banco, nao do que coube na pagina). */
+  totais: { osAbertas: number; osFechadas: number; osSlaEstourado: number };
 }
 
 function buildQuery(filtros: FilaFiltros): string {
@@ -23,6 +25,7 @@ function buildQuery(filtros: FilaFiltros): string {
   if (filtros.tipoOsId) params.set("tipoOsId", filtros.tipoOsId);
   if (filtros.tecnicoId) params.set("tecnicoId", filtros.tecnicoId);
   if (filtros.categoriaId) params.set("categoriaId", filtros.categoriaId);
+  if (filtros.grupo) params.set("grupo", filtros.grupo);
   if (filtros.busca) params.set("busca", filtros.busca);
   if (filtros.de) params.set("de", filtros.de);
   if (filtros.ate) params.set("ate", filtros.ate);

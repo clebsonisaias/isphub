@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
-import { OsStatus, UserRole, type FilaItem } from "@isphub/shared";
+import { OsStatus, OS_STATUS_ABERTOS, UserRole, type FilaItem } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -22,6 +22,14 @@ const filtrosSchema = z.object({
   tecnicoId: z.string().uuid().optional(),
   /** "sem_categoria" filtra OS cujo tipo ainda nao foi mapeado a nenhuma categoria. */
   categoriaId: z.union([z.string().uuid(), z.literal("sem_categoria")]).optional(),
+  /**
+   * Separa a fila operacional do arquivo. "abertos" = trabalho que ainda
+   * precisa de acao (OS em OS_STATUS_ABERTOS / ocorrencia sem data de
+   * finalizacao); "fechados" = o resto, so pra consulta. Sem isso, uma base
+   * com muita OS encerrada consome o teto de registros e esconde as abertas,
+   * que sao justamente as que importam.
+   */
+  grupo: z.enum(["abertos", "fechados"]).optional(),
   busca: z.string().optional(),
   de: z.string().datetime().optional(),
   ate: z.string().datetime().optional(),
@@ -48,6 +56,8 @@ filaRouter.get(
     // mesmo (de qualquer provedor). admin/gestor: livre, com filtro opcional.
     const osWhere: any = { ...escopoOsWhere(req.user!, f.provedorId) };
     if (f.status?.length) osWhere.status = { in: f.status };
+    else if (f.grupo === "abertos") osWhere.status = { in: OS_STATUS_ABERTOS };
+    else if (f.grupo === "fechados") osWhere.status = { notIn: OS_STATUS_ABERTOS };
     if (f.tipoOsId) osWhere.tipoOsId = f.tipoOsId;
     // Filtro de tecnicoId da query so vale pra admin/gestor escolhendo um
     // tecnico especifico — um usuario tecnico nao pode usa-lo pra ver a fila
@@ -86,6 +96,10 @@ filaRouter.get(
       const provedorIdOcorrencias =
         req.user!.role === UserRole.PROVEDOR ? (req.user!.provedorId ?? "__nenhum__") : f.provedorId;
       const ocoWhere: any = { provedorId: provedorIdOcorrencias };
+      // Coerencia com o grupo pedido: ocorrencia "aberta" e a que ainda nao
+      // tem data de finalizacao (o SGP nao expoe um enum de status util aqui).
+      if (f.grupo === "abertos") ocoWhere.dataFinalizacao = null;
+      else if (f.grupo === "fechados") ocoWhere.dataFinalizacao = { not: null };
       if (f.busca) {
         ocoWhere.OR = [
           { conteudo: { contains: f.busca, mode: "insensitive" } },
@@ -211,6 +225,42 @@ filaRouter.get(
     const start = (f.page - 1) * f.pageSize;
     const pagina = todos.slice(start, start + f.pageSize);
 
-    res.json({ total: todos.length, page: f.page, pageSize: f.pageSize, itens: pagina });
+    // Contagem real por grupo, direto do banco: os contadores das abas nao
+    // podem depender do que coube no `take`, senao voltam a mentir quando a
+    // base cresce (foi assim que 1000 OS encerradas se passaram por abertas).
+    // Ignora o filtro de grupo/status, mas respeita escopo e demais filtros.
+    const osWhereSemStatus = { ...osWhere };
+    delete osWhereSemStatus.status;
+    const [osAbertas, osFechadas, abertasComSla] = await Promise.all([
+      prisma.ordemServico.count({ where: { ...osWhereSemStatus, status: { in: OS_STATUS_ABERTOS } } }),
+      prisma.ordemServico.count({ where: { ...osWhereSemStatus, status: { notIn: OS_STATUS_ABERTOS } } }),
+      // Só os campos que o SLA precisa — o alerta tem que ser o mesmo esteja
+      // o usuario na aba de abertas ou na de concluidas.
+      prisma.ordemServico.findMany({
+        where: { ...osWhereSemStatus, status: { in: OS_STATUS_ABERTOS } },
+        select: {
+          dataAgendamento: true,
+          dataCadastro: true,
+          criadoEm: true,
+          tipoOs: { select: { slaHoras: true, categoria: { select: { slaHorasPadrao: true } } } },
+        },
+      }),
+    ]);
+
+    const osSlaEstourado = abertasComSla.filter(
+      (os) =>
+        calcularSla({
+          slaHoras: os.tipoOs?.slaHoras ?? os.tipoOs?.categoria?.slaHorasPadrao,
+          dataBase: os.dataAgendamento ?? os.dataCadastro ?? os.criadoEm,
+        }).semaforo === "vermelho",
+    ).length;
+
+    res.json({
+      total: todos.length,
+      page: f.page,
+      pageSize: f.pageSize,
+      itens: pagina,
+      totais: { osAbertas, osFechadas, osSlaEstourado },
+    });
   }),
 );

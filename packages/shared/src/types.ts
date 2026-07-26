@@ -177,6 +177,8 @@ export interface FilaFiltros {
   tecnicoId?: string;
   /** "sem_categoria" filtra tipos ainda nao mapeados a nenhuma categoria. */
   categoriaId?: string | "sem_categoria";
+  /** Separa fila operacional ("abertos") do arquivo ("fechados"). */
+  grupo?: "abertos" | "fechados";
   /** Busca livre (cliente, protocolo, endereco). */
   busca?: string;
   /** ISO date range. */
