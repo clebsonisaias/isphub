@@ -4,6 +4,7 @@ import { OsStatus, UserRole } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { podeAcessarOs } from "../services/escopoService.js";
 import * as writeback from "../services/writebackService.js";
 
 export const ordensServicoRouter = Router();
@@ -13,8 +14,8 @@ ordensServicoRouter.use(requireAuth);
 async function assertAcesso(req: any, ordemServicoId: string) {
   const os = await prisma.ordemServico.findUnique({ where: { id: ordemServicoId } });
   if (!os) throw new HttpError(404, "Ordem de servico nao encontrada");
-  if (req.user.role === UserRole.PROVEDOR && os.provedorId !== req.user.provedorId) {
-    throw new HttpError(403, "Acesso restrito ao proprio provedor");
+  if (!podeAcessarOs(req.user, os)) {
+    throw new HttpError(403, "Acesso restrito ao proprio provedor/tecnico");
   }
   return os;
 }

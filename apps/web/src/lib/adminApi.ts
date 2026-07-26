@@ -1,4 +1,4 @@
-import type { Categoria, ErpConfigPublic, Provedor, TipoOs } from "@isphub/shared";
+import type { Categoria, ErpConfigPublic, Provedor, TipoOs, UserRole, UsuarioPublic } from "@isphub/shared";
 import { api } from "@/lib/apiClient";
 
 export const provedoresApi = {
@@ -44,4 +44,17 @@ export const categoriasApi = {
   ) => api.post<Categoria>("/categorias", data),
   atualizar: (id: string, data: Partial<Omit<Categoria, "id">>) => api.put<Categoria>(`/categorias/${id}`, data),
   remover: (id: string) => api.delete<Categoria | void>(`/categorias/${id}`),
+};
+
+export const usuariosApi = {
+  listar: (role?: UserRole) => api.get<UsuarioPublic[]>(`/usuarios${role ? `?role=${role}` : ""}`),
+  criar: (data: { nome: string; email: string; senha: string; role: UserRole; provedorId?: string | null }) =>
+    api.post<UsuarioPublic>("/usuarios", data),
+  atualizar: (
+    id: string,
+    data: { nome: string; email: string; role: UserRole; provedorId?: string | null; ativo: boolean },
+  ) => api.put<UsuarioPublic>(`/usuarios/${id}`, data),
+  redefinirSenha: (id: string, novaSenha: string) =>
+    api.post<UsuarioPublic>(`/usuarios/${id}/senha`, { novaSenha }),
+  remover: (id: string) => api.delete<UsuarioPublic>(`/usuarios/${id}`),
 };

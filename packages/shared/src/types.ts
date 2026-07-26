@@ -109,8 +109,11 @@ export interface OrdemServico {
   /** Data/hora reais de abertura no SGP — distinta de criadoEm (data do 1o sync). */
   dataCadastro?: string | null;
   dataAgendamento?: string | null;
+  /** Tecnico ISPhub atribuido (despacho feito dentro do ISPhub). */
   tecnicoId?: string | null;
   tecnicoNome?: string | null;
+  /** Nome do tecnico designado no SGP do provedor — so informativo, nao e o tecnico ISPhub. */
+  tecnicoSgpNome?: string | null;
   criadoEm: string;
   atualizadoEm: string;
   sincronizadoEm: string;
@@ -137,16 +140,7 @@ export interface Ocorrencia {
   sincronizadoEm: string;
 }
 
-/** Tecnico (do SGP e/ou usuario interno). */
-export interface Tecnico {
-  id: string;
-  nome: string;
-  sgpTecnicoId?: string | null;
-  provedorId?: string | null;
-  ativo: boolean;
-}
-
-/** Usuario autenticado (shape publico, sem hash de senha). */
+/** Usuario (shape publico, sem hash de senha). Tecnico e um Usuario com role=tecnico. */
 export interface UsuarioPublic {
   id: string;
   nome: string;
@@ -154,6 +148,7 @@ export interface UsuarioPublic {
   role: UserRole;
   /** Preenchido apenas para role=provedor. */
   provedorId?: string | null;
+  ativo: boolean;
 }
 
 /** Semaforo de SLA calculado no servidor. */

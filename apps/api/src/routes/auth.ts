@@ -5,7 +5,7 @@ import type { UsuarioPublic } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth } from "../middleware/auth.js";
-import { signToken, verifyPassword } from "../services/authService.js";
+import { hashPassword, signToken, verifyPassword } from "../services/authService.js";
 
 export const authRouter = Router();
 
@@ -29,6 +29,7 @@ function toPublic(u: {
   email: string;
   role: string;
   provedorId: string | null;
+  ativo: boolean;
 }): UsuarioPublic {
   return {
     id: u.id,
@@ -36,6 +37,7 @@ function toPublic(u: {
     email: u.email,
     role: u.role as UsuarioPublic["role"],
     provedorId: u.provedorId,
+    ativo: u.ativo,
   };
 }
 
@@ -71,7 +73,31 @@ authRouter.get(
   requireAuth,
   asyncHandler(async (req, res) => {
     const usuario = await prisma.usuario.findUnique({ where: { id: req.user!.sub } });
-    if (!usuario) throw new HttpError(404, "Usuario nao encontrado");
+    // Revalida ativo a cada chamada — sem isso, desativar um usuario nao
+    // derruba a sessao dele ate o token expirar (ate 8h por padrao).
+    if (!usuario || !usuario.ativo) throw new HttpError(401, "Usuario nao encontrado ou inativo");
     res.json(toPublic(usuario));
+  }),
+);
+
+const senhaSchema = z.object({
+  senhaAtual: z.string().min(1),
+  novaSenha: z.string().min(8, "A nova senha deve ter pelo menos 8 caracteres"),
+});
+
+authRouter.post(
+  "/senha",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { senhaAtual, novaSenha } = senhaSchema.parse(req.body);
+    const usuario = await prisma.usuario.findUnique({ where: { id: req.user!.sub } });
+    if (!usuario || !usuario.ativo) throw new HttpError(401, "Usuario nao encontrado ou inativo");
+
+    const ok = await verifyPassword(senhaAtual, usuario.senhaHash);
+    if (!ok) throw new HttpError(401, "Senha atual incorreta");
+
+    const senhaHash = await hashPassword(novaSenha);
+    await prisma.usuario.update({ where: { id: usuario.id }, data: { senhaHash } });
+    res.status(204).send();
   }),
 );

@@ -92,7 +92,7 @@ export function MapaPage() {
             {itens.length} {itens.length === 1 ? "OS geolocalizada" : "OS geolocalizadas"}
           </p>
         </div>
-        {usuario?.role !== UserRole.PROVEDOR && (
+        {usuario?.role !== UserRole.PROVEDOR && usuario?.role !== UserRole.TECNICO && (
           <select
             value={provedorId}
             onChange={(e) => setProvedorId(e.target.value)}

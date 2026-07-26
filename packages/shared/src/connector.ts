@@ -13,12 +13,6 @@ export interface RawOsType {
   descricao: string;
 }
 
-/** Tecnico bruto vindo do ERP. */
-export interface RawTecnico {
-  sgpTecnicoId: string;
-  nome: string;
-}
-
 /** Ordem de servico normalizada pelo adapter (formato neutro de ERP). */
 export interface RawOs {
   sgpOsId: string;
@@ -39,8 +33,8 @@ export interface RawOs {
   usuario?: string | null;
   dataCadastro?: string | null;
   dataAgendamento?: string | null;
-  tecnicoSgpId?: string | null;
-  tecnicoNome?: string | null;
+  /** Nome do tecnico designado no SGP (pessoal do provedor) — so informativo. */
+  tecnicoSgpNome?: string | null;
 }
 
 /** Ocorrencia normalizada pelo adapter. */
@@ -112,9 +106,6 @@ export interface ErpConnector {
 
   /** Catalogo de tipos de OS/ocorrencia do provedor. */
   listOsTypes(): Promise<RawOsType[]>;
-
-  /** Tecnicos cadastrados no ERP do provedor. */
-  listTechnicians(): Promise<RawTecnico[]>;
 
   /** Lista OS para o espelho (polling). */
   listServiceOrders(params?: ListOsParams): Promise<RawOs[]>;

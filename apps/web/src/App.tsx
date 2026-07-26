@@ -11,6 +11,8 @@ import { DashboardPage } from "@/pages/DashboardPage";
 import { ProvedoresPage } from "@/pages/admin/ProvedoresPage";
 import { ProvedorDetailPage } from "@/pages/admin/ProvedorDetailPage";
 import { CategoriasPage } from "@/pages/admin/CategoriasPage";
+import { UsuariosPage } from "@/pages/admin/UsuariosPage";
+import { PerfilPage } from "@/pages/PerfilPage";
 
 function App() {
   return (
@@ -39,8 +41,16 @@ function App() {
               <Route
                 path="/dashboard"
                 element={
-                  <RequireAuth>
+                  <RequireAuth roles={[UserRole.ADMIN, UserRole.GESTOR, UserRole.PROVEDOR]}>
                     <DashboardPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/perfil"
+                element={
+                  <RequireAuth>
+                    <PerfilPage />
                   </RequireAuth>
                 }
               />
@@ -65,6 +75,14 @@ function App() {
                 element={
                   <RequireAuth roles={[UserRole.ADMIN]}>
                     <CategoriasPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/admin/usuarios"
+                element={
+                  <RequireAuth roles={[UserRole.ADMIN]}>
+                    <UsuariosPage />
                   </RequireAuth>
                 }
               />

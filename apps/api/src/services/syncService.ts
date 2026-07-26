@@ -4,10 +4,15 @@ import { buildConnector } from "./erpConnectorService.js";
 import { sugerirCategoriaId } from "./categoriaMatch.js";
 
 /**
- * Motor de sincronizacao: puxa tecnicos, OS e ocorrencias do SGP de um
- * provedor e faz upsert idempotente no espelho local. Chamado tanto pelo
- * scheduler (polling periodico) quanto por um trigger manual (rota
- * POST /provedores/:id/sync, util para testes e para "sincronizar agora").
+ * Motor de sincronizacao: puxa OS e ocorrencias do SGP de um provedor e faz
+ * upsert idempotente no espelho local. Chamado tanto pelo scheduler (polling
+ * periodico) quanto por um trigger manual (rota POST /provedores/:id/sync,
+ * util para testes e para "sincronizar agora").
+ *
+ * Nao sincroniza tecnicos: tecnico e pessoal da ISPhub (usuario com
+ * role=tecnico), nao do SGP do provedor. O tecnicoId da OS so e alterado
+ * pelo despacho feito dentro do ISPhub (writebackService.atribuirTecnico) —
+ * o sync nunca escreve nesse campo, so no informativo "tecnicoSgpNome".
  */
 export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; message?: string }> {
   const config = await prisma.erpConfig.findFirst({
@@ -20,28 +25,6 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
   const connector = buildConnector(config);
   let mensagemFinal: string | undefined;
   let ok = true;
-
-  // --- 1. Tecnicos (precisa vir antes de OS para resolver tecnicoId) ---
-  const inicioTecnicos = Date.now();
-  try {
-    const tecnicos = await connector.listTechnicians();
-    for (const t of tecnicos) {
-      await prisma.tecnico.upsert({
-        where: { provedorId_sgpTecnicoId: { provedorId, sgpTecnicoId: t.sgpTecnicoId } },
-        create: { provedorId, sgpTecnicoId: t.sgpTecnicoId, nome: t.nome },
-        update: { nome: t.nome },
-      });
-    }
-    await logSync(provedorId, "pull", "tecnicos", true, tecnicos.length, inicioTecnicos);
-  } catch (err) {
-    ok = false;
-    mensagemFinal = mensagem(err);
-    await logSync(provedorId, "pull", "tecnicos", false, 0, inicioTecnicos, mensagemFinal);
-  }
-
-  // Mapa sgpTecnicoId -> id local, para resolver tecnicoId das OS.
-  const tecnicosLocais = await prisma.tecnico.findMany({ where: { provedorId } });
-  const tecnicoPorSgpId = new Map(tecnicosLocais.filter((t) => t.sgpTecnicoId).map((t) => [t.sgpTecnicoId!, t.id]));
 
   // Mapa (sgpCodigo OU descricao) -> tipoOs.id, para resolver tipoOsId das OS.
   // O catalogo de tipos do SGP e indexado por codigo numerico, mas a
@@ -122,7 +105,7 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
         usuario: raw.usuario,
         dataCadastro: raw.dataCadastro ? new Date(raw.dataCadastro) : null,
         dataAgendamento: raw.dataAgendamento ? new Date(raw.dataAgendamento) : null,
-        tecnicoId: raw.tecnicoSgpId ? tecnicoPorSgpId.get(raw.tecnicoSgpId) : undefined,
+        tecnicoSgpNome: raw.tecnicoSgpNome,
       };
       await prisma.ordemServico.upsert({
         where: { provedorId_sgpOsId: { provedorId, sgpOsId: raw.sgpOsId } },

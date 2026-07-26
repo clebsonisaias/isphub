@@ -8,10 +8,11 @@ import { cn } from "@/lib/utils";
 import { APP_BUILD_DATE, APP_VERSION_LABEL } from "@/lib/version";
 import { LogOut, Map, LayoutGrid, BarChart3, Settings } from "lucide-react";
 
+/** Dashboard e so pra quem enxerga mais de uma OS/provedor — tecnico ve so as proprias. */
 const NAV_ITEMS = [
-  { to: "/", label: "Painel", icon: LayoutGrid },
-  { to: "/mapa", label: "Mapa", icon: Map },
-  { to: "/dashboard", label: "Dashboard", icon: BarChart3 },
+  { to: "/", label: "Painel", icon: LayoutGrid, ocultoPara: [] as UserRole[] },
+  { to: "/mapa", label: "Mapa", icon: Map, ocultoPara: [] as UserRole[] },
+  { to: "/dashboard", label: "Dashboard", icon: BarChart3, ocultoPara: [UserRole.TECNICO] },
 ];
 
 /** Casca comum das telas autenticadas: cabecalho com marca, navegação, usuario e logout. */
@@ -33,9 +34,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             </span>
           </Link>
 
-          {usuario && usuario.role !== UserRole.TECNICO && (
+          {usuario && (
             <nav className="flex items-center gap-1">
-              {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
+              {NAV_ITEMS.filter((item) => !item.ocultoPara.includes(usuario.role)).map(({ to, label, icon: Icon }) => (
                 <Link
                   key={to}
                   to={to}
@@ -69,10 +70,14 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <div className="flex shrink-0 items-center gap-3">
             {usuario && (
-              <div className="hidden text-right leading-tight sm:block">
+              <Link
+                to="/perfil"
+                className="hidden text-right leading-tight transition-colors hover:text-primary sm:block"
+                title="Meu perfil"
+              >
                 <p className="text-sm font-medium text-foreground">{usuario.nome}</p>
                 <p className="text-xs text-muted-foreground">{USER_ROLE_LABEL[usuario.role]}</p>
-              </div>
+              </Link>
             )}
             <ThemeToggle />
             {usuario && (

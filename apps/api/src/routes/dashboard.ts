@@ -4,6 +4,7 @@ import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth } from "../middleware/auth.js";
 import { calcularSla } from "../services/slaService.js";
+import { escopoOsWhere } from "../services/escopoService.js";
 
 export const dashboardRouter = Router();
 
@@ -11,15 +12,17 @@ dashboardRouter.use(requireAuth);
 
 /**
  * Metricas agregadas para o dashboard do Gestor. role=provedor so ve os
- * proprios numeros. SLA estourado e computado em memoria (depende do
- * slaHoras do tipo de OS, que nao da para agregar direto em SQL de forma
- * simples) — aceitavel para o volume esperado no MVP.
+ * proprios numeros; role=tecnico so os proprios (o front nem mostra esta
+ * tela pra tecnico, mas o escopo vale tambem contra acesso direto pela API).
+ * SLA estourado e computado em memoria (depende do slaHoras do tipo de OS,
+ * que nao da para agregar direto em SQL de forma simples) — aceitavel para
+ * o volume esperado no MVP.
  */
 dashboardRouter.get(
   "/metrics",
   asyncHandler(async (req, res) => {
-    const provedorId = req.user!.role === UserRole.PROVEDOR ? req.user!.provedorId ?? "__nenhum__" : undefined;
-    const where = provedorId ? { provedorId } : {};
+    const where = escopoOsWhere(req.user!);
+    const provedorIdRestrito = req.user!.role === UserRole.PROVEDOR ? (req.user!.provedorId ?? "__nenhum__") : undefined;
 
     const [totalAbertas, totalConcluidas, ordensAbertasComSla, provedores, statusGroups, tecnicoGroups, ordensCategoria] =
       await Promise.all([
@@ -34,7 +37,7 @@ dashboardRouter.get(
             tipoOs: { select: { slaHoras: true, categoria: { select: { slaHorasPadrao: true } } } },
           },
         }),
-        prisma.provedor.findMany({ where: provedorId ? { id: provedorId } : {} }),
+        prisma.provedor.findMany({ where: provedorIdRestrito ? { id: provedorIdRestrito } : {} }),
         prisma.ordemServico.groupBy({ by: ["status"], where, _count: { _all: true } }),
         prisma.ordemServico.groupBy({
           by: ["tecnicoId"],
@@ -63,8 +66,8 @@ dashboardRouter.get(
     const porProvedor = await Promise.all(
       provedores.map(async (p) => {
         const [abertas, concluidas] = await Promise.all([
-          prisma.ordemServico.count({ where: { provedorId: p.id, status: { in: OS_STATUS_ABERTOS } } }),
-          prisma.ordemServico.count({ where: { provedorId: p.id, status: OsStatus.CONCLUIDA } }),
+          prisma.ordemServico.count({ where: { ...where, provedorId: p.id, status: { in: OS_STATUS_ABERTOS } } }),
+          prisma.ordemServico.count({ where: { ...where, provedorId: p.id, status: OsStatus.CONCLUIDA } }),
         ]);
         return { provedorId: p.id, provedorNome: p.nome, cor: p.cor, abertas, concluidas };
       }),
@@ -103,7 +106,7 @@ dashboardRouter.get(
 
     const tecnicoIds = tecnicoGroups.map((g) => g.tecnicoId).filter((id): id is string => !!id);
     const tecnicos = tecnicoIds.length
-      ? await prisma.tecnico.findMany({ where: { id: { in: tecnicoIds } } })
+      ? await prisma.usuario.findMany({ where: { id: { in: tecnicoIds } } })
       : [];
     const nomeTecnico = new Map(tecnicos.map((t) => [t.id, t.nome]));
 
@@ -111,8 +114,8 @@ dashboardRouter.get(
       tecnicoGroups.map(async (g) => {
         const tecnicoId = g.tecnicoId as string;
         const [abertas, concluidas] = await Promise.all([
-          prisma.ordemServico.count({ where: { tecnicoId, status: { in: OS_STATUS_ABERTOS } } }),
-          prisma.ordemServico.count({ where: { tecnicoId, status: OsStatus.CONCLUIDA } }),
+          prisma.ordemServico.count({ where: { ...where, tecnicoId, status: { in: OS_STATUS_ABERTOS } } }),
+          prisma.ordemServico.count({ where: { ...where, tecnicoId, status: OsStatus.CONCLUIDA } }),
         ]);
         return { tecnicoId, tecnicoNome: nomeTecnico.get(tecnicoId) ?? "?", abertas, concluidas };
       }),

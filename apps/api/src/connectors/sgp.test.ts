@@ -82,7 +82,7 @@ describe("createSgpConnector", () => {
             endereco_cidade: "Natal",
             endereco_ll: "-5.79448,-35.211",
             os_data_agendamento: "2026-07-25 09:00:00",
-            os_tecnico_responsavel_id: "10",
+            os_tecnico_responsavel: "Joao Tecnico",
           },
         ],
       }),
@@ -96,7 +96,7 @@ describe("createSgpConnector", () => {
     expect(os.clienteNome).toBe("Maria Silva");
     expect(os.endereco.lat).toBeCloseTo(-5.79448);
     expect(os.endereco.lng).toBeCloseTo(-35.211);
-    expect(os.tecnicoSgpId).toBe("10");
+    expect(os.tecnicoSgpNome).toBe("Joao Tecnico");
 
     // Requisicao de listagem usa POST JSON (app+token no corpo), nao form-urlencoded.
     const [url, options] = fetchMock.mock.calls[0];
@@ -108,10 +108,10 @@ describe("createSgpConnector", () => {
     expect(body.token).toBe(creds.token);
   });
 
-  it("listServiceOrders converte contrato_id/motivo/tecnico numericos para string (regressao de producao)", async () => {
+  it("listServiceOrders converte contrato_id/motivo numericos para string (regressao de producao)", async () => {
     // Um SGP real (CITmax) retorna esses campos como numero JSON, nao string,
     // o que quebrava prisma.ordemServico.upsert() ("Expected String or Null,
-    // provided Int") e fazia o Map lookup de tipo/tecnico falhar em silencio.
+    // provided Int") e fazia o Map lookup de tipo falhar em silencio.
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
         ordens_servicos: [
@@ -120,7 +120,6 @@ describe("createSgpConnector", () => {
             os_status: 0,
             motivo: 1,
             contrato_id: 1268,
-            os_tecnico_responsavel_id: 10,
             cliente_cpfcnpj: 12345678900,
           },
         ],
@@ -134,8 +133,6 @@ describe("createSgpConnector", () => {
     expect(typeof os.contratoId).toBe("string");
     expect(os.tipoCodigo).toBe("1");
     expect(typeof os.tipoCodigo).toBe("string");
-    expect(os.tecnicoSgpId).toBe("10");
-    expect(typeof os.tecnicoSgpId).toBe("string");
     expect(os.clienteDocumento).toBe("12345678900");
   });
 

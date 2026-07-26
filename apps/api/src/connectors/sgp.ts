@@ -6,7 +6,6 @@ import type {
   RawOccurrence,
   RawOs,
   RawOsType,
-  RawTecnico,
 } from "@isphub/shared";
 
 /**
@@ -213,8 +212,9 @@ function normalizeOs(raw: Record<string, any>): RawOs {
     usuario: pickString(raw, "usuario"),
     dataCadastro: combineDateHora(raw, "data_cadastro", "hora_cadastro"),
     dataAgendamento: combineDateHora(raw, "data_agendamento", "hora_agendamento") ?? pickString(raw, "os_data_agendamento"),
-    tecnicoSgpId: pickString(raw, "os_tecnico_responsavel_id", "tecnico_id"),
-    tecnicoNome: pickString(raw, "os_tecnico_responsavel", "tecnico"),
+    // Tecnico designado no SGP (pessoal do provedor) — so informativo; o
+    // despacho de verdade e feito na ISPhub, com tecnicos proprios.
+    tecnicoSgpNome: pickString(raw, "os_tecnico_responsavel", "tecnico"),
   };
 }
 
@@ -262,14 +262,6 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
       return asArray(data, "tipos", "resultados").map((item) => ({
         sgpCodigo: String(pick(item, "codigo", "id")),
         descricao: String(pick(item, "descricao", "nome") ?? ""),
-      }));
-    },
-
-    async listTechnicians(): Promise<RawTecnico[]> {
-      const data = await sgpPostForm(creds, "/api/ura/tecnicos/");
-      return asArray(data, "tecnicos", "resultados").map((item) => ({
-        sgpTecnicoId: String(pick(item, "id", "tecnico_id")),
-        nome: String(pick(item, "nome", "nome_tecnico") ?? ""),
       }));
     },
 

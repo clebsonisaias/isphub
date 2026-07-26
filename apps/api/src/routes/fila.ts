@@ -6,6 +6,7 @@ import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth } from "../middleware/auth.js";
 import { calcularSla } from "../services/slaService.js";
+import { escopoOsWhere } from "../services/escopoService.js";
 
 export const filaRouter = Router();
 
@@ -43,13 +44,15 @@ filaRouter.get(
   asyncHandler(async (req, res) => {
     const f = filtrosSchema.parse(req.query);
 
-    // role=provedor so enxerga o proprio provedor, nunca a fila geral.
-    const provedorId = req.user!.role === UserRole.PROVEDOR ? req.user!.provedorId ?? "__nenhum__" : f.provedorId;
-
-    const osWhere: any = { provedorId };
+    // provedor: so o proprio provedor. tecnico: so as OS atribuidas a ele
+    // mesmo (de qualquer provedor). admin/gestor: livre, com filtro opcional.
+    const osWhere: any = { ...escopoOsWhere(req.user!, f.provedorId) };
     if (f.status?.length) osWhere.status = { in: f.status };
     if (f.tipoOsId) osWhere.tipoOsId = f.tipoOsId;
-    if (f.tecnicoId) osWhere.tecnicoId = f.tecnicoId;
+    // Filtro de tecnicoId da query so vale pra admin/gestor escolhendo um
+    // tecnico especifico — um usuario tecnico nao pode usa-lo pra ver a fila
+    // de outro tecnico, o escopo acima ja fixou o dele.
+    if (f.tecnicoId && req.user!.role !== UserRole.TECNICO) osWhere.tecnicoId = f.tecnicoId;
     if (f.categoriaId === "sem_categoria") osWhere.tipoOs = { categoriaId: null };
     else if (f.categoriaId) osWhere.tipoOs = { categoriaId: f.categoriaId };
     if (f.de || f.ate) {
@@ -75,10 +78,14 @@ filaRouter.get(
     });
 
     // Ocorrencias so entram na fila quando o filtro nao usa dimensoes
-    // exclusivas de OS (tipo/tecnico/categoria), que elas nao possuem.
+    // exclusivas de OS (tipo/tecnico/categoria), que elas nao possuem, e
+    // nunca pra um usuario tecnico (ocorrencia nao tem tecnico atribuido —
+    // a fila dele e so as OS dele mesmo).
     let ocorrencias: Prisma.OcorrenciaGetPayload<{ include: { provedor: true } }>[] = [];
-    if (!f.tipoOsId && !f.tecnicoId && !f.categoriaId) {
-      const ocoWhere: any = { provedorId };
+    if (req.user!.role !== UserRole.TECNICO && !f.tipoOsId && !f.tecnicoId && !f.categoriaId) {
+      const provedorIdOcorrencias =
+        req.user!.role === UserRole.PROVEDOR ? (req.user!.provedorId ?? "__nenhum__") : f.provedorId;
+      const ocoWhere: any = { provedorId: provedorIdOcorrencias };
       if (f.busca) {
         ocoWhere.OR = [
           { conteudo: { contains: f.busca, mode: "insensitive" } },
@@ -148,6 +155,7 @@ filaRouter.get(
       dataAgendamento: os.dataAgendamento?.toISOString() ?? null,
       tecnicoId: os.tecnicoId,
       tecnicoNome: os.tecnico?.nome ?? null,
+      tecnicoSgpNome: os.tecnicoSgpNome,
       criadoEm: os.criadoEm.toISOString(),
       atualizadoEm: os.atualizadoEm.toISOString(),
       sincronizadoEm: os.sincronizadoEm.toISOString(),

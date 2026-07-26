@@ -1,4 +1,4 @@
-import { OsStatus, toSgpOsStatus } from "@isphub/shared";
+import { OsStatus, UserRole, toSgpOsStatus } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../middleware/errorHandler.js";
 import { buildConnector } from "./erpConnectorService.js";
@@ -69,23 +69,23 @@ export async function adicionarAnotacao(ordemServicoId: string, texto: string) {
  * de escrita para "tecnico responsavel" separado da OS. Fica registrado no
  * ISPhub (Atribuicao + OrdemServico.tecnicoId) para fins de despacho e
  * dashboard; nao ha write-back ao SGP para este campo especifico.
+ *
+ * O tecnico e um Usuario com role=tecnico (pessoal da ISPhub, sem vinculo
+ * com um provedor especifico) — por isso nao ha mais checagem cross-provedor
+ * aqui, so a validacao de que o alvo e de fato um tecnico ativo.
  */
 export async function atribuirTecnico(ordemServicoId: string, tecnicoId: string, atribuidoPor?: string) {
   const os = await prisma.ordemServico.findUnique({ where: { id: ordemServicoId } });
   if (!os) throw new HttpError(404, "Ordem de servico nao encontrada");
 
-  const tecnico = await prisma.tecnico.findUnique({ where: { id: tecnicoId } });
-  if (!tecnico) throw new HttpError(404, "Tecnico nao encontrado");
-  if (tecnico.provedorId && tecnico.provedorId !== os.provedorId) {
-    throw new HttpError(409, "Tecnico pertence a outro provedor");
-  }
+  const tecnico = await prisma.usuario.findUnique({ where: { id: tecnicoId } });
+  if (!tecnico || tecnico.role !== UserRole.TECNICO) throw new HttpError(404, "Tecnico nao encontrado");
+  if (!tecnico.ativo) throw new HttpError(409, "Tecnico esta inativo");
 
-  await prisma.atribuicao.create({
-    data: { ordemServicoId, tecnicoId, atribuidoPor },
-  });
+  const [, osAtualizada] = await prisma.$transaction([
+    prisma.atribuicao.create({ data: { ordemServicoId, tecnicoId, atribuidoPor } }),
+    prisma.ordemServico.update({ where: { id: ordemServicoId }, data: { tecnicoId } }),
+  ]);
 
-  return prisma.ordemServico.update({
-    where: { id: ordemServicoId },
-    data: { tecnicoId },
-  });
+  return osAtualizada;
 }

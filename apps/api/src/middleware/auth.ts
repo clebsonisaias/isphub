@@ -43,19 +43,3 @@ export function requireRole(...roles: UserRole[]) {
   };
 }
 
-/**
- * Para usuarios com role=provedor: garante que o :provedorId da rota (ou
- * query) corresponda ao provedor do usuario. Admin/gestor passam livre.
- */
-export function scopeToOwnProvedor(getProvedorId: (req: Request) => string | undefined) {
-  return (req: Request, _res: Response, next: NextFunction) => {
-    if (!req.user) throw new HttpError(401, "Nao autenticado");
-    if (req.user.role === "provedor") {
-      const alvo = getProvedorId(req);
-      if (!alvo || alvo !== req.user.provedorId) {
-        throw new HttpError(403, "Acesso restrito ao proprio provedor");
-      }
-    }
-    next();
-  };
-}

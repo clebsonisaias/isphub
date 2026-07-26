@@ -1,5 +1,12 @@
-import type { FilaFiltros, FilaItem, OrdemServico, OsStatus, Tecnico } from "@isphub/shared";
+import type { FilaFiltros, FilaItem, OrdemServico, OsStatus } from "@isphub/shared";
 import { api } from "@/lib/apiClient";
+
+/** Tecnico no seletor de atribuicao — usuario ISPhub com role=tecnico. */
+export interface TecnicoResumo {
+  id: string;
+  nome: string;
+  email: string;
+}
 
 interface FilaResponse {
   total: number;
@@ -36,5 +43,5 @@ export const ordensServicoApi = {
 };
 
 export const tecnicosApi = {
-  listar: (provedorId: string) => api.get<Tecnico[]>(`/provedores/${provedorId}/tecnicos`),
+  listar: () => api.get<TecnicoResumo[]>("/tecnicos"),
 };

@@ -44,7 +44,6 @@ model Provedor {
   tiposOs         TipoOs[]
   ordensServico   OrdemServico[]
   ocorrencias     Ocorrencia[]
-  tecnicos        Tecnico[]
   usuarios        Usuario[]
   syncLogs        SyncLog[]
 
@@ -119,23 +118,6 @@ model TipoOs {
   @@map("tipos_os")
 }
 
-model Tecnico {
-  id           String   @id @default(uuid())
-  provedorId   String?
-  provedor     Provedor? @relation(fields: [provedorId], references: [id], onDelete: SetNull)
-  sgpTecnicoId String?
-  nome         String
-  ativo        Boolean  @default(true)
-  usuarioId    String?  @unique
-  usuario      Usuario? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
-
-  ordensServico OrdemServico[]
-  atribuicoes   Atribuicao[]
-
-  @@unique([provedorId, sgpTecnicoId])
-  @@map("tecnicos")
-}
-
 /// Ordem de Servico espelhada do ERP do provedor.
 model OrdemServico {
   id              String           @id @default(uuid())
@@ -173,8 +155,13 @@ model OrdemServico {
   /// primeira vez.
   dataCadastro    DateTime?
   dataAgendamento DateTime?
+  /// Tecnico ISPhub atribuido (Usuario com role=tecnico) — despacho feito
+  /// dentro do ISPhub, nao vem do SGP.
   tecnicoId       String?
-  tecnico         Tecnico?         @relation(fields: [tecnicoId], references: [id], onDelete: SetNull)
+  tecnico         Usuario?         @relation(fields: [tecnicoId], references: [id], onDelete: SetNull)
+  /// Nome do tecnico designado no SGP do provedor (informativo — o SGP e de
+  /// pessoal do provedor, nao do tecnico ISPhub que de fato executa a OS).
+  tecnicoSgpNome  String?
   criadoEm        DateTime         @default(now())
   atualizadoEm    DateTime         @updatedAt
   sincronizadoEm  DateTime         @default(now())
@@ -184,6 +171,7 @@ model OrdemServico {
   @@unique([provedorId, sgpOsId])
   @@index([provedorId, status])
   @@index([status, dataAgendamento])
+  @@index([tecnicoId])
   @@map("ordens_servico")
 }
 
@@ -231,7 +219,8 @@ model Usuario {
   ativo        Boolean  @default(true)
   criadoEm     DateTime @default(now())
 
-  tecnico Tecnico?
+  ordensServico OrdemServico[]
+  atribuicoes   Atribuicao[]
 
   @@map("usuarios")
 }
@@ -242,7 +231,7 @@ model Atribuicao {
   ordemServicoId String
   ordemServico   OrdemServico  @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
   tecnicoId      String
-  tecnico        Tecnico       @relation(fields: [tecnicoId], references: [id], onDelete: Cascade)
+  tecnico        Usuario       @relation(fields: [tecnicoId], references: [id], onDelete: Cascade)
   atribuidoEm    DateTime      @default(now())
   atribuidoPor   String?
 

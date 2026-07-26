@@ -45,6 +45,7 @@ export function PainelPage() {
   const { usuario } = useAuth();
   const { toast } = useToast();
   const ehProvedor = usuario?.role === UserRole.PROVEDOR;
+  const ehTecnico = usuario?.role === UserRole.TECNICO;
 
   const [provedores, setProvedores] = useState<Provedor[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -152,7 +153,7 @@ export function PainelPage() {
       facetas={facetas}
       provedores={provedores}
       categorias={categorias}
-      mostrarProvedores={!ehProvedor}
+      mostrarProvedores={!ehProvedor && !ehTecnico}
       onChange={(patch) => {
         patchFiltro(patch);
         setSidebarMobile(false);
@@ -166,7 +167,9 @@ export function PainelPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Painel Unificado</h1>
           <p className="text-sm text-muted-foreground">
-            Ocorrências e ordens de serviço de {ehProvedor ? "seu provedor" : "todos os provedores"}
+            {ehTecnico
+              ? "Suas ordens de serviço"
+              : `Ocorrências e ordens de serviço de ${ehProvedor ? "seu provedor" : "todos os provedores"}`}
           </p>
         </div>
         <div className="hidden gap-2 sm:flex">

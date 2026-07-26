@@ -3,10 +3,10 @@ import {
   OS_STATUS_LABEL,
   OS_STATUS_ABERTOS,
   OsStatus,
+  UserRole,
   type DetalhesTecnicos,
   type Endereco,
   type FilaItem,
-  type Tecnico,
 } from "@isphub/shared";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -14,8 +14,9 @@ import { ProvedorBadge } from "@/components/ProvedorBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ContratoStatusBadge } from "@/components/ContratoStatusBadge";
 import { ConexaoStatus } from "@/components/ConexaoStatus";
-import { ordensServicoApi, tecnicosApi } from "@/lib/filaApi";
+import { ordensServicoApi, tecnicosApi, type TecnicoResumo } from "@/lib/filaApi";
 import { ApiError } from "@/lib/apiClient";
+import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { Navigation } from "lucide-react";
 
@@ -34,9 +35,11 @@ export function OrdemServicoDetailDialog({
   onClose: () => void;
   onAtualizado: () => void;
 }) {
+  const { usuario } = useAuth();
+  const podeDespachar = usuario?.role === UserRole.ADMIN || usuario?.role === UserRole.GESTOR;
   const { toast } = useToast();
   const [os, setOs] = useState(item);
-  const [tecnicos, setTecnicos] = useState<Tecnico[]>([]);
+  const [tecnicos, setTecnicos] = useState<TecnicoResumo[]>([]);
   const [tecnicoSelecionado, setTecnicoSelecionado] = useState("");
   const [novoStatus, setNovoStatus] = useState<OsStatus>(item.status);
   const [textoAnotacao, setTextoAnotacao] = useState("");
@@ -45,11 +48,12 @@ export function OrdemServicoDetailDialog({
   const [detalhesLive, setDetalhesLive] = useState<DetalhesTecnicos | null>(null);
 
   useEffect(() => {
+    if (!podeDespachar) return;
     tecnicosApi
-      .listar(item.provedorId)
+      .listar()
       .then(setTecnicos)
       .catch(() => {});
-  }, [item.provedorId]);
+  }, [podeDespachar]);
 
   function marcarMudanca() {
     setHouveMudanca(true);
@@ -142,6 +146,7 @@ export function OrdemServicoDetailDialog({
         <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
           <Info label="Contrato" value={os.contratoId} />
           <Info label="Técnico" value={os.tecnicoNome} />
+          <Info label="Designado no SGP" value={os.tecnicoSgpNome} />
           <Info
             label="Endereço"
             value={enderecoTexto(detalhesLive?.endereco ?? null) ?? enderecoTexto(os.endereco)}
@@ -203,28 +208,30 @@ export function OrdemServicoDetailDialog({
             </Button>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={tecnicoSelecionado}
-              onChange={(e) => setTecnicoSelecionado(e.target.value)}
-              className="h-9 flex-1 rounded-md border border-input bg-secondary/40 px-2 text-sm"
-            >
-              <option value="">Atribuir técnico...</option>
-              {tecnicos.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.nome}
-                </option>
-              ))}
-            </select>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleAtribuir}
-              disabled={acaoEmCurso !== null || !tecnicoSelecionado}
-            >
-              {acaoEmCurso === "atribuir" ? "Atribuindo..." : "Atribuir"}
-            </Button>
-          </div>
+          {podeDespachar && (
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={tecnicoSelecionado}
+                onChange={(e) => setTecnicoSelecionado(e.target.value)}
+                className="h-9 flex-1 rounded-md border border-input bg-secondary/40 px-2 text-sm"
+              >
+                <option value="">Atribuir técnico...</option>
+                {tecnicos.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.nome}
+                  </option>
+                ))}
+              </select>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleAtribuir}
+                disabled={acaoEmCurso !== null || !tecnicoSelecionado}
+              >
+                {acaoEmCurso === "atribuir" ? "Atribuindo..." : "Atribuir"}
+              </Button>
+            </div>
+          )}
 
           <div className="flex flex-col gap-2">
             <textarea

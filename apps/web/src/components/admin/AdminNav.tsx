@@ -1,13 +1,14 @@
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { Building2, Tags } from "lucide-react";
+import { Building2, Tags, Users } from "lucide-react";
 
 const ITEMS = [
   { to: "/admin", label: "Provedores", icon: Building2, match: (p: string) => p === "/admin" || p.startsWith("/admin/provedores") },
   { to: "/admin/categorias", label: "Categorias", icon: Tags, match: (p: string) => p.startsWith("/admin/categorias") },
+  { to: "/admin/usuarios", label: "Usuários", icon: Users, match: (p: string) => p.startsWith("/admin/usuarios") },
 ];
 
-/** Sub-navegação da área Administração (Provedores x Categorias). */
+/** Sub-navegação da área Administração (Provedores x Categorias x Usuários). */
 export function AdminNav() {
   const location = useLocation();
   return (
