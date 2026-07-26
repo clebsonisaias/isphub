@@ -7,7 +7,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { NotificationBell } from "@/components/NotificationBell";
 import { HeaderClock } from "@/components/HeaderClock";
 import { cn } from "@/lib/utils";
-import { APP_BUILD_DATE, APP_VERSION_LABEL } from "@/lib/version";
+import { APP_BUILD_ID, APP_VERSION_LABEL } from "@/lib/version";
 import { LogOut, Map, LayoutGrid, BarChart3, Settings } from "lucide-react";
 
 /** Dashboard e so pra quem enxerga mais de uma OS/provedor — tecnico ve so as proprias. */
@@ -33,7 +33,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </span>
             <span
               className="hidden rounded-full border border-border bg-secondary/60 px-1.5 py-0.5 text-[0.65rem] font-medium tabular-nums text-muted-foreground sm:inline"
-              title={APP_BUILD_DATE ? `Build ${APP_BUILD_DATE}` : undefined}
+              title={APP_BUILD_ID ? `Build ${APP_BUILD_ID}` : undefined}
             >
               {APP_VERSION_LABEL}
             </span>
@@ -104,7 +104,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <span>
           <span className="brand-gradient-text font-semibold">ISPhub</span> — central de campo multi-provedor
         </span>
-        <span className="tabular-nums" title={APP_BUILD_DATE ? `Build ${APP_BUILD_DATE}` : undefined}>
+        <span className="tabular-nums" title={APP_BUILD_ID ? `Build ${APP_BUILD_ID}` : undefined}>
           {APP_VERSION_LABEL}
         </span>
       </footer>
