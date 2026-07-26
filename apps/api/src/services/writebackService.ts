@@ -1,4 +1,4 @@
-import { OsStatus, UserRole, toSgpOsStatus } from "@isphub/shared";
+import { OS_STATUS_LABEL, OsStatus, UserRole, toSgpOsStatus, type OsEventoTipo } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../middleware/errorHandler.js";
 import { buildConnector } from "./erpConnectorService.js";
@@ -8,7 +8,15 @@ import { buildConnector } from "./erpConnectorService.js";
  * SGP do provedor dono da OS e, so em caso de sucesso, atualiza o espelho
  * local. Isso garante que o espelho nunca fique "adiantado" em relacao ao
  * que de fato aconteceu no ERP do provedor.
+ *
+ * Toda acao tambem grava um OsEvento (timeline) na mesma transacao da
+ * atualizacao local — e o unico lugar que popula a timeline (ver
+ * routes/ordensServico.ts GET /:id/eventos).
  */
+
+function evento(ordemServicoId: string, tipo: OsEventoTipo, autorId: string, descricao: string) {
+  return prisma.osEvento.create({ data: { ordemServicoId, tipo, autorId, descricao } });
+}
 
 async function loadOsWithConnector(ordemServicoId: string) {
   const os = await prisma.ordemServico.findUnique({ where: { id: ordemServicoId } });
@@ -23,16 +31,21 @@ async function loadOsWithConnector(ordemServicoId: string) {
   return { os, connector };
 }
 
-export async function marcarACaminho(ordemServicoId: string) {
+export async function marcarACaminho(ordemServicoId: string, autorId: string) {
   const { os, connector } = await loadOsWithConnector(ordemServicoId);
   await connector.setOnTheWay(os.sgpOsId);
-  return prisma.ordemServico.update({
-    where: { id: os.id },
-    data: { status: OsStatus.EM_DESLOCAMENTO, sincronizadoEm: new Date() },
-  });
+
+  const [, osAtualizada] = await prisma.$transaction([
+    prisma.ordemServico.update({
+      where: { id: os.id },
+      data: { status: OsStatus.EM_DESLOCAMENTO, sincronizadoEm: new Date() },
+    }),
+    evento(os.id, "status", autorId, "Marcado como a caminho"),
+  ]);
+  return osAtualizada;
 }
 
-export async function mudarStatus(ordemServicoId: string, novoStatus: OsStatus) {
+export async function mudarStatus(ordemServicoId: string, novoStatus: OsStatus, autorId: string) {
   const { os, connector } = await loadOsWithConnector(ordemServicoId);
 
   if (novoStatus === OsStatus.EM_DESLOCAMENTO) {
@@ -46,22 +59,33 @@ export async function mudarStatus(ordemServicoId: string, novoStatus: OsStatus) 
     await connector.updateOsStatus(os.sgpOsId, codigo);
   }
 
-  return prisma.ordemServico.update({
-    where: { id: os.id },
-    data: { status: novoStatus, sincronizadoEm: new Date() },
-  });
+  const descricao = `Status alterado: ${OS_STATUS_LABEL[os.status as OsStatus]} → ${OS_STATUS_LABEL[novoStatus]}`;
+  const [, osAtualizada] = await prisma.$transaction([
+    prisma.ordemServico.update({
+      where: { id: os.id },
+      data: { status: novoStatus, sincronizadoEm: new Date() },
+    }),
+    evento(os.id, "status", autorId, descricao),
+  ]);
+  return osAtualizada;
 }
 
-export async function adicionarAnotacao(ordemServicoId: string, texto: string) {
+export async function adicionarAnotacao(ordemServicoId: string, texto: string, autorId: string) {
   const { os, connector } = await loadOsWithConnector(ordemServicoId);
   await connector.addOsNote(os.sgpOsId, texto);
+
   // Eco local best-effort: o SGP nao expoe endpoint de leitura de historico
   // completo de anotacoes de forma pratica para o espelho, entao guardamos
-  // apenas a ultima anotacao em `observacao` como referencia rapida na UI.
-  return prisma.ordemServico.update({
-    where: { id: os.id },
-    data: { observacao: texto, sincronizadoEm: new Date() },
-  });
+  // a ultima anotacao em `observacao` (referencia rapida na UI) e o texto
+  // completo tambem vira um OsEvento (historico real, na aba Historico).
+  const [, osAtualizada] = await prisma.$transaction([
+    prisma.ordemServico.update({
+      where: { id: os.id },
+      data: { observacao: texto, sincronizadoEm: new Date() },
+    }),
+    evento(os.id, "anotacao", autorId, texto),
+  ]);
+  return osAtualizada;
 }
 
 /**
@@ -74,7 +98,7 @@ export async function adicionarAnotacao(ordemServicoId: string, texto: string) {
  * com um provedor especifico) — por isso nao ha mais checagem cross-provedor
  * aqui, so a validacao de que o alvo e de fato um tecnico ativo.
  */
-export async function atribuirTecnico(ordemServicoId: string, tecnicoId: string, atribuidoPor?: string) {
+export async function atribuirTecnico(ordemServicoId: string, tecnicoId: string, autorId: string) {
   const os = await prisma.ordemServico.findUnique({ where: { id: ordemServicoId } });
   if (!os) throw new HttpError(404, "Ordem de servico nao encontrada");
 
@@ -83,8 +107,17 @@ export async function atribuirTecnico(ordemServicoId: string, tecnicoId: string,
   if (!tecnico.ativo) throw new HttpError(409, "Tecnico esta inativo");
 
   const [, osAtualizada] = await prisma.$transaction([
-    prisma.atribuicao.create({ data: { ordemServicoId, tecnicoId, atribuidoPor } }),
+    prisma.atribuicao.create({ data: { ordemServicoId, tecnicoId, atribuidoPor: autorId } }),
     prisma.ordemServico.update({ where: { id: ordemServicoId }, data: { tecnicoId } }),
+    evento(ordemServicoId, "atribuicao", autorId, `Atribuído a ${tecnico.nome}`),
+    prisma.notificacao.create({
+      data: {
+        usuarioId: tecnicoId,
+        tipo: "atribuicao",
+        mensagem: `Nova OS atribuída: ${os.clienteNome ?? `#${os.sgpOsId}`}`,
+        ordemServicoId,
+      },
+    }),
   ]);
 
   return osAtualizada;

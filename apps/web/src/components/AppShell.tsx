@@ -4,6 +4,7 @@ import { USER_ROLE_LABEL, UserRole } from "@isphub/shared";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { NotificationBell } from "@/components/NotificationBell";
 import { cn } from "@/lib/utils";
 import { APP_BUILD_DATE, APP_VERSION_LABEL } from "@/lib/version";
 import { LogOut, Map, LayoutGrid, BarChart3, Settings } from "lucide-react";
@@ -79,6 +80,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <p className="text-xs text-muted-foreground">{USER_ROLE_LABEL[usuario.role]}</p>
               </Link>
             )}
+            {usuario && <NotificationBell />}
             <ThemeToggle />
             {usuario && (
               <Button variant="ghost" size="icon" onClick={logout} title="Sair" aria-label="Sair">

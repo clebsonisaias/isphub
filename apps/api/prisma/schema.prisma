@@ -32,6 +32,14 @@ enum OsStatus {
   pendente
 }
 
+/// Tipo de evento na timeline de uma OS.
+enum OsEventoTipo {
+  atribuicao
+  status
+  anotacao
+  foto
+}
+
 model Provedor {
   id        String   @id @default(uuid())
   nome      String
@@ -162,11 +170,17 @@ model OrdemServico {
   /// Nome do tecnico designado no SGP do provedor (informativo — o SGP e de
   /// pessoal do provedor, nao do tecnico ISPhub que de fato executa a OS).
   tecnicoSgpNome  String?
+  /// Marca quando o alerta de "SLA estourado" ja foi disparado pra esta OS —
+  /// evita notificar de novo a cada tick do slaAlertScheduler.
+  slaNotificadoEm DateTime?
   criadoEm        DateTime         @default(now())
   atualizadoEm    DateTime         @updatedAt
   sincronizadoEm  DateTime         @default(now())
 
-  atribuicoes Atribuicao[]
+  atribuicoes   Atribuicao[]
+  eventos       OsEvento[]
+  evidencias    Evidencia[]
+  notificacoes  Notificacao[]
 
   @@unique([provedorId, sgpOsId])
   @@index([provedorId, status])
@@ -221,6 +235,9 @@ model Usuario {
 
   ordensServico OrdemServico[]
   atribuicoes   Atribuicao[]
+  eventos       OsEvento[]
+  evidencias    Evidencia[]
+  notificacoes  Notificacao[]
 
   @@map("usuarios")
 }
@@ -238,6 +255,62 @@ model Atribuicao {
   @@index([ordemServicoId])
   @@index([tecnicoId])
   @@map("atribuicoes")
+}
+
+/// Foto de evidencia anexada a uma OS. Local-only na ISPhub (o SGP nao expoe
+/// endpoint de upload de imagem) — guardada direto no Postgres (bytea) pra nao
+/// depender de volume/S3 no deploy atual.
+model Evidencia {
+  id             String       @id @default(uuid())
+  ordemServicoId String
+  ordemServico   OrdemServico @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
+  autorId        String?
+  autor          Usuario?     @relation(fields: [autorId], references: [id], onDelete: SetNull)
+  legenda        String?
+  mimeType       String
+  tamanhoBytes   Int
+  dados          Bytes
+  criadoEm       DateTime     @default(now())
+
+  eventos OsEvento[]
+
+  @@index([ordemServicoId])
+  @@map("evidencias")
+}
+
+/// Timeline de uma OS: toda acao feita dentro do ISPhub (status, anotacao,
+/// atribuicao, foto) vira um evento aqui. So nasce de acao humana — a criacao
+/// da OS via sync nao gera evento.
+model OsEvento {
+  id             String       @id @default(uuid())
+  ordemServicoId String
+  ordemServico   OrdemServico @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
+  tipo           OsEventoTipo
+  autorId        String?
+  autor          Usuario?     @relation(fields: [autorId], references: [id], onDelete: SetNull)
+  descricao      String
+  evidenciaId    String?
+  evidencia      Evidencia?   @relation(fields: [evidenciaId], references: [id], onDelete: SetNull)
+  criadoEm       DateTime     @default(now())
+
+  @@index([ordemServicoId, criadoEm])
+  @@map("os_eventos")
+}
+
+/// Notificacao in-app pra um usuario (atribuicao de OS, SLA estourado).
+model Notificacao {
+  id             String        @id @default(uuid())
+  usuarioId      String
+  usuario        Usuario       @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  tipo           String
+  mensagem       String
+  ordemServicoId String?
+  ordemServico   OrdemServico? @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
+  lida           Boolean       @default(false)
+  criadoEm       DateTime      @default(now())
+
+  @@index([usuarioId, lida, criadoEm])
+  @@map("notificacoes")
 }
 
 /// Auditoria de cada ciclo de sync (pull) e write-back (push) por provedor.

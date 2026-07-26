@@ -9,11 +9,14 @@ import {
   type FilaItem,
 } from "@isphub/shared";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { ProvedorBadge } from "@/components/ProvedorBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ContratoStatusBadge } from "@/components/ContratoStatusBadge";
 import { ConexaoStatus } from "@/components/ConexaoStatus";
+import { OsTimeline } from "@/components/OsTimeline";
+import { EvidenciaGallery } from "@/components/EvidenciaGallery";
 import { ordensServicoApi, tecnicosApi, type TecnicoResumo } from "@/lib/filaApi";
 import { ApiError } from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
@@ -143,115 +146,133 @@ export function OrdemServicoDetailDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-          <Info label="Contrato" value={os.contratoId} />
-          <Info label="Técnico" value={os.tecnicoNome} />
-          <Info label="Designado no SGP" value={os.tecnicoSgpNome} />
-          <Info
-            label="Endereço"
-            value={enderecoTexto(detalhesLive?.endereco ?? null) ?? enderecoTexto(os.endereco)}
-          />
-          <Info label="Localização (POP)" value={os.pop} />
-          <Info
-            label="Aberta em"
-            value={os.dataCadastro ? new Date(os.dataCadastro).toLocaleString("pt-BR") : undefined}
-          />
-          <Info
-            label="Agendamento"
-            value={os.dataAgendamento ? new Date(os.dataAgendamento).toLocaleString("pt-BR") : undefined}
-          />
-          <Info label="Registrado por" value={os.usuario} />
-        </div>
+        <Tabs defaultValue="detalhes">
+          <TabsList>
+            <TabsTrigger value="detalhes">Detalhes</TabsTrigger>
+            <TabsTrigger value="historico">Histórico</TabsTrigger>
+            <TabsTrigger value="fotos">Fotos</TabsTrigger>
+          </TabsList>
 
-        {os.conteudo && (
-          <div className="rounded-md border border-border bg-secondary/30 p-3 text-sm text-muted-foreground">
-            {os.conteudo}
-          </div>
-        )}
-        {os.observacao && (
-          <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
-            <span className="font-medium">Última anotação: </span>
-            {os.observacao}
-          </div>
-        )}
-
-        <div className="flex flex-col gap-4 border-t border-border pt-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleACaminho}
-              disabled={acaoEmCurso !== null || !OS_STATUS_ABERTOS.includes(os.status)}
-            >
-              <Navigation className="size-3.5" />
-              {acaoEmCurso === "acaminho" ? "Enviando..." : "Marcar a caminho"}
-            </Button>
-
-            <select
-              value={novoStatus}
-              onChange={(e) => setNovoStatus(e.target.value as OsStatus)}
-              className="h-9 rounded-md border border-input bg-secondary/40 px-2 text-sm"
-            >
-              {Object.values(OsStatus).map((s) => (
-                <option key={s} value={s}>
-                  {OS_STATUS_LABEL[s]}
-                </option>
-              ))}
-            </select>
-            <Button
-              variant="brand"
-              size="sm"
-              onClick={handleMudarStatus}
-              disabled={acaoEmCurso !== null || novoStatus === os.status}
-            >
-              {acaoEmCurso === "status" ? "Atualizando..." : "Atualizar status"}
-            </Button>
-          </div>
-
-          {podeDespachar && (
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                value={tecnicoSelecionado}
-                onChange={(e) => setTecnicoSelecionado(e.target.value)}
-                className="h-9 flex-1 rounded-md border border-input bg-secondary/40 px-2 text-sm"
-              >
-                <option value="">Atribuir técnico...</option>
-                {tecnicos.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.nome}
-                  </option>
-                ))}
-              </select>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleAtribuir}
-                disabled={acaoEmCurso !== null || !tecnicoSelecionado}
-              >
-                {acaoEmCurso === "atribuir" ? "Atribuindo..." : "Atribuir"}
-              </Button>
+          <TabsContent value="detalhes">
+            <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+              <Info label="Contrato" value={os.contratoId} />
+              <Info label="Técnico" value={os.tecnicoNome} />
+              <Info label="Designado no SGP" value={os.tecnicoSgpNome} />
+              <Info
+                label="Endereço"
+                value={enderecoTexto(detalhesLive?.endereco ?? null) ?? enderecoTexto(os.endereco)}
+              />
+              <Info label="Localização (POP)" value={os.pop} />
+              <Info
+                label="Aberta em"
+                value={os.dataCadastro ? new Date(os.dataCadastro).toLocaleString("pt-BR") : undefined}
+              />
+              <Info
+                label="Agendamento"
+                value={os.dataAgendamento ? new Date(os.dataAgendamento).toLocaleString("pt-BR") : undefined}
+              />
+              <Info label="Registrado por" value={os.usuario} />
             </div>
-          )}
 
-          <div className="flex flex-col gap-2">
-            <textarea
-              value={textoAnotacao}
-              onChange={(e) => setTextoAnotacao(e.target.value)}
-              placeholder="Adicionar anotação (enviada ao SGP)..."
-              rows={2}
-              className="w-full resize-none rounded-md border border-input bg-secondary/40 px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-fit"
-              onClick={handleAnotar}
-              disabled={acaoEmCurso !== null || !textoAnotacao.trim()}
-            >
-              {acaoEmCurso === "anotacao" ? "Enviando..." : "Adicionar anotação"}
-            </Button>
-          </div>
-        </div>
+            {os.conteudo && (
+              <div className="mt-3 rounded-md border border-border bg-secondary/30 p-3 text-sm text-muted-foreground">
+                {os.conteudo}
+              </div>
+            )}
+            {os.observacao && (
+              <div className="mt-3 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
+                <span className="font-medium">Última anotação: </span>
+                {os.observacao}
+              </div>
+            )}
+
+            <div className="mt-4 flex flex-col gap-4 border-t border-border pt-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleACaminho}
+                  disabled={acaoEmCurso !== null || !OS_STATUS_ABERTOS.includes(os.status)}
+                >
+                  <Navigation className="size-3.5" />
+                  {acaoEmCurso === "acaminho" ? "Enviando..." : "Marcar a caminho"}
+                </Button>
+
+                <select
+                  value={novoStatus}
+                  onChange={(e) => setNovoStatus(e.target.value as OsStatus)}
+                  className="h-9 rounded-md border border-input bg-secondary/40 px-2 text-sm"
+                >
+                  {Object.values(OsStatus).map((s) => (
+                    <option key={s} value={s}>
+                      {OS_STATUS_LABEL[s]}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  variant="brand"
+                  size="sm"
+                  onClick={handleMudarStatus}
+                  disabled={acaoEmCurso !== null || novoStatus === os.status}
+                >
+                  {acaoEmCurso === "status" ? "Atualizando..." : "Atualizar status"}
+                </Button>
+              </div>
+
+              {podeDespachar && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={tecnicoSelecionado}
+                    onChange={(e) => setTecnicoSelecionado(e.target.value)}
+                    className="h-9 flex-1 rounded-md border border-input bg-secondary/40 px-2 text-sm"
+                  >
+                    <option value="">Atribuir técnico...</option>
+                    {tecnicos.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.nome}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAtribuir}
+                    disabled={acaoEmCurso !== null || !tecnicoSelecionado}
+                  >
+                    {acaoEmCurso === "atribuir" ? "Atribuindo..." : "Atribuir"}
+                  </Button>
+                </div>
+              )}
+
+              <div className="flex flex-col gap-2">
+                <textarea
+                  value={textoAnotacao}
+                  onChange={(e) => setTextoAnotacao(e.target.value)}
+                  placeholder="Adicionar anotação (enviada ao SGP)..."
+                  rows={2}
+                  className="w-full resize-none rounded-md border border-input bg-secondary/40 px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-fit"
+                  onClick={handleAnotar}
+                  disabled={acaoEmCurso !== null || !textoAnotacao.trim()}
+                >
+                  {acaoEmCurso === "anotacao" ? "Enviando..." : "Adicionar anotação"}
+                </Button>
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="historico">
+            <OsTimeline ordemServicoId={os.id} />
+          </TabsContent>
+
+          <TabsContent value="fotos">
+            <EvidenciaGallery ordemServicoId={os.id} />
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   );

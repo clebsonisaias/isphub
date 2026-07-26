@@ -1,5 +1,6 @@
-import type { FilaFiltros, FilaItem, OrdemServico, OsStatus } from "@isphub/shared";
+import type { EvidenciaResumo, FilaFiltros, FilaItem, OrdemServico, OsEvento, OsStatus } from "@isphub/shared";
 import { api } from "@/lib/apiClient";
+import type { ImagemComprimida } from "@/lib/imagem";
 
 /** Tecnico no seletor de atribuicao — usuario ISPhub com role=tecnico. */
 export interface TecnicoResumo {
@@ -40,6 +41,13 @@ export const ordensServicoApi = {
   mudarStatus: (id: string, status: OsStatus) => api.patch<OrdemServico>(`/ordens-servico/${id}/status`, { status }),
   anotar: (id: string, texto: string) => api.post<OrdemServico>(`/ordens-servico/${id}/anotacoes`, { texto }),
   atribuir: (id: string, tecnicoId: string) => api.post<OrdemServico>(`/ordens-servico/${id}/atribuir`, { tecnicoId }),
+  eventos: (id: string) => api.get<OsEvento[]>(`/ordens-servico/${id}/eventos`),
+  evidencias: {
+    listar: (id: string) => api.get<EvidenciaResumo[]>(`/ordens-servico/${id}/evidencias`),
+    adicionar: (id: string, imagem: ImagemComprimida, legenda?: string) =>
+      api.post<EvidenciaResumo>(`/ordens-servico/${id}/evidencias`, { ...imagem, legenda }),
+    urlArquivo: (id: string, evidenciaId: string) => `/ordens-servico/${id}/evidencias/${evidenciaId}/arquivo`,
+  },
 };
 
 export const tecnicosApi = {

@@ -186,6 +186,40 @@ export interface FilaFiltros {
   pageSize?: number;
 }
 
+/** Tipo de evento na timeline de uma OS. */
+export type OsEventoTipo = "atribuicao" | "status" | "anotacao" | "foto";
+
+/** Evento da timeline de uma OS (status, anotacao, atribuicao, foto). */
+export interface OsEvento {
+  id: string;
+  tipo: OsEventoTipo;
+  autorNome?: string | null;
+  descricao: string;
+  /** Presente quando tipo="foto" — id da Evidencia associada. */
+  evidenciaId?: string | null;
+  criadoEm: string;
+}
+
+/** Metadados de uma foto de evidencia anexada a uma OS (sem os bytes). */
+export interface EvidenciaResumo {
+  id: string;
+  legenda?: string | null;
+  mimeType: string;
+  tamanhoBytes: number;
+  autorNome?: string | null;
+  criadoEm: string;
+}
+
+/** Notificacao in-app de um usuario. */
+export interface Notificacao {
+  id: string;
+  tipo: "atribuicao" | "sla_estourado";
+  mensagem: string;
+  ordemServicoId?: string | null;
+  lida: boolean;
+  criadoEm: string;
+}
+
 /** Metricas agregadas para o dashboard. */
 export interface DashboardMetrics {
   totalAbertas: number;
