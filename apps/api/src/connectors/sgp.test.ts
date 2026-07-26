@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mapSgpOsStatus, OsStatus } from "@isphub/shared";
 import { createSgpConnector } from "./sgp.js";
 
 const creds = { url: "https://sgp.exemplo.com.br", app: "isphub", token: "tok-abc123" };
@@ -194,6 +195,37 @@ describe("createSgpConnector", () => {
     expect(os.usuario).toBe("joelma");
     expect(os.dataCadastro).toBe("2026-07-24T10:57:51");
     expect(os.dataAgendamento).toBeNull();
+  });
+
+  it("listServiceOrders le o status de status_id, nao do rotulo textual (regressao: tudo virava 'aberta')", async () => {
+    // Payload real da CITmax: o rotulo vem em "status" e o codigo em
+    // "status_id". Ler o texto fazia Number() virar NaN -> default "Aberta",
+    // entao OS encerradas apareciam abertas no ISPhub indefinidamente.
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        ordens_servicos: [
+          { id: 6746, status: "Encerrada", status_id: 1, motivo: "🛠️ Reparo", contrato: 1607 },
+          { id: 6747, status: "Aberta", status_id: 0, motivo: "🚨 Retirada 🚨", contrato: 724 },
+        ],
+      }),
+    );
+
+    const conn = createSgpConnector(creds);
+    const [encerrada, aberta] = await conn.listServiceOrders();
+
+    expect(mapSgpOsStatus(encerrada.statusCode)).toBe(OsStatus.CONCLUIDA);
+    expect(mapSgpOsStatus(aberta.statusCode)).toBe(OsStatus.ABERTA);
+  });
+
+  it("listServiceOrders ainda funciona quando o SGP so manda o rotulo textual (sem status_id)", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ ordens_servicos: [{ id: 99, status: "Encerrada", motivo: "Reparo" }] }),
+    );
+
+    const conn = createSgpConnector(creds);
+    const [os] = await conn.listServiceOrders();
+
+    expect(mapSgpOsStatus(os.statusCode)).toBe(OsStatus.CONCLUIDA);
   });
 
   it("listOccurrences extrai cliente/pop/metodo/data_finalizacao do payload real do SGP (CITmax)", async () => {

@@ -136,10 +136,20 @@ export function PainelPage() {
     [itensDaAba, filtros, ordenacao],
   );
 
+  // As metricas do topo sao sobre o trabalho que ainda precisa de acao (OS
+  // aberta/a caminho/em execucao/pendente). Concluidas entram num contador
+  // proprio, so pra controle — misturar as duas escondia o numero que de
+  // fato importa pra operacao do dia.
   const estat = useMemo(() => {
-    const abertas = itens.filter((i) => i.kind === "os" && i.status !== "concluida" && i.status !== "cancelada").length;
-    const estourado = itens.filter((i) => i.kind === "os" && i.sla.semaforo === "vermelho").length;
-    return { total: itens.length, abertas, estourado };
+    const ordens = itens.filter((i) => i.kind === "os");
+    const abertas = ordens.filter((i) => OS_STATUS_ABERTOS.includes(i.status));
+    return {
+      abertas: abertas.length,
+      // SLA so faz sentido pra trabalho pendente: uma OS ja encerrada nao
+      // esta estourando prazo nenhum, entao nao infla o alerta.
+      estourado: abertas.filter((i) => i.sla.semaforo === "vermelho").length,
+      concluidas: ordens.length - abertas.length,
+    };
   }, [itens]);
 
   const totalPaginas = Math.max(1, Math.ceil(filtrados.length / pageSize));
@@ -197,24 +207,26 @@ export function PainelPage() {
               : `Ocorrências e ordens de serviço de ${ehProvedor ? "seu provedor" : "todos os provedores"}`}
           </p>
         </div>
+        {/* Abertas e SLA em destaque (o trabalho do dia); concluídas em tom
+            neutro, só como controle. */}
         <div className="hidden gap-2 sm:flex">
           <EstatCard
             icon={<Inbox className="size-4" />}
-            valor={estat.total}
-            label="na fila"
-            tom="bg-primary/10 text-primary"
-          />
-          <EstatCard
-            icon={<ListChecks className="size-4" />}
             valor={estat.abertas}
             label="OS abertas"
-            tom="bg-secondary text-foreground"
+            tom="bg-primary/10 text-primary"
           />
           <EstatCard
             icon={<AlarmClock className="size-4" />}
             valor={estat.estourado}
             label="SLA estourado"
             tom="bg-destructive/10 text-destructive"
+          />
+          <EstatCard
+            icon={<ListChecks className="size-4" />}
+            valor={estat.concluidas}
+            label="concluídas"
+            tom="bg-secondary text-muted-foreground"
           />
         </div>
       </div>

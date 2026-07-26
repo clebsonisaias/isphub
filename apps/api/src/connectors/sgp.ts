@@ -297,7 +297,12 @@ function normalizeOs(raw: Record<string, any>): RawOs {
     // catalogo de TipoOs (syncService.ts) aceita tanto codigo quanto texto.
     tipoCodigo: pickString(raw, "motivo_id", "motivo", "os_tipo_id"),
     tipoDescricao: pickString(raw, "motivo", "motivo_descricao", "tipo", "os_tipo"),
-    statusCode: Number(pick(raw, "os_status", "status") ?? 0),
+    // "status_id" (numerico) vem ANTES de "status" porque o SGP real manda o
+    // rotulo textual em "status" ("Encerrada") e o codigo em "status_id" —
+    // pegar o texto fazia Number() virar NaN e o mapeamento cair no default
+    // "Aberta", marcando TODA OS como aberta pra sempre. mapSgpOsStatus
+    // tambem entende o texto, entao os dois formatos funcionam.
+    statusCode: pick(raw, "os_status", "status_id", "status") ?? 0,
     prioridade: raw.os_prioridade ? Number(raw.os_prioridade) : null,
     clienteNome: pickString(raw, "cliente_nome", "cliente", "razaosocial"),
     clienteDocumento: pickString(raw, "cliente_cpfcnpj", "cpfcnpj"),

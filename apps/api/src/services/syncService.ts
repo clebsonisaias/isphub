@@ -1,4 +1,4 @@
-import { mapSgpOsStatus, OsStatus, SgpOsStatus, type RawOs } from "@isphub/shared";
+import { mapSgpOsStatus, sgpStatusReconhecido, OsStatus, SgpOsStatus, type RawOs } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { buildConnector } from "./erpConnectorService.js";
 import { sugerirCategoriaId } from "./categoriaMatch.js";
@@ -108,6 +108,10 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
   // --- 2. Ordens de Servico ---
   const inicioOs = Date.now();
   const tiposAutoCriados = new Set<string>();
+  // Valores de status que o SGP mandou e o mapeamento nao entendeu (caem no
+  // fallback "aberta"). Logado ao fim do ciclo pra um formato novo nao passar
+  // despercebido, como aconteceu com o rotulo textual.
+  const statusNaoReconhecidos = new Set<string>();
   try {
     // Estado local de toda OS ja conhecida deste provedor: usado tanto pra
     // saber quais campos estao numa janela de protecao (statusAlteradoEm /
@@ -148,6 +152,7 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
         tipoOsId = await resolverOuCriarTipoOsId(raw.tipoCodigo, raw.tipoDescricao);
         if (!jaExistia) tiposAutoCriados.add(raw.tipoCodigo.trim());
       }
+      if (!sgpStatusReconhecido(raw.statusCode)) statusNaoReconhecidos.add(String(raw.statusCode));
       const statusSgp = reconciliarStatus(mapSgpOsStatus(raw.statusCode), statusLocalPorSgpId.get(raw.sgpOsId));
       const campos = {
         tipoOsId,
@@ -179,6 +184,11 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
         create: { provedorId, sgpOsId: raw.sgpOsId, status: statusSgp, ...campos },
         update: { ...campos, sincronizadoEm: new Date() },
       });
+    }
+    if (statusNaoReconhecidos.size > 0) {
+      console.warn(
+        `[sync] status de OS nao reconhecido(s) no provedor ${provedorId}, tratados como "aberta": ${[...statusNaoReconhecidos].join(" | ")}`,
+      );
     }
     const msgTipos =
       tiposAutoCriados.size > 0

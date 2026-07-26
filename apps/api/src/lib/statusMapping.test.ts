@@ -20,6 +20,35 @@ describe("mapSgpOsStatus (SGP -> ISPhub)", () => {
   it("aceita o codigo como string (formato comum de resposta do SGP)", () => {
     expect(mapSgpOsStatus("1")).toBe(OsStatus.CONCLUIDA);
   });
+
+  // Regressao real de producao: o SGP da CITmax manda o rotulo em "status"
+  // ("Encerrada") e o codigo em "status_id". O conector lia o texto, Number()
+  // virava NaN, e o switch caia no default — marcando TODA OS como "aberta".
+  // Resultado observado: 1258 abertas / 0 concluidas no espelho, com OS
+  // comprovadamente encerradas no SGP aparecendo como abertas no ISPhub.
+  describe("rotulo textual (payload real do SGP)", () => {
+    it.each([
+      ["Encerrada", OsStatus.CONCLUIDA],
+      ["encerrada", OsStatus.CONCLUIDA],
+      ["Finalizada", OsStatus.CONCLUIDA],
+      ["Concluída", OsStatus.CONCLUIDA],
+      ["Aberta", OsStatus.ABERTA],
+      ["Pendente", OsStatus.PENDENTE],
+      ["Cancelada", OsStatus.CANCELADA],
+    ])("mapeia %s para %s", (texto, esperado) => {
+      expect(mapSgpOsStatus(texto)).toBe(esperado);
+    });
+
+    it("entende 'Em execução' com e sem acento", () => {
+      expect(mapSgpOsStatus("Em execução")).toBe(OsStatus.EM_EXECUCAO);
+      expect(mapSgpOsStatus("Em execucao")).toBe(OsStatus.EM_EXECUCAO);
+    });
+
+    it("nao confunde texto vazio com status valido", () => {
+      expect(mapSgpOsStatus("")).toBe(OsStatus.ABERTA);
+      expect(mapSgpOsStatus("   ")).toBe(OsStatus.ABERTA);
+    });
+  });
 });
 
 describe("toSgpOsStatus (ISPhub -> SGP, usado no write-back)", () => {

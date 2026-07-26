@@ -19,7 +19,12 @@ export interface RawOs {
   tipoCodigo?: string | null;
   tipoDescricao?: string | null;
   /** Codigo numerico de status no ERP (mapeado depois por mapSgpOsStatus). */
-  statusCode: number;
+  /**
+   * Status cru do ERP. Pode vir como codigo numerico (`status_id`: 0/1/2/3)
+   * ou como rotulo textual (`status`: "Aberta"/"Encerrada"/...) — instancias
+   * reais do SGP mandam os dois. Quem interpreta e mapSgpOsStatus.
+   */
+  statusCode: number | string;
   prioridade?: number | null;
   clienteNome?: string | null;
   clienteDocumento?: string | null;

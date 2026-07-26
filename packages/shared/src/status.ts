@@ -30,20 +30,75 @@ export enum OsPrioridade {
   ALTA = 3,
 }
 
-/** Converte um codigo de status do SGP para o enum interno. */
+/**
+ * Converte o status cru do SGP para o enum interno. Aceita tanto o codigo
+ * numerico (`status_id`) quanto o rotulo textual (`status`), porque
+ * instancias reais do SGP mandam os dois campos — e um payload que so tinha
+ * o texto ja fez Number() virar NaN e cair no fallback "Aberta", marcando
+ * toda OS como aberta indefinidamente (inclusive as encerradas).
+ */
 export function mapSgpOsStatus(code: number | string | null | undefined): OsStatus {
-  switch (Number(code)) {
-    case SgpOsStatus.ABERTA:
-      return OsStatus.ABERTA;
-    case SgpOsStatus.ENCERRADA:
-      return OsStatus.CONCLUIDA;
-    case SgpOsStatus.EM_EXECUCAO:
-      return OsStatus.EM_EXECUCAO;
-    case SgpOsStatus.PENDENTE:
-      return OsStatus.PENDENTE;
-    default:
-      return OsStatus.ABERTA;
+  const numero = typeof code === "number" ? code : Number(String(code ?? "").trim());
+  if (Number.isFinite(numero)) {
+    switch (numero) {
+      case SgpOsStatus.ABERTA:
+        return OsStatus.ABERTA;
+      case SgpOsStatus.ENCERRADA:
+        return OsStatus.CONCLUIDA;
+      case SgpOsStatus.EM_EXECUCAO:
+        return OsStatus.EM_EXECUCAO;
+      case SgpOsStatus.PENDENTE:
+        return OsStatus.PENDENTE;
+    }
   }
+
+  // Rotulo textual (ex.: "Encerrada", "Em execução"). Comparado sem acento
+  // e por prefixo/trecho, porque a grafia varia entre instancias do SGP.
+  const texto = String(code ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, ""); // remove acentos
+  if (!texto) return OsStatus.ABERTA;
+  if (texto.startsWith("encerrad") || texto.startsWith("finalizad") || texto.startsWith("concluid")) {
+    return OsStatus.CONCLUIDA;
+  }
+  if (texto.startsWith("cancelad")) return OsStatus.CANCELADA;
+  if (texto.includes("execu")) return OsStatus.EM_EXECUCAO;
+  if (texto.startsWith("pendent")) return OsStatus.PENDENTE;
+  if (texto.startsWith("abert")) return OsStatus.ABERTA;
+
+  // Desconhecido: assume aberta pra nao sumir da fila operacional. Quem
+  // sincroniza deve avisar (ver sgpStatusReconhecido) — silenciar isso foi
+  // o que escondeu o bug do status textual por tanto tempo.
+  return OsStatus.ABERTA;
+}
+
+/**
+ * Se o status cru do SGP casou com alguma regra conhecida de mapSgpOsStatus.
+ * `false` significa que o valor caiu no fallback "aberta" sem ser entendido —
+ * o sync usa isso pra logar e nao mascarar formato novo/inesperado.
+ */
+export function sgpStatusReconhecido(code: number | string | null | undefined): boolean {
+  const numero = typeof code === "number" ? code : Number(String(code ?? "").trim());
+  if (Number.isFinite(numero)) {
+    return [SgpOsStatus.ABERTA, SgpOsStatus.ENCERRADA, SgpOsStatus.EM_EXECUCAO, SgpOsStatus.PENDENTE].includes(numero);
+  }
+  const texto = String(code ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (!texto) return false;
+  return (
+    texto.startsWith("encerrad") ||
+    texto.startsWith("finalizad") ||
+    texto.startsWith("concluid") ||
+    texto.startsWith("cancelad") ||
+    texto.includes("execu") ||
+    texto.startsWith("pendent") ||
+    texto.startsWith("abert")
+  );
 }
 
 /**
