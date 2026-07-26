@@ -1,4 +1,4 @@
-import { mapSgpOsStatus } from "@isphub/shared";
+import { mapSgpOsStatus, SgpOsStatus, type RawOs } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { buildConnector } from "./erpConnectorService.js";
 import { sugerirCategoriaId } from "./categoriaMatch.js";
@@ -96,7 +96,17 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
     });
     const statusProtegido = new Set(recemAlteradas.map((o) => o.sgpOsId));
 
-    const ordens = await connector.listServiceOrders();
+    // O SGP nao documenta o comportamento do filtro "status" quando ausente —
+    // na pratica, uma OS que foi encerrada direto no SGP (fora do ISPhub)
+    // parava de aparecer na listagem sem filtro e o espelho local ficava
+    // preso pra sempre no ultimo status conhecido (ex.: "Aberta" por meses
+    // depois de encerrada de verdade). Busca cada status conhecido
+    // explicitamente pra garantir que o ISPhub sempre reflita o status real
+    // do SGP, nao um subconjunto implicito dele.
+    const ordens: RawOs[] = [];
+    for (const status of [SgpOsStatus.ABERTA, SgpOsStatus.EM_EXECUCAO, SgpOsStatus.PENDENTE, SgpOsStatus.ENCERRADA]) {
+      ordens.push(...(await connector.listServiceOrders({ status })));
+    }
     for (const raw of ordens) {
       let tipoOsId: string | undefined;
       if (raw.tipoCodigo) {

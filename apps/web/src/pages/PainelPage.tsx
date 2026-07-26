@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createScope, animate, stagger, type Scope } from "animejs";
-import { UserRole, type Categoria, type FilaItem, type Provedor } from "@isphub/shared";
+import { OS_STATUS_ABERTOS, UserRole, type Categoria, type FilaItem, type Provedor } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { filaApi } from "@/lib/filaApi";
@@ -25,6 +26,11 @@ import { Search, SlidersHorizontal, ChevronLeft, ChevronRight, AlarmClock, Inbox
 
 function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
+}
+
+/** OS concluída/cancelada, ou ocorrência já finalizada no SGP (dataFinalizacao preenchida). */
+function estaFinalizado(item: FilaItem): boolean {
+  return item.kind === "os" ? !OS_STATUS_ABERTOS.includes(item.status) : item.dataFinalizacao != null;
 }
 
 const TAMANHOS_PAGINA = [10, 20, 50];
@@ -52,6 +58,7 @@ export function PainelPage() {
   const [itens, setItens] = useState<FilaItem[]>([]);
   const [carregando, setCarregando] = useState(true);
 
+  const [visao, setVisao] = useState<"fila" | "concluidas">("fila");
   const [filtros, setFiltros] = useState<FilaFacetState>(FILA_FACET_INICIAL);
   const [busca, setBusca] = useState("");
   const [buscaDebounced, setBuscaDebounced] = useState("");
@@ -108,8 +115,26 @@ export function PainelPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [buscaDebounced, refetch]);
 
-  const facetas = useMemo(() => calcularFacetas(itens, filtros), [itens, filtros]);
-  const filtrados = useMemo(() => ordenarFila(filtrarFila(itens, filtros), ordenacao), [itens, filtros, ordenacao]);
+  // Concluídas ficam numa aba separada da fila operacional — evita misturar
+  // trabalho já encerrado com o que ainda precisa de ação, tanto na lista
+  // quanto nos contadores/filtros da sidebar (que passam a refletir só a
+  // aba ativa).
+  const contagemPorAba = useMemo(() => {
+    let fila = 0;
+    let concluidas = 0;
+    for (const i of itens) (estaFinalizado(i) ? concluidas++ : fila++);
+    return { fila, concluidas };
+  }, [itens]);
+  const itensDaAba = useMemo(
+    () => itens.filter((i) => estaFinalizado(i) === (visao === "concluidas")),
+    [itens, visao],
+  );
+
+  const facetas = useMemo(() => calcularFacetas(itensDaAba, filtros), [itensDaAba, filtros]);
+  const filtrados = useMemo(
+    () => ordenarFila(filtrarFila(itensDaAba, filtros), ordenacao),
+    [itensDaAba, filtros, ordenacao],
+  );
 
   const estat = useMemo(() => {
     const abertas = itens.filter((i) => i.kind === "os" && i.status !== "concluida" && i.status !== "cancelada").length;
@@ -122,10 +147,10 @@ export function PainelPage() {
   const inicio = (pageSegura - 1) * pageSize;
   const paginaItens = filtrados.slice(inicio, inicio + pageSize);
 
-  // Volta pra página 1 quando filtro/busca/tamanho muda.
+  // Volta pra página 1 quando filtro/busca/tamanho/aba muda.
   useEffect(() => {
     setPage(1);
-  }, [filtros, ordenacao, pageSize, buscaDebounced]);
+  }, [visao, filtros, ordenacao, pageSize, buscaDebounced]);
 
   function patchFiltro(patch: Partial<FilaFacetState>) {
     setFiltros((prev) => ({ ...prev, ...patch }));
@@ -216,6 +241,13 @@ export function PainelPage() {
 
         {/* Conteúdo */}
         <div className="min-w-0 flex-1">
+          <Tabs value={visao} onValueChange={(v) => setVisao(v as "fila" | "concluidas")} className="mb-4">
+            <TabsList>
+              <TabsTrigger value="fila">Fila ({contagemPorAba.fila})</TabsTrigger>
+              <TabsTrigger value="concluidas">Concluídas ({contagemPorAba.concluidas})</TabsTrigger>
+            </TabsList>
+          </Tabs>
+
           {/* Toolbar */}
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <div className="relative min-w-0 flex-1">
