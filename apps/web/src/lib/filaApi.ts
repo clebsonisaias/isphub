@@ -10,9 +10,14 @@ export interface TecnicoResumo {
 }
 
 interface FilaResponse {
+  /** Total real no banco pro filtro atual (soma OS + ocorrencias), via count. */
   total: number;
-  page: number;
-  pageSize: number;
+  /**
+   * true quando o conjunto devolvido nao cobre o total (bateu no teto do
+   * servidor) — a UI deve avisar pra refinar, nunca exibir lista incompleta
+   * como se fosse tudo.
+   */
+  truncado: boolean;
   itens: FilaItem[];
   /** Contagem real por grupo (do banco, nao do que coube na pagina). */
   totais: { osAbertas: number; osFechadas: number; osSlaEstourado: number };

@@ -22,7 +22,16 @@ import {
   type FilaFacetState,
   type OrdenacaoFila,
 } from "@/lib/filaFacets";
-import { Search, SlidersHorizontal, ChevronLeft, ChevronRight, AlarmClock, Inbox, ListChecks } from "lucide-react";
+import {
+  Search,
+  SlidersHorizontal,
+  ChevronLeft,
+  ChevronRight,
+  AlarmClock,
+  Inbox,
+  ListChecks,
+  AlertTriangle,
+} from "lucide-react";
 
 function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
@@ -58,6 +67,9 @@ export function PainelPage() {
   const [itens, setItens] = useState<FilaItem[]>([]);
   // Contagem real por grupo (do banco): nao depende do que coube na pagina.
   const [totais, setTotais] = useState({ osAbertas: 0, osFechadas: 0, osSlaEstourado: 0 });
+  // true quando o grupo ativo tem mais itens do que o servidor devolve de uma
+  // vez — a lista mostra os mais recentes e o aviso pede pra refinar.
+  const [truncado, setTruncado] = useState(false);
   const [carregando, setCarregando] = useState(true);
 
   const [visao, setVisao] = useState<"fila" | "concluidas">("fila");
@@ -95,15 +107,18 @@ export function PainelPage() {
     return () => clearTimeout(t);
   }, [busca]);
 
-  // Carrega um lote generoso e faz faceta/ordenação/paginação no cliente
-  // (contadores da sidebar sempre exatos). Só a busca vai ao servidor.
+  // Carrega o conjunto COMPLETO do grupo ativo (todos os provedores) e faz
+  // faceta/ordenação/paginação no cliente — por isso os contadores da sidebar
+  // batem exato. Sem provedorId: o filtro de provedor é uma faceta local sobre
+  // dados completos, não um corte no servidor (era o que fazia um provedor
+  // sumir quando o volume passava do antigo teto de 500). Só a busca vai ao
+  // servidor.
   useEffect(() => {
     let cancelado = false;
     setCarregando(true);
     filaApi
       .listar({
         busca: buscaDebounced || undefined,
-        pageSize: 500,
         // So o grupo da aba ativa: sem isso, uma base com muita OS encerrada
         // consome o teto de registros e esconde as abertas.
         grupo: visao === "concluidas" ? "fechados" : "abertos",
@@ -112,6 +127,7 @@ export function PainelPage() {
         if (!cancelado) {
           setItens(resp.itens);
           setTotais(resp.totais);
+          setTruncado(resp.truncado);
         }
       })
       .catch((err) => {
@@ -335,6 +351,18 @@ export function PainelPage() {
               </div>
             )}
           </div>
+
+          {/* Aviso honesto de truncamento: há mais itens no banco do que o
+              painel carrega de uma vez. Nunca esconder dados em silêncio. */}
+          {truncado && !carregando && (
+            <div className="mb-3 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-foreground">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
+              <span>
+                Há mais itens do que o painel exibe de uma vez — estes são os mais recentes. Use a busca ou os filtros da
+                barra lateral pra encontrar o que falta.
+              </span>
+            </div>
+          )}
 
           {/* Lista */}
           {carregando ? (

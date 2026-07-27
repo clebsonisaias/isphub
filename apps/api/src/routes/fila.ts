@@ -7,10 +7,20 @@ import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth } from "../middleware/auth.js";
 import { calcularSla } from "../services/slaService.js";
 import { escopoOsWhere } from "../services/escopoService.js";
+import { mesclarFila } from "../services/filaService.js";
 
 export const filaRouter = Router();
 
 filaRouter.use(requireAuth);
+
+/**
+ * Teto defensivo de itens devolvidos numa resposta da fila. Alto o bastante
+ * pra cobrir toda a operacao aberta (o que de fato importa no dia a dia) sem
+ * cortar um provedor; se for ultrapassado, a resposta marca `truncado` e o
+ * cliente avisa o usuario a refinar — nunca esconde dados em silencio (foi o
+ * bug do corte cego de 500, que fazia o 1o provedor sumir ao entrar o 2o).
+ */
+const LIMITE_FILA = 2000;
 
 const filtrosSchema = z.object({
   provedorId: z.string().uuid().optional(),
@@ -80,18 +90,24 @@ filaRouter.get(
     }
     Object.keys(osWhere).forEach((k) => osWhere[k] === undefined && delete osWhere[k]);
 
-    const ordens = await prisma.ordemServico.findMany({
-      where: osWhere,
-      include: { provedor: true, tipoOs: { include: { categoria: true } }, tecnico: true },
-      orderBy: [{ dataAgendamento: "asc" }, { criadoEm: "desc" }],
-      take: 500,
-    });
+    const [ordens, totalOs] = await Promise.all([
+      prisma.ordemServico.findMany({
+        where: osWhere,
+        include: { provedor: true, tipoOs: { include: { categoria: true } }, tecnico: true },
+        orderBy: [{ dataAgendamento: "asc" }, { criadoEm: "desc" }],
+        take: LIMITE_FILA,
+      }),
+      // Total real no banco pro filtro atual — base honesta do `truncado`,
+      // independente de quantas OS couberam no `take`.
+      prisma.ordemServico.count({ where: osWhere }),
+    ]);
 
     // Ocorrencias so entram na fila quando o filtro nao usa dimensoes
     // exclusivas de OS (tipo/tecnico/categoria), que elas nao possuem, e
     // nunca pra um usuario tecnico (ocorrencia nao tem tecnico atribuido —
     // a fila dele e so as OS dele mesmo).
     let ocorrencias: Prisma.OcorrenciaGetPayload<{ include: { provedor: true } }>[] = [];
+    let totalOco = 0;
     if (req.user!.role !== UserRole.TECNICO && !f.tipoOsId && !f.tecnicoId && !f.categoriaId) {
       const provedorIdOcorrencias =
         req.user!.role === UserRole.PROVEDOR ? (req.user!.provedorId ?? "__nenhum__") : f.provedorId;
@@ -114,12 +130,15 @@ filaRouter.get(
       }
       Object.keys(ocoWhere).forEach((k) => ocoWhere[k] === undefined && delete ocoWhere[k]);
 
-      ocorrencias = await prisma.ocorrencia.findMany({
-        where: ocoWhere,
-        include: { provedor: true },
-        orderBy: { dataCadastro: "desc" },
-        take: 500,
-      });
+      [ocorrencias, totalOco] = await Promise.all([
+        prisma.ocorrencia.findMany({
+          where: ocoWhere,
+          include: { provedor: true },
+          orderBy: { dataCadastro: "desc" },
+          take: LIMITE_FILA,
+        }),
+        prisma.ocorrencia.count({ where: ocoWhere }),
+      ]);
     }
 
     const itensOs: FilaItem[] = ordens.map((os) => ({
@@ -214,16 +233,16 @@ filaRouter.get(
       sincronizadoEm: o.sincronizadoEm.toISOString(),
     }));
 
-    /** Data mais relevante de um item, para ordenar a fila mesclada (mais recente primeiro). */
-    function dataRelevante(item: FilaItem): string {
-      if (item.kind === "os") return item.dataAgendamento ?? item.criadoEm;
-      return item.dataAgendamento ?? item.dataCadastro ?? "";
+    // Mescla, ordena e aplica o teto — devolve o conjunto COMPLETO do grupo
+    // ativo (todos os provedores), pra o cliente facetar/paginar sobre dados
+    // completos. `truncado` avisa honestamente se o total real passou do teto.
+    const { itens, total, truncado } = mesclarFila(itensOs, itensOco, totalOs, totalOco, LIMITE_FILA);
+    if (truncado) {
+      console.warn(
+        `[fila] conjunto truncado: devolvidos ${itens.length} de ${total} (limite ${LIMITE_FILA}). ` +
+          `A resposta marca truncado=true; refine filtros/busca pra ver o restante.`,
+      );
     }
-
-    const todos = [...itensOs, ...itensOco].sort((a, b) => dataRelevante(b).localeCompare(dataRelevante(a)));
-
-    const start = (f.page - 1) * f.pageSize;
-    const pagina = todos.slice(start, start + f.pageSize);
 
     // Contagem real por grupo, direto do banco: os contadores das abas nao
     // podem depender do que coube no `take`, senao voltam a mentir quando a
@@ -256,10 +275,9 @@ filaRouter.get(
     ).length;
 
     res.json({
-      total: todos.length,
-      page: f.page,
-      pageSize: f.pageSize,
-      itens: pagina,
+      total,
+      truncado,
+      itens,
       totais: { osAbertas, osFechadas, osSlaEstourado },
     });
   }),

@@ -67,12 +67,21 @@ export function MapaPage() {
   useEffect(() => {
     setCarregando(true);
     filaApi
-      .listar({ provedorId: provedorId || undefined, pageSize: 500 })
+      .listar({ provedorId: provedorId || undefined })
       .then((resp) => {
         const comCoordenadas = resp.itens.filter(
           (i): i is OsItem => i.kind === "os" && i.endereco.lat != null && i.endereco.lng != null,
         );
         setItens(comCoordenadas);
+        // Nunca esconder pinos em silencio: se o servidor truncou, avisa pra
+        // filtrar por provedor (que reduz o conjunto abaixo do teto).
+        if (resp.truncado) {
+          toast({
+            titulo: "Mapa parcial",
+            descricao: "Há mais OS do que o mapa carrega de uma vez. Filtre por um provedor pra ver todas no mapa.",
+            variante: "erro",
+          });
+        }
       })
       .catch((err) => toast({ titulo: "Erro ao carregar o mapa", descricao: mensagem(err), variante: "erro" }))
       .finally(() => setCarregando(false));
