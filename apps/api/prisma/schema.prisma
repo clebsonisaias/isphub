@@ -286,6 +286,22 @@ model Notificacao {
   @@map("notificacoes")
 }
 
+/// Estado EDITAVEL de um modulo do app do tecnico (Fase 2). Os metadados
+/// imutaveis (nome, icone, se e core) vivem no codigo (shared: MODULO_CATALOGO);
+/// aqui fica so o que o admin muda. `moduloId` e um dos MODULO_IDS (uniao
+/// fechada, validada na aplicacao). Ausencia de registro = usa o padrao do
+/// catalogo. Nao ha coluna `core` de proposito: core=false fica irrepresentavel.
+model ModuloConfig {
+  id              String   @id @default(uuid())
+  moduloId        String   @unique
+  ativo           Boolean  @default(true)
+  ordem           Int      @default(0)
+  rolesPermitidos String[]
+  atualizadoEm    DateTime @updatedAt
+
+  @@map("modulo_configs")
+}
+
 /// Auditoria de cada ciclo de sync (pull) e write-back (push) por provedor.
 model SyncLog {
   id         String   @id @default(uuid())
