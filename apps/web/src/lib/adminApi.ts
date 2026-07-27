@@ -40,7 +40,7 @@ export const categoriasApi = {
   listar: () => api.get<Categoria[]>("/categorias"),
   criar: (
     data: Pick<Categoria, "nome" | "cor"> &
-      Partial<Pick<Categoria, "icone" | "palavrasChave" | "slaHorasPadrao" | "ordem" | "ativo">>,
+      Partial<Pick<Categoria, "icone" | "palavrasChave" | "slaHorasPadrao" | "equipeExterna" | "ordem" | "ativo">>,
   ) => api.post<Categoria>("/categorias", data),
   atualizar: (id: string, data: Partial<Omit<Categoria, "id">>) => api.put<Categoria>(`/categorias/${id}`, data),
   remover: (id: string) => api.delete<Categoria | void>(`/categorias/${id}`),

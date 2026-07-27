@@ -97,6 +97,13 @@ model Categoria {
   palavrasChave  String[] @default([])
   /// SLA herdado por tipos mapeados sem SLA proprio definido.
   slaHorasPadrao Int?
+  /// Marca categorias cujas OS sao executadas por equipe de FORA (do proprio
+  /// provedor), nao pela equipe da ISPhub — ex.: retirada/cancelamento de
+  /// equipamento. Elas saem da fila/mapa/alertas de SLA da operacao e ganham
+  /// tela propria (ver equipeService.ts). Fica na categoria (nao no nome do
+  /// tipo) porque cada SGP nomeia o tipo do seu jeito e o admin ja mantem
+  /// essa taxonomia em Categoria, nao em TipoOs.
+  equipeExterna  Boolean  @default(false)
   ordem          Int      @default(0)
   ativo          Boolean  @default(true)
   criadoEm       DateTime @default(now())

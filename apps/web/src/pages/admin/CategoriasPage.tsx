@@ -19,7 +19,7 @@ import { categoriasApi } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
 import { CATEGORIA_ICONE_OPCOES, iconeCategoria } from "@/lib/categoriaIcons";
-import { Plus, Pencil, Trash2, X } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Users } from "lucide-react";
 
 const CORES_SUGERIDAS = ["#22c55e", "#ef4444", "#f59e0b", "#3b82f6", "#8b5cf6", "#64748b", "#06b6d4", "#ec4899"];
 
@@ -118,7 +118,18 @@ export function CategoriasPage() {
                     <Icone className="size-5" />
                   </span>
                   <div className="flex-1">
-                    <CardTitle className="text-base">{c.nome}</CardTitle>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      {c.nome}
+                      {c.equipeExterna && (
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full border border-border bg-secondary/60 px-2 py-0.5 text-xs font-normal text-muted-foreground"
+                          title="OS desta categoria vão para a tela de Retiradas — saem do Painel, do Mapa e dos alertas de SLA"
+                        >
+                          <Users className="size-3" />
+                          Outra equipe
+                        </span>
+                      )}
+                    </CardTitle>
                     <CardDescription>
                       {c.slaHorasPadrao ? `SLA padrão: ${c.slaHorasPadrao}h` : "Sem SLA padrão"}
                       {!c.ativo && " · inativa"}
@@ -183,6 +194,7 @@ function CategoriaDialog({
   const [palavras, setPalavras] = useState<string[]>([]);
   const [novaPalavra, setNovaPalavra] = useState("");
   const [slaHorasPadrao, setSlaHorasPadrao] = useState<string>("");
+  const [equipeExterna, setEquipeExterna] = useState(false);
   const [ordem, setOrdem] = useState(0);
   const [enviando, setEnviando] = useState(false);
 
@@ -194,6 +206,7 @@ function CategoriaDialog({
     setPalavras(categoria?.palavrasChave ?? []);
     setNovaPalavra("");
     setSlaHorasPadrao(categoria?.slaHorasPadrao ? String(categoria.slaHorasPadrao) : "");
+    setEquipeExterna(categoria?.equipeExterna ?? false);
     setOrdem(categoria?.ordem ?? 0);
   }, [aberto, categoria]);
 
@@ -220,6 +233,7 @@ function CategoriaDialog({
       icone,
       palavrasChave: palavras,
       slaHorasPadrao: slaHorasPadrao ? Number(slaHorasPadrao) : null,
+      equipeExterna,
       ordem,
     };
     try {
@@ -352,6 +366,16 @@ function CategoriaDialog({
                 onChange={(e) => setOrdem(Number(e.target.value))}
               />
             </div>
+          </div>
+
+          <div className="flex items-start justify-between gap-4 rounded-lg border border-border bg-secondary/30 px-3 py-2.5">
+            <div className="flex flex-col gap-0.5">
+              <Label htmlFor="equipe-externa">Executada por outra equipe</Label>
+              <p className="text-xs text-muted-foreground">
+                OS desta categoria vão para a tela de Retiradas — saem do Painel, do Mapa e dos alertas de SLA.
+              </p>
+            </div>
+            <Switch id="equipe-externa" checked={equipeExterna} onCheckedChange={setEquipeExterna} />
           </div>
 
           <DialogFooter>

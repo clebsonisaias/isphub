@@ -48,9 +48,22 @@ export interface Categoria {
   palavrasChave: string[];
   /** SLA herdado por tipos mapeados sem SLA proprio definido. */
   slaHorasPadrao?: number | null;
+  /**
+   * true = OS desta categoria sao executadas por equipe de FORA (nao a da
+   * ISPhub) — ex.: retirada/cancelamento. Saem da fila/mapa/alertas de SLA e
+   * ganham tela propria (ver EquipeFiltro).
+   */
+  equipeExterna: boolean;
   ordem: number;
   ativo: boolean;
 }
+
+/**
+ * Quem executa a OS: a equipe da ISPhub ("interna") ou uma equipe de fora
+ * ("externa" — retirada/cancelamento), derivado de Categoria.equipeExterna.
+ * "todas" e um escape hatch de auditoria (nao exposto na UI).
+ */
+export type EquipeFiltro = "interna" | "externa" | "todas";
 
 /** Vista resumida da categoria, embutida em TipoOs/FilaItem (sem palavrasChave/ativo). */
 export type CategoriaResumo = Pick<Categoria, "id" | "nome" | "cor" | "icone" | "slaHorasPadrao">;
@@ -157,6 +170,8 @@ export interface FilaFiltros {
   categoriaId?: string | "sem_categoria";
   /** Separa fila operacional ("abertos") do arquivo ("fechados"). */
   grupo?: "abertos" | "fechados";
+  /** Quem executa a OS. Default do servidor: "interna" (fila da equipe ISPhub). */
+  equipe?: EquipeFiltro;
   /** Busca livre (cliente, protocolo, endereco). */
   busca?: string;
   /** ISO date range. */
@@ -217,4 +232,18 @@ export interface DashboardMetrics {
   }[];
   porTecnico: { tecnicoId: string; tecnicoNome: string; abertas: number; concluidas: number }[];
   slaEstourado: number;
+  /**
+   * Bloco SEPARADO das OS executadas por equipes de fora (retirada/
+   * cancelamento) — fica fora de todos os campos acima porque as metricas da
+   * operacao ISPhub nao podem embutir trabalho que nao e da equipe.
+   */
+  retiradas: DashboardRetiradas;
+}
+
+/** Metricas das OS de equipe externa (retirada/cancelamento) — ver DashboardMetrics.retiradas. */
+export interface DashboardRetiradas {
+  abertas: number;
+  concluidas: number;
+  slaEstourado: number;
+  porProvedor: { provedorId: string; provedorNome: string; cor: string; abertas: number; concluidas: number }[];
 }

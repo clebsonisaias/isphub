@@ -83,3 +83,12 @@ test("fluxo despacho -> status: marcar a caminho e concluir uma OS, refletindo n
   // form) — o mock loga o valor cru, então é 1 (número), não "1".
   expect(log.some((e: any) => e.acao === "status" && e.osId === "e2e-os-1" && e.osStatus === 1)).toBe(true);
 });
+
+test("OS sem tipo mapeado continua na fila principal (regressao do recorte interna/externa)", async ({ page }) => {
+  // O recorte que separa Painel (interna) de Retiradas (externa) navega por
+  // OS -> TipoOs -> Categoria. Uma OS sem tipoOsId não tem como saber se é de
+  // equipe externa — o whereEquipeOs("interna") tem que continuar incluindo
+  // esse caso, senão ela some do Painel sem nenhum aviso.
+  await login(page, ADMIN);
+  await expect(page.getByText("Cliente Sem Tipo")).toBeVisible();
+});

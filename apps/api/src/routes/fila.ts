@@ -7,6 +7,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { calcularSla } from "../services/slaService.js";
 import { escopoOsWhere } from "../services/escopoService.js";
 import { prepararFila } from "../services/filaService.js";
+import { whereEquipeOs } from "../services/equipeService.js";
 
 export const filaRouter = Router();
 
@@ -38,6 +39,12 @@ const filtrosSchema = z.object({
    * registros e esconde as abertas, que sao justamente as que importam.
    */
   grupo: z.enum(["abertos", "fechados"]).optional(),
+  /**
+   * Quem executa a OS. Default "interna": sem o param, a resposta e a fila
+   * da equipe ISPhub — e o que Painel e Mapa esperam. A tela de Retiradas
+   * pede "externa" explicitamente. Retirada nunca "some": tem tela propria.
+   */
+  equipe: z.enum(["interna", "externa", "todas"]).default("interna"),
   busca: z.string().optional(),
   de: z.string().datetime().optional(),
   ate: z.string().datetime().optional(),
@@ -53,6 +60,10 @@ const filtrosSchema = z.object({
  * conjunto completo do grupo ativo (ate LIMITE_FILA), com `total` exato via
  * count e flag `truncado`; a faceta/ordenacao/paginacao fina acontece no
  * cliente sobre esse conjunto completo. A ISPhub trabalha so com OS.
+ *
+ * `equipe` recorta quem executa a OS (ver equipeService.ts): default
+ * "interna" (fila da equipe ISPhub, usada pelo Painel e pelo Mapa); a tela
+ * de Retiradas pede "externa" explicitamente — nunca se misturam.
  */
 filaRouter.get(
   "/",
@@ -85,6 +96,11 @@ filaRouter.get(
         { contratoId: { contains: f.busca, mode: "insensitive" } },
       ];
     }
+    // Recorte de equipe (interna/externa/todas) — sempre no AND, nunca no
+    // topo do where: `OR` (busca, acima) e `tipoOs` (filtro de categoria)
+    // ja ocupam essas chaves e seriam sobrescritos em silencio.
+    const clausulaEquipe = whereEquipeOs(f.equipe);
+    if (clausulaEquipe) osWhere.AND = [...(osWhere.AND ?? []), clausulaEquipe];
     Object.keys(osWhere).forEach((k) => osWhere[k] === undefined && delete osWhere[k]);
 
     const [ordens, totalOs] = await Promise.all([

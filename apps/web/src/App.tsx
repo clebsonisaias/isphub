@@ -6,6 +6,7 @@ import { ThemeProvider } from "@/context/ThemeContext";
 import { RequireAuth } from "@/routes/RequireAuth";
 import { LoginPage } from "@/pages/LoginPage";
 import { PainelPage } from "@/pages/PainelPage";
+import { RetiradasPage } from "@/pages/RetiradasPage";
 import { MapaPage } from "@/pages/MapaPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { ProvedoresPage } from "@/pages/admin/ProvedoresPage";
@@ -35,6 +36,14 @@ function App() {
                 element={
                   <RequireAuth>
                     <MapaPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/retiradas"
+                element={
+                  <RequireAuth roles={[UserRole.ADMIN, UserRole.GESTOR, UserRole.PROVEDOR]}>
+                    <RetiradasPage />
                   </RequireAuth>
                 }
               />

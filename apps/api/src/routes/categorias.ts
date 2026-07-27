@@ -21,6 +21,8 @@ const categoriaSchema = z.object({
   icone: z.string().max(60).nullable().optional(),
   palavrasChave: z.array(z.string().min(1).max(PALAVRA_MAX)).max(30).default([]),
   slaHorasPadrao: z.number().int().min(1).max(24 * 30).nullable().optional(),
+  /** true = OS desta categoria sao executadas por equipe de fora (tela de Retiradas). */
+  equipeExterna: z.boolean().optional(),
   ordem: z.number().int().min(0).max(1000).default(0),
   ativo: z.boolean().optional(),
 });

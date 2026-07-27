@@ -1,10 +1,11 @@
 import { Router } from "express";
-import { OsStatus, OS_STATUS_ABERTOS, UserRole, type DashboardMetrics } from "@isphub/shared";
+import { OsStatus, OS_STATUS_ABERTOS, UserRole, type DashboardMetrics, type DashboardRetiradas } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth } from "../middleware/auth.js";
 import { calcularSla } from "../services/slaService.js";
 import { escopoOsWhere } from "../services/escopoService.js";
+import { OS_EXTERNA_WHERE, OS_INTERNA_WHERE } from "../services/equipeService.js";
 
 export const dashboardRouter = Router();
 
@@ -21,7 +22,13 @@ dashboardRouter.use(requireAuth);
 dashboardRouter.get(
   "/metrics",
   asyncHandler(async (req, res) => {
-    const where = escopoOsWhere(req.user!);
+    const escopo = escopoOsWhere(req.user!);
+    // A equipe da ISPhub nao executa retirada/cancelamento: as metricas da
+    // operacao (abaixo) contam so as OS internas. As retiradas nao somem —
+    // viram um bloco proprio (`retiradas`), pra continuarem visiveis sem
+    // inflar o numero de trabalho que e da equipe.
+    const where = { ...escopo, AND: [OS_INTERNA_WHERE] };
+    const whereRetiradas = { ...escopo, AND: [OS_EXTERNA_WHERE] };
     const provedorIdRestrito = req.user!.role === UserRole.PROVEDOR ? (req.user!.provedorId ?? "__nenhum__") : undefined;
 
     const [totalAbertas, totalConcluidas, ordensAbertasComSla, provedores, statusGroups, tecnicoGroups, ordensCategoria] =
@@ -121,6 +128,48 @@ dashboardRouter.get(
       }),
     );
 
+    // Bloco separado das retiradas/cancelamentos (equipe de fora) — mesmo
+    // formato do `porProvedor` principal, so que escopado a `whereRetiradas`.
+    // Reusa `provedores` (ja carregado com o escopo/restricao de provedor) em
+    // vez de outra query.
+    const [retiradasAbertas, retiradasConcluidas, retiradasAbertasComSla] = await Promise.all([
+      prisma.ordemServico.count({ where: { ...whereRetiradas, status: { in: OS_STATUS_ABERTOS } } }),
+      prisma.ordemServico.count({ where: { ...whereRetiradas, status: OsStatus.CONCLUIDA } }),
+      prisma.ordemServico.findMany({
+        where: { ...whereRetiradas, status: { in: OS_STATUS_ABERTOS } },
+        select: {
+          dataAgendamento: true,
+          dataCadastro: true,
+          criadoEm: true,
+          tipoOs: { select: { slaHoras: true, categoria: { select: { slaHorasPadrao: true } } } },
+        },
+      }),
+    ]);
+    const retiradasSlaEstourado = retiradasAbertasComSla.filter(
+      (os) =>
+        calcularSla({
+          slaHoras: os.tipoOs?.slaHoras ?? os.tipoOs?.categoria?.slaHorasPadrao,
+          dataBase: os.dataAgendamento ?? os.dataCadastro ?? os.criadoEm,
+        }).semaforo === "vermelho",
+    ).length;
+    const retiradasPorProvedorBruto = await Promise.all(
+      provedores.map(async (p) => {
+        const [abertas, concluidas] = await Promise.all([
+          prisma.ordemServico.count({ where: { ...whereRetiradas, provedorId: p.id, status: { in: OS_STATUS_ABERTOS } } }),
+          prisma.ordemServico.count({ where: { ...whereRetiradas, provedorId: p.id, status: OsStatus.CONCLUIDA } }),
+        ]);
+        return { provedorId: p.id, provedorNome: p.nome, cor: p.cor, abertas, concluidas };
+      }),
+    );
+    // So lista provedor que de fato tem retirada — nao vale poluir o card com
+    // zeros de provedores que nunca tiveram uma.
+    const retiradas: DashboardRetiradas = {
+      abertas: retiradasAbertas,
+      concluidas: retiradasConcluidas,
+      slaEstourado: retiradasSlaEstourado,
+      porProvedor: retiradasPorProvedorBruto.filter((p) => p.abertas > 0 || p.concluidas > 0),
+    };
+
     const metrics: DashboardMetrics = {
       totalAbertas,
       totalConcluidas,
@@ -129,6 +178,7 @@ dashboardRouter.get(
       porCategoria,
       porTecnico,
       slaEstourado,
+      retiradas,
     };
 
     res.json(metrics);

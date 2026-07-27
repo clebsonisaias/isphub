@@ -8,12 +8,15 @@ import { NotificationBell } from "@/components/NotificationBell";
 import { HeaderClock } from "@/components/HeaderClock";
 import { cn } from "@/lib/utils";
 import { APP_BUILD_ID, APP_VERSION_LABEL } from "@/lib/version";
-import { LogOut, Map, LayoutGrid, BarChart3, Settings } from "lucide-react";
+import { LogOut, Map, LayoutGrid, BarChart3, Settings, PackageX } from "lucide-react";
 
-/** Dashboard e so pra quem enxerga mais de uma OS/provedor — tecnico ve so as proprias. */
+/** Dashboard e Retiradas sao so pra quem enxerga mais de uma OS/provedor — tecnico ve so as proprias. */
 const NAV_ITEMS = [
   { to: "/", label: "Painel", icon: LayoutGrid, ocultoPara: [] as UserRole[] },
   { to: "/mapa", label: "Mapa", icon: Map, ocultoPara: [] as UserRole[] },
+  // Retirada e feita por equipe de fora — tecnico da ISPhub nunca executa
+  // uma, a tela seria sempre vazia pra ele.
+  { to: "/retiradas", label: "Retiradas", icon: PackageX, ocultoPara: [UserRole.TECNICO] },
   { to: "/dashboard", label: "Dashboard", icon: BarChart3, ocultoPara: [UserRole.TECNICO] },
 ];
 

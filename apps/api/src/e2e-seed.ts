@@ -90,6 +90,28 @@ async function main() {
     },
   });
 
+  // Sem tipoOsId (regressao do recorte interna/externa): uma OS sem tipo
+  // mapeado nao tem como saber se e de equipe externa, entao deve SEMPRE
+  // ficar na fila interna (Painel) — nunca sumir por causa da nova clausula
+  // equipe (ver equipeService.ts, whereEquipeOs).
+  await prisma.ordemServico.upsert({
+    where: { provedorId_sgpOsId: { provedorId: provedor.id, sgpOsId: "e2e-os-sem-tipo" } },
+    create: {
+      provedorId: provedor.id,
+      sgpOsId: "e2e-os-sem-tipo",
+      tipoOsId: null,
+      status: "aberta",
+      clienteNome: "Cliente Sem Tipo",
+      contratoId: "2",
+      dataAgendamento: new Date("2026-12-31T12:00:00.000Z"),
+    },
+    update: {
+      status: "aberta",
+      clienteNome: "Cliente Sem Tipo",
+      tipoOsId: null,
+    },
+  });
+
   console.log("Seed E2E concluido:");
   console.log(`  admin:  ${E2E_ADMIN_EMAIL} / ${E2E_ADMIN_SENHA}`);
   console.log(`  gestor: ${E2E_GESTOR_EMAIL} / ${E2E_GESTOR_SENHA}`);

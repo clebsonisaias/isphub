@@ -2,6 +2,7 @@ import cron from "node-cron";
 import { OS_STATUS_ABERTOS, UserRole } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { selecionarOsParaAlertar, type OsParaAvaliarSla } from "../services/slaAlertService.js";
+import { OS_INTERNA_WHERE } from "../services/equipeService.js";
 
 /**
  * Job separado do sync (roda a cada 5 min, nao a cada 1 min como o sync):
@@ -19,7 +20,15 @@ async function tick() {
   tickEmAndamento = true;
   try {
     const ordens = await prisma.ordemServico.findMany({
-      where: { status: { in: OS_STATUS_ABERTOS }, slaNotificadoEm: null },
+      where: {
+        status: { in: OS_STATUS_ABERTOS },
+        slaNotificadoEm: null,
+        // Retirada/cancelamento e executada por outra equipe: alertar a
+        // equipe ISPhub sobre um prazo que nao esta na mao dela so gera
+        // ruido — e o alerta e unico por OS (slaNotificadoEm trava), entao
+        // ruido aqui seria ruido permanente.
+        AND: [OS_INTERNA_WHERE],
+      },
       select: {
         id: true,
         tecnicoId: true,

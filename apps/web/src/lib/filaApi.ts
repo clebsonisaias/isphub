@@ -31,6 +31,7 @@ function buildQuery(filtros: FilaFiltros): string {
   if (filtros.tecnicoId) params.set("tecnicoId", filtros.tecnicoId);
   if (filtros.categoriaId) params.set("categoriaId", filtros.categoriaId);
   if (filtros.grupo) params.set("grupo", filtros.grupo);
+  if (filtros.equipe) params.set("equipe", filtros.equipe);
   if (filtros.busca) params.set("busca", filtros.busca);
   if (filtros.de) params.set("de", filtros.de);
   if (filtros.ate) params.set("ate", filtros.ate);
