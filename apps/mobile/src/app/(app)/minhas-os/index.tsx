@@ -1,11 +1,13 @@
 import { useRouter } from "expo-router";
-import { ActivityIndicator, FlatList, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, FlatList, RefreshControl, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import type { FilaItem } from "@isphub/shared";
 import { useAuth } from "@/lib/auth";
 import { apiFetch, buildFilaQuery } from "@/lib/api";
 import { Muted, Screen, Title } from "@/components/ui";
-import { colors, corSla, font, radius, space } from "@/theme/tokens";
+import { colors, space } from "@/theme/tokens";
+import { FilaCard } from "@/features/minhas-os/fila-card";
+import { ordenarSlaFirst } from "@/features/minhas-os/sla";
 
 interface FilaResp {
   itens: FilaItem[];
@@ -14,9 +16,8 @@ interface FilaResp {
 }
 
 /**
- * Minhas OS (CORE) — stub do incremento 2: prova a cadeia auth -> API -> render
- * com o escopo do tecnico ja feito no servidor. O card SLA-first completo
- * (ordenacao, acoes, pull-to-refresh) chega no incremento 3.
+ * Minhas OS (CORE) — fila pessoal do tecnico (escopo ja feito no servidor),
+ * ordenada SLA-first, com pull-to-refresh. O card so tem cor na urgencia.
  */
 export default function MinhasOs() {
   const { token } = useAuth();
@@ -28,47 +29,29 @@ export default function MinhasOs() {
       apiFetch<FilaResp>(`/fila${buildFilaQuery({ equipe: "interna", grupo: "abertos" })}`, { token }),
   });
 
+  const itens = ordenarSlaFirst(query.data?.itens ?? []);
+
   return (
-    <Screen>
-      <View style={{ paddingVertical: space.md }}>
+    <Screen style={{ paddingHorizontal: 0 }}>
+      <View style={{ paddingHorizontal: space.lg, paddingVertical: space.md }}>
         <Title>Minhas OS</Title>
-        <Muted>{query.data ? `${query.data.total} abertas` : "carregando…"}</Muted>
+        <Muted>{query.data ? `${query.data.total} ${query.data.total === 1 ? "aberta" : "abertas"}` : "carregando…"}</Muted>
       </View>
 
       {query.isLoading ? (
         <ActivityIndicator color={colors.brand} style={{ marginTop: space.xl }} />
-      ) : query.isError ? (
-        <Muted>Não foi possível carregar a fila.</Muted>
       ) : (
         <FlatList
-          data={query.data?.itens ?? []}
+          data={itens}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ gap: space.md, paddingBottom: space.xl }}
-          ListEmptyComponent={<Muted>Nenhuma OS atribuída a você.</Muted>}
-          renderItem={({ item }) => (
-            <Pressable
-              onPress={() => router.push(`/minhas-os/${item.id}`)}
-              style={{
-                backgroundColor: colors.card,
-                borderRadius: radius.lg,
-                borderWidth: 1,
-                borderColor: colors.line,
-                borderLeftWidth: 5,
-                borderLeftColor: corSla(item.sla.semaforo),
-                padding: space.lg,
-              }}
-            >
-              <Text style={{ fontSize: font.size.base, fontWeight: "700", color: colors.ink }}>
-                {item.categoria?.nome ?? "Não classificado"}
-              </Text>
-              <Text style={{ fontSize: font.size.base, color: colors.ink, marginTop: 2 }}>
-                {item.clienteNome ?? "Cliente não identificado"}
-              </Text>
-              {item.endereco.cidade || item.pop ? (
-                <Muted>{item.endereco.cidade ?? `POP: ${item.pop}`}</Muted>
-              ) : null}
-            </Pressable>
-          )}
+          contentContainerStyle={{ gap: space.md, paddingHorizontal: space.lg, paddingBottom: space.xxl }}
+          refreshControl={
+            <RefreshControl refreshing={query.isFetching && !query.isLoading} onRefresh={() => query.refetch()} tintColor={colors.brand} />
+          }
+          ListEmptyComponent={
+            <Muted>{query.isError ? "Não foi possível carregar a fila." : "Nenhuma OS atribuída a você."}</Muted>
+          }
+          renderItem={({ item }) => <FilaCard item={item} onPress={() => router.push(`/minhas-os/${item.id}`)} />}
         />
       )}
     </Screen>
