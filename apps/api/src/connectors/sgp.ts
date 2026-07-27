@@ -250,6 +250,26 @@ function parseGeoCliente(enderecoRaw: any): { lat: number | null; lng: number | 
   };
 }
 
+/**
+ * Telefone/contato do cliente no payload de /api/ura/clientes/. O SGP nao e
+ * consistente no nome nem na forma desse campo entre instancias — tenta os
+ * aliases diretos e tambem as formas em lista (telefones[], telefones_cargos[]
+ * — este ultimo confirmado na doc de "Cliente - Consultar"). Se nada bater,
+ * retorna null (o card so nao mostra o contato).
+ */
+function extrairTelefoneCliente(cliente: any): string | null {
+  const direto = pickString(cliente, "telefone", "celular", "fone", "whatsapp", "contato", "telefone1");
+  if (direto) return direto;
+  for (const lista of [cliente?.telefones_cargos, cliente?.telefones, cliente?.contatos]) {
+    if (!Array.isArray(lista)) continue;
+    for (const t of lista) {
+      const v = typeof t === "string" ? t.trim() || null : pickString(t ?? {}, "contato", "telefone", "numero", "fone", "celular");
+      if (v) return v;
+    }
+  }
+  return null;
+}
+
 /** Extrai "lat,lng" de campos de endereco do SGP (ex.: "endereco_ll"). */
 function parseLatLng(value: unknown): { lat: number | null; lng: number | null } {
   if (typeof value !== "string" || !value.includes(",")) return { lat: null, lng: null };
@@ -510,19 +530,27 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
       }
     },
 
-    async getContratoGeo(contratoId: string) {
-      // So a lat/lng do cadastro do cliente — versao enxuta de
-      // getDetalhesTecnicos (sem verificaacesso/sinal), pro backfill em massa
-      // do mapa nao dobrar as chamadas ao SGP por contrato. A listagem de OS
-      // nao traz coordenada; este endpoint traz.
+    async getContratoCadastro(contratoId: string) {
+      // Endereco de rua + geo + telefone do cadastro do cliente — a listagem
+      // de OS nao traz nenhum desses. Versao enxuta de getDetalhesTecnicos
+      // (sem verificaacesso/sinal), pro backfill em massa nao dobrar as
+      // chamadas ao SGP por contrato.
       // Distingue "nao deu pra consultar" (null -> tenta de novo depois) de
-      // "cliente consultado, mas sem coordenada" ({lat:null,lng:null} ->
-      // marca a tentativa e nao insiste).
+      // "cliente consultado" (objeto, campos possivelmente null -> marca a
+      // tentativa e nao insiste).
       try {
         const data = await sgpPostForm(creds, "/api/ura/clientes/", { contrato: contratoId, limit: 1 });
         const cliente = Array.isArray(data?.clientes) ? data.clientes[0] : undefined;
         if (!cliente) return null;
-        return parseGeoCliente(enderecoDoCliente(cliente));
+        const enderecoRaw = enderecoDoCliente(cliente);
+        return {
+          ...parseGeoCliente(enderecoRaw),
+          logradouro: pickString(enderecoRaw ?? {}, "logradouro"),
+          numero: pickString(enderecoRaw ?? {}, "numero"),
+          bairro: pickString(enderecoRaw ?? {}, "bairro"),
+          cidade: pickString(enderecoRaw ?? {}, "cidade"),
+          telefone: extrairTelefoneCliente(cliente),
+        };
       } catch {
         return null;
       }

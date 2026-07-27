@@ -64,6 +64,21 @@ export interface ConnectionStatus {
  * SGP nao expoe endereco de rua nem sinal nas listagens de OS,
  * so num endpoint de consulta de cliente separado.
  */
+/**
+ * Cadastro do cliente puxado sob demanda pro backfill (endereco de rua + geo +
+ * telefone) — dados que a listagem de OS do SGP nao traz. Todos os campos
+ * podem ser null quando o cliente existe mas nao tem aquele dado cadastrado.
+ */
+export interface ContratoCadastro {
+  lat: number | null;
+  lng: number | null;
+  logradouro: string | null;
+  numero: string | null;
+  bairro: string | null;
+  cidade: string | null;
+  telefone: string | null;
+}
+
 export interface DetalhesTecnicos {
   endereco: Endereco | null;
   online: boolean | null;
@@ -139,13 +154,13 @@ export interface ErpConnector {
   getDetalhesTecnicos(contratoId: string): Promise<DetalhesTecnicos>;
 
   /**
-   * So a geolocalizacao (lat/lng) do contrato, do cadastro do cliente — versao
-   * enxuta de getDetalhesTecnicos pro backfill em massa do mapa (a listagem de
-   * OS do SGP nao traz coordenada). `null` = nao deu pra consultar (tenta de
-   * novo depois); `{lat,lng}` com ambos null = cliente consultado, mas sem
-   * coordenada cadastrada.
+   * Cadastro do cliente pro backfill em massa (endereco de rua + geo +
+   * telefone) — a listagem de OS do SGP nao traz nenhum desses. Versao enxuta
+   * de getDetalhesTecnicos (sem verificaacesso/sinal), pra nao dobrar as
+   * chamadas ao SGP por contrato. `null` = nao deu pra consultar (tenta de
+   * novo depois); objeto (com campos possivelmente null) = cliente consultado.
    */
-  getContratoGeo(contratoId: string): Promise<{ lat: number | null; lng: number | null } | null>;
+  getContratoCadastro(contratoId: string): Promise<ContratoCadastro | null>;
 
   /** Anexa uma foto de evidencia a OS, hospedada no proprio SGP. */
   addOsImage(sgpOsId: string, imagemBase64: string, descricao?: string): Promise<void>;

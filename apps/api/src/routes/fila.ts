@@ -94,6 +94,7 @@ filaRouter.get(
         { protocolo: { contains: f.busca, mode: "insensitive" } },
         { logradouro: { contains: f.busca, mode: "insensitive" } },
         { contratoId: { contains: f.busca, mode: "insensitive" } },
+        { telefone: { contains: f.busca, mode: "insensitive" } },
       ];
     }
     // Recorte de equipe (interna/externa/todas) — sempre no AND, nunca no
@@ -142,6 +143,7 @@ filaRouter.get(
       prioridade: os.prioridade as 1 | 2 | 3,
       clienteNome: os.clienteNome,
       clienteDocumento: os.clienteDocumento,
+      telefone: os.telefone,
       contratoId: os.contratoId,
       contratoStatus: os.contratoStatus,
       protocolo: os.protocolo,

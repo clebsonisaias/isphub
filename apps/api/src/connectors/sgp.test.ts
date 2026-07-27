@@ -503,20 +503,34 @@ describe("createSgpConnector", () => {
     });
   });
 
-  describe("getContratoGeo (backfill do mapa)", () => {
-    // Versao enxuta de getDetalhesTecnicos: so lat/lng do cadastro do cliente,
-    // sem verificaacesso — uma unica chamada a /api/ura/clientes/ por contrato.
+  describe("getContratoCadastro (backfill do mapa/card)", () => {
+    // Versao enxuta de getDetalhesTecnicos: endereco de rua + geo + telefone do
+    // cadastro do cliente, sem verificaacesso — uma unica chamada a
+    // /api/ura/clientes/ por contrato.
 
-    it("extrai lat/lng do endereco do servico e faz UMA so chamada (sem verificaacesso)", async () => {
+    it("extrai endereco, lat/lng e telefone do servico e faz UMA so chamada (sem verificaacesso)", async () => {
       fetchMock.mockResolvedValueOnce(
         jsonResponse({
           clientes: [
             {
               nome: "MARIA SILVA",
+              telefone: "(84) 99999-8888",
               contratos: [
                 {
                   contrato: 75,
-                  servicos: [{ id: 1, endereco: { latitude: "-5.8555", longitude: "-35.3555" } }],
+                  servicos: [
+                    {
+                      id: 1,
+                      endereco: {
+                        logradouro: "Rua das Flores",
+                        numero: 123,
+                        bairro: "Centro",
+                        cidade: "Macaíba",
+                        latitude: "-5.8555",
+                        longitude: "-35.3555",
+                      },
+                    },
+                  ],
                 },
               ],
               endereco: { latitude: "-9.9", longitude: "-9.9" },
@@ -526,10 +540,15 @@ describe("createSgpConnector", () => {
       );
 
       const conn = createSgpConnector(creds);
-      const geo = await conn.getContratoGeo("75");
+      const cadastro = await conn.getContratoCadastro("75");
 
-      expect(geo?.lat).toBeCloseTo(-5.8555);
-      expect(geo?.lng).toBeCloseTo(-35.3555);
+      expect(cadastro?.lat).toBeCloseTo(-5.8555);
+      expect(cadastro?.lng).toBeCloseTo(-35.3555);
+      expect(cadastro?.logradouro).toBe("Rua das Flores");
+      expect(cadastro?.numero).toBe("123");
+      expect(cadastro?.bairro).toBe("Centro");
+      expect(cadastro?.cidade).toBe("Macaíba");
+      expect(cadastro?.telefone).toBe("(84) 99999-8888");
       // So a chamada a /clientes/ — nada de verificaacesso no backfill em massa.
       expect(fetchMock).toHaveBeenCalledTimes(1);
       const [url, options] = fetchMock.mock.calls[0];
@@ -537,45 +556,73 @@ describe("createSgpConnector", () => {
       expect(new URLSearchParams(options.body as string).get("contrato")).toBe("75");
     });
 
-    it("cai pro endereco do cliente quando o servico nao tem endereco proprio", async () => {
+    it("extrai o telefone da lista telefones_cargos quando nao ha campo direto (forma da doc 'Cliente - Consultar')", async () => {
       fetchMock.mockResolvedValueOnce(
         jsonResponse({
-          clientes: [{ contratos: [{ contrato: 1, servicos: [{ id: 1 }] }], endereco: { latitude: "-5.7", longitude: "-35.2" } }],
+          clientes: [
+            {
+              nome: "JOAO",
+              telefones_cargos: [{ cargo: null, contato: "(99) 9999-9999", nome: null }],
+              contratos: [{ contrato: 5, servicos: [{ id: 1, endereco: { latitude: "-5.7", longitude: "-35.2" } }] }],
+            },
+          ],
         }),
       );
 
       const conn = createSgpConnector(creds);
-      const geo = await conn.getContratoGeo("1");
+      const cadastro = await conn.getContratoCadastro("5");
 
-      expect(geo?.lat).toBeCloseTo(-5.7);
-      expect(geo?.lng).toBeCloseTo(-35.2);
+      expect(cadastro?.telefone).toBe("(99) 9999-9999");
     });
 
-    it("retorna {lat:null,lng:null} quando o cliente existe mas nao tem coordenada cadastrada (0/vazio -> null)", async () => {
+    it("cai pro endereco do cliente quando o servico nao tem endereco proprio", async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({
+          clientes: [
+            {
+              contratos: [{ contrato: 1, servicos: [{ id: 1 }] }],
+              endereco: { logradouro: "Av. Central", latitude: "-5.7", longitude: "-35.2" },
+            },
+          ],
+        }),
+      );
+
+      const conn = createSgpConnector(creds);
+      const cadastro = await conn.getContratoCadastro("1");
+
+      expect(cadastro?.logradouro).toBe("Av. Central");
+      expect(cadastro?.lat).toBeCloseTo(-5.7);
+      expect(cadastro?.lng).toBeCloseTo(-35.2);
+    });
+
+    it("retorna campos null quando o cliente existe mas nao tem coordenada/telefone (0/vazio -> null)", async () => {
       fetchMock.mockResolvedValueOnce(
         jsonResponse({ clientes: [{ contratos: [{ contrato: 1, servicos: [{ id: 1, endereco: { latitude: "0", longitude: "" } }] }] }] }),
       );
 
       const conn = createSgpConnector(creds);
-      const geo = await conn.getContratoGeo("1");
+      const cadastro = await conn.getContratoCadastro("1");
 
-      // Consultado (nao-null), mas sem coordenada — o sync marca geoConsultadoEm e nao insiste.
-      expect(geo).toEqual({ lat: null, lng: null });
+      // Consultado (nao-null), mas sem dado — o sync marca geoConsultadoEm e nao insiste.
+      expect(cadastro).not.toBeNull();
+      expect(cadastro?.lat).toBeNull();
+      expect(cadastro?.lng).toBeNull();
+      expect(cadastro?.telefone).toBeNull();
     });
 
     it("retorna null quando o contrato nao existe (nao da pra consultar -> reconsulta depois)", async () => {
       fetchMock.mockResolvedValueOnce(jsonResponse({ clientes: [] }));
 
       const conn = createSgpConnector(creds);
-      expect(await conn.getContratoGeo("999999")).toBeNull();
+      expect(await conn.getContratoCadastro("999999")).toBeNull();
     });
 
     it("retorna null (sem lancar) quando o SGP falha", async () => {
-      // sgpPostForm nao faz retry (uma chamada so) — 500 lanca, getContratoGeo captura.
+      // sgpPostForm nao faz retry (uma chamada so) — 500 lanca, getContratoCadastro captura.
       fetchMock.mockResolvedValueOnce(new Response("erro", { status: 500 }));
 
       const conn = createSgpConnector(creds);
-      expect(await conn.getContratoGeo("75")).toBeNull();
+      expect(await conn.getContratoCadastro("75")).toBeNull();
     });
   });
 

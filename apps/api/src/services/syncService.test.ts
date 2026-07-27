@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { OsStatus } from "@isphub/shared";
-import { camposGeoDoListado, contratosParaBackfillGeo, reconciliarStatus } from "./syncService.js";
+import { camposEnderecoDoListado, contratosParaBackfillGeo, reconciliarStatus } from "./syncService.js";
 
 describe("reconciliarStatus", () => {
   it("mantem Cancelada quando o SGP diz Concluida (SGP so tem 'Encerrada', sem distinguir cancelado)", () => {
@@ -28,20 +28,28 @@ describe("reconciliarStatus", () => {
   });
 });
 
-describe("camposGeoDoListado", () => {
-  it("persiste lat/lng quando a listagem traz coordenada (endereco_ll presente)", () => {
-    expect(camposGeoDoListado({ lat: -5.79, lng: -35.21 })).toEqual({ lat: -5.79, lng: -35.21 });
+describe("camposEnderecoDoListado", () => {
+  it("persiste os campos que a listagem traz (endereco_ll + rua presentes)", () => {
+    expect(
+      camposEnderecoDoListado({ logradouro: "Rua A", numero: "10", bairro: "Centro", cidade: "Natal", lat: -5.79, lng: -35.21 }),
+    ).toEqual({ logradouro: "Rua A", numero: "10", bairro: "Centro", cidade: "Natal", lat: -5.79, lng: -35.21 });
   });
 
-  it("NAO seta lat/lng quando a listagem nao traz coordenada (o normal) — preserva a geo do backfill", () => {
-    // Guarda central do mapa: sem isso, todo sync zerava a coordenada que o
-    // backfill puxou do cadastro do cliente e o mapa vivia vazio.
-    expect(camposGeoDoListado({ lat: null, lng: null })).toEqual({});
+  it("NAO inclui campos ausentes (o normal na listagem) — preserva o que o backfill gravou", () => {
+    // Guarda central: sem isso, todo sync zerava rua/geo que o backfill puxou
+    // do cadastro do cliente, e o mapa/card viviam vazios.
+    expect(camposEnderecoDoListado({ logradouro: null, numero: null, bairro: null, cidade: null, lat: null, lng: null })).toEqual(
+      {},
+    );
+  });
+
+  it("mantem a cidade da listagem mesmo sem rua (o SGP costuma mandar so cidade+pop)", () => {
+    expect(camposEnderecoDoListado({ cidade: "Macaíba", lat: null, lng: null })).toEqual({ cidade: "Macaíba" });
   });
 
   it("nao persiste geo parcial (so lat ou so lng) — um par incompleto nao serve pro mapa", () => {
-    expect(camposGeoDoListado({ lat: -5.79, lng: null })).toEqual({});
-    expect(camposGeoDoListado({ lat: null, lng: -35.21 })).toEqual({});
+    expect(camposEnderecoDoListado({ lat: -5.79, lng: null })).toEqual({});
+    expect(camposEnderecoDoListado({ lat: null, lng: -35.21 })).toEqual({});
   });
 });
 

@@ -145,6 +145,9 @@ model OrdemServico {
   prioridade      Int              @default(2)
   clienteNome     String?
   clienteDocumento String?
+  /// Telefone/contato do cliente, do cadastro no SGP (/api/ura/clientes/) —
+  /// a listagem de OS nao traz, vem no mesmo backfill do endereco/geo.
+  telefone        String?
   contratoId      String?
   protocolo       String?
   conteudo        String?
@@ -191,12 +194,11 @@ model OrdemServico {
   /// escrita, entao o sync so volta a confiar na leitura dele apos a janela
   /// de graca (ver syncService.ts).
   observacaoAlteradaEm DateTime?
-  /// Quando o backfill de geolocalizacao (mapa) tentou puxar lat/lng do
-  /// cadastro do cliente pra esta OS — a listagem de OS do SGP nao traz
-  /// coordenada, so o cadastro do cliente (/api/ura/clientes/) traz. Marca a
-  /// TENTATIVA (com ou sem coordenada) pra nao reconsultar pra sempre um
-  /// contrato que o SGP nao geolocaliza; reconsulta so apos um TTL (ver
-  /// syncService.ts).
+  /// Quando o backfill tentou puxar o cadastro do cliente (/api/ura/clientes/)
+  /// pra esta OS — a listagem de OS do SGP nao traz endereco de rua, geo nem
+  /// telefone, so esse endpoint traz. Marca a TENTATIVA (com ou sem dado) pra
+  /// nao reconsultar pra sempre um contrato que o SGP nao detalha; reconsulta
+  /// so apos um TTL (ver syncService.ts).
   geoConsultadoEm DateTime?
   criadoEm        DateTime         @default(now())
   atualizadoEm    DateTime         @updatedAt

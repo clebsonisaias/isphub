@@ -108,6 +108,8 @@ export interface OrdemServico {
   prioridade: OsPrioridade;
   clienteNome?: string | null;
   clienteDocumento?: string | null;
+  /** Telefone/contato do cliente (do cadastro no SGP) — não vem na listagem de OS. */
+  telefone?: string | null;
   contratoId?: string | null;
   protocolo?: string | null;
   conteudo?: string | null;

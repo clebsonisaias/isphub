@@ -4,8 +4,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { SlaBadge } from "@/components/SlaBadge";
 import { ContratoStatusBadge } from "@/components/ContratoStatusBadge";
 import { ConexaoBadge } from "@/components/fila/ConexaoBadge";
-import { iconeCategoria } from "@/lib/categoriaIcons";
-import { Clock, ChevronRight, HelpCircle, ChevronsUp } from "lucide-react";
+import { Clock, ChevronRight, ChevronsUp, MapPin } from "lucide-react";
 
 /** Cor da barra lateral do card, pelo semáforo de SLA. É a ÚNICA cor forte do
  * card — urgência manda; o resto dos badges fica neutro pra não competir. */
@@ -59,26 +58,6 @@ function abertaHa(iso: string | null, agora: number): string | null {
   return `${dias}d ${h % 24}h`;
 }
 
-/** Chip neutro da categoria (dot na cor da categoria); "Não classificado" discreto. */
-function CategoriaChip({ item }: { item: FilaItem }) {
-  if (!item.categoria) {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-xs font-medium text-muted-foreground">
-        <HelpCircle className="size-3" />
-        Não classificado
-      </span>
-    );
-  }
-  const Icone = iconeCategoria(item.categoria.icone);
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-border bg-secondary/40 px-2 py-0.5 text-xs font-medium text-foreground">
-      <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: item.categoria.cor }} />
-      <Icone className="size-3 text-muted-foreground" />
-      {item.categoria.nome}
-    </span>
-  );
-}
-
 function Campo({ label, valor }: { label: string; valor?: string | null }) {
   return (
     <div className="min-w-0">
@@ -91,11 +70,18 @@ function Campo({ label, valor }: { label: string; valor?: string | null }) {
 export function FilaCard({ item, agora, onClick }: { item: FilaItem; agora: number; onClick: () => void }) {
   const rail = corRail(item);
   const titulo = item.tipoDescricao ?? "Ordem de Serviço";
-  const local = item.endereco.logradouro
-    ? `${item.endereco.logradouro}${item.endereco.bairro ? ` — ${item.endereco.bairro}` : ""}`
-    : item.pop
-      ? `POP: ${item.pop}`
-      : null;
+  // Endereço mais completo disponível: rua+nº — bairro, cidade; senão só a
+  // cidade; senão o POP (localidade). A rua/bairro vêm do cadastro do cliente
+  // (backfill), não da listagem de OS — por isso o fallback importa.
+  const e = item.endereco;
+  const rua = [e.logradouro, e.numero].filter(Boolean).join(", ");
+  const local = rua
+    ? `${rua}${e.bairro ? ` — ${e.bairro}` : ""}${e.cidade ? `, ${e.cidade}` : ""}`
+    : e.cidade
+      ? e.cidade
+      : item.pop
+        ? `POP: ${item.pop}`
+        : null;
   const destaque = dataDestaque(item);
   const decorrido = abertaHa(abertaBase(item), agora);
   const alta = item.prioridade === OsPrioridade.ALTA;
@@ -144,19 +130,22 @@ export function FilaCard({ item, agora, onClick }: { item: FilaItem; agora: numb
           <ProvedorBadge provedor={item.provedor} />
           <StatusBadge status={item.status} />
           <ContratoStatusBadge status={item.contratoStatus} />
-          <CategoriaChip item={item} />
           <ConexaoBadge provedorId={item.provedorId} contratoId={item.contratoId} />
         </div>
 
-        <div className="flex flex-wrap items-baseline gap-x-2">
-          <h3 className="text-base font-bold text-foreground">{titulo}</h3>
-          {local && <span className="text-sm text-muted-foreground">· {local}</span>}
-        </div>
+        <h3 className="text-base font-bold text-foreground">{titulo}</h3>
+
+        {local && (
+          <p className="flex items-center gap-1 text-sm text-muted-foreground">
+            <MapPin className="size-3.5 shrink-0" />
+            <span className="truncate">{local}</span>
+          </p>
+        )}
 
         <div className="grid grid-cols-2 gap-x-4 gap-y-2 pt-0.5 sm:grid-cols-4">
           <Campo label="Cliente" valor={item.clienteNome} />
           <Campo label="Contrato" valor={item.contratoId} />
-          <Campo label="Cidade" valor={item.endereco.cidade ?? item.pop} />
+          <Campo label="Contato" valor={item.telefone} />
           <Campo label="Técnico" valor={item.tecnicoNome} />
         </div>
       </div>

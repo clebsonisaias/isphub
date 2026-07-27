@@ -44,17 +44,31 @@ const GEO_BACKFILL_MAX_POR_SYNC = 30;
 const GEO_RECONSULTA_MS = 7 * 24 * 60 * 60_000;
 
 /**
- * lat/lng a persistir a partir da LISTAGEM de OS. Quase nunca ha coordenada
- * ali (o SGP so manda "pop" nas listagens); quando nao ha, retorna {} pra NAO
- * sobrescrever a coordenada que o backfill (via cadastro do cliente) ja
- * gravou. Sem essa guarda, todo sync zerava lat/lng e o mapa vivia vazio.
+ * Campos de endereco/geo a persistir a partir da LISTAGEM de OS — SO os que a
+ * listagem realmente trouxe. A listagem quase nunca traz rua/coordenada (so
+ * "pop" e as vezes cidade); incluir um campo ausente como null sobrescreveria
+ * o que o backfill (via cadastro do cliente) ja gravou. Sem essa guarda, todo
+ * sync zerava endereco e geo, e o mapa/card viviam vazios. lat/lng so entram
+ * em par (um sem o outro nao serve pro mapa).
  */
-export function camposGeoDoListado(endereco: {
+export function camposEnderecoDoListado(endereco: {
+  logradouro?: string | null;
+  numero?: string | null;
+  bairro?: string | null;
+  cidade?: string | null;
   lat?: number | null;
   lng?: number | null;
-}): { lat?: number; lng?: number } {
-  if (endereco.lat != null && endereco.lng != null) return { lat: endereco.lat, lng: endereco.lng };
-  return {};
+}): { logradouro?: string; numero?: string; bairro?: string; cidade?: string; lat?: number; lng?: number } {
+  const out: { logradouro?: string; numero?: string; bairro?: string; cidade?: string; lat?: number; lng?: number } = {};
+  if (endereco.logradouro != null) out.logradouro = endereco.logradouro;
+  if (endereco.numero != null) out.numero = endereco.numero;
+  if (endereco.bairro != null) out.bairro = endereco.bairro;
+  if (endereco.cidade != null) out.cidade = endereco.cidade;
+  if (endereco.lat != null && endereco.lng != null) {
+    out.lat = endereco.lat;
+    out.lng = endereco.lng;
+  }
+  return out;
 }
 
 /**
@@ -216,14 +230,10 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
         // nao expoe escrita nesse campo (ver connector.ts addOsNote).
         conteudo: raw.conteudo,
         ...(observacaoProtegida.has(raw.sgpOsId) ? {} : { observacao: raw.observacao }),
-        logradouro: raw.endereco.logradouro,
-        numero: raw.endereco.numero,
-        bairro: raw.endereco.bairro,
-        cidade: raw.endereco.cidade,
-        // lat/lng NAO sao setados a partir da listagem quando ela nao traz
-        // coordenada (o normal): sobrescrever com null zeraria a geo que o
-        // backfill abaixo puxou do cadastro do cliente. Ver camposGeoDoListado.
-        ...camposGeoDoListado(raw.endereco),
+        // Endereco/geo: so os campos que a listagem REALMENTE trouxe. A
+        // listagem quase nunca traz rua/coordenada; setar como null zeraria o
+        // que o backfill puxou do cadastro do cliente. Ver camposEnderecoDoListado.
+        ...camposEnderecoDoListado(raw.endereco),
         pop: raw.pop,
         usuario: raw.usuario,
         dataCadastro: raw.dataCadastro ? new Date(raw.dataCadastro) : null,
@@ -241,20 +251,20 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
         `[sync] status de OS nao reconhecido(s) no provedor ${provedorId}, tratados como "aberta": ${[...statusNaoReconhecidos].join(" | ")}`,
       );
     }
-    // --- 3. Backfill de geolocalizacao (mapa) ---
-    // A listagem de OS nao traz coordenada; o cadastro do cliente
-    // (/api/ura/clientes/) traz. Sem isso o Mapa fica sempre vazio. Puxa a geo
-    // das OS sem lat/lng, deduplicando por contrato e com teto por ciclo pra
-    // nao estourar o SGP — o resto vai nos proximos syncs. geoConsultadoEm
-    // marca a tentativa (com TTL) pra nao reconsultar pra sempre um contrato
-    // que o SGP nao geolocaliza. Best-effort: nao derruba o sync de OS.
+    // --- 3. Backfill do cadastro do cliente (endereco de rua + geo + telefone) ---
+    // A listagem de OS nao traz nada disso; o cadastro do cliente
+    // (/api/ura/clientes/) traz. Sem isso o Mapa fica vazio e o card so mostra
+    // o POP. Puxa o cadastro dos contratos ainda nao consultados, deduplicando
+    // por contrato e com teto por ciclo pra nao estourar o SGP — o resto vai
+    // nos proximos syncs. geoConsultadoEm marca a tentativa (com TTL) pra nao
+    // reconsultar pra sempre um contrato que o SGP nao detalha. Best-effort:
+    // nao derruba o sync de OS.
     try {
       const reconsultarAntesDe = new Date(Date.now() - GEO_RECONSULTA_MS);
       const candidatas = await prisma.ordemServico.findMany({
         where: {
           provedorId,
           contratoId: { not: null },
-          lat: null,
           OR: [{ geoConsultadoEm: null }, { geoConsultadoEm: { lt: reconsultarAntesDe } }],
         },
         select: { contratoId: true },
@@ -265,24 +275,33 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
       if (contratos.length > 0) {
         let comCoordenada = 0;
         for (const contratoId of contratos) {
-          const geo = await connector.getContratoGeo(contratoId);
-          const temGeo = geo != null && geo.lat != null && geo.lng != null;
-          // Marca a tentativa sempre (mesmo sem coordenada ou com falha), pra o
-          // TTL controlar a reconsulta em vez de bater no SGP todo ciclo.
-          await prisma.ordemServico.updateMany({
-            where: { provedorId, contratoId },
-            data: { geoConsultadoEm: new Date(), ...(temGeo ? { lat: geo!.lat, lng: geo!.lng } : {}) },
-          });
-          if (temGeo) comCoordenada++;
+          const cadastro = await connector.getContratoCadastro(contratoId);
+          // Marca a tentativa sempre (mesmo sem dado ou com falha), pra o TTL
+          // controlar a reconsulta em vez de bater no SGP todo ciclo. So
+          // grava um campo quando veio preenchido (nao apaga o que ja existe).
+          const dados: Record<string, unknown> = { geoConsultadoEm: new Date() };
+          if (cadastro) {
+            if (cadastro.lat != null && cadastro.lng != null) {
+              dados.lat = cadastro.lat;
+              dados.lng = cadastro.lng;
+              comCoordenada++;
+            }
+            if (cadastro.logradouro != null) dados.logradouro = cadastro.logradouro;
+            if (cadastro.numero != null) dados.numero = cadastro.numero;
+            if (cadastro.bairro != null) dados.bairro = cadastro.bairro;
+            if (cadastro.cidade != null) dados.cidade = cadastro.cidade;
+            if (cadastro.telefone != null) dados.telefone = cadastro.telefone;
+          }
+          await prisma.ordemServico.updateMany({ where: { provedorId, contratoId }, data: dados });
         }
         const contratosPendentes = new Set(candidatas.map((c) => c.contratoId)).size - contratos.length;
         console.log(
-          `[sync] geo backfill provedor ${provedorId}: ${comCoordenada}/${contratos.length} contrato(s) com coordenada` +
+          `[sync] cadastro backfill provedor ${provedorId}: ${comCoordenada}/${contratos.length} contrato(s) com coordenada` +
             (contratosPendentes > 0 ? `; ${contratosPendentes} contrato(s) pendente(s) pros proximos ciclos` : ""),
         );
       }
     } catch (err) {
-      console.warn(`[sync] geo backfill falhou no provedor ${provedorId}:`, err instanceof Error ? err.message : err);
+      console.warn(`[sync] cadastro backfill falhou no provedor ${provedorId}:`, err instanceof Error ? err.message : err);
     }
 
     const msgTipos =

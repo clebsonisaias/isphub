@@ -96,6 +96,36 @@ export function FilaSidebar({ filtros, facetas, provedores, categorias, mostrarP
         />
       </Secao>
 
+      <Secao titulo="Categoria">
+        <LinhaFiltro
+          label="Todas"
+          ativo={filtros.categoriaId === "todas"}
+          onClick={() => onChange({ categoriaId: "todas" })}
+        />
+        {categorias.map((c) => {
+          const Icone = iconeCategoria(c.icone);
+          return (
+            <LinhaFiltro
+              key={c.id}
+              label={c.nome}
+              icon={<Icone className="size-3.5 shrink-0" style={{ color: c.cor }} />}
+              count={facetas.porCategoria.get(c.id) ?? 0}
+              ativo={filtros.categoriaId === c.id}
+              onClick={() => onChange({ categoriaId: c.id })}
+            />
+          );
+        })}
+        {((facetas.porCategoria.get("sem_categoria") ?? 0) > 0 || filtros.categoriaId === "sem_categoria") && (
+          <LinhaFiltro
+            label="Não classificado"
+            icon={<HelpCircle className="size-3.5 shrink-0 text-warning" />}
+            count={facetas.porCategoria.get("sem_categoria") ?? 0}
+            ativo={filtros.categoriaId === "sem_categoria"}
+            onClick={() => onChange({ categoriaId: "sem_categoria" })}
+          />
+        )}
+      </Secao>
+
       <Secao titulo="Status">
         <LinhaFiltro
           label="Todos"
@@ -129,36 +159,6 @@ export function FilaSidebar({ filtros, facetas, provedores, categorias, mostrarP
             onClick={() => onChange({ prioridade: p })}
           />
         ))}
-      </Secao>
-
-      <Secao titulo="Categoria">
-        <LinhaFiltro
-          label="Todas"
-          ativo={filtros.categoriaId === "todas"}
-          onClick={() => onChange({ categoriaId: "todas" })}
-        />
-        {categorias.map((c) => {
-          const Icone = iconeCategoria(c.icone);
-          return (
-            <LinhaFiltro
-              key={c.id}
-              label={c.nome}
-              icon={<Icone className="size-3.5 shrink-0" style={{ color: c.cor }} />}
-              count={facetas.porCategoria.get(c.id) ?? 0}
-              ativo={filtros.categoriaId === c.id}
-              onClick={() => onChange({ categoriaId: c.id })}
-            />
-          );
-        })}
-        {((facetas.porCategoria.get("sem_categoria") ?? 0) > 0 || filtros.categoriaId === "sem_categoria") && (
-          <LinhaFiltro
-            label="Não classificado"
-            icon={<HelpCircle className="size-3.5 shrink-0 text-warning" />}
-            count={facetas.porCategoria.get("sem_categoria") ?? 0}
-            ativo={filtros.categoriaId === "sem_categoria"}
-            onClick={() => onChange({ categoriaId: "sem_categoria" })}
-          />
-        )}
       </Secao>
 
       {mostrarProvedores && provedores.length > 0 && (
