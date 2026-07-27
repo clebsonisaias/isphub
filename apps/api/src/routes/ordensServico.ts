@@ -28,7 +28,15 @@ ordensServicoRouter.get(
       where: { id: req.params.id },
       include: { provedor: true, tipoOs: true, tecnico: true, atribuicoes: { orderBy: { atribuidoEm: "desc" } } },
     });
-    res.json(os);
+    // Aninha `endereco` (colunas planas no banco) pra bater com o tipo
+    // OrdemServico do shared que os clientes consomem (o app mobile lê
+    // os.endereco.logradouro). Aditivo: os campos planos seguem presentes.
+    res.json(
+      os && {
+        ...os,
+        endereco: { logradouro: os.logradouro, numero: os.numero, bairro: os.bairro, cidade: os.cidade, lat: os.lat, lng: os.lng },
+      },
+    );
   }),
 );
 

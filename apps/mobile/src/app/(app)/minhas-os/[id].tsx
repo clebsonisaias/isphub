@@ -53,10 +53,10 @@ export default function DetalheOs() {
   function abrirMapa() {
     if (!os) return;
     const url =
-      os.endereco.lat != null && os.endereco.lng != null
-        ? `https://www.google.com/maps/search/?api=1&query=${os.endereco.lat},${os.endereco.lng}`
+      os.endereco?.lat != null && os.endereco?.lng != null
+        ? `https://www.google.com/maps/search/?api=1&query=${os.endereco?.lat},${os.endereco?.lng}`
         : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-            [os.endereco.logradouro, os.endereco.numero, os.endereco.cidade].filter(Boolean).join(" "),
+            [os.endereco?.logradouro, os.endereco?.numero, os.endereco?.cidade].filter(Boolean).join(" "),
           )}`;
     Linking.openURL(url);
   }
@@ -84,13 +84,13 @@ export default function DetalheOs() {
 
           <Card>
             <Text style={{ fontSize: font.size.base, color: colors.ink }}>
-              {os.endereco.logradouro
-                ? `${os.endereco.logradouro}${os.endereco.numero ? `, ${os.endereco.numero}` : ""}${os.endereco.bairro ? ` — ${os.endereco.bairro}` : ""}`
+              {os.endereco?.logradouro
+                ? `${os.endereco?.logradouro}${os.endereco?.numero ? `, ${os.endereco?.numero}` : ""}${os.endereco?.bairro ? ` — ${os.endereco?.bairro}` : ""}`
                 : os.pop
                   ? `POP: ${os.pop}`
                   : "Endereço não informado"}
             </Text>
-            {os.endereco.cidade ? <Muted>{os.endereco.cidade}</Muted> : null}
+            {os.endereco?.cidade ? <Muted>{os.endereco?.cidade}</Muted> : null}
             <View style={{ marginTop: space.sm }}>
               <Button label="Abrir no mapa" variant="ghost" onPress={abrirMapa} />
             </View>
