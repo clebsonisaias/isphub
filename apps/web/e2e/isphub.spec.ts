@@ -58,7 +58,10 @@ test("fluxo despacho -> status: marcar a caminho e concluir uma OS, refletindo n
   // sidebar — restrita ao <aside> pra não colidir com o badge do provedor no
   // próprio card) e abre a OS fixture.
   await page.locator("aside").getByRole("button", { name: /E2E Provider/ }).click();
-  const card = page.getByText("Cliente E2E").locator("xpath=ancestor::button[1]");
+  // O card é um <div role="button"> (tem links/botões internos — ligar,
+  // WhatsApp, copiar —, e interativo-dentro-de-<button> é DOM inválido), por
+  // isso o ancestor casa por @role='button', não pela tag <button>.
+  const card = page.getByText("Cliente E2E").locator("xpath=ancestor::*[@role='button'][1]");
   await expect(card).toBeVisible();
   await card.click();
 
