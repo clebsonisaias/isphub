@@ -20,74 +20,119 @@ const NAV_ITEMS = [
   { to: "/dashboard", label: "Dashboard", icon: BarChart3, ocultoPara: [UserRole.TECNICO] },
 ];
 
+/**
+ * Classe de um item de navegacao — um unico elemento serve dois papeis pelo
+ * breakpoint `lg`: aba de rodape (mobile/tablet, alcance de polegar) e pilula
+ * no cabecalho (desktop). Nunca existem os dois ao mesmo tempo (nao ha
+ * duplicacao de Link/nome acessivel — so uma troca de layout via CSS), entao
+ * o rotulo "Administração" continua unico na arvore de acessibilidade em
+ * qualquer largura, do jeito que os testes e2e esperam.
+ */
+function navItemClass(ativo: boolean): string {
+  return cn(
+    "group flex flex-1 flex-col items-center justify-center gap-0.5 rounded-lg py-2 text-[0.65rem] font-medium transition-colors lg:flex-none lg:flex-row lg:gap-1.5 lg:rounded-full lg:px-3 lg:py-1.5 lg:text-sm",
+    ativo
+      ? "text-primary lg:bg-primary/12 lg:text-primary"
+      : "text-muted-foreground hover:text-foreground lg:hover:bg-secondary/60",
+  );
+}
+
+function NavIcon({ Icon, ativo }: { Icon: typeof LayoutGrid; ativo: boolean }) {
+  return (
+    <span
+      className={cn(
+        "flex size-7 items-center justify-center rounded-lg transition-colors lg:size-auto lg:rounded-none lg:bg-transparent",
+        ativo && "bg-primary/12 lg:bg-transparent",
+      )}
+    >
+      <Icon className="size-[1.15rem] shrink-0 lg:size-4" />
+    </span>
+  );
+}
+
+/** Iniciais do nome (ate 2 letras) pro avatar compacto do cabecalho. */
+function iniciais(nome: string): string {
+  const partes = nome.trim().split(/\s+/);
+  const letras = partes.length > 1 ? [partes[0][0], partes[partes.length - 1][0]] : [partes[0]?.[0] ?? "?"];
+  return letras.join("").toUpperCase();
+}
+
 /** Casca comum das telas autenticadas: cabecalho com marca, navegação, usuario e logout. */
 export function AppShell({ children }: { children: ReactNode }) {
   const { usuario, logout } = useAuth();
   const location = useLocation();
 
   return (
-    <div className="min-h-svh bg-background">
-      <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-1 px-2 sm:gap-4 sm:px-4">
-          <Link to="/" className="flex shrink-0 items-center gap-2 text-lg font-bold tracking-tight">
-            <span>
+    <div className="min-h-svh">
+      {/*
+        Sem backdrop-blur AQUI de proposito: `backdrop-filter` num ancestral
+        cria containing block pra descendentes `position: fixed` (CSS
+        Transforms spec) — a nav abaixo é fixa no rodape no mobile, e um
+        header com blur faria ela "grudar" no fim do header (perto do topo)
+        em vez do fim da viewport de verdade. O blur fica só na propria nav.
+      */}
+      <header className="sticky top-0 z-30 border-b border-border bg-background/95">
+        {/* Fio de marca — um unico detalhe de cor no cabecalho, discreto. */}
+        <div aria-hidden className="h-[2px] w-full brand-gradient-bg opacity-70" />
+        <div className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-3 sm:gap-3 sm:px-4 lg:gap-2">
+          <Link to="/" className="flex shrink-0 items-center gap-2">
+            <span className="font-display text-lg font-bold tracking-tight">
               <span className="brand-gradient-text">ISP</span>
               <span className="text-foreground">hub</span>
             </span>
             <span
-              className="hidden rounded-full border border-border bg-secondary/60 px-1.5 py-0.5 text-[0.65rem] font-medium tabular-nums text-muted-foreground sm:inline"
+              className="hidden rounded-full border border-border bg-secondary/60 px-1.5 py-0.5 font-mono text-[0.6rem] font-medium tabular-nums text-muted-foreground xl:inline"
               title={APP_BUILD_ID ? `Build ${APP_BUILD_ID}` : undefined}
             >
               {APP_VERSION_LABEL}
             </span>
           </Link>
 
+          {/*
+            Navegacao unica: aba fixa no rodape abaixo de `lg` (alcance de
+            polegar pro tecnico em campo no celular), pilulas no proprio
+            cabecalho a partir de `lg`. `position: fixed` tira o elemento do
+            fluxo do header no mobile sem precisar de outro componente —
+            `lg:static` devolve ao fluxo normal da linha no desktop.
+          */}
           {usuario && (
-            <nav className="flex min-w-0 items-center gap-0.5 sm:gap-1">
-              {NAV_ITEMS.filter((item) => !item.ocultoPara.includes(usuario.role)).map(({ to, label, icon: Icon }) => (
-                <Link
-                  key={to}
-                  to={to}
-                  title={label}
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium transition-colors xl:px-3",
-                    location.pathname === to
-                      ? "bg-secondary text-foreground"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  <Icon className="size-4 shrink-0" />
-                  <span className="hidden xl:inline">{label}</span>
-                </Link>
-              ))}
+            <nav
+              className="fixed inset-x-0 bottom-0 z-30 flex items-stretch justify-around border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:static lg:inset-auto lg:z-auto lg:flex-1 lg:items-center lg:justify-start lg:gap-1 lg:border-t-0 lg:bg-transparent lg:pb-0 lg:backdrop-blur-none"
+              aria-label="Navegação principal"
+            >
+              {NAV_ITEMS.filter((item) => !item.ocultoPara.includes(usuario.role)).map(({ to, label, icon: Icon }) => {
+                const ativo = location.pathname === to;
+                return (
+                  <Link key={to} to={to} title={label} className={navItemClass(ativo)}>
+                    <NavIcon Icon={Icon} ativo={ativo} />
+                    <span>{label}</span>
+                  </Link>
+                );
+              })}
               {usuario.role === UserRole.ADMIN && (
-                <Link
-                  to="/admin"
-                  title="Administração"
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium transition-colors xl:px-3",
-                    location.pathname.startsWith("/admin")
-                      ? "bg-secondary text-foreground"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  <Settings className="size-4 shrink-0" />
-                  <span className="hidden xl:inline">Administração</span>
+                <Link to="/admin" title="Administração" className={navItemClass(location.pathname.startsWith("/admin"))}>
+                  <NavIcon Icon={Settings} ativo={location.pathname.startsWith("/admin")} />
+                  <span>Administração</span>
                 </Link>
               )}
             </nav>
           )}
 
-          <div className="flex shrink-0 items-center gap-1 sm:gap-3">
+          <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
             {usuario && <HeaderClock />}
             {usuario && (
               <Link
                 to="/perfil"
-                className="hidden text-right leading-tight transition-colors hover:text-primary xl:block"
-                title="Meu perfil"
+                className="hidden items-center gap-2 rounded-full py-1 pl-1 pr-2.5 transition-colors hover:bg-secondary/60 lg:flex"
+                title={`${usuario.nome} — ${USER_ROLE_LABEL[usuario.role]}`}
               >
-                <p className="text-sm font-medium text-foreground">{usuario.nome}</p>
-                <p className="text-xs text-muted-foreground">{USER_ROLE_LABEL[usuario.role]}</p>
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-secondary font-display text-xs font-semibold text-foreground">
+                  {iniciais(usuario.nome)}
+                </span>
+                <span className="hidden text-left leading-tight xl:block">
+                  <span className="block text-sm font-medium text-foreground">{usuario.nome}</span>
+                  <span className="block text-xs text-muted-foreground">{USER_ROLE_LABEL[usuario.role]}</span>
+                </span>
               </Link>
             )}
             {usuario && <NotificationBell />}
@@ -101,13 +146,15 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>
+      {/* pb extra no mobile: a aba de navegacao fixa no rodape nao pode
+          cobrir o final da lista/conteudo. */}
+      <main className="mx-auto max-w-7xl px-4 py-6 pb-24 lg:pb-6">{children}</main>
 
-      <footer className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 text-xs text-muted-foreground">
+      <footer className="mx-auto hidden max-w-7xl items-center justify-between px-4 py-4 text-xs text-muted-foreground lg:flex">
         <span>
           <span className="brand-gradient-text font-semibold">ISPhub</span> — central de campo multi-provedor
         </span>
-        <span className="tabular-nums" title={APP_BUILD_ID ? `Build ${APP_BUILD_ID}` : undefined}>
+        <span className="font-mono tabular-nums" title={APP_BUILD_ID ? `Build ${APP_BUILD_ID}` : undefined}>
           {APP_VERSION_LABEL}
         </span>
       </footer>

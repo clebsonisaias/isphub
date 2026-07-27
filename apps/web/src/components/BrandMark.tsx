@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { createScope, createTimeline, svg, stagger, type Scope } from "animejs";
+import { useRef } from "react";
+import { gsap, useGSAP } from "@/lib/gsapSetup";
 import { cn } from "@/lib/utils";
 
 /**
@@ -10,26 +10,36 @@ import { cn } from "@/lib/utils";
  */
 export function BrandMark({ className }: { className?: string }) {
   const root = useRef<HTMLDivElement>(null);
-  const scope = useRef<Scope | null>(null);
 
-  useEffect(() => {
-    scope.current = createScope({ root }).add(() => {
-      createTimeline({ defaults: { ease: "outQuad" } })
-        .add(svg.createDrawable(".hub-line"), {
-          draw: ["0 0", "0 1"],
-          duration: 650,
-          delay: stagger(90),
-        })
-        .add(
+  useGSAP(
+    () => {
+      // Lacuna do original fechada aqui: o glifo nao verificava
+      // prefers-reduced-motion. Reduzido, so aplica o estado final (traço
+      // completo, escala 1, wordmark visivel) sem a sequencia.
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        gsap.set(".hub-line", { drawSVG: "100%" });
+        gsap.set(".hub-node", { scale: 1 });
+        gsap.set(".brand-word", { opacity: 1, y: 0 });
+        return;
+      }
+      const tl = gsap.timeline({ defaults: { ease: "power1.out" } });
+      // fromTo em tudo: os elementos nascem no estado natural do SVG (traço
+      // completo, escala 1), sem CSS escondendo nada — o inicio de cada
+      // animacao precisa ser explicito, nao inferido do estado atual.
+      tl.fromTo(".hub-line", { drawSVG: "0%" }, { drawSVG: "100%", duration: 0.65, stagger: 0.09 })
+        .fromTo(
           ".hub-node",
-          { scale: [0, 1], duration: 420, delay: stagger(70), ease: "outBack" },
-          "-=350",
+          { scale: 0 },
+          { scale: 1, duration: 0.42, stagger: 0.07, ease: "back.out(1.7)" },
+          "-=0.35",
         )
-        .add(".brand-word", { opacity: [0, 1], translateY: [10, 0], duration: 500 }, "-=250");
-    });
-
-    return () => scope.current?.revert();
-  }, []);
+        .fromTo(".brand-word", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.5 }, "-=0.25");
+    },
+    // dependencies:[] e OBRIGATORIO junto de `scope` — sem ele o hook reexecuta
+    // a cada render (igual useEffect sem array), e o StrictMode do React
+    // (2 renders no mount) mata a timeline antes dela sair do frame 0.
+    { scope: root, dependencies: [] },
+  );
 
   return (
     <div ref={root} className={cn("flex items-center gap-4", className)}>

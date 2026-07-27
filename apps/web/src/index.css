@@ -36,6 +36,14 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+
+  /* Tipografia: par distintivo, nao generico. Display com carater (leve flare
+     nos terminais) pra titulos/marca; corpo tecnico/legivel pro resto; mono
+     reservado pra dado "duro" (ids de OS, horarios, contadores tabulares) —
+     reforca a identidade de central de operacoes de rede. */
+  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
 }
 
 /* Claro (padrao). Cores de status/semanticas mais escuras que no dark —
@@ -105,13 +113,33 @@ html[data-theme="dark"] {
 
 body {
   @apply bg-background text-foreground antialiased;
-  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
   margin: 0;
   transition: background-color 0.2s ease, color 0.2s ease;
+  /* Atmosfera: grade de pontos bem sutil, ecoando mapa de rede/POPs — nunca
+     mais forte que ~6% pra nao brigar com cards e texto. Fixa no viewport
+     (nao rola com o conteudo) pra dar profundidade sem distrair. Opacidade
+     exata definida por tema logo abaixo (contraste precisa ser bem diferente
+     entre claro e escuro pra continuar quase imperceptivel nos dois). */
+  background-size: 28px 28px;
+  background-attachment: fixed;
+  background-color: var(--background);
+}
+
+html[data-theme="dark"] body {
+  background-image: radial-gradient(circle at 1px 1px, oklch(1 0 0 / 6%) 1px, transparent 0);
+}
+html:not([data-theme="dark"]) body {
+  background-image: radial-gradient(circle at 1px 1px, oklch(0 0 0 / 4%) 1px, transparent 0);
 }
 
 #root {
   min-height: 100svh;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
 }
 
 .brand-gradient-text {

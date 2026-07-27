@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { DashboardMetrics } from "@isphub/shared";
+import { gsap, useGSAP, ScrollTrigger } from "@/lib/gsapSetup";
 import { AppShell } from "@/components/AppShell";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -20,7 +21,7 @@ function mensagem(err: unknown): string {
 /** Stat tile: label + valor grande com count-up. Cor reservada para leitura de estado (ok/critico). */
 function StatTile({ label, value, tone = "default" }: { label: string; value: number; tone?: "default" | "critico" }) {
   return (
-    <Card>
+    <Card className="dash-top-card opacity-0">
       <CardContent className="py-5">
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
         <CountUp
@@ -36,6 +37,7 @@ export function DashboardPage() {
   const { toast } = useToast();
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [carregando, setCarregando] = useState(true);
+  const pageRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     dashboardApi
@@ -44,6 +46,37 @@ export function DashboardPage() {
       .catch((err) => toast({ titulo: "Erro ao carregar métricas", descricao: mensagem(err), variante: "erro" }))
       .finally(() => setCarregando(false));
   }, []);
+
+  // Reveal do Dashboard: os KPIs + card de Retiradas ja estao visiveis no
+  // primeiro frame (stagger simples no mount). Os 4 cards de baixo costumam
+  // ficar abaixo da dobra em telas de notebook — usam ScrollTrigger.batch
+  // (sem pin/scrub, so "anima quando entra na tela", once:true) em vez de
+  // reveal-on-mount, que os deixaria pular pra vista mesmo fora da tela.
+  useGSAP(
+    () => {
+      if (!pageRef.current || !metrics) return;
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        gsap.set(".dash-top-card, .dash-reveal-card", { opacity: 1, y: 0 });
+        return;
+      }
+      gsap.fromTo(
+        ".dash-top-card",
+        { opacity: 0, y: 12 },
+        { opacity: 1, y: 0, duration: 0.4, stagger: 0.08, ease: "power1.out" },
+      );
+      ScrollTrigger.batch(".dash-reveal-card", {
+        start: "top 85%",
+        once: true,
+        onEnter: (elements) =>
+          gsap.fromTo(
+            elements,
+            { opacity: 0, y: 16 },
+            { opacity: 1, y: 0, duration: 0.4, stagger: 0.1, ease: "power1.out" },
+          ),
+      });
+    },
+    { scope: pageRef, dependencies: [metrics] },
+  );
 
   if (carregando) {
     return (
@@ -69,6 +102,7 @@ export function DashboardPage() {
 
   return (
     <AppShell>
+      <div ref={pageRef}>
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Dashboard</h1>
         <p className="text-sm text-muted-foreground">
@@ -85,7 +119,7 @@ export function DashboardPage() {
 
       {/* Retiradas/cancelamentos ficam separadas: sao executadas por equipe de
           fora, entao nao entram nos numeros da operacao acima. */}
-      <Card className="mb-6">
+      <Card className="dash-top-card mb-6 opacity-0">
         <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
           <div>
             <CardTitle className="flex items-center gap-2">
@@ -162,7 +196,7 @@ export function DashboardPage() {
       </Card>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card>
+        <Card className="dash-reveal-card opacity-0">
           <CardHeader>
             <CardTitle>Por provedor</CardTitle>
             <CardDescription>OS abertas e concluídas em cada provedor atendido.</CardDescription>
@@ -208,7 +242,7 @@ export function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="dash-reveal-card opacity-0">
           <CardHeader>
             <CardTitle>Por status</CardTitle>
             <CardDescription>Distribuição das OS por status atual.</CardDescription>
@@ -232,7 +266,7 @@ export function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="dash-reveal-card opacity-0">
           <CardHeader>
             <CardTitle>Por categoria</CardTitle>
             <CardDescription>OS abertas e concluídas por categoria canônica da ISPhub.</CardDescription>
@@ -281,7 +315,7 @@ export function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-2">
+        <Card className="dash-reveal-card opacity-0 lg:col-span-2">
           <CardHeader>
             <CardTitle>Por técnico</CardTitle>
             <CardDescription>Carga de trabalho de cada técnico, em todos os provedores.</CardDescription>
@@ -321,6 +355,7 @@ export function DashboardPage() {
             )}
           </CardContent>
         </Card>
+      </div>
       </div>
     </AppShell>
   );

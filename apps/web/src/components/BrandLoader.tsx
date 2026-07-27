@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { createScope, animate, stagger, type Scope } from "animejs";
+import { useRef } from "react";
+import { gsap, useGSAP } from "@/lib/gsapSetup";
 import { cn } from "@/lib/utils";
 
 /**
@@ -11,31 +11,28 @@ import { cn } from "@/lib/utils";
  */
 export function BrandLoader({ className }: { className?: string }) {
   const root = useRef<HTMLDivElement>(null);
-  const scope = useRef<Scope | null>(null);
 
-  useEffect(() => {
-    if (!root.current || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    scope.current = createScope({ root }).add(() => {
-      animate(".loader-node", {
-        scale: [1, 1.25],
-        opacity: [0.6, 1],
-        duration: 700,
-        loop: true,
-        alternate: true,
-        delay: stagger(120),
-        ease: "inOutSine",
-      });
-      animate(".loader-line", {
-        opacity: [0.25, 0.8],
-        duration: 700,
-        loop: true,
-        alternate: true,
-        delay: stagger(120),
-        ease: "inOutSine",
-      });
-    });
-    return () => scope.current?.revert();
-  }, []);
+  useGSAP(
+    () => {
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      // fromTo (nao `to`): o SVG nasce em scale/opacity naturais (1/1), mas o
+      // pulso precisa alternar entre valores explicitos — `to()` sozinho so
+      // pegaria o estado natural como ponto de partida e nao puxaria a
+      // opacidade pra baixo no primeiro ciclo.
+      gsap.fromTo(
+        ".loader-node",
+        { scale: 1, opacity: 0.6 },
+        { scale: 1.25, opacity: 1, duration: 0.7, repeat: -1, yoyo: true, stagger: 0.12, ease: "sine.inOut" },
+      );
+      gsap.fromTo(
+        ".loader-line",
+        { opacity: 0.25 },
+        { opacity: 0.8, duration: 0.7, repeat: -1, yoyo: true, stagger: 0.12, ease: "sine.inOut" },
+      );
+    },
+    // dependencies:[] junto de `scope` (ver BrandMark.tsx pro motivo).
+    { scope: root, dependencies: [] },
+  );
 
   return (
     <div

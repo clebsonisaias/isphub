@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { createScope, animate, stagger, type Scope } from "animejs";
+import { useEffect, useMemo, useState } from "react";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { OS_STATUS_ABERTOS, UserRole, type Categoria, type EquipeFiltro, type FilaItem, type Provedor } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
 import { Input } from "@/components/ui/input";
@@ -125,8 +125,7 @@ export function FilaWorkspace({
   // "Aberta há" recalcula a cada minuto sem re-fetch.
   const [agora, setAgora] = useState(() => Date.now());
 
-  const listRef = useRef<HTMLDivElement>(null);
-  const scope = useRef<Scope | null>(null);
+  const shouldReduceMotion = useReducedMotion();
 
   useEffect(() => {
     provedoresApi.listar().then(setProvedores).catch(() => {});
@@ -261,22 +260,6 @@ export function FilaWorkspace({
   // Skeleton só na primeira carga; re-fetches mantêm a lista (esmaecida).
   const primeiraCarga = carregando && itens.length === 0;
 
-  // Entrada escalonada dos cards a cada re-render da página exibida.
-  useEffect(() => {
-    if (carregando || !listRef.current) return;
-    scope.current?.revert();
-    scope.current = createScope({ root: listRef }).add(() => {
-      animate(".fila-item", {
-        opacity: [0, 1],
-        translateY: [8, 0],
-        duration: 300,
-        delay: stagger(22, { start: 0 }),
-        ease: "outQuad",
-      });
-    });
-    return () => scope.current?.revert();
-  }, [paginaItens, carregando]);
-
   const sidebar = (
     <FilaSidebar
       filtros={filtros}
@@ -363,9 +346,12 @@ export function FilaWorkspace({
             </TabsList>
           </Tabs>
 
-          {/* Toolbar */}
-          <div className="mb-4 flex flex-wrap items-center gap-2">
-            <div className="relative min-w-0 flex-1">
+          {/* Toolbar: busca (flex-1, so encolhe de verdade a partir de sm:)
+              empurrada pra sua propria linha no mobile — com os dois selects
+              de largura natural (~330px juntos) ela nao cabia ao lado deles
+              abaixo de sm: e acabava espremida a uns 5px, parecendo quebrada. */}
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <div className="relative min-w-0 sm:flex-1">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={busca}
@@ -378,29 +364,31 @@ export function FilaWorkspace({
               )}
             </div>
 
-            <select
-              value={ordenacao}
-              onChange={(e) => setOrdenacao(e.target.value as OrdenacaoFila)}
-              className="h-10 rounded-md border border-input bg-card px-3 text-sm"
-              aria-label="Ordenar por"
-            >
-              <option value="urgencia">Mais urgentes primeiro</option>
-              <option value="recentes">Mais recentes primeiro</option>
-              <option value="antigas">Mais antigas primeiro</option>
-            </select>
+            <div className="flex gap-2">
+              <select
+                value={ordenacao}
+                onChange={(e) => setOrdenacao(e.target.value as OrdenacaoFila)}
+                className="h-10 flex-1 rounded-md border border-input bg-card px-3 text-sm sm:flex-initial"
+                aria-label="Ordenar por"
+              >
+                <option value="urgencia">Mais urgentes primeiro</option>
+                <option value="recentes">Mais recentes primeiro</option>
+                <option value="antigas">Mais antigas primeiro</option>
+              </select>
 
-            <select
-              value={pageSize}
-              onChange={(e) => setPageSize(Number(e.target.value))}
-              className="h-10 rounded-md border border-input bg-card px-3 text-sm"
-              aria-label="Itens por página"
-            >
-              {TAMANHOS_PAGINA.map((n) => (
-                <option key={n} value={n}>
-                  {n} por página
-                </option>
-              ))}
-            </select>
+              <select
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                className="h-10 flex-1 rounded-md border border-input bg-card px-3 text-sm sm:flex-initial"
+                aria-label="Itens por página"
+              >
+                {TAMANHOS_PAGINA.map((n) => (
+                  <option key={n} value={n}>
+                    {n} por página
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* Chips dos filtros ativos + limpar — deixa visível por que a lista
@@ -450,16 +438,24 @@ export function FilaWorkspace({
 
           {/* Aviso honesto de truncamento: há mais OS no banco do que o painel
               carrega de uma vez. Nunca esconder dados em silêncio. */}
-          {truncado && !primeiraCarga && (
-            <div className="mb-3 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-foreground">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
-              <span>
-                Mostrando as {itens.length.toLocaleString("pt-BR")} OS mais recentes de{" "}
-                {totalServidor.toLocaleString("pt-BR")}. Use a busca ou os filtros da barra lateral pra encontrar o
-                restante.
-              </span>
-            </div>
-          )}
+          <AnimatePresence>
+            {truncado && !primeiraCarga && (
+              <motion.div
+                initial={shouldReduceMotion ? false : { opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={shouldReduceMotion ? undefined : { opacity: 0, height: 0 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+                className="mb-3 flex items-start gap-2 overflow-hidden rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-foreground"
+              >
+                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
+                <span>
+                  Mostrando as {itens.length.toLocaleString("pt-BR")} OS mais recentes de{" "}
+                  {totalServidor.toLocaleString("pt-BR")}. Use a busca ou os filtros da barra lateral pra encontrar o
+                  restante.
+                </span>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Lista */}
           {primeiraCarga ? (
@@ -469,43 +465,75 @@ export function FilaWorkspace({
               ))}
             </div>
           ) : paginaItens.length === 0 ? (
-            <Card>
-              <CardContent className="flex flex-col items-center gap-3 py-12 text-center text-sm text-muted-foreground">
-                {temFiltroAtivo ? (
-                  <>
-                    <span>Nenhuma OS com os filtros atuais.</span>
-                    <Button variant="outline" size="sm" onClick={limparFiltros}>
-                      Limpar filtros
-                    </Button>
-                  </>
-                ) : (
-                  <span>{visao === "concluidas" ? vazioConcluidas : vazioAbertas}</span>
-                )}
-              </CardContent>
-            </Card>
-          ) : (
-            <div
-              ref={listRef}
-              className={cn("flex flex-col gap-2.5 transition-opacity", carregando && "pointer-events-none opacity-60")}
+            <motion.div
+              initial={shouldReduceMotion ? false : { opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.2 }}
             >
-              {paginaItens.map((item) => (
-                <FilaCard key={item.id} item={item} agora={agora} onClick={() => setSelecionado(item)} />
-              ))}
+              <Card>
+                <CardContent className="flex flex-col items-center gap-3 py-12 text-center text-sm text-muted-foreground">
+                  {temFiltroAtivo ? (
+                    <>
+                      <span>Nenhuma OS com os filtros atuais.</span>
+                      <Button variant="outline" size="sm" onClick={limparFiltros}>
+                        Limpar filtros
+                      </Button>
+                    </>
+                  ) : (
+                    <span>{visao === "concluidas" ? vazioConcluidas : vazioAbertas}</span>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+          ) : (
+            <div className={cn("flex flex-col gap-2.5 transition-opacity", carregando && "pointer-events-none opacity-60")}>
+              {/* AnimatePresence + layout="position": cards entram/saem quando a
+                  lista muda (filtro, busca, pagina) e REORDENAM suavemente
+                  quando a ordenacao muda — key estavel (item.id) e o que
+                  permite o Framer Motion saber "e o mesmo card, so mudou de
+                  lugar" em vez de destruir/recriar. `initial={false}` (via
+                  shouldReduceMotion) desliga tudo pra quem prefere menos
+                  movimento — os cards soh aparecem/somem, sem deslocamento. */}
+              <AnimatePresence initial={false}>
+                {paginaItens.map((item) =>
+                  shouldReduceMotion ? (
+                    <FilaCard key={item.id} item={item} agora={agora} onClick={() => setSelecionado(item)} />
+                  ) : (
+                    <motion.div
+                      key={item.id}
+                      layout="position"
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -8 }}
+                      transition={{ duration: 0.2, ease: "easeOut" }}
+                    >
+                      <FilaCard item={item} agora={agora} onClick={() => setSelecionado(item)} />
+                    </motion.div>
+                  ),
+                )}
+              </AnimatePresence>
             </div>
           )}
         </div>
       </div>
 
-      {selecionado && (
-        <OrdemServicoDetailDialog
-          item={selecionado}
-          onClose={() => setSelecionado(null)}
-          onAtualizado={() => {
-            setSelecionado(null);
-            setRefetch((n) => n + 1);
-          }}
-        />
-      )}
+      {/* AnimatePresence aqui, nao dentro do dialog: o item some do estado
+          (setSelecionado(null)) no mesmo render que desmontaria o componente
+          inteiro — sem este wrapper o Dialog.tsx interno nunca teria a chance
+          de tocar a saida, porque o React já teria removido a arvore. */}
+      <AnimatePresence>
+        {selecionado && (
+          <OrdemServicoDetailDialog
+            key={selecionado.id}
+            item={selecionado}
+            onClose={() => setSelecionado(null)}
+            onAtualizado={() => {
+              setSelecionado(null);
+              setRefetch((n) => n + 1);
+            }}
+          />
+        )}
+      </AnimatePresence>
     </AppShell>
   );
 }

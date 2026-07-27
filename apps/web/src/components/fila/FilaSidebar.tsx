@@ -9,6 +9,7 @@ import {
   type FilaFacetState,
 } from "@/lib/filaFacets";
 import { iconeCategoria } from "@/lib/categoriaIcons";
+import { CountUp } from "@/components/CountUp";
 import { LayoutList, HelpCircle } from "lucide-react";
 
 interface Props {
@@ -57,7 +58,9 @@ function LinhaFiltro({
             ativo ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground",
           )}
         >
-          {count}
+          {/* Tween curto no numero ao mudar (filtro, sync) — mesmo CountUp do
+              Dashboard, reduced-motion e cleanup ja resolvidos la. */}
+          <CountUp value={count} />
         </span>
       )}
     </button>

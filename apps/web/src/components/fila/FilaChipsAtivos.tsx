@@ -1,6 +1,7 @@
 import type { Categoria, Provedor } from "@isphub/shared";
 import { OS_STATUS_LABEL, PRIORIDADE_LABEL, type FilaFacetState } from "@/lib/filaFacets";
 import { X } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 
 /** Dimensões de filtro que viram chip (a busca entra separada). */
 type Dimensao = "status" | "prioridade" | "categoriaId" | "provedorId";
@@ -27,6 +28,7 @@ interface Props {
  * um "×" por dimensão + um "Limpar filtros" geral.
  */
 export function FilaChipsAtivos({ filtros, busca, categorias, provedores, onRemover, onLimpar }: Props) {
+  const shouldReduceMotion = useReducedMotion();
   const chips: ChipInfo[] = [];
 
   if (filtros.status !== "todos") {
@@ -50,28 +52,55 @@ export function FilaChipsAtivos({ filtros, busca, categorias, provedores, onRemo
     chips.push({ dim: "busca", rotulo: `Busca: "${busca.trim()}"` });
   }
 
-  if (chips.length === 0) return null;
-
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-2">
-      {chips.map((chip) => (
-        <button
-          key={chip.dim}
-          type="button"
-          onClick={() => onRemover(chip.dim)}
-          className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 py-1 pl-2.5 pr-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/15"
+    <AnimatePresence>
+      {chips.length > 0 && (
+        <motion.div
+          initial={shouldReduceMotion ? false : { opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: "auto" }}
+          exit={shouldReduceMotion ? undefined : { opacity: 0, height: 0 }}
+          transition={{ duration: 0.2, ease: "easeOut" }}
+          className="mb-3 flex flex-wrap items-center gap-2 overflow-hidden"
         >
-          {chip.rotulo}
-          <X className="size-3.5" />
-        </button>
-      ))}
-      <button
-        type="button"
-        onClick={onLimpar}
-        className="rounded-full px-2 py-1 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-      >
-        Limpar filtros
-      </button>
-    </div>
+          <AnimatePresence initial={false}>
+            {chips.map((chip) =>
+              shouldReduceMotion ? (
+                <button
+                  key={chip.dim}
+                  type="button"
+                  onClick={() => onRemover(chip.dim)}
+                  className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 py-1 pl-2.5 pr-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/15"
+                >
+                  {chip.rotulo}
+                  <X className="size-3.5" />
+                </button>
+              ) : (
+                <motion.button
+                  key={chip.dim}
+                  type="button"
+                  layout="position"
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  transition={{ duration: 0.15, ease: "easeOut" }}
+                  onClick={() => onRemover(chip.dim)}
+                  className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 py-1 pl-2.5 pr-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/15"
+                >
+                  {chip.rotulo}
+                  <X className="size-3.5" />
+                </motion.button>
+              ),
+            )}
+          </AnimatePresence>
+          <button
+            type="button"
+            onClick={onLimpar}
+            className="rounded-full px-2 py-1 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          >
+            Limpar filtros
+          </button>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

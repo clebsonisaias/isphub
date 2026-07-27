@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { animate } from "animejs";
+import { gsap, useGSAP } from "@/lib/gsapSetup";
 import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/lib/apiClient";
 import { BrandMark } from "@/components/BrandMark";
@@ -10,7 +10,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-const REDUZIR_MOVIMENTO = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+function reduzirMovimento() {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -23,30 +25,38 @@ export function LoginPage() {
   const cardRef = useRef<HTMLDivElement>(null);
 
   // Entrada do card logo depois da animacao do glifo de marca.
-  useEffect(() => {
+  useGSAP(() => {
     if (!cardRef.current) return;
-    if (REDUZIR_MOVIMENTO()) {
-      cardRef.current.style.opacity = "1";
+    if (reduzirMovimento()) {
+      gsap.set(cardRef.current, { opacity: 1 });
       return;
     }
-    animate(cardRef.current, {
-      opacity: [0, 1],
-      translateY: [16, 0],
-      duration: 500,
-      delay: 500,
-      ease: "outQuad",
-    });
+    gsap.fromTo(
+      cardRef.current,
+      { opacity: 0, y: 16 },
+      { opacity: 1, y: 0, duration: 0.5, delay: 0.5, ease: "power1.out" },
+    );
   }, []);
 
   // Shake sutil no card ao errar login — feedback imediato, sem depender so da cor do texto.
-  useEffect(() => {
-    if (!erro || !cardRef.current || REDUZIR_MOVIMENTO()) return;
-    animate(cardRef.current, {
-      translateX: [0, -8, 8, -6, 6, 0],
-      duration: 400,
-      ease: "inOutSine",
-    });
-  }, [erro]);
+  useGSAP(
+    () => {
+      if (!erro || !cardRef.current || reduzirMovimento()) return;
+      // keyframes (array): replica o multi-ponto [0,-8,8,-6,6,0] do anime.js
+      // original — 5 segmentos iguais somando os 400ms totais.
+      gsap.to(cardRef.current, {
+        keyframes: [
+          { x: -8, duration: 0.08 },
+          { x: 8, duration: 0.08 },
+          { x: -6, duration: 0.08 },
+          { x: 6, duration: 0.08 },
+          { x: 0, duration: 0.08 },
+        ],
+        ease: "sine.inOut",
+      });
+    },
+    { dependencies: [erro] },
+  );
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -64,7 +74,7 @@ export function LoginPage() {
   }
 
   return (
-    <div className="relative flex min-h-svh items-center justify-center overflow-hidden bg-background px-4">
+    <div className="relative flex min-h-svh items-center justify-center overflow-hidden px-4">
       <div className="absolute right-4 top-4 z-20">
         <ThemeToggle />
       </div>

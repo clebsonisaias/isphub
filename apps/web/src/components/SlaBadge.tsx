@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { animate } from "animejs";
+import { useRef } from "react";
+import { gsap, useGSAP } from "@/lib/gsapSetup";
 import type { SlaInfo } from "@isphub/shared";
 import { cn } from "@/lib/utils";
 
@@ -22,21 +22,18 @@ export function SlaBadge({ sla }: { sla: SlaInfo }) {
   const dotRef = useRef<HTMLSpanElement>(null);
 
   // SLA estourado pulsa pra chamar atencao — respeita prefers-reduced-motion.
-  useEffect(() => {
+  useGSAP(() => {
     if (!estourado || !dotRef.current) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const anim = animate(dotRef.current, {
-      scale: [1, 1.7],
-      opacity: [1, 0.35],
-      duration: 900,
-      loop: true,
-      alternate: true,
-      ease: "inOutSine",
+    gsap.to(dotRef.current, {
+      scale: 1.7,
+      opacity: 0.35,
+      duration: 0.9,
+      repeat: -1,
+      yoyo: true,
+      ease: "sine.inOut",
     });
-    return () => {
-      anim.pause();
-    };
-  }, [estourado]);
+  }, { dependencies: [estourado] });
 
   return (
     <span className={cn("inline-flex items-center gap-1.5 text-xs font-medium", s.texto)}>

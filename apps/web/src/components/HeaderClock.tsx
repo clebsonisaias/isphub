@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { animate } from "animejs";
+import { gsap, useGSAP } from "@/lib/gsapSetup";
 import { horaApi } from "@/lib/horaApi";
 import { Clock3 } from "lucide-react";
 
@@ -32,13 +32,16 @@ export function HeaderClock() {
   const offsetRef = useRef(0); // isoUtc(rede) - Date.now(local) no momento da sincronizacao
   const rootRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  useGSAP(() => {
     if (!rootRef.current) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      rootRef.current.style.opacity = "1";
+      gsap.set(rootRef.current, { opacity: 1 });
       return;
     }
-    animate(rootRef.current, { opacity: [0, 1], translateY: [-6, 0], duration: 400, ease: "outQuad" });
+    // fromTo (nao `from`): o elemento ja nasce com a classe `opacity-0` do
+    // Tailwind — `from()` leria esse 0 computado como o "destino" implicito
+    // e o fade nunca apareceria. Os dois extremos explicitos evitam a ambiguidade.
+    gsap.fromTo(rootRef.current, { opacity: 0, y: -6 }, { opacity: 1, y: 0, duration: 0.4, ease: "power1.out" });
   }, []);
 
   useEffect(() => {
@@ -68,14 +71,15 @@ export function HeaderClock() {
   return (
     <div
       ref={rootRef}
-      className="hidden items-center gap-1.5 rounded-full border border-border bg-secondary/40 px-3 py-1 text-xs text-muted-foreground opacity-0 lg:flex"
+      className="hidden items-center gap-1.5 rounded-full border border-border bg-secondary/40 px-3 py-1 text-xs text-muted-foreground opacity-0 xl:flex"
       title={`Hora de rede — ${cidade}`}
     >
+      <span className="size-1.5 shrink-0 rounded-full bg-success motion-safe:animate-pulse" aria-hidden />
       <Clock3 className="size-3.5 shrink-0" />
-      <span className="font-semibold tabular-nums text-foreground">{fmtHora.format(agora)}</span>
+      <span className="font-mono font-semibold tabular-nums text-foreground">{fmtHora.format(agora)}</span>
       <span className="text-muted-foreground/70">·</span>
       <span className="capitalize">{fmtData.format(agora)}</span>
-      <span className="hidden text-muted-foreground/70 lg:inline">· {cidade}</span>
+      <span className="hidden text-muted-foreground/70 2xl:inline">· {cidade}</span>
     </div>
   );
 }

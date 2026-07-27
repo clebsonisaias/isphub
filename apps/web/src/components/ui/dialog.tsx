@@ -1,29 +1,81 @@
-import type * as React from "react";
+import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const Dialog = DialogPrimitive.Root;
+/**
+ * Radix expõe "aberto/fechado" via data-attribute pra CSS puro. Pra animar a
+ * saída com Framer Motion precisamos do booleano em React mesmo — daí este
+ * contexto: `Dialog` espelha a prop `open` (sempre controlada nos usos atuais)
+ * pra `DialogContent` decidir quando desmontar de verdade.
+ */
+const DialogOpenContext = React.createContext(false);
+
+function Dialog({ open, ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
+  return (
+    <DialogOpenContext.Provider value={open ?? false}>
+      <DialogPrimitive.Root open={open} {...props} />
+    </DialogOpenContext.Provider>
+  );
+}
+
 const DialogTrigger = DialogPrimitive.Trigger;
 
+const overlayVariants = {
+  hidden: { opacity: 0 },
+  visible: { opacity: 1 },
+};
+
+const contentVariants = {
+  hidden: { opacity: 0, scale: 0.95, y: 8 },
+  visible: { opacity: 1, scale: 1, y: 0 },
+};
+
 function DialogContent({ className, children, ...props }: React.ComponentProps<typeof DialogPrimitive.Content>) {
+  const isOpen = React.useContext(DialogOpenContext);
+  const shouldReduceMotion = useReducedMotion();
+
   return (
-    <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
-      <DialogPrimitive.Content
-        className={cn(
-          "fixed left-1/2 top-1/2 z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl border border-border bg-card p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
-          className,
-        )}
-        {...props}
-      >
-        {children}
-        <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none">
-          <X className="size-4" />
-          <span className="sr-only">Fechar</span>
-        </DialogPrimitive.Close>
-      </DialogPrimitive.Content>
-    </DialogPrimitive.Portal>
+    <AnimatePresence>
+      {isOpen && (
+        // forceMount em Portal/Overlay/Content: sem isso o Radix desmonta tudo
+        // no instante em que `open` vira false, antes do AnimatePresence
+        // conseguir tocar a saída. Quem decide o desmonte real agora é o
+        // `{isOpen && ...}` acima, coordenado pelo AnimatePresence.
+        <DialogPrimitive.Portal forceMount>
+          <DialogPrimitive.Overlay asChild forceMount>
+            <motion.div
+              initial={shouldReduceMotion ? false : "hidden"}
+              animate="visible"
+              exit={shouldReduceMotion ? undefined : "hidden"}
+              variants={overlayVariants}
+              transition={{ duration: 0.15, ease: "easeOut" }}
+              className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
+            />
+          </DialogPrimitive.Overlay>
+          <DialogPrimitive.Content asChild forceMount {...props}>
+            <motion.div
+              initial={shouldReduceMotion ? false : "hidden"}
+              animate="visible"
+              exit={shouldReduceMotion ? undefined : "hidden"}
+              variants={contentVariants}
+              transition={{ duration: 0.18, ease: "easeOut" }}
+              className={cn(
+                "fixed left-1/2 top-1/2 z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl border border-border bg-card p-6 shadow-lg",
+                className,
+              )}
+            >
+              {children}
+              <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none">
+                <X className="size-4" />
+                <span className="sr-only">Fechar</span>
+              </DialogPrimitive.Close>
+            </motion.div>
+          </DialogPrimitive.Content>
+        </DialogPrimitive.Portal>
+      )}
+    </AnimatePresence>
   );
 }
 
