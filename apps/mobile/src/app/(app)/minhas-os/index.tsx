@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useRouter } from "expo-router";
 import { ActivityIndicator, FlatList, RefreshControl, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
@@ -22,6 +23,7 @@ interface FilaResp {
 export default function MinhasOs() {
   const { token } = useAuth();
   const router = useRouter();
+  const [sincronizando, setSincronizando] = useState(false);
   const query = useQuery({
     queryKey: ["fila", "minhas-os"],
     enabled: !!token,
@@ -30,6 +32,19 @@ export default function MinhasOs() {
   });
 
   const itens = ordenarSlaFirst(query.data?.itens ?? []);
+
+  // Pull-to-refresh: dispara um sync sob demanda no SGP (SGP -> ISPhub) e depois
+  // re-busca a fila. Rate-limit e falha do sync sao best-effort — a fila
+  // recarrega de qualquer jeito.
+  async function sincronizarERecarregar() {
+    setSincronizando(true);
+    try {
+      await apiFetch("/sync/minhas-os", { method: "POST", token }).catch(() => {});
+      await query.refetch();
+    } finally {
+      setSincronizando(false);
+    }
+  }
 
   return (
     <Screen style={{ paddingHorizontal: 0 }}>
@@ -46,7 +61,7 @@ export default function MinhasOs() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ gap: space.md, paddingHorizontal: space.lg, paddingBottom: space.xxl }}
           refreshControl={
-            <RefreshControl refreshing={query.isFetching && !query.isLoading} onRefresh={() => query.refetch()} tintColor={colors.brand} />
+            <RefreshControl refreshing={sincronizando} onRefresh={sincronizarERecarregar} tintColor={colors.brand} />
           }
           ListEmptyComponent={
             <Muted>{query.isError ? "Não foi possível carregar a fila." : "Nenhuma OS atribuída a você."}</Muted>

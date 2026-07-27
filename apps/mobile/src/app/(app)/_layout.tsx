@@ -2,6 +2,7 @@ import { Redirect, Tabs } from "expo-router";
 import { ActivityIndicator, View } from "react-native";
 import { useAuth } from "@/lib/auth";
 import { useModulos } from "@/lib/config";
+import { useRealtime } from "@/lib/realtime";
 import { ROTAS_MODULO } from "@/lib/modulo-registry";
 import { colors } from "@/theme/tokens";
 
@@ -13,6 +14,7 @@ import { colors } from "@/theme/tokens";
 export default function AppLayout() {
   const { token, carregando } = useAuth();
   const { modulos } = useModulos();
+  useRealtime(); // canal SSE ao vivo enquanto o tecnico esta logado
 
   if (carregando) {
     return (

@@ -5,6 +5,7 @@ import { prisma } from "../lib/prisma.js";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { montarModulosHabilitados, togglePatchInvalido, type ModuloConfigRow } from "../services/moduloService.js";
+import { emitParaTodos } from "../services/realtimeHub.js";
 
 /**
  * `GET /config` — config efetiva do app do tecnico pro usuario logado. Cruza o
@@ -88,6 +89,8 @@ adminModulosRouter.patch(
         ...(patch.rolesPermitidos !== undefined ? { rolesPermitidos: patch.rolesPermitidos } : {}),
       },
     });
+    // Empurra pros apps reconstruirem a navegacao na hora (tab aparece/some).
+    emitParaTodos({ tipo: "config-alterada", em: new Date().toISOString() });
     res.json(atualizado);
   }),
 );
