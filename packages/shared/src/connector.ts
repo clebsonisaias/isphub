@@ -42,35 +42,10 @@ export interface RawOs {
   tecnicoSgpNome?: string | null;
 }
 
-/** Ocorrencia normalizada pelo adapter. */
-export interface RawOccurrence {
-  sgpNumero: string;
-  tipo?: string | null;
-  status?: string | null;
-  conteudo?: string | null;
-  responsavel?: string | null;
-  clienteNome?: string | null;
-  contratoId?: string | null;
-  contratoStatus?: string | null;
-  pop?: string | null;
-  metodo?: string | null;
-  usuario?: string | null;
-  dataCadastro?: string | null;
-  dataAgendamento?: string | null;
-  dataFinalizacao?: string | null;
-}
-
 export interface ListOsParams {
   status?: number;
   motivo?: number[];
   contrato?: number;
-  offset?: number;
-  limit?: number;
-}
-
-export interface ListOccurrenceParams {
-  tipo?: number[];
-  status?: number;
   offset?: number;
   limit?: number;
 }
@@ -86,7 +61,7 @@ export interface ConnectionStatus {
 /**
  * Detalhes tecnicos consultados ao vivo no ERP (endereco completo + sinal
  * da ONU + status de conexao) — nao fazem parte do sync em massa porque o
- * SGP nao expoe endereco de rua nem sinal nas listagens de OS/ocorrencia,
+ * SGP nao expoe endereco de rua nem sinal nas listagens de OS,
  * so num endpoint de consulta de cliente separado.
  */
 export interface DetalhesTecnicos {
@@ -126,14 +101,11 @@ export interface ErpConnector {
   /** Valida credenciais fazendo uma chamada leve. */
   testConnection(): Promise<{ ok: boolean; message?: string }>;
 
-  /** Catalogo de tipos de OS/ocorrencia do provedor. */
+  /** Catalogo de tipos de OS do provedor. */
   listOsTypes(): Promise<RawOsType[]>;
 
   /** Lista OS para o espelho (polling). */
   listServiceOrders(params?: ListOsParams): Promise<RawOs[]>;
-
-  /** Lista ocorrencias para o espelho (polling). */
-  listOccurrences(params?: ListOccurrenceParams): Promise<RawOccurrence[]>;
 
   // ---- write-back ----
 

@@ -54,8 +54,10 @@ test("fluxo despacho -> status: marcar a caminho e concluir uma OS, refletindo n
 
   await login(page, ADMIN);
 
-  // Escopa a fila ao provedor semeado pelo global-setup e abre a OS fixture.
-  await page.getByRole("combobox").selectOption({ label: "E2E Provider" });
+  // Escopa a fila ao provedor semeado pelo global-setup (faceta de provedor na
+  // sidebar — restrita ao <aside> pra não colidir com o badge do provedor no
+  // próprio card) e abre a OS fixture.
+  await page.locator("aside").getByRole("button", { name: /E2E Provider/ }).click();
   const card = page.getByText("Cliente E2E").locator("xpath=ancestor::button[1]");
   await expect(card).toBeVisible();
   await card.click();
@@ -77,5 +79,7 @@ test("fluxo despacho -> status: marcar a caminho e concluir uma OS, refletindo n
   // Confirma que as duas acoes de fato chegaram no SGP (write-back real, nao so local).
   const log = await (await request.get(`${MOCK_SGP}/_test/log`)).json();
   expect(log.some((e: any) => e.acao === "acaminho" && e.osId === "e2e-os-1")).toBe(true);
-  expect(log.some((e: any) => e.acao === "status" && e.osId === "e2e-os-1" && e.osStatus === "1")).toBe(true);
+  // os_status vai como número no corpo JSON (updateOsStatus manda JSON, não
+  // form) — o mock loga o valor cru, então é 1 (número), não "1".
+  expect(log.some((e: any) => e.acao === "status" && e.osId === "e2e-os-1" && e.osStatus === 1)).toBe(true);
 });

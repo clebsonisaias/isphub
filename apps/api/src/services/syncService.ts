@@ -4,7 +4,7 @@ import { buildConnector } from "./erpConnectorService.js";
 import { sugerirCategoriaId } from "./categoriaMatch.js";
 
 /**
- * Motor de sincronizacao: puxa OS e ocorrencias do SGP de um provedor e faz
+ * Motor de sincronizacao: puxa OS do SGP de um provedor e faz
  * upsert idempotente no espelho local. Chamado tanto pelo scheduler (polling
  * periodico) quanto por um trigger manual (rota POST /provedores/:id/sync,
  * util para testes e para "sincronizar agora").
@@ -199,39 +199,6 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
     ok = false;
     mensagemFinal = mensagem(err);
     await logSync(provedorId, "pull", "os", false, 0, inicioOs, mensagemFinal);
-  }
-
-  // --- 3. Ocorrencias ---
-  const inicioOcorrencias = Date.now();
-  try {
-    const ocorrencias = await connector.listOccurrences();
-    for (const raw of ocorrencias) {
-      const campos = {
-        tipo: raw.tipo,
-        status: raw.status,
-        conteudo: raw.conteudo,
-        responsavel: raw.responsavel,
-        clienteNome: raw.clienteNome,
-        contratoId: raw.contratoId,
-        contratoStatus: raw.contratoStatus,
-        pop: raw.pop,
-        metodo: raw.metodo,
-        usuario: raw.usuario,
-        dataCadastro: raw.dataCadastro ? new Date(raw.dataCadastro) : null,
-        dataAgendamento: raw.dataAgendamento ? new Date(raw.dataAgendamento) : null,
-        dataFinalizacao: raw.dataFinalizacao ? new Date(raw.dataFinalizacao) : null,
-      };
-      await prisma.ocorrencia.upsert({
-        where: { provedorId_sgpNumero: { provedorId, sgpNumero: raw.sgpNumero } },
-        create: { provedorId, sgpNumero: raw.sgpNumero, ...campos },
-        update: { ...campos, sincronizadoEm: new Date() },
-      });
-    }
-    await logSync(provedorId, "pull", "ocorrencia", true, ocorrencias.length, inicioOcorrencias);
-  } catch (err) {
-    ok = false;
-    mensagemFinal = mensagem(err);
-    await logSync(provedorId, "pull", "ocorrencia", false, 0, inicioOcorrencias, mensagemFinal);
   }
 
   await prisma.erpConfig.update({

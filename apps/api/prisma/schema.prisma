@@ -52,7 +52,6 @@ model Provedor {
   erpConfigs      ErpConfig[]
   tiposOs         TipoOs[]
   ordensServico   OrdemServico[]
-  ocorrencias     Ocorrencia[]
   usuarios        Usuario[]
   syncLogs        SyncLog[]
 
@@ -107,7 +106,7 @@ model Categoria {
   @@map("categorias")
 }
 
-/// Tipo de OS/ocorrencia importado do catalogo do ERP e exibido no ISPhub.
+/// Tipo de OS importado do catalogo do ERP e exibido no ISPhub.
 model TipoOs {
   id          String     @id @default(uuid())
   provedorId  String
@@ -150,7 +149,7 @@ model OrdemServico {
   lat             Float?
   lng             Float?
   /// Localidade/POP do SGP (ex.: "Macaíba") — o SGP nao expoe endereco de
-  /// rua nas listagens de OS/ocorrencia, isso e o dado de localizacao mais
+  /// rua nas listagens de OS, isso e o dado de localizacao mais
   /// fino disponivel.
   pop             String?
   /// Status do contrato no SGP no momento do sync (ex.: "Ativo",
@@ -200,37 +199,6 @@ model OrdemServico {
   @@map("ordens_servico")
 }
 
-/// Ocorrencia espelhada do ERP do provedor.
-model Ocorrencia {
-  id               String    @id @default(uuid())
-  provedorId       String
-  provedor         Provedor  @relation(fields: [provedorId], references: [id], onDelete: Cascade)
-  sgpNumero        String
-  tipo             String?
-  status           String?
-  conteudo         String?
-  responsavel      String?
-  /// Nome do cliente dono do contrato (o SGP manda no proprio registro da
-  /// ocorrencia, nao precisa de lookup extra).
-  clienteNome      String?
-  contratoId       String?
-  /// Status do contrato no momento do sync (ex.: "Ativo", "Cancelado").
-  contratoStatus   String?
-  /// Localidade/POP do SGP — mesma ressalva de OrdemServico.pop.
-  pop              String?
-  /// Canal pelo qual a ocorrencia foi registrada (ex.: "Telefone", "URA").
-  metodo           String?
-  /// Usuario do SGP que registrou a ocorrencia (auditoria).
-  usuario          String?
-  dataCadastro     DateTime?
-  dataAgendamento  DateTime?
-  dataFinalizacao  DateTime?
-  sincronizadoEm   DateTime  @default(now())
-
-  @@unique([provedorId, sgpNumero])
-  @@index([provedorId, status])
-  @@map("ocorrencias")
-}
 
 model Usuario {
   id           String   @id @default(uuid())
@@ -308,7 +276,7 @@ model SyncLog {
   provedorId String
   provedor   Provedor @relation(fields: [provedorId], references: [id], onDelete: Cascade)
   direcao    String   // "pull" | "push"
-  recurso    String   // "os" | "ocorrencia" | "tipos" | "tecnicos" | ...
+  recurso    String   // "os" | "tipos" | "tecnicos" | ...
   ok         Boolean
   mensagem   String?
   quantidade Int?

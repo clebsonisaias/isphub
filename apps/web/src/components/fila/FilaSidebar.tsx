@@ -9,7 +9,7 @@ import {
   type FilaFacetState,
 } from "@/lib/filaFacets";
 import { iconeCategoria } from "@/lib/categoriaIcons";
-import { LayoutList, Wrench, AlertCircle, HelpCircle } from "lucide-react";
+import { LayoutList, HelpCircle } from "lucide-react";
 
 interface Props {
   filtros: FilaFacetState;
@@ -17,6 +17,8 @@ interface Props {
   provedores: Provedor[];
   categorias: Categoria[];
   mostrarProvedores: boolean;
+  /** Total de OS do lote da aba ativa (sem nenhum filtro) — mostrado em "Todas as OS". */
+  totalOs: number;
   onChange: (patch: Partial<FilaFacetState>) => void;
 }
 
@@ -73,32 +75,21 @@ function Secao({ titulo, children }: { titulo: string; children: React.ReactNode
   );
 }
 
-export function FilaSidebar({ filtros, facetas, provedores, categorias, mostrarProvedores, onChange }: Props) {
-  const totalKind = facetas.porKind.os + facetas.porKind.ocorrencia;
-
+export function FilaSidebar({ filtros, facetas, provedores, categorias, mostrarProvedores, totalOs, onChange }: Props) {
   return (
     <nav className="flex flex-col gap-1">
-      <Secao titulo="Tipo">
+      <Secao titulo="Ordens de serviço">
         <LinhaFiltro
-          label="Todos os itens"
-          count={totalKind}
-          ativo={filtros.kind === "todos"}
-          onClick={() => onChange({ kind: "todos" })}
+          label="Todas as OS"
+          count={totalOs}
+          ativo={
+            filtros.status === "todos" &&
+            filtros.prioridade === "todas" &&
+            filtros.categoriaId === "todas" &&
+            filtros.provedorId === "todos"
+          }
+          onClick={() => onChange({ status: "todos", prioridade: "todas", categoriaId: "todas", provedorId: "todos" })}
           icon={<LayoutList className="size-4 shrink-0" />}
-        />
-        <LinhaFiltro
-          label="Ordens de Serviço"
-          count={facetas.porKind.os}
-          ativo={filtros.kind === "os"}
-          onClick={() => onChange({ kind: "os" })}
-          icon={<Wrench className="size-4 shrink-0" />}
-        />
-        <LinhaFiltro
-          label="Ocorrências"
-          count={facetas.porKind.ocorrencia}
-          ativo={filtros.kind === "ocorrencia"}
-          onClick={() => onChange({ kind: "ocorrencia" })}
-          icon={<AlertCircle className="size-4 shrink-0" />}
         />
       </Secao>
 

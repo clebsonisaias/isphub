@@ -137,18 +137,6 @@ describe("createSgpConnector", () => {
     expect(os.clienteDocumento).toBe("12345678900");
   });
 
-  it("listOccurrences converte contrato numerico para string (regressao de producao)", async () => {
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({ ocorrencias: [{ numero: "260724151100", contrato: 97, status: "Encerrada" }] }),
-    );
-
-    const conn = createSgpConnector(creds);
-    const [ocorrencia] = await conn.listOccurrences();
-
-    expect(ocorrencia.contratoId).toBe("97");
-    expect(typeof ocorrencia.contratoId).toBe("string");
-  });
-
   it("listServiceOrders extrai motivo/pop/contrato_status/data+hora do payload real do SGP (CITmax)", async () => {
     // Payload real capturado em producao (via SGP_DEBUG_RAW) — o SGP so manda
     // o "motivo" como texto (sem motivo_id), separa data e hora em campos
@@ -226,49 +214,6 @@ describe("createSgpConnector", () => {
     const [os] = await conn.listServiceOrders();
 
     expect(mapSgpOsStatus(os.statusCode)).toBe(OsStatus.CONCLUIDA);
-  });
-
-  it("listOccurrences extrai cliente/pop/metodo/data_finalizacao do payload real do SGP (CITmax)", async () => {
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({
-        ocorrencias: [
-          {
-            id: 41178,
-            cliente: "IGREJA BATISTA LAGOINHA NATAL",
-            contrato: 97,
-            contrato_status: "Ativo",
-            contrato_status_id: 1,
-            pop: "Macaíba",
-            numero: "260724151100",
-            status: "Encerrada",
-            status_id: 1,
-            data_cadastro: "2026-07-24",
-            data_agendamento: "",
-            data_finalizacao: "2026-07-24",
-            tipo: "💰 Financeiro - Outros",
-            metodo: "Telefone",
-            conteudo: "Envio de Fatura via URA",
-            responsavel: "",
-            usuario: "system",
-            usuario_finalizacao: "",
-            servico: [],
-            comentarios: [],
-            ordens_servicos: [],
-          },
-        ],
-      }),
-    );
-
-    const conn = createSgpConnector(creds);
-    const [ocorrencia] = await conn.listOccurrences();
-
-    expect(ocorrencia.clienteNome).toBe("IGREJA BATISTA LAGOINHA NATAL");
-    expect(ocorrencia.contratoStatus).toBe("Ativo");
-    expect(ocorrencia.pop).toBe("Macaíba");
-    expect(ocorrencia.metodo).toBe("Telefone");
-    expect(ocorrencia.usuario).toBe("system");
-    expect(ocorrencia.dataCadastro).toBe("2026-07-24");
-    expect(ocorrencia.dataFinalizacao).toBe("2026-07-24");
   });
 
   it("listServiceOrders retorna endereco sem lat/lng quando endereco_ll esta ausente", async () => {

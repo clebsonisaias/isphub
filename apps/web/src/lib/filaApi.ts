@@ -10,7 +10,7 @@ export interface TecnicoResumo {
 }
 
 interface FilaResponse {
-  /** Total real no banco pro filtro atual (soma OS + ocorrencias), via count. */
+  /** Total real de OS no banco pro filtro atual, via count. */
   total: number;
   /**
    * true quando o conjunto devolvido nao cobre o total (bateu no teto do

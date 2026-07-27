@@ -52,7 +52,10 @@ export async function marcarACaminho(ordemServicoId: string, autorId: string) {
   const { os, connector } = await loadOsWithConnector(ordemServicoId);
   await chamarSgp(() => connector.setOnTheWay(os.sgpOsId));
 
-  const [, osAtualizada] = await prisma.$transaction([
+  // A OS atualizada e o 1o elemento da transacao; o evento e o 2o (e nao tem
+  // campo `status`) — pegar o indice errado devolvia o evento pro front, que
+  // entao exibia o status vazio ate o dialog fechar e a fila re-buscar.
+  const [osAtualizada] = await prisma.$transaction([
     prisma.ordemServico.update({
       where: { id: os.id },
       data: { status: OsStatus.EM_DESLOCAMENTO, sincronizadoEm: new Date(), statusAlteradoEm: new Date() },
@@ -81,7 +84,8 @@ export async function mudarStatus(ordemServicoId: string, novoStatus: OsStatus, 
   }
 
   const descricao = `Status alterado: ${OS_STATUS_LABEL[os.status as OsStatus]} → ${OS_STATUS_LABEL[novoStatus]}`;
-  const [, osAtualizada] = await prisma.$transaction([
+  // Pega a OS atualizada (1o elemento), nao o evento (2o) — ver marcarACaminho.
+  const [osAtualizada] = await prisma.$transaction([
     prisma.ordemServico.update({
       where: { id: os.id },
       data: { status: novoStatus, sincronizadoEm: new Date(), statusAlteradoEm: new Date() },
@@ -101,7 +105,8 @@ export async function adicionarAnotacao(ordemServicoId: string, texto: string, a
   // completo tambem vira um OsEvento (historico real, na aba Historico).
   // observacaoAlteradaEm protege esse eco contra o sync sobrescrever com um
   // valor desatualizado antes do SGP confirmar (mesma logica do status).
-  const [, osAtualizada] = await prisma.$transaction([
+  // Pega a OS atualizada (1o elemento), nao o evento (2o) — ver marcarACaminho.
+  const [osAtualizada] = await prisma.$transaction([
     prisma.ordemServico.update({
       where: { id: os.id },
       data: { observacao: texto, sincronizadoEm: new Date(), observacaoAlteradaEm: new Date() },

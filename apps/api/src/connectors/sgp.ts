@@ -3,9 +3,7 @@ import { env } from "../config/env.js";
 import type {
   ErpConnector,
   ErpCredentials,
-  ListOccurrenceParams,
   ListOsParams,
-  RawOccurrence,
   RawOs,
   RawOsType,
   SgpImagem,
@@ -331,25 +329,6 @@ function normalizeOs(raw: Record<string, any>): RawOs {
   };
 }
 
-function normalizeOccurrence(raw: Record<string, any>): RawOccurrence {
-  return {
-    sgpNumero: String(pick(raw, "numero", "os_id", "id")),
-    tipo: pickString(raw, "tipo"),
-    status: pickString(raw, "status"),
-    conteudo: pickString(raw, "conteudo"),
-    responsavel: pickString(raw, "responsavel"),
-    clienteNome: pickString(raw, "cliente", "cliente_nome"),
-    contratoId: pickString(raw, "contrato"),
-    contratoStatus: pickString(raw, "contrato_status"),
-    pop: pickString(raw, "pop"),
-    metodo: pickString(raw, "metodo"),
-    usuario: pickString(raw, "usuario"),
-    dataCadastro: combineDateHora(raw, "data_cadastro", "hora_cadastro"),
-    dataAgendamento: combineDateHora(raw, "data_agendamento", "hora_agendamento"),
-    dataFinalizacao: combineDateHora(raw, "data_finalizacao", "hora_finalizacao"),
-  };
-}
-
 /**
  * Formata uma data ISO no padrao que o SGP espera em campos de escrita:
  * "AAAA-MM-DD HH:mm:ss", sempre em horario de Brasilia — o container roda
@@ -412,18 +391,6 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
       const raw = asArray(data, "ordens_servicos", "resultados");
       if (env.SGP_DEBUG_RAW) console.log("[sgp-debug] os[0] raw:", JSON.stringify(raw[0]));
       return raw.map(normalizeOs);
-    },
-
-    async listOccurrences(params: ListOccurrenceParams = {}): Promise<RawOccurrence[]> {
-      const data = await sgpPostJson(creds, "/api/ura/ocorrencia/list/", {
-        tipo: params.tipo,
-        status: params.status,
-        offset: params.offset,
-        limit: params.limit,
-      });
-      const raw = asArray(data, "ocorrencias", "resultados");
-      if (env.SGP_DEBUG_RAW) console.log("[sgp-debug] ocorrencia[0] raw:", JSON.stringify(raw[0]));
-      return raw.map(normalizeOccurrence);
     },
 
     async setOnTheWay(sgpOsId: string): Promise<void> {

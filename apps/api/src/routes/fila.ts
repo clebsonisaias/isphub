@@ -1,13 +1,12 @@
 import { Router } from "express";
 import { z } from "zod";
-import type { Prisma } from "@prisma/client";
 import { OsStatus, OS_STATUS_ABERTOS, UserRole, type FilaItem } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth } from "../middleware/auth.js";
 import { calcularSla } from "../services/slaService.js";
 import { escopoOsWhere } from "../services/escopoService.js";
-import { mesclarFila } from "../services/filaService.js";
+import { prepararFila } from "../services/filaService.js";
 
 export const filaRouter = Router();
 
@@ -33,11 +32,10 @@ const filtrosSchema = z.object({
   /** "sem_categoria" filtra OS cujo tipo ainda nao foi mapeado a nenhuma categoria. */
   categoriaId: z.union([z.string().uuid(), z.literal("sem_categoria")]).optional(),
   /**
-   * Separa a fila operacional do arquivo. "abertos" = trabalho que ainda
-   * precisa de acao (OS em OS_STATUS_ABERTOS / ocorrencia sem data de
-   * finalizacao); "fechados" = o resto, so pra consulta. Sem isso, uma base
-   * com muita OS encerrada consome o teto de registros e esconde as abertas,
-   * que sao justamente as que importam.
+   * Separa a fila operacional do arquivo. "abertos" = OS em OS_STATUS_ABERTOS
+   * (trabalho que ainda precisa de acao); "fechados" = o resto, so pra
+   * consulta. Sem isso, uma base com muita OS encerrada consome o teto de
+   * registros e esconde as abertas, que sao justamente as que importam.
    */
   grupo: z.enum(["abertos", "fechados"]).optional(),
   busca: z.string().optional(),
@@ -50,12 +48,11 @@ const filtrosSchema = z.object({
 });
 
 /**
- * Fila unificada: mescla Ordens de Servico e Ocorrencias de todos os
- * provedores (ou de um so, via filtro) numa unica lista, com badge do
- * provedor (cor/logo) e SLA calculado por item. Como as duas tabelas nao
- * compartilham schema, a paginacao e feita em memoria apos buscar um
- * volume generoso de cada uma — adequado para o volume esperado no MVP;
- * se a escala crescer muito, migrar para uma view/union SQL dedicada.
+ * Fila de Ordens de Servico de todos os provedores (ou de um so, via filtro),
+ * com badge do provedor (cor/logo) e SLA calculado por item. Devolve o
+ * conjunto completo do grupo ativo (ate LIMITE_FILA), com `total` exato via
+ * count e flag `truncado`; a faceta/ordenacao/paginacao fina acontece no
+ * cliente sobre esse conjunto completo. A ISPhub trabalha so com OS.
  */
 filaRouter.get(
   "/",
@@ -102,47 +99,7 @@ filaRouter.get(
       prisma.ordemServico.count({ where: osWhere }),
     ]);
 
-    // Ocorrencias so entram na fila quando o filtro nao usa dimensoes
-    // exclusivas de OS (tipo/tecnico/categoria), que elas nao possuem, e
-    // nunca pra um usuario tecnico (ocorrencia nao tem tecnico atribuido —
-    // a fila dele e so as OS dele mesmo).
-    let ocorrencias: Prisma.OcorrenciaGetPayload<{ include: { provedor: true } }>[] = [];
-    let totalOco = 0;
-    if (req.user!.role !== UserRole.TECNICO && !f.tipoOsId && !f.tecnicoId && !f.categoriaId) {
-      const provedorIdOcorrencias =
-        req.user!.role === UserRole.PROVEDOR ? (req.user!.provedorId ?? "__nenhum__") : f.provedorId;
-      const ocoWhere: any = { provedorId: provedorIdOcorrencias };
-      // Coerencia com o grupo pedido: ocorrencia "aberta" e a que ainda nao
-      // tem data de finalizacao (o SGP nao expoe um enum de status util aqui).
-      if (f.grupo === "abertos") ocoWhere.dataFinalizacao = null;
-      else if (f.grupo === "fechados") ocoWhere.dataFinalizacao = { not: null };
-      if (f.busca) {
-        ocoWhere.OR = [
-          { conteudo: { contains: f.busca, mode: "insensitive" } },
-          { contratoId: { contains: f.busca, mode: "insensitive" } },
-          { sgpNumero: { contains: f.busca, mode: "insensitive" } },
-        ];
-      }
-      if (f.de || f.ate) {
-        ocoWhere.dataCadastro = {};
-        if (f.de) ocoWhere.dataCadastro.gte = new Date(f.de);
-        if (f.ate) ocoWhere.dataCadastro.lte = new Date(f.ate);
-      }
-      Object.keys(ocoWhere).forEach((k) => ocoWhere[k] === undefined && delete ocoWhere[k]);
-
-      [ocorrencias, totalOco] = await Promise.all([
-        prisma.ocorrencia.findMany({
-          where: ocoWhere,
-          include: { provedor: true },
-          orderBy: { dataCadastro: "desc" },
-          take: LIMITE_FILA,
-        }),
-        prisma.ocorrencia.count({ where: ocoWhere }),
-      ]);
-    }
-
     const itensOs: FilaItem[] = ordens.map((os) => ({
-      kind: "os" as const,
       id: os.id,
       provedorId: os.provedorId,
       provedor: {
@@ -204,39 +161,10 @@ filaRouter.get(
       }),
     }));
 
-    const itensOco: FilaItem[] = ocorrencias.map((o) => ({
-      kind: "ocorrencia" as const,
-      id: o.id,
-      provedorId: o.provedorId,
-      provedor: {
-        id: o.provedor.id,
-        nome: o.provedor.nome,
-        cor: o.provedor.cor,
-        logoUrl: o.provedor.logoUrl,
-        ativo: o.provedor.ativo,
-        criadoEm: o.provedor.criadoEm.toISOString(),
-      },
-      sgpNumero: o.sgpNumero,
-      tipo: o.tipo,
-      status: o.status,
-      conteudo: o.conteudo,
-      responsavel: o.responsavel,
-      clienteNome: o.clienteNome,
-      contratoId: o.contratoId,
-      contratoStatus: o.contratoStatus,
-      pop: o.pop,
-      metodo: o.metodo,
-      usuario: o.usuario,
-      dataCadastro: o.dataCadastro?.toISOString() ?? null,
-      dataAgendamento: o.dataAgendamento?.toISOString() ?? null,
-      dataFinalizacao: o.dataFinalizacao?.toISOString() ?? null,
-      sincronizadoEm: o.sincronizadoEm.toISOString(),
-    }));
-
-    // Mescla, ordena e aplica o teto — devolve o conjunto COMPLETO do grupo
-    // ativo (todos os provedores), pra o cliente facetar/paginar sobre dados
+    // Ordena e aplica o teto — devolve o conjunto COMPLETO do grupo ativo
+    // (todos os provedores), pra o cliente facetar/paginar sobre dados
     // completos. `truncado` avisa honestamente se o total real passou do teto.
-    const { itens, total, truncado } = mesclarFila(itensOs, itensOco, totalOs, totalOco, LIMITE_FILA);
+    const { itens, total, truncado } = prepararFila(itensOs, totalOs, LIMITE_FILA);
     if (truncado) {
       console.warn(
         `[fila] conjunto truncado: devolvidos ${itens.length} de ${total} (limite ${LIMITE_FILA}). ` +

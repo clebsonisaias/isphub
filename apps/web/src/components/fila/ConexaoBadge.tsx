@@ -12,19 +12,14 @@ import { Wifi, WifiOff } from "lucide-react";
 const CACHE_TTL_MS = 90_000;
 const cache = new Map<string, { valor: DetalhesTecnicos | null; expiraEm: number }>();
 
-/** Como formatarEndereco, mas reaproveitando o texto ja sintetizado do detalhe tecnico. */
-function enderecoTexto(d: DetalhesTecnicos): string | null {
-  if (!d.endereco?.logradouro) return null;
-  const bairro = d.endereco.bairro ? ` — ${d.endereco.bairro}` : "";
-  return `${d.endereco.logradouro}, ${d.endereco.numero ?? "s/n"}${bairro}`;
-}
-
 /**
- * Status de conexão (online/offline) + endereço completo do cliente, direto
- * no card da fila — consulta ao vivo o SGP do provedor, mas só quando o card
- * entra na tela (IntersectionObserver) e com cache de 90s, pra uma página
- * com dezenas de OS não virar uma rajada de chamadas simultâneas (o backend
- * também limita concorrência por provedor, ver conexao.ts).
+ * Status de conexão (online/offline) do cliente, direto no card da fila —
+ * consulta ao vivo o SGP do provedor, mas só quando o card entra na tela
+ * (IntersectionObserver) e com cache de 90s, pra uma página com dezenas de OS
+ * não virar uma rajada de chamadas simultâneas (o backend também limita
+ * concorrência por provedor, ver conexao.ts). O endereço completo NÃO entra
+ * aqui (fica no dialog de detalhe, que já consulta) — evita duplicar o
+ * endereço que o card já mostra no subtítulo e o layout shift da linha.
  */
 export function ConexaoBadge({ provedorId, contratoId }: { provedorId: string; contratoId?: string | null }) {
   const [detalhes, setDetalhes] = useState<DetalhesTecnicos | null>(null);
@@ -72,25 +67,28 @@ export function ConexaoBadge({ provedorId, contratoId }: { provedorId: string; c
 
   if (!contratoId) return null;
 
-  const endereco = detalhes ? enderecoTexto(detalhes) : null;
-
+  // Espaço reservado de tamanho fixo: o badge carrega async, mas o slot ocupa
+  // sempre o mesmo lugar (skeleton -> badge -> vazio), então a linha de badges
+  // não re-flui ~1s depois do card aparecer (era um layout shift a cada scroll).
   return (
-    <span ref={rootRef} className="inline-flex items-center gap-1.5">
-      {carregando && !detalhes && (
+    <span ref={rootRef} className="inline-flex h-5 w-[4.75rem] items-center">
+      {carregando && !detalhes ? (
         <span className="inline-flex h-4 w-16 animate-pulse rounded-full bg-secondary/60" />
-      )}
-      {detalhes?.online != null && (
+      ) : detalhes?.online != null ? (
         <span
           className={cn(
             "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium",
-            detalhes.online ? "border-success/40 bg-success/10 text-success" : "border-destructive/40 bg-destructive/10 text-destructive",
+            // Offline é sinal de atenção (destructive); online é neutro — cor
+            // no card fica reservada pra urgência/SLA.
+            detalhes.online
+              ? "border-border bg-secondary/50 text-muted-foreground"
+              : "border-destructive/40 bg-destructive/10 text-destructive",
           )}
         >
           {detalhes.online ? <Wifi className="size-3" /> : <WifiOff className="size-3" />}
           {detalhes.online ? "Online" : "Offline"}
         </span>
-      )}
-      {endereco && <span className="text-sm text-muted-foreground">· {endereco}</span>}
+      ) : null}
     </span>
   );
 }

@@ -1,0 +1,77 @@
+import type { Categoria, Provedor } from "@isphub/shared";
+import { OS_STATUS_LABEL, PRIORIDADE_LABEL, type FilaFacetState } from "@/lib/filaFacets";
+import { X } from "lucide-react";
+
+/** Dimensões de filtro que viram chip (a busca entra separada). */
+type Dimensao = "status" | "prioridade" | "categoriaId" | "provedorId";
+
+interface ChipInfo {
+  dim: Dimensao | "busca";
+  rotulo: string;
+}
+
+interface Props {
+  filtros: FilaFacetState;
+  /** Texto de busca (estado separado dos filtros de faceta no Painel). */
+  busca: string;
+  categorias: Categoria[];
+  provedores: Provedor[];
+  /** Remove uma dimensão (volta ao valor "todos/todas"); "busca" limpa o texto. */
+  onRemover: (dim: Dimensao | "busca") => void;
+  onLimpar: () => void;
+}
+
+/**
+ * Linha de chips dos filtros ativos, acima da lista. Torna visível *por que* a
+ * lista está curta (antes o usuário via poucos itens sem pista do filtro) e dá
+ * um "×" por dimensão + um "Limpar filtros" geral.
+ */
+export function FilaChipsAtivos({ filtros, busca, categorias, provedores, onRemover, onLimpar }: Props) {
+  const chips: ChipInfo[] = [];
+
+  if (filtros.status !== "todos") {
+    chips.push({ dim: "status", rotulo: `Status: ${OS_STATUS_LABEL[filtros.status]}` });
+  }
+  if (filtros.prioridade !== "todas") {
+    chips.push({ dim: "prioridade", rotulo: `Prioridade: ${PRIORIDADE_LABEL[filtros.prioridade]}` });
+  }
+  if (filtros.categoriaId !== "todas") {
+    const nome =
+      filtros.categoriaId === "sem_categoria"
+        ? "Não classificado"
+        : (categorias.find((c) => c.id === filtros.categoriaId)?.nome ?? "Categoria");
+    chips.push({ dim: "categoriaId", rotulo: `Categoria: ${nome}` });
+  }
+  if (filtros.provedorId !== "todos") {
+    const nome = provedores.find((p) => p.id === filtros.provedorId)?.nome ?? "Provedor";
+    chips.push({ dim: "provedorId", rotulo: `Provedor: ${nome}` });
+  }
+  if (busca.trim()) {
+    chips.push({ dim: "busca", rotulo: `Busca: "${busca.trim()}"` });
+  }
+
+  if (chips.length === 0) return null;
+
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-2">
+      {chips.map((chip) => (
+        <button
+          key={chip.dim}
+          type="button"
+          onClick={() => onRemover(chip.dim)}
+          className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 py-1 pl-2.5 pr-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/15"
+        >
+          {chip.rotulo}
+          <X className="size-3.5" />
+        </button>
+      ))}
+      <button
+        type="button"
+        onClick={onLimpar}
+        className="rounded-full px-2 py-1 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+      >
+        Limpar filtros
+      </button>
+    </div>
+  );
+}

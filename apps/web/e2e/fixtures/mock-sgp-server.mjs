@@ -1,6 +1,6 @@
 /**
  * SGP fixture para os testes E2E do ISPhub. Simula o suficiente da API do SGP
- * (auth por app+token, catalogo de tipos, tecnicos, listagem de OS/ocorrencias
+ * (auth por app+token, catalogo de tipos, tecnicos, listagem de OS
  * e os endpoints de write-back) para exercitar o fluxo completo despacho ->
  * status sem depender de um SGP real. Expõe /_test/log e /_test/reset para
  * os specs confirmarem que o ISPhub de fato conversou com o "SGP".
@@ -81,11 +81,6 @@ app.post("/api/ura/ordemservico/list/", (req, res) => {
       },
     ],
   });
-});
-
-app.post("/api/ura/ocorrencia/list/", (req, res) => {
-  if (exigirAuth(req, res)) return;
-  res.json({ ocorrencias: [] });
 });
 
 app.post("/api/os/acaminho/id/:id/", (req, res) => {

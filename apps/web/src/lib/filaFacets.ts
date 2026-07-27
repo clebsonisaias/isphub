@@ -1,13 +1,10 @@
 import { OS_STATUS_LABEL, OsPrioridade, OsStatus, type FilaItem } from "@isphub/shared";
 import { SLA_PRIORIDADE } from "@/components/SlaBadge";
 
-export type KindFiltro = "todos" | "os" | "ocorrencia";
-
 /** "sem_categoria" filtra OS cujo tipo ainda nao foi mapeado a nenhuma categoria canonica. */
 export type CategoriaFiltro = string | "todas" | "sem_categoria";
 
 export interface FilaFacetState {
-  kind: KindFiltro;
   status: OsStatus | "todos";
   prioridade: OsPrioridade | "todas";
   categoriaId: CategoriaFiltro;
@@ -16,7 +13,6 @@ export interface FilaFacetState {
 }
 
 export const FILA_FACET_INICIAL: FilaFacetState = {
-  kind: "todos",
   status: "todos",
   prioridade: "todas",
   categoriaId: "todas",
@@ -30,21 +26,17 @@ export const PRIORIDADE_LABEL: Record<OsPrioridade, string> = {
   [OsPrioridade.BAIXA]: "Baixa",
 };
 
-/** Chave de agrupamento da categoria de um item: id, "sem_categoria" (OS sem match) ou null (ocorrência, sem categoria). */
-function chaveCategoria(item: FilaItem): string | null {
-  if (item.kind !== "os") return null;
+/** Chave de agrupamento da categoria de uma OS: id da categoria ou "sem_categoria" (tipo sem match). */
+function chaveCategoria(item: FilaItem): string {
   return item.categoria?.id ?? "sem_categoria";
 }
 
 /** Aplica um predicado por dimensão, ignorando a própria dimensão (para faceta "OR dentro, AND entre"). */
-function passaKind(item: FilaItem, f: FilaFacetState) {
-  return f.kind === "todos" || item.kind === f.kind;
-}
 function passaStatus(item: FilaItem, f: FilaFacetState) {
-  return f.status === "todos" || (item.kind === "os" && item.status === f.status);
+  return f.status === "todos" || item.status === f.status;
 }
 function passaPrioridade(item: FilaItem, f: FilaFacetState) {
-  return f.prioridade === "todas" || (item.kind === "os" && item.prioridade === f.prioridade);
+  return f.prioridade === "todas" || item.prioridade === f.prioridade;
 }
 function passaCategoria(item: FilaItem, f: FilaFacetState) {
   return f.categoriaId === "todas" || chaveCategoria(item) === f.categoriaId;
@@ -56,14 +48,14 @@ function passaProvedor(item: FilaItem, f: FilaFacetState) {
 /** Aplica todos os filtros (a busca já vem resolvida do servidor, mas mantemos por segurança). */
 export function filtrarFila(itens: FilaItem[], f: FilaFacetState): FilaItem[] {
   return itens.filter(
-    (i) => passaKind(i, f) && passaStatus(i, f) && passaPrioridade(i, f) && passaCategoria(i, f) && passaProvedor(i, f),
+    (i) => passaStatus(i, f) && passaPrioridade(i, f) && passaCategoria(i, f) && passaProvedor(i, f),
   );
 }
 
 /**
  * Contagem por opção de UMA dimensão, respeitando os filtros das OUTRAS
- * dimensões (contadores "vivos" como no modelo). Ex.: quantos itens de cada
- * status existem dado o provedor/tipo já filtrados.
+ * dimensões (contadores "vivos" como no modelo). Ex.: quantas OS de cada
+ * status existem dado o provedor/categoria já filtrados.
  */
 function contarPor<T extends string | number>(
   itens: FilaItem[],
@@ -84,8 +76,6 @@ function contarPor<T extends string | number>(
 
 function ignorarValor(dim: keyof FilaFacetState): FilaFacetState[keyof FilaFacetState] {
   switch (dim) {
-    case "kind":
-      return "todos";
     case "status":
       return "todos";
     case "prioridade":
@@ -101,7 +91,6 @@ function ignorarValor(dim: keyof FilaFacetState): FilaFacetState[keyof FilaFacet
 
 export interface FilaFacetCounts {
   total: number;
-  porKind: { os: number; ocorrencia: number };
   porStatus: Map<OsStatus, number>;
   porPrioridade: Map<OsPrioridade, number>;
   /** Chave = categoriaId, ou "sem_categoria" pras OS sem match. */
@@ -110,12 +99,10 @@ export interface FilaFacetCounts {
 }
 
 export function calcularFacetas(itens: FilaItem[], f: FilaFacetState): FilaFacetCounts {
-  const kindMap = contarPor(itens, f, "kind", (i) => i.kind);
   return {
     total: filtrarFila(itens, f).length,
-    porKind: { os: kindMap.get("os") ?? 0, ocorrencia: kindMap.get("ocorrencia") ?? 0 },
-    porStatus: contarPor(itens, f, "status", (i) => (i.kind === "os" ? i.status : null)),
-    porPrioridade: contarPor(itens, f, "prioridade", (i) => (i.kind === "os" ? i.prioridade : null)),
+    porStatus: contarPor(itens, f, "status", (i) => i.status),
+    porPrioridade: contarPor(itens, f, "prioridade", (i) => i.prioridade),
     porCategoria: contarPor(itens, f, "categoriaId", chaveCategoria),
     porProvedor: contarPor(itens, f, "provedorId", (i) => i.provedorId),
   };
@@ -123,12 +110,9 @@ export function calcularFacetas(itens: FilaItem[], f: FilaFacetState): FilaFacet
 
 export type OrdenacaoFila = "urgencia" | "recentes";
 
-/** Data mais relevante do item, para ordenar "mais recentes primeiro". */
+/** Data mais relevante da OS, para ordenar "mais recentes primeiro". */
 function dataRelevante(item: FilaItem): number {
-  const iso =
-    item.kind === "os"
-      ? item.dataAgendamento ?? item.dataCadastro ?? item.criadoEm
-      : item.dataAgendamento ?? item.dataCadastro ?? item.sincronizadoEm;
+  const iso = item.dataAgendamento ?? item.dataCadastro ?? item.criadoEm;
   const t = Date.parse(iso ?? "");
   return Number.isNaN(t) ? 0 : t;
 }
@@ -139,10 +123,10 @@ export function ordenarFila(itens: FilaItem[], modo: OrdenacaoFila): FilaItem[] 
     copia.sort((a, b) => dataRelevante(b) - dataRelevante(a));
     return copia;
   }
-  // Urgência: SLA estourado primeiro; ocorrências (sem SLA) por último; empate = mais recente.
+  // Urgência: SLA estourado primeiro; empate = mais recente.
   copia.sort((a, b) => {
-    const pa = a.kind === "os" ? SLA_PRIORIDADE[a.sla.semaforo] : SLA_PRIORIDADE.sem_sla;
-    const pb = b.kind === "os" ? SLA_PRIORIDADE[b.sla.semaforo] : SLA_PRIORIDADE.sem_sla;
+    const pa = SLA_PRIORIDADE[a.sla.semaforo];
+    const pb = SLA_PRIORIDADE[b.sla.semaforo];
     if (pa !== pb) return pa - pb;
     return dataRelevante(b) - dataRelevante(a);
   });

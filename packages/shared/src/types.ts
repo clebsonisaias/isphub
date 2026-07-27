@@ -55,7 +55,7 @@ export interface Categoria {
 /** Vista resumida da categoria, embutida em TipoOs/FilaItem (sem palavrasChave/ativo). */
 export type CategoriaResumo = Pick<Categoria, "id" | "nome" | "cor" | "icone" | "slaHorasPadrao">;
 
-/** Tipo de OS/ocorrencia importado do SGP e exibido no ISPhub. */
+/** Tipo de OS importado do SGP e exibido no ISPhub. */
 export interface TipoOs {
   id: string;
   provedorId: string;
@@ -119,27 +119,6 @@ export interface OrdemServico {
   sincronizadoEm: string;
 }
 
-/** Ocorrencia espelhada do SGP. */
-export interface Ocorrencia {
-  id: string;
-  provedorId: string;
-  sgpNumero: string;
-  tipo?: string | null;
-  status?: string | null;
-  conteudo?: string | null;
-  responsavel?: string | null;
-  clienteNome?: string | null;
-  contratoId?: string | null;
-  contratoStatus?: string | null;
-  pop?: string | null;
-  metodo?: string | null;
-  usuario?: string | null;
-  dataCadastro?: string | null;
-  dataAgendamento?: string | null;
-  dataFinalizacao?: string | null;
-  sincronizadoEm: string;
-}
-
 /** Usuario (shape publico, sem hash de senha). Tecnico e um Usuario com role=tecnico. */
 export interface UsuarioPublic {
   id: string;
@@ -162,12 +141,11 @@ export interface SlaInfo {
 }
 
 /**
- * Item da fila unificada. Uniao discriminada entre OS e ocorrencia, sempre
- * carregando o provedor (com cor/logo) para o badge e o SLA calculado.
+ * Item da fila. Uma Ordem de Servico espelhada, sempre carregando o provedor
+ * (com cor/logo) para o badge e o SLA calculado no servidor. A ISPhub trabalha
+ * so com OS — ocorrencias foram removidas do sistema.
  */
-export type FilaItem =
-  | ({ kind: "os"; provedor: Provedor; sla: SlaInfo } & OrdemServico)
-  | ({ kind: "ocorrencia"; provedor: Provedor } & Ocorrencia);
+export type FilaItem = { provedor: Provedor; sla: SlaInfo } & OrdemServico;
 
 /** Filtros da fila unificada (query params da API). */
 export interface FilaFiltros {

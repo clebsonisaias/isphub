@@ -3,16 +3,18 @@ import { createScope, animate, stagger, type Scope } from "animejs";
 import { OS_STATUS_ABERTOS, UserRole, type Categoria, type FilaItem, type Provedor } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
+import { cn } from "@/lib/utils";
 import { filaApi } from "@/lib/filaApi";
 import { categoriasApi, provedoresApi } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
 import { OrdemServicoDetailDialog } from "@/components/OrdemServicoDetailDialog";
-import { OcorrenciaDetailDialog } from "@/components/OcorrenciaDetailDialog";
 import { FilaSidebar } from "@/components/fila/FilaSidebar";
+import { FilaChipsAtivos } from "@/components/fila/FilaChipsAtivos";
 import { FilaCard } from "@/components/fila/FilaCard";
 import {
   FILA_FACET_INICIAL,
@@ -31,15 +33,16 @@ import {
   Inbox,
   ListChecks,
   AlertTriangle,
+  Loader2,
 } from "lucide-react";
 
 function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
 }
 
-/** OS concluída/cancelada, ou ocorrência já finalizada no SGP (dataFinalizacao preenchida). */
+/** OS concluída ou cancelada (fora dos status "abertos"). */
 function estaFinalizado(item: FilaItem): boolean {
-  return item.kind === "os" ? !OS_STATUS_ABERTOS.includes(item.status) : item.dataFinalizacao != null;
+  return !OS_STATUS_ABERTOS.includes(item.status);
 }
 
 const TAMANHOS_PAGINA = [10, 20, 50];
@@ -70,6 +73,8 @@ export function PainelPage() {
   // true quando o grupo ativo tem mais itens do que o servidor devolve de uma
   // vez — a lista mostra os mais recentes e o aviso pede pra refinar.
   const [truncado, setTruncado] = useState(false);
+  // Total real de OS do grupo no banco (pra o aviso de truncamento dizer "de N").
+  const [totalServidor, setTotalServidor] = useState(0);
   const [carregando, setCarregando] = useState(true);
 
   const [visao, setVisao] = useState<"fila" | "concluidas">("fila");
@@ -128,6 +133,7 @@ export function PainelPage() {
           setItens(resp.itens);
           setTotais(resp.totais);
           setTruncado(resp.truncado);
+          setTotalServidor(resp.total);
         }
       })
       .catch((err) => {
@@ -145,11 +151,9 @@ export function PainelPage() {
   // Concluídas ficam numa aba separada da fila operacional — evita misturar
   // trabalho já encerrado com o que ainda precisa de ação, tanto na lista
   // quanto nos contadores/filtros da sidebar (que passam a refletir só a
-  // aba ativa).
-  // O servidor ja devolve so o grupo da aba; o filtro aqui e defesa em
-  // profundidade (e cobre a ocorrencia, cujo "fechado" e ter data de
-  // finalizacao). Os contadores das abas vem dos totais do banco, nao do
-  // que coube na pagina.
+  // aba ativa). O servidor já devolve só o grupo da aba; o filtro aqui é
+  // defesa em profundidade. Os contadores das abas vêm dos totais do banco,
+  // não do que coube na página.
   const itensDaAba = useMemo(
     () => itens.filter((i) => estaFinalizado(i) === (visao === "concluidas")),
     [itens, visao],
@@ -188,6 +192,31 @@ export function PainelPage() {
     setFiltros((prev) => ({ ...prev, ...patch }));
   }
 
+  const temFiltroAtivo =
+    filtros.status !== "todos" ||
+    filtros.prioridade !== "todas" ||
+    filtros.categoriaId !== "todas" ||
+    filtros.provedorId !== "todos" ||
+    busca.trim() !== "";
+
+  function limparFiltros() {
+    setFiltros(FILA_FACET_INICIAL);
+    setBusca("");
+  }
+
+  function removerFiltro(dim: "status" | "prioridade" | "categoriaId" | "provedorId" | "busca") {
+    if (dim === "busca") {
+      setBusca("");
+      return;
+    }
+    patchFiltro({ [dim]: FILA_FACET_INICIAL[dim] } as Partial<FilaFacetState>);
+  }
+
+  // "Buscando" enquanto o debounce ainda não confirmou ou o fetch está em voo.
+  const buscando = busca !== buscaDebounced || (carregando && itens.length > 0);
+  // Skeleton só na primeira carga; re-fetches mantêm a lista (esmaecida).
+  const primeiraCarga = carregando && itens.length === 0;
+
   // Entrada escalonada dos cards a cada re-render da página exibida.
   useEffect(() => {
     if (carregando || !listRef.current) return;
@@ -211,6 +240,7 @@ export function PainelPage() {
       provedores={provedores}
       categorias={categorias}
       mostrarProvedores={!ehProvedor && !ehTecnico}
+      totalOs={itensDaAba.length}
       onChange={(patch) => {
         patchFiltro(patch);
         setSidebarMobile(false);
@@ -222,11 +252,11 @@ export function PainelPage() {
     <AppShell>
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Painel Unificado</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Painel de Ordens de Serviço</h1>
           <p className="text-sm text-muted-foreground">
             {ehTecnico
               ? "Suas ordens de serviço"
-              : `Ocorrências e ordens de serviço de ${ehProvedor ? "seu provedor" : "todos os provedores"}`}
+              : `Ordens de serviço de ${ehProvedor ? "seu provedor" : "todos os provedores"}`}
           </p>
         </div>
         {/* Abertas e SLA em destaque (o trabalho do dia); concluídas em tom
@@ -235,7 +265,7 @@ export function PainelPage() {
           <EstatCard
             icon={<Inbox className="size-4" />}
             valor={estat.abertas}
-            label="OS abertas"
+            label="Na fila"
             tom="bg-primary/10 text-primary"
           />
           <EstatCard
@@ -290,8 +320,11 @@ export function PainelPage() {
                 value={busca}
                 onChange={(e) => setBusca(e.target.value)}
                 placeholder="Cliente, protocolo, contrato, endereço..."
-                className="pl-8"
+                className="pl-8 pr-8"
               />
+              {buscando && (
+                <Loader2 className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+              )}
             </div>
 
             <select
@@ -300,8 +333,8 @@ export function PainelPage() {
               className="h-10 rounded-md border border-input bg-card px-3 text-sm"
               aria-label="Ordenar por"
             >
-              <option value="urgencia">Ordenar: urgência</option>
-              <option value="recentes">Ordenar: mais recentes</option>
+              <option value="urgencia">Mais urgentes primeiro</option>
+              <option value="recentes">Mais recentes primeiro</option>
             </select>
 
             <select
@@ -318,11 +351,22 @@ export function PainelPage() {
             </select>
           </div>
 
+          {/* Chips dos filtros ativos + limpar — deixa visível por que a lista
+              está curta, em vez de o usuário achar que "sumiu" dado. */}
+          <FilaChipsAtivos
+            filtros={filtros}
+            busca={busca}
+            categorias={categorias}
+            provedores={provedores}
+            onRemover={removerFiltro}
+            onLimpar={limparFiltros}
+          />
+
           {/* Contador + paginação */}
           <div className="mb-3 flex items-center justify-between text-sm text-muted-foreground">
             <span>
               {filtrados.length === 0
-                ? "Nenhum item"
+                ? "Nenhuma OS"
                 : `Mostrando ${inicio + 1}–${Math.min(inicio + pageSize, filtrados.length)} de ${filtrados.length}`}
             </span>
             {totalPaginas > 1 && (
@@ -352,20 +396,21 @@ export function PainelPage() {
             )}
           </div>
 
-          {/* Aviso honesto de truncamento: há mais itens no banco do que o
-              painel carrega de uma vez. Nunca esconder dados em silêncio. */}
-          {truncado && !carregando && (
+          {/* Aviso honesto de truncamento: há mais OS no banco do que o painel
+              carrega de uma vez. Nunca esconder dados em silêncio. */}
+          {truncado && !primeiraCarga && (
             <div className="mb-3 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-foreground">
               <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
               <span>
-                Há mais itens do que o painel exibe de uma vez — estes são os mais recentes. Use a busca ou os filtros da
-                barra lateral pra encontrar o que falta.
+                Mostrando as {itens.length.toLocaleString("pt-BR")} OS mais recentes de{" "}
+                {totalServidor.toLocaleString("pt-BR")}. Use a busca ou os filtros da barra lateral pra encontrar o
+                restante.
               </span>
             </div>
           )}
 
           {/* Lista */}
-          {carregando ? (
+          {primeiraCarga ? (
             <div className="flex flex-col gap-2">
               {Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="h-28 animate-pulse rounded-xl border border-border bg-card" />
@@ -373,26 +418,33 @@ export function PainelPage() {
             </div>
           ) : paginaItens.length === 0 ? (
             <Card>
-              <CardContent className="py-12 text-center text-sm text-muted-foreground">
-                Nenhum item encontrado com os filtros atuais.
+              <CardContent className="flex flex-col items-center gap-3 py-12 text-center text-sm text-muted-foreground">
+                {temFiltroAtivo ? (
+                  <>
+                    <span>Nenhuma OS com os filtros atuais.</span>
+                    <Button variant="outline" size="sm" onClick={limparFiltros}>
+                      Limpar filtros
+                    </Button>
+                  </>
+                ) : (
+                  <span>{visao === "concluidas" ? "Nenhuma OS concluída ainda." : "Nenhuma OS aberta no momento."}</span>
+                )}
               </CardContent>
             </Card>
           ) : (
-            <div ref={listRef} className="flex flex-col gap-2.5">
+            <div
+              ref={listRef}
+              className={cn("flex flex-col gap-2.5 transition-opacity", carregando && "pointer-events-none opacity-60")}
+            >
               {paginaItens.map((item) => (
-                <FilaCard
-                  key={`${item.kind}-${item.id}`}
-                  item={item}
-                  agora={agora}
-                  onClick={() => setSelecionado(item)}
-                />
+                <FilaCard key={item.id} item={item} agora={agora} onClick={() => setSelecionado(item)} />
               ))}
             </div>
           )}
         </div>
       </div>
 
-      {selecionado && selecionado.kind === "os" && (
+      {selecionado && (
         <OrdemServicoDetailDialog
           item={selecionado}
           onClose={() => setSelecionado(null)}
@@ -401,9 +453,6 @@ export function PainelPage() {
             setRefetch((n) => n + 1);
           }}
         />
-      )}
-      {selecionado && selecionado.kind === "ocorrencia" && (
-        <OcorrenciaDetailDialog item={selecionado} onClose={() => setSelecionado(null)} />
       )}
     </AppShell>
   );

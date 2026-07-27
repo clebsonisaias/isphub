@@ -23,8 +23,6 @@ import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { Navigation } from "lucide-react";
 
-type OsItem = Extract<FilaItem, { kind: "os" }>;
-
 function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
 }
@@ -34,7 +32,7 @@ export function OrdemServicoDetailDialog({
   onClose,
   onAtualizado,
 }: {
-  item: OsItem;
+  item: FilaItem;
   onClose: () => void;
   onAtualizado: () => void;
 }) {

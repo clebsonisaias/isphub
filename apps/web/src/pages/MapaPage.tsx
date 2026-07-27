@@ -14,8 +14,6 @@ import { provedoresApi } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
 
-type OsItem = Extract<FilaItem, { kind: "os" }>;
-
 function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
 }
@@ -57,7 +55,7 @@ export function MapaPage() {
   const { toast } = useToast();
   const [provedores, setProvedores] = useState<Provedor[]>([]);
   const [provedorId, setProvedorId] = useState("");
-  const [itens, setItens] = useState<OsItem[]>([]);
+  const [itens, setItens] = useState<FilaItem[]>([]);
   const [carregando, setCarregando] = useState(true);
 
   useEffect(() => {
@@ -70,7 +68,7 @@ export function MapaPage() {
       .listar({ provedorId: provedorId || undefined })
       .then((resp) => {
         const comCoordenadas = resp.itens.filter(
-          (i): i is OsItem => i.kind === "os" && i.endereco.lat != null && i.endereco.lng != null,
+          (i) => i.endereco.lat != null && i.endereco.lng != null,
         );
         setItens(comCoordenadas);
         // Nunca esconder pinos em silencio: se o servidor truncou, avisa pra
