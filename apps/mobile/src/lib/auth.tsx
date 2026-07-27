@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import * as SecureStore from "expo-secure-store";
 import type { UsuarioPublic } from "@isphub/shared";
 import { apiFetch } from "./api";
+import { tokenStore } from "./token-store";
 
 const TOKEN_KEY = "isphub_token";
 
@@ -26,7 +26,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let vivo = true;
     (async () => {
       try {
-        const guardado = await SecureStore.getItemAsync(TOKEN_KEY);
+        const guardado = await tokenStore.get(TOKEN_KEY);
         if (guardado) {
           const me = await apiFetch<UsuarioPublic>("/auth/me", { token: guardado });
           if (vivo) {
@@ -36,7 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       } catch {
         // token invalido/expirado ou usuario desativado -> descarta
-        await SecureStore.deleteItemAsync(TOKEN_KEY);
+        await tokenStore.del(TOKEN_KEY);
       } finally {
         if (vivo) setCarregando(false);
       }
@@ -56,12 +56,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           method: "POST",
           body: { email, senha },
         });
-        await SecureStore.setItemAsync(TOKEN_KEY, resp.token);
+        await tokenStore.set(TOKEN_KEY, resp.token);
         setToken(resp.token);
         setUsuario(resp.usuario);
       },
       async logout() {
-        await SecureStore.deleteItemAsync(TOKEN_KEY);
+        await tokenStore.del(TOKEN_KEY);
         setToken(null);
         setUsuario(null);
       },
