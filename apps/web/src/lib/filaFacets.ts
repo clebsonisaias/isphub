@@ -108,7 +108,7 @@ export function calcularFacetas(itens: FilaItem[], f: FilaFacetState): FilaFacet
   };
 }
 
-export type OrdenacaoFila = "urgencia" | "recentes";
+export type OrdenacaoFila = "urgencia" | "recentes" | "antigas";
 
 /** Data mais relevante da OS, para ordenar "mais recentes primeiro". */
 function dataRelevante(item: FilaItem): number {
@@ -121,6 +121,10 @@ export function ordenarFila(itens: FilaItem[], modo: OrdenacaoFila): FilaItem[] 
   const copia = [...itens];
   if (modo === "recentes") {
     copia.sort((a, b) => dataRelevante(b) - dataRelevante(a));
+    return copia;
+  }
+  if (modo === "antigas") {
+    copia.sort((a, b) => dataRelevante(a) - dataRelevante(b));
     return copia;
   }
   // Urgência: SLA estourado primeiro; empate = mais recente.

@@ -335,6 +335,7 @@ export function PainelPage() {
             >
               <option value="urgencia">Mais urgentes primeiro</option>
               <option value="recentes">Mais recentes primeiro</option>
+              <option value="antigas">Mais antigas primeiro</option>
             </select>
 
             <select
