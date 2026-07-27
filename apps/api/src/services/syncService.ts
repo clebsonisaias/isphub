@@ -27,6 +27,55 @@ import { sugerirCategoriaId } from "./categoriaMatch.js";
 const CAMPO_PROTEGIDO_MS = 5 * 60_000;
 
 /**
+ * Teto de contratos cuja geolocalizacao e consultada por ciclo de sync. A
+ * listagem de OS do SGP nao traz coordenada, so o cadastro do cliente
+ * (/api/ura/clientes/) — entao o mapa depende de um backfill que puxa a geo
+ * por contrato. O teto espalha esse backfill por varios ciclos em vez de um
+ * estouro de centenas de chamadas de uma vez; o que sobra vai nos proximos.
+ */
+const GEO_BACKFILL_MAX_POR_SYNC = 30;
+
+/**
+ * Apos consultar a geo de um contrato (com ou sem coordenada), so
+ * reconsultamos passado este TTL — evita bater no SGP toda vez por um
+ * contrato que ele simplesmente nao geolocaliza, mas ainda permite pegar uma
+ * coordenada que o provedor venha a cadastrar depois.
+ */
+const GEO_RECONSULTA_MS = 7 * 24 * 60 * 60_000;
+
+/**
+ * lat/lng a persistir a partir da LISTAGEM de OS. Quase nunca ha coordenada
+ * ali (o SGP so manda "pop" nas listagens); quando nao ha, retorna {} pra NAO
+ * sobrescrever a coordenada que o backfill (via cadastro do cliente) ja
+ * gravou. Sem essa guarda, todo sync zerava lat/lng e o mapa vivia vazio.
+ */
+export function camposGeoDoListado(endereco: {
+  lat?: number | null;
+  lng?: number | null;
+}): { lat?: number; lng?: number } {
+  if (endereco.lat != null && endereco.lng != null) return { lat: endereco.lat, lng: endereco.lng };
+  return {};
+}
+
+/**
+ * A partir das OS candidatas a backfill (sem geo, com contrato), devolve ate
+ * `max` contratos UNICOS a consultar neste ciclo. O dedupe evita gastar o
+ * orcamento de chamadas com o mesmo contrato repetido (varias OS por
+ * contrato); o teto espalha o trabalho por varios syncs.
+ */
+export function contratosParaBackfillGeo(candidatas: { contratoId: string | null }[], max: number): string[] {
+  const unicos: string[] = [];
+  const vistos = new Set<string>();
+  for (const os of candidatas) {
+    if (!os.contratoId || vistos.has(os.contratoId)) continue;
+    vistos.add(os.contratoId);
+    unicos.push(os.contratoId);
+    if (unicos.length >= max) break;
+  }
+  return unicos;
+}
+
+/**
  * Reconcilia o status bruto do SGP com o status local atual pra dois casos
  * que o SGP estruturalmente nao consegue distinguir/expressar:
  *  - Cancelada: o SGP so tem "Encerrada" (codigo 1), sem separar cancelado
@@ -171,8 +220,10 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
         numero: raw.endereco.numero,
         bairro: raw.endereco.bairro,
         cidade: raw.endereco.cidade,
-        lat: raw.endereco.lat,
-        lng: raw.endereco.lng,
+        // lat/lng NAO sao setados a partir da listagem quando ela nao traz
+        // coordenada (o normal): sobrescrever com null zeraria a geo que o
+        // backfill abaixo puxou do cadastro do cliente. Ver camposGeoDoListado.
+        ...camposGeoDoListado(raw.endereco),
         pop: raw.pop,
         usuario: raw.usuario,
         dataCadastro: raw.dataCadastro ? new Date(raw.dataCadastro) : null,
@@ -190,6 +241,50 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
         `[sync] status de OS nao reconhecido(s) no provedor ${provedorId}, tratados como "aberta": ${[...statusNaoReconhecidos].join(" | ")}`,
       );
     }
+    // --- 3. Backfill de geolocalizacao (mapa) ---
+    // A listagem de OS nao traz coordenada; o cadastro do cliente
+    // (/api/ura/clientes/) traz. Sem isso o Mapa fica sempre vazio. Puxa a geo
+    // das OS sem lat/lng, deduplicando por contrato e com teto por ciclo pra
+    // nao estourar o SGP — o resto vai nos proximos syncs. geoConsultadoEm
+    // marca a tentativa (com TTL) pra nao reconsultar pra sempre um contrato
+    // que o SGP nao geolocaliza. Best-effort: nao derruba o sync de OS.
+    try {
+      const reconsultarAntesDe = new Date(Date.now() - GEO_RECONSULTA_MS);
+      const candidatas = await prisma.ordemServico.findMany({
+        where: {
+          provedorId,
+          contratoId: { not: null },
+          lat: null,
+          OR: [{ geoConsultadoEm: null }, { geoConsultadoEm: { lt: reconsultarAntesDe } }],
+        },
+        select: { contratoId: true },
+        // Mais recentes primeiro: tendem a ser as abertas, que o Mapa mostra.
+        orderBy: { dataCadastro: "desc" },
+      });
+      const contratos = contratosParaBackfillGeo(candidatas, GEO_BACKFILL_MAX_POR_SYNC);
+      if (contratos.length > 0) {
+        let comCoordenada = 0;
+        for (const contratoId of contratos) {
+          const geo = await connector.getContratoGeo(contratoId);
+          const temGeo = geo != null && geo.lat != null && geo.lng != null;
+          // Marca a tentativa sempre (mesmo sem coordenada ou com falha), pra o
+          // TTL controlar a reconsulta em vez de bater no SGP todo ciclo.
+          await prisma.ordemServico.updateMany({
+            where: { provedorId, contratoId },
+            data: { geoConsultadoEm: new Date(), ...(temGeo ? { lat: geo!.lat, lng: geo!.lng } : {}) },
+          });
+          if (temGeo) comCoordenada++;
+        }
+        const contratosPendentes = new Set(candidatas.map((c) => c.contratoId)).size - contratos.length;
+        console.log(
+          `[sync] geo backfill provedor ${provedorId}: ${comCoordenada}/${contratos.length} contrato(s) com coordenada` +
+            (contratosPendentes > 0 ? `; ${contratosPendentes} contrato(s) pendente(s) pros proximos ciclos` : ""),
+        );
+      }
+    } catch (err) {
+      console.warn(`[sync] geo backfill falhou no provedor ${provedorId}:`, err instanceof Error ? err.message : err);
+    }
+
     const msgTipos =
       tiposAutoCriados.size > 0
         ? `${tiposAutoCriados.size} tipo(s) de OS criado(s) automaticamente (nao estavam no catalogo importado): ${Array.from(tiposAutoCriados).slice(0, 15).join(" | ")}`

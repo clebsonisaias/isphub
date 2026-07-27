@@ -503,6 +503,82 @@ describe("createSgpConnector", () => {
     });
   });
 
+  describe("getContratoGeo (backfill do mapa)", () => {
+    // Versao enxuta de getDetalhesTecnicos: so lat/lng do cadastro do cliente,
+    // sem verificaacesso — uma unica chamada a /api/ura/clientes/ por contrato.
+
+    it("extrai lat/lng do endereco do servico e faz UMA so chamada (sem verificaacesso)", async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({
+          clientes: [
+            {
+              nome: "MARIA SILVA",
+              contratos: [
+                {
+                  contrato: 75,
+                  servicos: [{ id: 1, endereco: { latitude: "-5.8555", longitude: "-35.3555" } }],
+                },
+              ],
+              endereco: { latitude: "-9.9", longitude: "-9.9" },
+            },
+          ],
+        }),
+      );
+
+      const conn = createSgpConnector(creds);
+      const geo = await conn.getContratoGeo("75");
+
+      expect(geo?.lat).toBeCloseTo(-5.8555);
+      expect(geo?.lng).toBeCloseTo(-35.3555);
+      // So a chamada a /clientes/ — nada de verificaacesso no backfill em massa.
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, options] = fetchMock.mock.calls[0];
+      expect(String(url)).toContain("/api/ura/clientes/");
+      expect(new URLSearchParams(options.body as string).get("contrato")).toBe("75");
+    });
+
+    it("cai pro endereco do cliente quando o servico nao tem endereco proprio", async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({
+          clientes: [{ contratos: [{ contrato: 1, servicos: [{ id: 1 }] }], endereco: { latitude: "-5.7", longitude: "-35.2" } }],
+        }),
+      );
+
+      const conn = createSgpConnector(creds);
+      const geo = await conn.getContratoGeo("1");
+
+      expect(geo?.lat).toBeCloseTo(-5.7);
+      expect(geo?.lng).toBeCloseTo(-35.2);
+    });
+
+    it("retorna {lat:null,lng:null} quando o cliente existe mas nao tem coordenada cadastrada (0/vazio -> null)", async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({ clientes: [{ contratos: [{ contrato: 1, servicos: [{ id: 1, endereco: { latitude: "0", longitude: "" } }] }] }] }),
+      );
+
+      const conn = createSgpConnector(creds);
+      const geo = await conn.getContratoGeo("1");
+
+      // Consultado (nao-null), mas sem coordenada — o sync marca geoConsultadoEm e nao insiste.
+      expect(geo).toEqual({ lat: null, lng: null });
+    });
+
+    it("retorna null quando o contrato nao existe (nao da pra consultar -> reconsulta depois)", async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ clientes: [] }));
+
+      const conn = createSgpConnector(creds);
+      expect(await conn.getContratoGeo("999999")).toBeNull();
+    });
+
+    it("retorna null (sem lancar) quando o SGP falha", async () => {
+      // sgpPostForm nao faz retry (uma chamada so) — 500 lanca, getContratoGeo captura.
+      fetchMock.mockResolvedValueOnce(new Response("erro", { status: 500 }));
+
+      const conn = createSgpConnector(creds);
+      expect(await conn.getContratoGeo("75")).toBeNull();
+    });
+  });
+
   describe("fotos de evidencia (hospedadas no SGP)", () => {
     // Payloads confirmados ao vivo contra o SGP real (CITmax) — upload de uma
     // imagem de teste na OS 5537 devolveu exatamente o shape abaixo.

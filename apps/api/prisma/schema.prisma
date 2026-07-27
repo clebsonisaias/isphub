@@ -191,6 +191,13 @@ model OrdemServico {
   /// escrita, entao o sync so volta a confiar na leitura dele apos a janela
   /// de graca (ver syncService.ts).
   observacaoAlteradaEm DateTime?
+  /// Quando o backfill de geolocalizacao (mapa) tentou puxar lat/lng do
+  /// cadastro do cliente pra esta OS — a listagem de OS do SGP nao traz
+  /// coordenada, so o cadastro do cliente (/api/ura/clientes/) traz. Marca a
+  /// TENTATIVA (com ou sem coordenada) pra nao reconsultar pra sempre um
+  /// contrato que o SGP nao geolocaliza; reconsulta so apos um TTL (ver
+  /// syncService.ts).
+  geoConsultadoEm DateTime?
   criadoEm        DateTime         @default(now())
   atualizadoEm    DateTime         @updatedAt
   sincronizadoEm  DateTime         @default(now())

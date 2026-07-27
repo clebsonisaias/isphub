@@ -138,6 +138,15 @@ export interface ErpConnector {
   /** Endereco completo + sinal da ONU + conexao do contrato, direto do cadastro do cliente. */
   getDetalhesTecnicos(contratoId: string): Promise<DetalhesTecnicos>;
 
+  /**
+   * So a geolocalizacao (lat/lng) do contrato, do cadastro do cliente — versao
+   * enxuta de getDetalhesTecnicos pro backfill em massa do mapa (a listagem de
+   * OS do SGP nao traz coordenada). `null` = nao deu pra consultar (tenta de
+   * novo depois); `{lat,lng}` com ambos null = cliente consultado, mas sem
+   * coordenada cadastrada.
+   */
+  getContratoGeo(contratoId: string): Promise<{ lat: number | null; lng: number | null } | null>;
+
   /** Anexa uma foto de evidencia a OS, hospedada no proprio SGP. */
   addOsImage(sgpOsId: string, imagemBase64: string, descricao?: string): Promise<void>;
 

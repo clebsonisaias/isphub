@@ -227,6 +227,29 @@ async function verificarAcesso(
   }
 }
 
+/**
+ * Endereco "de referencia" de um cliente do /api/ura/clientes/: prefere o do
+ * SERVICO (mais especifico) ao do cliente. Compartilhado por
+ * getDetalhesTecnicos (dialog, ao vivo) e getContratoGeo (backfill do mapa).
+ */
+function enderecoDoCliente(cliente: any): any {
+  const servico = cliente?.contratos?.[0]?.servicos?.[0];
+  return servico?.endereco ?? cliente?.endereco ?? null;
+}
+
+/**
+ * lat/lng de um endereco do cadastro do cliente (campos latitude/longitude,
+ * que o SGP manda como string ou number). `Number(x) || null` trata 0, ""
+ * e NaN como "sem coordenada" — 0,0 e a "null island" no golfo da Guine,
+ * nunca um endereco real de provedor brasileiro.
+ */
+function parseGeoCliente(enderecoRaw: any): { lat: number | null; lng: number | null } {
+  return {
+    lat: enderecoRaw?.latitude != null ? Number(enderecoRaw.latitude) || null : null,
+    lng: enderecoRaw?.longitude != null ? Number(enderecoRaw.longitude) || null : null,
+  };
+}
+
 /** Extrai "lat,lng" de campos de endereco do SGP (ex.: "endereco_ll"). */
 function parseLatLng(value: unknown): { lat: number | null; lng: number | null } {
   if (typeof value !== "string" || !value.includes(",")) return { lat: null, lng: null };
@@ -458,7 +481,7 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
         if (!cliente) return { ...vazio, online: acesso.online, mensagem: acesso.mensagem ?? "Cliente nao encontrado para este contrato" };
 
         const servico = cliente.contratos?.[0]?.servicos?.[0];
-        const enderecoRaw = servico?.endereco ?? cliente.endereco;
+        const enderecoRaw = enderecoDoCliente(cliente);
         const onu = servico?.onu;
 
         const endereco = enderecoRaw
@@ -467,8 +490,7 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
               numero: pickString(enderecoRaw, "numero"),
               bairro: pickString(enderecoRaw, "bairro"),
               cidade: pickString(enderecoRaw, "cidade"),
-              lat: enderecoRaw.latitude != null ? Number(enderecoRaw.latitude) || null : null,
-              lng: enderecoRaw.longitude != null ? Number(enderecoRaw.longitude) || null : null,
+              ...parseGeoCliente(enderecoRaw),
             }
           : null;
 
@@ -485,6 +507,24 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
         };
       } catch (err) {
         return { ...vazio, mensagem: err instanceof Error ? err.message : String(err) };
+      }
+    },
+
+    async getContratoGeo(contratoId: string) {
+      // So a lat/lng do cadastro do cliente — versao enxuta de
+      // getDetalhesTecnicos (sem verificaacesso/sinal), pro backfill em massa
+      // do mapa nao dobrar as chamadas ao SGP por contrato. A listagem de OS
+      // nao traz coordenada; este endpoint traz.
+      // Distingue "nao deu pra consultar" (null -> tenta de novo depois) de
+      // "cliente consultado, mas sem coordenada" ({lat:null,lng:null} ->
+      // marca a tentativa e nao insiste).
+      try {
+        const data = await sgpPostForm(creds, "/api/ura/clientes/", { contrato: contratoId, limit: 1 });
+        const cliente = Array.isArray(data?.clientes) ? data.clientes[0] : undefined;
+        if (!cliente) return null;
+        return parseGeoCliente(enderecoDoCliente(cliente));
+      } catch {
+        return null;
       }
     },
 
