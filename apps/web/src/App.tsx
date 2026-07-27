@@ -13,6 +13,7 @@ import { ProvedoresPage } from "@/pages/admin/ProvedoresPage";
 import { ProvedorDetailPage } from "@/pages/admin/ProvedorDetailPage";
 import { CategoriasPage } from "@/pages/admin/CategoriasPage";
 import { UsuariosPage } from "@/pages/admin/UsuariosPage";
+import { ModulosPage } from "@/pages/admin/ModulosPage";
 import { PerfilPage } from "@/pages/PerfilPage";
 
 function App() {
@@ -92,6 +93,14 @@ function App() {
                 element={
                   <RequireAuth roles={[UserRole.ADMIN]}>
                     <UsuariosPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/admin/modulos"
+                element={
+                  <RequireAuth roles={[UserRole.ADMIN]}>
+                    <ModulosPage />
                   </RequireAuth>
                 }
               />
