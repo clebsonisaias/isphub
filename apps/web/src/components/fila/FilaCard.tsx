@@ -6,7 +6,8 @@ import { SlaBadge } from "@/components/SlaBadge";
 import { ContratoStatusBadge } from "@/components/ContratoStatusBadge";
 import { ConexaoBadge } from "@/components/fila/ConexaoBadge";
 import { copiarTexto, numeroWhatsApp } from "@/lib/clipboard";
-import { Clock, ChevronRight, ChevronsUp, MapPin, MessageCircle, Copy, Check, UserPlus } from "lucide-react";
+import { iconeCategoria } from "@/lib/categoriaIcons";
+import { Clock, ChevronRight, ChevronsUp, MapPin, MessageCircle, Copy, Check, UserPlus, HelpCircle } from "lucide-react";
 
 /** Cor da barra lateral do card, pelo semáforo de SLA. É a ÚNICA cor forte do
  * card — urgência manda; o resto dos badges fica neutro pra não competir. */
@@ -127,7 +128,11 @@ function Campo({ label, valor, children }: { label: string; valor?: string | nul
 
 export function FilaCard({ item, agora, onClick }: { item: FilaItem; agora: number; onClick: () => void }) {
   const rail = corRail(item);
-  const titulo = item.tipoDescricao ?? "Ordem de Serviço";
+  // Título = NOSSA categoria canônica (ISPhub), não o tipo/motivo cru do SGP
+  // (ex.: "REPARO CARRO"). O tipo do SGP é ruído aqui — só aparece em Tipos de
+  // OS, pra o admin vincular a uma categoria nossa. Sem categoria mapeada, a OS
+  // fica "Não classificado" (sinaliza que o tipo ainda precisa ser vinculado).
+  const CategoriaIcone = item.categoria ? iconeCategoria(item.categoria.icone) : HelpCircle;
   // Endereço mais completo disponível: rua+nº — bairro, cidade; senão só a
   // cidade; senão o POP (localidade). A rua/bairro vêm do cadastro do cliente
   // (backfill), não da listagem de OS — por isso o fallback importa.
@@ -225,7 +230,17 @@ export function FilaCard({ item, agora, onClick }: { item: FilaItem; agora: numb
           )}
         </div>
 
-        <h3 className="text-base font-bold text-foreground">{titulo}</h3>
+        {item.categoria ? (
+          <h3 className="flex items-center gap-1.5 text-base font-bold text-foreground">
+            <CategoriaIcone className="size-4 shrink-0" style={{ color: item.categoria.cor }} />
+            {item.categoria.nome}
+          </h3>
+        ) : (
+          <h3 className="flex items-center gap-1.5 text-base font-bold text-muted-foreground">
+            <HelpCircle className="size-4 shrink-0 text-warning" />
+            Não classificado
+          </h3>
+        )}
 
         {local && (
           <div className="flex items-center gap-1 text-sm text-muted-foreground">
