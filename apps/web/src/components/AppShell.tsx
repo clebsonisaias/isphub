@@ -1,15 +1,16 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { motion, useReducedMotion } from "framer-motion";
 import { USER_ROLE_LABEL, UserRole } from "@isphub/shared";
 import { useAuth } from "@/context/AuthContext";
-import { Button } from "@/components/ui/button";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import { useTheme } from "@/context/ThemeContext";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { NotificationBell } from "@/components/NotificationBell";
 import { CommandPalette } from "@/components/CommandPalette";
 import { HeaderClock } from "@/components/HeaderClock";
 import { cn } from "@/lib/utils";
 import { APP_BUILD_ID, APP_VERSION_LABEL } from "@/lib/version";
-import { LogOut, Map, LayoutGrid, BarChart3, Settings, PackageX, Router } from "lucide-react";
+import { LogOut, Map, LayoutGrid, BarChart3, Settings, PackageX, Router, UserCircle, Sun, Moon } from "lucide-react";
 
 /** Dashboard e Retiradas sao so pra quem enxerga mais de uma OS/provedor — tecnico ve so as proprias. */
 const NAV_ITEMS = [
@@ -33,10 +34,27 @@ const NAV_ITEMS = [
  */
 function navItemClass(ativo: boolean): string {
   return cn(
-    "group flex flex-1 flex-col items-center justify-center gap-0.5 rounded-lg py-2 text-[0.65rem] font-medium transition-colors lg:flex-none lg:flex-row lg:gap-1.5 lg:rounded-full lg:px-3 lg:py-1.5 lg:text-sm",
-    ativo
-      ? "text-primary lg:bg-primary/12 lg:text-primary"
-      : "text-muted-foreground hover:text-foreground lg:hover:bg-secondary/60",
+    "group relative flex flex-1 flex-col items-center justify-center gap-0.5 rounded-lg py-2 text-[0.65rem] font-medium transition-colors lg:flex-none lg:flex-row lg:gap-1.5 lg:rounded-full lg:px-3 lg:py-1.5 lg:text-sm",
+    ativo ? "text-primary" : "text-muted-foreground hover:text-foreground lg:hover:bg-secondary/60",
+  );
+}
+
+/**
+ * Pilula de fundo do item de rota ativo no desktop — um unico elemento com
+ * `layoutId` compartilhado entre os Links (motor de layout do Framer Motion
+ * ve a posicao/tamanho mudar entre renders com IDs iguais e anima a
+ * transicao), entao ela DESLIZA pra pilula seguinte em vez de piscar. So no
+ * desktop (`hidden lg:block`) — no mobile o destaque já vem do icone-chip do
+ * NavIcon, que não precisa de deslizamento (abas fixas, sem espaço de sobra).
+ */
+function NavActivePill({ shouldReduceMotion }: { shouldReduceMotion: boolean }) {
+  return (
+    <motion.span
+      aria-hidden
+      layoutId="nav-active-pill"
+      className="absolute inset-0 hidden rounded-full bg-primary/12 lg:block"
+      transition={shouldReduceMotion ? { duration: 0 } : { type: "spring", stiffness: 500, damping: 34 }}
+    />
   );
 }
 
@@ -60,10 +78,79 @@ function iniciais(nome: string): string {
   return letras.join("").toUpperCase();
 }
 
+/**
+ * Menu do usuario (avatar) em popover — Perfil/Tema/Sair. Antes "Meu perfil"
+ * ficava `hidden lg:flex` (sumia inteiro no mobile) e tema/sair eram botoes
+ * soltos no cabecalho; agora e uma UNICA affordance, visivel em qualquer
+ * largura — mais descobrivel no mobile e menos poluicao de icones no header.
+ */
+function UserMenu({ nome, role, onLogout }: { nome: string; role: UserRole; onLogout: () => void }) {
+  const { theme, toggleTheme } = useTheme();
+  const [aberto, setAberto] = useState(false);
+
+  return (
+    <Popover open={aberto} onOpenChange={setAberto}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          title={`${nome} — ${USER_ROLE_LABEL[role]}`}
+          className="flex items-center gap-2 rounded-full py-1 pl-1 pr-1 transition-colors hover:bg-secondary/60 lg:pr-2.5"
+        >
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-secondary font-display text-xs font-semibold text-foreground">
+            {iniciais(nome)}
+          </span>
+          <span className="hidden text-left leading-tight xl:block">
+            <span className="block text-sm font-medium text-foreground">{nome}</span>
+            <span className="block text-xs text-muted-foreground">{USER_ROLE_LABEL[role]}</span>
+          </span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-1.5">
+        <div className="border-b border-border px-2.5 pb-2 pt-1 lg:hidden">
+          <p className="truncate text-sm font-medium text-foreground">{nome}</p>
+          <p className="text-xs text-muted-foreground">{USER_ROLE_LABEL[role]}</p>
+        </div>
+        <Link
+          to="/perfil"
+          onClick={() => setAberto(false)}
+          className="mt-1 flex items-center gap-2 rounded-md px-2.5 py-2 text-sm text-foreground transition-colors hover:bg-secondary"
+        >
+          <UserCircle className="size-4 text-muted-foreground" />
+          Meu perfil
+        </Link>
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-secondary"
+        >
+          {theme === "dark" ? (
+            <Sun className="size-4 text-muted-foreground" />
+          ) : (
+            <Moon className="size-4 text-muted-foreground" />
+          )}
+          {theme === "dark" ? "Tema claro" : "Tema escuro"}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setAberto(false);
+            onLogout();
+          }}
+          className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-destructive transition-colors hover:bg-destructive/10"
+        >
+          <LogOut className="size-4" />
+          Sair
+        </button>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 /** Casca comum das telas autenticadas: cabecalho com marca, navegação, usuario e logout. */
 export function AppShell({ children }: { children: ReactNode }) {
   const { usuario, logout } = useAuth();
   const location = useLocation();
+  const shouldReduceMotion = useReducedMotion();
 
   return (
     <div className="min-h-svh">
@@ -107,15 +194,21 @@ export function AppShell({ children }: { children: ReactNode }) {
                 const ativo = location.pathname === to;
                 return (
                   <Link key={to} to={to} title={label} className={navItemClass(ativo)}>
+                    {ativo && <NavActivePill shouldReduceMotion={!!shouldReduceMotion} />}
                     <NavIcon Icon={Icon} ativo={ativo} />
-                    <span>{label}</span>
+                    <span className="relative">{label}</span>
                   </Link>
                 );
               })}
               {usuario.role === UserRole.ADMIN && (
-                <Link to="/admin" title="Administração" className={navItemClass(location.pathname.startsWith("/admin"))}>
+                <Link
+                  to="/admin"
+                  title="Administração"
+                  className={navItemClass(location.pathname.startsWith("/admin"))}
+                >
+                  {location.pathname.startsWith("/admin") && <NavActivePill shouldReduceMotion={!!shouldReduceMotion} />}
                   <NavIcon Icon={Settings} ativo={location.pathname.startsWith("/admin")} />
-                  <span>Administração</span>
+                  <span className="relative">Administração</span>
                 </Link>
               )}
             </nav>
@@ -123,29 +216,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
             {usuario && <HeaderClock />}
-            {usuario && (
-              <Link
-                to="/perfil"
-                className="hidden items-center gap-2 rounded-full py-1 pl-1 pr-2.5 transition-colors hover:bg-secondary/60 lg:flex"
-                title={`${usuario.nome} — ${USER_ROLE_LABEL[usuario.role]}`}
-              >
-                <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-secondary font-display text-xs font-semibold text-foreground">
-                  {iniciais(usuario.nome)}
-                </span>
-                <span className="hidden text-left leading-tight xl:block">
-                  <span className="block text-sm font-medium text-foreground">{usuario.nome}</span>
-                  <span className="block text-xs text-muted-foreground">{USER_ROLE_LABEL[usuario.role]}</span>
-                </span>
-              </Link>
-            )}
             {usuario && <CommandPalette />}
             {usuario && <NotificationBell />}
-            <ThemeToggle />
-            {usuario && (
-              <Button variant="ghost" size="icon" onClick={logout} title="Sair" aria-label="Sair">
-                <LogOut />
-              </Button>
-            )}
+            {usuario && <UserMenu nome={usuario.nome} role={usuario.role} onLogout={logout} />}
           </div>
         </div>
       </header>

@@ -4,6 +4,7 @@ import { gsap, useGSAP } from "@/lib/gsapSetup";
 import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/lib/apiClient";
 import { BrandMark } from "@/components/BrandMark";
+import { GeoDecor } from "@/components/GeoDecor";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -83,6 +84,9 @@ export function LoginPage() {
         className="pointer-events-none absolute -top-40 left-1/2 h-96 w-[36rem] -translate-x-1/2 rounded-full opacity-20 blur-3xl"
         style={{ background: "linear-gradient(135deg, var(--brand-from), var(--brand-to))" }}
       />
+      {/* Geometria Memphis do telao — atras de tudo, leve, nunca sobre o
+          formulario (GeoDecor ja e aria-hidden/pointer-events-none). */}
+      <GeoDecor variant="hero" />
 
       <div className="relative z-10 flex w-full max-w-sm flex-col items-center gap-8">
         <BrandMark />
