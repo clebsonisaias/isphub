@@ -17,6 +17,7 @@ export const MODULO_IDS = [
   "assinatura", // assinatura do cliente no fim da OS
   "retiradas", // fila de retirada/cancelamento (equipe externa)
   "notificacoes", // in-app + (depois) push
+  "chat", // conversa interna (DM, grupo, thread por OS, avisos)
 ] as const;
 
 export type ModuloId = (typeof MODULO_IDS)[number];
@@ -59,6 +60,8 @@ export const MODULO_CATALOGO: Record<ModuloId, ModuloMeta> = {
   notificacoes: { id: "notificacoes", nome: "Notificações", icone: "bell", core: false, ativoPadrao: true, ordemPadrao: 40, rolesPadrao: [UserRole.TECNICO] },
   assinatura: { id: "assinatura", nome: "Assinatura", icone: "signature", core: false, ativoPadrao: false, ordemPadrao: 50, rolesPadrao: [UserRole.TECNICO] },
   retiradas: { id: "retiradas", nome: "Retiradas", icone: "package-x", core: false, ativoPadrao: false, ordemPadrao: 60, rolesPadrao: [UserRole.GESTOR, UserRole.TECNICO] },
+  // Coordenacao de campo (nao social): DM, grupo, thread por OS, avisos. PROVEDOR nunca participa (ver chatService.podeParticipar).
+  chat: { id: "chat", nome: "Chat", icone: "message-circle", core: false, ativoPadrao: true, ordemPadrao: 45, rolesPadrao: [UserRole.GESTOR, UserRole.TECNICO] },
 };
 
 /** Modulo ja resolvido para um usuario (o que `GET /config` devolve). */
@@ -82,13 +85,29 @@ export function isModuloId(v: string): v is ModuloId {
   return (MODULO_IDS as readonly string[]).includes(v);
 }
 
-/** Tipos de evento do canal realtime (SSE) — escopado por tecnico. */
-export type RealtimeEventoTipo = "os-alterada" | "os-atribuida" | "os-removida" | "config-alterada";
+/**
+ * Tipos de evento do canal realtime (SSE) — escopado por usuario (tecnico no
+ * app; tecnico/gestor/admin na web, ver chatService). Os 4 primeiros sao da
+ * fila/OS (Fase 2); os 4 "chat-*" sao do chat interno.
+ */
+export type RealtimeEventoTipo =
+  | "os-alterada"
+  | "os-atribuida"
+  | "os-removida"
+  | "config-alterada"
+  | "chat-mensagem"
+  | "chat-leitura"
+  | "chat-digitando"
+  | "chat-conversa";
 
 export interface RealtimeEvento {
   tipo: RealtimeEventoTipo;
   /** OS afetada (quando aplicavel) — pra invalidar a query certa no app. */
   osId?: string;
+  /** Conversa/mensagem/autor afetados (eventos chat-*). */
+  conversaId?: string;
+  mensagemId?: string;
+  autorId?: string;
   /** ISO. */
   em: string;
 }

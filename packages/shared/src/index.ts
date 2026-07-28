@@ -3,3 +3,4 @@ export * from "./roles.js";
 export * from "./types.js";
 export * from "./connector.js";
 export * from "./modulos.js";
+export * from "./chat.js";
