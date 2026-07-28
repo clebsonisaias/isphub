@@ -40,7 +40,14 @@ export function montarModulosHabilitados(registros: ModuloConfigRow[], role: Use
     const roles: string[] = reg?.rolesPermitidos ?? meta.rolesPadrao;
     const ordem = reg?.ordem ?? meta.ordemPadrao;
     if (!ativo) continue;
-    if (!roles.includes(role)) continue;
+    // Core tambem ignora o filtro de PAPEL, nao so o toggle. Antes o `ativo`
+    // do core era garantido logo acima e o `roles.includes` seguinte derrubava
+    // ele mesmo assim — como nenhum modulo do catalogo listava ADMIN, quem
+    // entrava no app como admin recebia `modulos: []` e ficava com a tela SEM
+    // MENU NENHUM (o layout esconde toda rota nao-habilitada com href:null).
+    // Gestor via so "Chat", sem nem a fila. "Core sempre presente" agora vale
+    // de fato, que e o que a docstring do arquivo sempre prometeu.
+    if (!isCore(id) && !roles.includes(role)) continue;
     habilitados.push({ id, nome: meta.nome, icone: meta.icone, core: meta.core, ordem });
   }
   return habilitados.sort((a, b) => a.ordem - b.ordem);

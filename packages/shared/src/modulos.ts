@@ -50,18 +50,25 @@ export interface ModuloMeta {
   rolesPadrao: UserRole[];
 }
 
+/**
+ * ADMIN entra em TODO `rolesPadrao`. O app do tecnico e a ferramenta de campo,
+ * mas o admin e o superusuario do sistema — quando ele ficava de fora de todos
+ * os modulos, `GET /config` devolvia lista vazia e o app abria sem menu nenhum
+ * (ver montarModulosHabilitados). Quem quiser esconder um modulo do admin faz
+ * isso em /admin/modulos, que grava `rolesPermitidos` no banco e sobrepoe isto.
+ */
 export const MODULO_CATALOGO: Record<ModuloId, ModuloMeta> = {
-  "minhas-os": { id: "minhas-os", nome: "Minhas OS", icone: "list", core: true, ativoPadrao: true, ordemPadrao: 0, rolesPadrao: [UserRole.TECNICO] },
-  conexao: { id: "conexao", nome: "Conexão", icone: "wifi", core: false, ativoPadrao: true, ordemPadrao: 10, rolesPadrao: [UserRole.TECNICO] },
+  "minhas-os": { id: "minhas-os", nome: "Minhas OS", icone: "list", core: true, ativoPadrao: true, ordemPadrao: 0, rolesPadrao: [UserRole.ADMIN, UserRole.GESTOR, UserRole.TECNICO] },
+  conexao: { id: "conexao", nome: "Conexão", icone: "wifi", core: false, ativoPadrao: true, ordemPadrao: 10, rolesPadrao: [UserRole.ADMIN, UserRole.TECNICO] },
   // ativoPadrao:false — nem todo provedor tem FTTX e autorizar e escrita sensivel; o admin liga em /admin/modulos.
-  provisionamento: { id: "provisionamento", nome: "Provisionar", icone: "router", core: false, ativoPadrao: false, ordemPadrao: 15, rolesPadrao: [UserRole.GESTOR, UserRole.TECNICO] },
-  evidencias: { id: "evidencias", nome: "Evidências", icone: "camera", core: false, ativoPadrao: true, ordemPadrao: 20, rolesPadrao: [UserRole.TECNICO] },
-  rota: { id: "rota", nome: "Rota", icone: "route", core: false, ativoPadrao: true, ordemPadrao: 30, rolesPadrao: [UserRole.TECNICO] },
-  notificacoes: { id: "notificacoes", nome: "Notificações", icone: "bell", core: false, ativoPadrao: true, ordemPadrao: 40, rolesPadrao: [UserRole.TECNICO] },
-  assinatura: { id: "assinatura", nome: "Assinatura", icone: "signature", core: false, ativoPadrao: false, ordemPadrao: 50, rolesPadrao: [UserRole.TECNICO] },
-  retiradas: { id: "retiradas", nome: "Retiradas", icone: "package-x", core: false, ativoPadrao: false, ordemPadrao: 60, rolesPadrao: [UserRole.GESTOR, UserRole.TECNICO] },
+  provisionamento: { id: "provisionamento", nome: "Provisionar", icone: "router", core: false, ativoPadrao: false, ordemPadrao: 15, rolesPadrao: [UserRole.ADMIN, UserRole.GESTOR, UserRole.TECNICO] },
+  evidencias: { id: "evidencias", nome: "Evidências", icone: "camera", core: false, ativoPadrao: true, ordemPadrao: 20, rolesPadrao: [UserRole.ADMIN, UserRole.TECNICO] },
+  rota: { id: "rota", nome: "Rota", icone: "route", core: false, ativoPadrao: true, ordemPadrao: 30, rolesPadrao: [UserRole.ADMIN, UserRole.TECNICO] },
+  notificacoes: { id: "notificacoes", nome: "Notificações", icone: "bell", core: false, ativoPadrao: true, ordemPadrao: 40, rolesPadrao: [UserRole.ADMIN, UserRole.TECNICO] },
+  assinatura: { id: "assinatura", nome: "Assinatura", icone: "signature", core: false, ativoPadrao: false, ordemPadrao: 50, rolesPadrao: [UserRole.ADMIN, UserRole.TECNICO] },
+  retiradas: { id: "retiradas", nome: "Retiradas", icone: "package-x", core: false, ativoPadrao: false, ordemPadrao: 60, rolesPadrao: [UserRole.ADMIN, UserRole.GESTOR, UserRole.TECNICO] },
   // Coordenacao de campo (nao social): DM, grupo, thread por OS, avisos. PROVEDOR nunca participa (ver chatService.podeParticipar).
-  chat: { id: "chat", nome: "Chat", icone: "message-circle", core: false, ativoPadrao: true, ordemPadrao: 45, rolesPadrao: [UserRole.GESTOR, UserRole.TECNICO] },
+  chat: { id: "chat", nome: "Chat", icone: "message-circle", core: false, ativoPadrao: true, ordemPadrao: 45, rolesPadrao: [UserRole.ADMIN, UserRole.GESTOR, UserRole.TECNICO] },
 };
 
 /** Modulo ja resolvido para um usuario (o que `GET /config` devolve). */

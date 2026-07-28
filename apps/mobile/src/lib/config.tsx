@@ -16,6 +16,12 @@ const CORE_FALLBACK: ModuloHabilitado[] = MODULOS_CORE.map((id) => {
   return { id, nome: m.nome, icone: m.icone, core: m.core, ordem: m.ordemPadrao };
 });
 
+/** Primeira lista com pelo menos um item — trata `[]` como "nao serve", igual a undefined. */
+function primeiroNaoVazio(...listas: (ModuloHabilitado[] | undefined)[]): ModuloHabilitado[] {
+  for (const l of listas) if (l && l.length > 0) return l;
+  return CORE_FALLBACK;
+}
+
 /**
  * Config efetiva do app. Cadeia de frescura/resiliencia:
  *   live (`/config`) -> cache (AsyncStorage, offline) -> CORE_FALLBACK.
@@ -43,7 +49,11 @@ export function useModulos(): { modulos: ModuloHabilitado[]; carregando: boolean
     },
   });
 
-  const modulos = query.data?.modulos ?? cache?.modulos ?? CORE_FALLBACK;
+  // `?? ` sozinho nao bastava: uma resposta `{modulos: []}` NAO e nullish, entao
+  // a lista vazia passava reto e o app abria sem nenhuma aba. A garantia aqui e
+  // "nunca ficar sem a fila", entao lista vazia tem que cair no fallback igual
+  // a resposta ausente.
+  const modulos = primeiroNaoVazio(query.data?.modulos, cache?.modulos, CORE_FALLBACK);
   const offline = !query.data && (query.isError || !token);
   return { modulos, carregando: (query.isLoading && !cache) || !cacheLido, offline };
 }

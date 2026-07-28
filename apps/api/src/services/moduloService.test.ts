@@ -38,6 +38,43 @@ describe("montarModulosHabilitados", () => {
     expect(ids).not.toContain("conexao");
   });
 
+  // --- Regressao: o app abria SEM MENU NENHUM ---
+  // O filtro de papel derrubava ate o modulo core, e nenhum modulo do catalogo
+  // listava ADMIN — entao `GET /config` devolvia [] pro admin e o layout do app
+  // escondia todas as rotas (href:null), resultando numa tela sem abas.
+
+  it("NENHUM papel interno recebe lista vazia — sempre sobra ao menos o core", () => {
+    for (const role of [UserRole.ADMIN, UserRole.GESTOR, UserRole.TECNICO]) {
+      const modulos = montarModulosHabilitados(semRegistros, role);
+      expect(modulos.length, `papel ${role} ficou sem modulo`).toBeGreaterThan(0);
+      expect(modulos.map((m) => m.id)).toContain("minhas-os");
+    }
+  });
+
+  it("admin enxerga o app (nao so o core) com o banco vazio", () => {
+    const ids = montarModulosHabilitados(semRegistros, UserRole.ADMIN).map((m) => m.id);
+    expect(ids[0]).toBe("minhas-os");
+    expect(ids).toContain("chat");
+  });
+
+  it("gestor nao perde a fila: core aparece mesmo fora do rolesPermitidos gravado", () => {
+    const registros: ModuloConfigRow[] = [
+      { moduloId: "minhas-os", ativo: true, ordem: 0, rolesPermitidos: [UserRole.TECNICO] },
+    ];
+    const ids = montarModulosHabilitados(registros, UserRole.GESTOR).map((m) => m.id);
+    expect(ids).toContain("minhas-os");
+  });
+
+  it("core ignora o filtro de papel, mas nao-core continua respeitando", () => {
+    const registros: ModuloConfigRow[] = [
+      { moduloId: "minhas-os", ativo: true, ordem: 0, rolesPermitidos: [UserRole.PROVEDOR] },
+      { moduloId: "chat", ativo: true, ordem: 45, rolesPermitidos: [UserRole.PROVEDOR] },
+    ];
+    const ids = montarModulosHabilitados(registros, UserRole.TECNICO).map((m) => m.id);
+    expect(ids).toContain("minhas-os");
+    expect(ids).not.toContain("chat");
+  });
+
   it("ordena pela ordem efetiva (registro sobrepoe a padrao)", () => {
     const registros: ModuloConfigRow[] = [{ moduloId: "notificacoes", ativo: true, ordem: 1, rolesPermitidos: [UserRole.TECNICO] }];
     const ids = montarModulosHabilitados(registros, UserRole.TECNICO).map((m) => m.id);
