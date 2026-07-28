@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import type { UserRole } from "@isphub/shared";
 import { verifyToken, type JwtPayload } from "../services/authService.js";
 import { HttpError } from "./errorHandler.js";
+import { tocarPresenca } from "./presenca.js";
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -24,6 +25,7 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction) {
   } catch {
     throw new HttpError(401, "Token invalido ou expirado");
   }
+  tocarPresenca(req.user.sub);
   next();
 }
 
