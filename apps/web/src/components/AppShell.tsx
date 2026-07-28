@@ -5,6 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { NotificationBell } from "@/components/NotificationBell";
+import { CommandPalette } from "@/components/CommandPalette";
 import { HeaderClock } from "@/components/HeaderClock";
 import { cn } from "@/lib/utils";
 import { APP_BUILD_ID, APP_VERSION_LABEL } from "@/lib/version";
@@ -137,6 +138,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </span>
               </Link>
             )}
+            {usuario && <CommandPalette />}
             {usuario && <NotificationBell />}
             <ThemeToggle />
             {usuario && (

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { OS_STATUS_ABERTOS, UserRole, type Categoria, type EquipeFiltro, type FilaItem, type Provedor } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
@@ -128,6 +129,16 @@ export function FilaWorkspace({
   const [agora, setAgora] = useState(() => Date.now());
 
   const shouldReduceMotion = useReducedMotion();
+  const [searchParams] = useSearchParams();
+
+  // Chegada via Command Palette (Cmd/Ctrl+K "buscar OS") — aplica o termo na
+  // busca já existente da tela, em vez de reinventar um jeito de abrir o
+  // detalhe direto de outra rota.
+  useEffect(() => {
+    const q = searchParams.get("q");
+    if (q) setBusca(q);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   useEffect(() => {
     provedoresApi.listar().then(setProvedores).catch(() => {});
