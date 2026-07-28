@@ -10,6 +10,13 @@ export interface JwtPayload {
   email: string;
   role: UserRole;
   provedorId: string | null;
+  /**
+   * Versao da sessao (Usuario.tokenVersion no momento da emissao). Comparada
+   * pelo requireAuth com o valor atual do banco — e o que permite invalidar um
+   * token ja emitido. Opcional so pra nao quebrar tokens emitidos antes desta
+   * mudanca: ausente e tratado como 0, que e o default da coluna.
+   */
+  tv?: number;
 }
 
 export async function hashPassword(plain: string): Promise<string> {

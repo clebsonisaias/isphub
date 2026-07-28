@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import type { UserRole } from "@isphub/shared";
 import { verifyToken, type JwtPayload } from "../services/authService.js";
+import { obterEstadoSessao } from "../services/sessaoService.js";
 import { HttpError } from "./errorHandler.js";
 import { tocarPresenca } from "./presenca.js";
 
@@ -13,19 +14,43 @@ declare global {
   }
 }
 
-/** Exige um Bearer token valido; popula req.user. */
-export function requireAuth(req: Request, _res: Response, next: NextFunction) {
+/**
+ * Exige um Bearer token valido; popula req.user.
+ *
+ * Alem de conferir a assinatura, confere se a SESSAO ainda vale: usuario ativo
+ * e `tokenVersion` igual a do banco (ver sessaoService). Sem essa segunda
+ * parte, o token era um cheque em branco de 8h — desativar alguem, trocar a
+ * senha dele ou rebaixar o papel nao surtia efeito nenhum ate expirar.
+ */
+export async function requireAuth(req: Request, _res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   if (!header?.startsWith("Bearer ")) {
-    throw new HttpError(401, "Token de autenticacao ausente");
+    return next(new HttpError(401, "Token de autenticacao ausente"));
   }
   const token = header.slice("Bearer ".length);
+
+  let payload;
   try {
-    req.user = verifyToken(token);
+    payload = verifyToken(token);
   } catch {
-    throw new HttpError(401, "Token invalido ou expirado");
+    return next(new HttpError(401, "Token invalido ou expirado"));
   }
-  tocarPresenca(req.user.sub);
+
+  try {
+    const sessao = await obterEstadoSessao(payload.sub);
+    if (!sessao || !sessao.ativo) {
+      return next(new HttpError(401, "Usuario nao encontrado ou inativo"));
+    }
+    // `tv` ausente = token emitido antes desta mudanca; vale contra a versao 0.
+    if ((payload.tv ?? 0) !== sessao.tokenVersion) {
+      return next(new HttpError(401, "Sessao encerrada. Entre novamente."));
+    }
+  } catch (err) {
+    return next(err);
+  }
+
+  req.user = payload;
+  tocarPresenca(payload.sub);
   next();
 }
 

@@ -229,6 +229,14 @@ model Usuario {
   provedor     Provedor? @relation(fields: [provedorId], references: [id], onDelete: SetNull)
   ativo        Boolean  @default(true)
   criadoEm     DateTime @default(now())
+  /// Versao da sessao. Vai dentro do JWT; `requireAuth` compara com o valor do
+  /// banco e recusa o token se diferir. E o unico jeito de INVALIDAR um token
+  /// ja emitido — sem isto, desativar o usuario, trocar a senha, rebaixar o
+  /// papel ou mudar o provedorId nao derrubava nada: o token velho continuava
+  /// valendo (com o papel ANTIGO) por ate 8h em todas as rotas.
+  /// Incrementa em: desativacao, troca de papel, troca de provedor e troca de
+  /// senha. Ver services/authService.ts e routes/usuarios.ts.
+  tokenVersion Int      @default(0)
   /// Presenca barata do chat: atualizado (com throttle de ~60s, ver
   /// middleware de presenca) a cada request autenticado. online = visto nos
   /// ultimos ~2min — nunca calculado no cliente.

@@ -5,6 +5,7 @@ import { prisma } from "../lib/prisma.js";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { hashPassword } from "../services/authService.js";
+import { invalidarCacheSessao } from "../services/sessaoService.js";
 
 /**
  * CRUD de usuarios (admin/gestor/tecnico/provedor). Tecnico e um usuario com
@@ -114,16 +115,36 @@ usuariosRouter.put(
       }
     }
 
+    // Papel, provedor e `ativo` viajam DENTRO do token — mudar qualquer um
+    // deles sem derrubar a sessao deixava o token antigo valendo com o valor
+    // ANTIGO por ate 8h. Rebaixar um admin era o pior caso: o token dele
+    // continuava passando por requireRole(ADMIN), e com ele dava pra criar um
+    // novo admin — a demissao virava reescalada garantida.
+    const sessaoInvalidada =
+      alvo.role !== data.role || alvo.provedorId !== provedorId || (alvo.ativo && !data.ativo);
+
     const usuario = await prisma.usuario
       .update({
         where: { id: alvo.id },
-        data: { nome: data.nome, email: data.email, role: data.role, provedorId, ativo: data.ativo },
+        data: {
+          nome: data.nome,
+          email: data.email,
+          role: data.role,
+          provedorId,
+          ativo: data.ativo,
+          ...(sessaoInvalidada ? { tokenVersion: { increment: 1 } } : {}),
+        },
         select: SELECT_PUBLICO,
       })
       .catch((err) => {
         if (err?.code === "P2002") throw new HttpError(409, "Ja existe um usuario com esse e-mail");
         throw err;
       });
+    // Limpa o cache SEMPRE, nao so quando a sessao foi invalidada. REATIVAR um
+    // usuario nao incrementa tokenVersion (nao ha sessao pra derrubar), mas o
+    // cache ainda guardava `ativo:false` — e ele ficava sem conseguir entrar
+    // ate o TTL expirar. Pego rodando o fluxo de verdade, nao lendo o codigo.
+    invalidarCacheSessao(alvo.id);
     res.json(usuario);
   }),
 );
@@ -138,11 +159,18 @@ usuariosRouter.post(
   asyncHandler(async (req, res) => {
     const { novaSenha } = resetSenhaSchema.parse(req.body);
     const senhaHash = await hashPassword(novaSenha);
+    // Reset feito pelo admin normalmente e resposta a conta comprometida ou
+    // saida do funcionario: tem que derrubar as sessoes abertas.
     const usuario = await prisma.usuario
-      .update({ where: { id: req.params.id }, data: { senhaHash }, select: SELECT_PUBLICO })
+      .update({
+        where: { id: req.params.id },
+        data: { senhaHash, tokenVersion: { increment: 1 } },
+        select: SELECT_PUBLICO,
+      })
       .catch(() => {
         throw new HttpError(404, "Usuario nao encontrado");
       });
+    invalidarCacheSessao(req.params.id);
     res.json(usuario);
   }),
 );
@@ -159,11 +187,15 @@ usuariosRouter.delete(
       throw new HttpError(409, "Nao e possivel desativar o ultimo administrador ativo");
     }
 
+    // Desativar tem que derrubar a sessao na hora. Sem o tokenVersion++, o
+    // token de um tecnico ja desligado seguia valendo por ate 8h em TODAS as
+    // rotas — incluindo as que escrevem no SGP do provedor.
     const usuario = await prisma.usuario.update({
       where: { id: alvo.id },
-      data: { ativo: false },
+      data: { ativo: false, tokenVersion: { increment: 1 } },
       select: SELECT_PUBLICO,
     });
+    invalidarCacheSessao(alvo.id);
     res.json(usuario);
   }),
 );
