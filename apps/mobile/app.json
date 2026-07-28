@@ -34,7 +34,26 @@
           "imageWidth": 76
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Permite gravar áudios pra enviar no chat interno."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Permite escolher fotos da galeria pra enviar no chat interno.",
+          "cameraPermission": "Permite tirar fotos pra enviar no chat interno."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Permite compartilhar sua localização atual no chat interno."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

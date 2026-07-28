@@ -1,3 +1,4 @@
+import * as FileSystem from "expo-file-system/legacy";
 import type { FilaFiltros } from "@isphub/shared";
 
 /**
@@ -46,6 +47,25 @@ export async function apiFetch<T>(path: string, opts: ApiOpts = {}): Promise<T> 
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
+}
+
+/**
+ * Baixa um anexo autenticado (foto/audio do chat) pra um arquivo local em
+ * cache e devolve a URI local. `<Image>`/o player de audio nunca conseguem
+ * mandar um header Authorization sozinhos — por isso o download manual em
+ * vez de passar a URL remota direto pro componente. Cacheia por nome de
+ * arquivo derivado do path (a rota ja usa o id da mensagem), entao tocar de
+ * novo nao baixa de novo.
+ */
+export async function baixarAnexoAutenticado(path: string, token: string | null): Promise<string> {
+  const nomeArquivo = path.replace(/[^a-zA-Z0-9]/g, "_");
+  const destino = `${FileSystem.cacheDirectory}${nomeArquivo}`;
+  const info = await FileSystem.getInfoAsync(destino);
+  if (info.exists) return destino;
+  const resultado = await FileSystem.downloadAsync(`${API_BASE}${path}`, destino, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  return resultado.uri;
 }
 
 /**

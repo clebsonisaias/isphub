@@ -9,6 +9,7 @@ import { apiFetch } from "@/lib/api";
 import { Button, Card, Field, Muted, Screen, Title } from "@/components/ui";
 import { colors, font, radius, space } from "@/theme/tokens";
 import { useAcoesOs } from "@/features/minhas-os/acoes";
+import { useCriarConversa } from "@/features/chat/hooks";
 
 function soDigitos(tel: string): string {
   return tel.replace(/\D/g, "");
@@ -35,8 +36,10 @@ export default function DetalheOs() {
   const router = useRouter();
   const { modulos } = useModulos();
   const temProvisionamento = modulos.some((m) => m.id === "provisionamento");
+  const temChat = modulos.some((m) => m.id === "chat");
   const [nota, setNota] = useState("");
   const { marcarACaminho, mudarStatus, anotar } = useAcoesOs(id);
+  const { garantirConversaDeOs } = useCriarConversa();
 
   const query = useQuery({
     queryKey: ["os", id],
@@ -158,6 +161,17 @@ export default function DetalheOs() {
                     },
                   })
                 }
+              />
+            </View>
+          ) : null}
+
+          {temChat ? (
+            <View>
+              <Button
+                label={garantirConversaDeOs.isPending ? "Abrindo…" : "Chat da OS"}
+                variant="ghost"
+                loading={garantirConversaDeOs.isPending}
+                onPress={() => garantirConversaDeOs.mutate(os.id, { onSuccess: (conversa) => router.push(`/chat/${conversa.id}`) })}
               />
             </View>
           ) : null}
