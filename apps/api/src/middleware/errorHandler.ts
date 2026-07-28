@@ -18,6 +18,21 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
   if (err instanceof ZodError) {
     return res.status(400).json({ error: "Dados invalidos", detalhes: err.flatten() });
   }
+  // Erros que ja carregam status HTTP proprio e nao sao nossos — na pratica os
+  // do body-parser (corpo acima do limite, JSON malformado). Sem este ramo eles
+  // caiam no 500 generico: quem mandava uma foto grande demais recebia "Erro
+  // interno do servidor" em vez de saber que o arquivo passou do tamanho.
+  const status = (err as { status?: number; statusCode?: number })?.status ?? (err as { statusCode?: number })?.statusCode;
+  if (typeof status === "number" && status >= 400 && status < 500) {
+    const tipo = (err as { type?: string })?.type;
+    if (tipo === "entity.too.large") {
+      return res.status(413).json({ error: "Conteudo grande demais para esta rota" });
+    }
+    if (tipo === "entity.parse.failed") {
+      return res.status(400).json({ error: "JSON invalido" });
+    }
+    return res.status(status).json({ error: "Requisicao invalida" });
+  }
   console.error(err);
   return res.status(500).json({ error: "Erro interno do servidor" });
 }
