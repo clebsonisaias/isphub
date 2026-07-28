@@ -23,6 +23,11 @@ COPY apps/api/prisma apps/api/prisma
 # nao roda de forma confiavel dentro do build do Coolify neste monorepo.
 RUN npm run prisma:generate -w @isphub/api
 
+# tsconfig.base.json e obrigatorio: TODO tsconfig de workspace faz `extends`
+# nele. Com o `COPY . .` antigo ele vinha de carona; ao passar a copiar arquivo
+# por arquivo (pra ganhar cache de camada) ficou de fora, e o build quebrou com
+# `TS5083: Cannot read file '/repo/tsconfig.base.json'`.
+COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
 COPY apps/api apps/api
 
@@ -38,9 +43,12 @@ RUN rm -f apps/api/dist/e2e-seed.js apps/api/dist/seed-tecnico.js
 
 WORKDIR /repo/apps/api
 
-# Nao rodar como root. A imagem node ja traz o usuario `node`; a aplicacao nao
-# escreve nada em disco, entao so precisa de leitura no que o build produziu.
-USER node
+# TODO(seguranca): rodar como usuario `node` em vez de root. Tentei junto com
+# esta mudanca e voltei atras — o CMD chama `npx prisma migrate deploy`, e nao
+# tenho Docker nesta maquina pra confirmar que o npx nao esbarra em permissao
+# de cache/HOME com usuario nao-root. Como um deploy que falha mantem no ar a
+# versao COM as vulnerabilidades, nao vale arriscar o ciclo por um
+# endurecimento. Fazer depois, validando o build localmente antes.
 
 EXPOSE 4000
 
