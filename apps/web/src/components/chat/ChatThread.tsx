@@ -26,6 +26,10 @@ const RESPOSTAS_RAPIDAS: { tipo: RespostaRapidaTipo; label: string }[] = [
 ];
 
 const LIMIAR_NO_FIM_PX = 80;
+/** Mesmo tamanho de pagina do app e do default do servidor. */
+const MENSAGENS_POR_PAGINA = 30;
+/** A que distancia do topo comecar a puxar o historico anterior. */
+const LIMIAR_TOPO_PX = 120;
 
 function mensagemErro(err: unknown): string {
   return err instanceof ApiError
@@ -85,6 +89,8 @@ export function ChatThread({
     resumo: string;
   } | null>(null);
   const [novasAbaixo, setNovasAbaixo] = useState(false);
+  const [temMais, setTemMais] = useState(false);
+  const [carregandoMais, setCarregandoMais] = useState(false);
   const [digitandoNome, setDigitandoNome] = useState<string | null>(null);
   const listaRef = useRef<HTMLDivElement>(null);
   const digitandoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -112,8 +118,12 @@ export function ChatThread({
   async function carregar() {
     setErro(false);
     try {
-      const resp = await chatApi.mensagens(conversa.id);
+      const resp = await chatApi.mensagens(conversa.id, {
+        limit: MENSAGENS_POR_PAGINA,
+      });
       setMensagens([...resp].reverse());
+      // Pagina cheia = provavelmente ha historico antes dela.
+      setTemMais(resp.length === MENSAGENS_POR_PAGINA);
       setTimeout(() => scrollParaFim(false), 0);
       await chatApi.marcarLida(conversa.id);
       onConversaAtualizada();
@@ -122,10 +132,50 @@ export function ChatThread({
     }
   }
 
+  /**
+   * Carrega a pagina ANTERIOR (mensagens mais antigas) por cursor.
+   *
+   * Antes o web pedia a primeira pagina e parava ali: uma conversa com
+   * historico simplesmente nao podia ser lida por inteiro, apesar de a API
+   * suportar cursor desde o inicio. Mesmo buraco que o app tinha.
+   *
+   * O detalhe que faz isso nao ser irritante: como o conteudo entra ACIMA do
+   * que ja esta na tela, o navegador manteria o mesmo scrollTop e a leitura
+   * "pularia". Por isso medimos scrollHeight antes e depois e compensamos a
+   * diferenca — a mensagem que a pessoa estava lendo fica parada no lugar.
+   */
+  async function carregarMais() {
+    const el = listaRef.current;
+    if (!el || carregandoMais || !temMais || !mensagens?.length) return;
+    setCarregandoMais(true);
+    const alturaAntes = el.scrollHeight;
+    const topoAntes = el.scrollTop;
+    try {
+      const resp = await chatApi.mensagens(conversa.id, {
+        antesDe: mensagens[0].criadoEm,
+        limit: MENSAGENS_POR_PAGINA,
+      });
+      if (resp.length < MENSAGENS_POR_PAGINA) setTemMais(false);
+      if (resp.length > 0) {
+        setMensagens((atual) => [...[...resp].reverse(), ...(atual ?? [])]);
+        requestAnimationFrame(() => {
+          const depois = listaRef.current;
+          if (depois) depois.scrollTop = topoAntes + (depois.scrollHeight - alturaAntes);
+        });
+      }
+    } catch {
+      // silencioso: a thread ja carregada continua utilizavel
+    } finally {
+      setCarregandoMais(false);
+    }
+  }
+
   useEffect(() => {
     setMensagens(null);
     setRespondendoA(null);
     setNovasAbaixo(false);
+    setTemMais(false);
+    setCarregandoMais(false);
     void carregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversa.id]);
@@ -148,9 +198,18 @@ export function ChatThread({
     if (evento.tipo !== "chat-mensagem") return;
     const jaNoFim = estaNoFim();
     chatApi
-      .mensagens(conversa.id)
+      .mensagens(conversa.id, { limit: MENSAGENS_POR_PAGINA })
       .then((resp) => {
-        setMensagens([...resp].reverse());
+        // MESCLA em vez de substituir. Trocar o estado pela primeira pagina
+        // jogava fora todo o historico que o usuario tinha acabado de rolar
+        // pra carregar — a thread "encolhia" sozinha a cada mensagem nova.
+        const recentes = [...resp].reverse();
+        setMensagens((atual) => {
+          if (!atual?.length) return recentes;
+          const porId = new Map(atual.map((m) => [m.id, m]));
+          for (const m of recentes) porId.set(m.id, m);
+          return Array.from(porId.values()).sort((a, b) => a.criadoEm.localeCompare(b.criadoEm));
+        });
         onConversaAtualizada();
         if (evento.autorId === meuId || jaNoFim) {
           setTimeout(() => scrollParaFim(true), 0);
@@ -244,7 +303,13 @@ export function ChatThread({
         </div>
       </div>
 
-      <div ref={listaRef} className="relative flex-1 overflow-y-auto px-3 py-3">
+      <div
+        ref={listaRef}
+        onScroll={(e) => {
+          if (e.currentTarget.scrollTop < LIMIAR_TOPO_PX) void carregarMais();
+        }}
+        className="relative flex-1 overflow-y-auto px-3 py-3"
+      >
         {mensagens === null ? (
           <div className="flex flex-col gap-3">
             {Array.from({ length: 4 }).map((_, i) => (
@@ -268,6 +333,16 @@ export function ChatThread({
           </p>
         ) : (
           <div className="flex flex-col gap-1">
+            {carregandoMais && (
+              <p className="py-2 text-center text-xs text-muted-foreground">
+                Carregando mensagens anteriores…
+              </p>
+            )}
+            {!temMais && mensagens.length >= MENSAGENS_POR_PAGINA && (
+              <p className="py-2 text-center text-xs text-muted-foreground">
+                Início da conversa
+              </p>
+            )}
             {mensagens.map((m, i) => {
               const anterior = mensagens[i - 1];
               const novoDia =

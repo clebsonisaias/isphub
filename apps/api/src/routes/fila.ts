@@ -45,7 +45,9 @@ const filtrosSchema = z.object({
    * pede "externa" explicitamente. Retirada nunca "some": tem tela propria.
    */
   equipe: z.enum(["interna", "externa", "todas"]).default("interna"),
-  busca: z.string().optional(),
+  // Teto de tamanho: `busca` vira ate 5 ILIKE '%...%' sem indice; string
+  // gigante so serve pra fazer o banco trabalhar a toa.
+  busca: z.string().max(120).optional(),
   de: z.string().datetime().optional(),
   ate: z.string().datetime().optional(),
   page: z.coerce.number().int().min(1).default(1),
@@ -201,6 +203,12 @@ filaRouter.get(
       prisma.ordemServico.count({ where: { ...osWhereSemStatus, status: { notIn: OS_STATUS_ABERTOS } } }),
       // Só os campos que o SLA precisa — o alerta tem que ser o mesmo esteja
       // o usuario na aba de abertas ou na de concluidas.
+      //
+      // `take` obrigatorio: sem ele esta query carregava TODAS as OS abertas do
+      // escopo so pra contar quantas estao vermelhas — cresce linear com a base
+      // e e a query mais cara da rota mais chamada do sistema. O teto e o mesmo
+      // da fila (LIMITE_FILA), entao o contador nunca fala de mais OS do que a
+      // propria lista ja admite ter truncado.
       prisma.ordemServico.findMany({
         where: { ...osWhereSemStatus, status: { in: OS_STATUS_ABERTOS } },
         select: {
@@ -209,6 +217,7 @@ filaRouter.get(
           criadoEm: true,
           tipoOs: { select: { slaHoras: true, categoria: { select: { slaHorasPadrao: true } } } },
         },
+        take: LIMITE_FILA,
       }),
     ]);
 
