@@ -61,9 +61,14 @@ function abertaHa(iso: string | null, agora: number): string | null {
   return `${dias}d ${h % 24}h`;
 }
 
-/** Classe comum dos controles inline (copiar, WhatsApp, mapa) — discretos, viram destaque no hover. */
+/**
+ * Classe comum dos controles inline (copiar, WhatsApp, mapa) — discretos,
+ * viram destaque no hover. Area de toque >=40px no mobile (min-h/min-w, sem
+ * mudar o tamanho visual do icone) sem inflar o desktop (sm: volta ao
+ * compacto, so a padding natural do icone).
+ */
 const acaoClasse =
-  "shrink-0 rounded p-0.5 text-muted-foreground/60 transition-colors hover:bg-secondary hover:text-foreground";
+  "inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-secondary hover:text-foreground sm:min-h-0 sm:min-w-0 sm:p-0.5";
 
 /** Botão de copiar com feedback rápido (vira ✓ por ~1s). Para a propagação pra
  *  não abrir o detalhe da OS ao clicar. Usa fallback de clipboard (produção http). */
@@ -173,7 +178,7 @@ export function FilaCard({ item, agora, onClick }: { item: FilaItem; agora: numb
         }
       }}
       style={{ borderLeftColor: rail, borderLeftWidth: 4 }}
-      className="fila-item group flex w-full cursor-pointer flex-col overflow-hidden rounded-xl border border-border bg-card text-left shadow-sm transition-all hover:border-primary/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-row"
+      className="fila-item group flex w-full cursor-pointer flex-col overflow-hidden rounded-xl border border-border bg-card text-left shadow-soft-sm transition-all hover:border-primary/40 hover:shadow-soft-md motion-safe:hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-row"
     >
       {/* Rail de urgência: id, protocolo, data rotulada, SLA, prioridade alta, aberta há */}
       <div className="flex shrink-0 flex-col items-start gap-1.5 border-border/60 bg-secondary/30 p-3 sm:w-44 sm:border-r">

@@ -6,7 +6,7 @@ import { OS_STATUS_LABEL, OsStatus } from "@isphub/shared";
  * isso pode usar o espectro cheio de acentos sem competir com o vermelho/
  * ambar/verde reservados do SlaBadge.
  */
-const COR_STATUS: Record<OsStatus, string> = {
+export const CORES_STATUS: Record<OsStatus, string> = {
   [OsStatus.ABERTA]: "var(--accent-blue)",
   [OsStatus.PENDENTE]: "var(--accent-yellow)",
   [OsStatus.EM_DESLOCAMENTO]: "var(--accent-orange)",
@@ -45,7 +45,7 @@ export function StatusDonut({ dados }: { dados: { status: OsStatus; total: numbe
                   cy="50"
                   r={raio}
                   fill="none"
-                  stroke={COR_STATUS[d.status]}
+                  stroke={CORES_STATUS[d.status]}
                   strokeWidth={14}
                   strokeDasharray={`${fatia} ${circunferencia - fatia}`}
                   strokeDashoffset={-offset}
@@ -67,7 +67,7 @@ export function StatusDonut({ dados }: { dados: { status: OsStatus; total: numbe
         {dados.map((d) => (
           <li key={d.status} className="flex items-center justify-between gap-2 text-sm">
             <span className="flex items-center gap-2 text-foreground">
-              <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: COR_STATUS[d.status] }} />
+              <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: CORES_STATUS[d.status] }} />
               {OS_STATUS_LABEL[d.status]}
             </span>
             <span className="tabular-nums text-muted-foreground">{d.total}</span>

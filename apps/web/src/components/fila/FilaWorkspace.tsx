@@ -53,7 +53,7 @@ const TAMANHOS_PAGINA = [10, 20, 50];
 
 function EstatCard({ icon, valor, label, tom }: { icon: React.ReactNode; valor: number; label: string; tom: string }) {
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 shadow-sm">
+    <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 shadow-soft-sm">
       <span className={`flex size-9 items-center justify-center rounded-lg ${tom}`}>{icon}</span>
       <div className="leading-tight">
         <p className="text-xl font-bold tabular-nums text-foreground">{valor}</p>
