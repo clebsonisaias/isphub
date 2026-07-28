@@ -1,4 +1,5 @@
 import { UserRole } from "@isphub/shared";
+import { HttpError } from "../middleware/errorHandler.js";
 import type { JwtPayload } from "./authService.js";
 
 /**
@@ -29,4 +30,47 @@ export function podeAcessarOs(user: JwtPayload, os: { provedorId: string; tecnic
   if (user.role === UserRole.PROVEDOR) return os.provedorId === user.provedorId;
   if (user.role === UserRole.TECNICO) return os.tecnicoId === user.sub;
   return true;
+}
+
+/**
+ * Escopo de acesso as rotas POR PROVEDOR que falam ao vivo com o SGP dele
+ * (conexao/*, fttx/*) — consultas de assinante e ESCRITA DE REDE (autorizar/
+ * desautorizar ONU numa OLT).
+ *
+ * Antes, essas rotas so barravam `role=provedor`: qualquer tecnico autenticado
+ * listava `GET /provedores`, pegava o id de um provedor com o qual nao tem
+ * nenhuma relacao e (a) baixava a lista de assinantes dele, (b) enumerava
+ * contrato por contrato pra colher endereco, ou (c) desautorizava ONUs em
+ * massa — derrubando a fibra de clientes de um ISP alheio.
+ *
+ * A regra abaixo mantem o desenho documentado (admin/gestor sao cross-tenant
+ * de proposito, e o tecnico e pessoal da ISPhub, nao de um provedor) e so
+ * amarra o tecnico ao trabalho dele: ele alcanca o SGP de um provedor onde de
+ * fato TEM OS atribuida. Cobre o caso real — provisionar a ONU do cliente que
+ * ele esta atendendo — e fecha o resto.
+ *
+ * Assincrona de proposito: o vinculo do tecnico e um fato do banco, nao do JWT
+ * (que e um retrato de ate 8h atras).
+ */
+export async function assertProvedorPermitido(
+  user: JwtPayload,
+  provedorId: string,
+  contarOsDoTecnico: (tecnicoId: string, provedorId: string) => Promise<number>,
+): Promise<void> {
+  if (user.role === UserRole.PROVEDOR) {
+    if (user.provedorId !== provedorId) {
+      throw new HttpError(403, "Acesso restrito ao proprio provedor");
+    }
+    return;
+  }
+
+  if (user.role === UserRole.TECNICO) {
+    const total = await contarOsDoTecnico(user.sub, provedorId);
+    if (total === 0) {
+      throw new HttpError(403, "Sem OS atribuida neste provedor");
+    }
+    return;
+  }
+
+  // admin/gestor: livre por desenho (despacham entre todos os provedores).
 }

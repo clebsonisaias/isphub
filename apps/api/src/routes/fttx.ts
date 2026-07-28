@@ -6,6 +6,7 @@ import { prisma } from "../lib/prisma.js";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { buildConnector } from "../services/erpConnectorService.js";
+import { assertProvedorPermitido } from "../services/escopoService.js";
 import { comConcorrenciaLimitada } from "../lib/limitador.js";
 
 /**
@@ -15,8 +16,10 @@ import { comConcorrenciaLimitada } from "../lib/limitador.js";
  * ativo. Cada provedor tem o seu SGP, com as suas proprias OLTs — por isso o
  * fluxo comeca escolhendo o provedor (GET /provedores, ja liberado).
  *
- * Leituras (olts/onus/templates) qualquer autenticado pode fazer (escopado);
- * as ESCRITAS de rede (autorizar/desautorizar) exigem ADMIN/GESTOR/TECNICO.
+ * Leituras (olts/onus/templates) e ESCRITAS de rede (autorizar/desautorizar)
+ * passam pelo MESMO escopo de provedor (assertProvedor): admin/gestor livres,
+ * provedor so no proprio, tecnico so onde tem OS atribuida. As escritas ainda
+ * exigem ADMIN/GESTOR/TECNICO por papel.
  */
 export const fttxRouter = Router({ mergeParams: true });
 
@@ -30,10 +33,15 @@ const oltsCache = new Map<string, { valor: Olt[]; expiraEm: number }>();
 /** Papeis que podem AUTORIZAR/DESAUTORIZAR (escrita de rede sensivel). */
 const escritaRoles = [UserRole.ADMIN, UserRole.GESTOR, UserRole.TECNICO];
 
-function assertProvedor(req: any, provedorId: string): void {
-  if (req.user!.role === UserRole.PROVEDOR && req.user!.provedorId !== provedorId) {
-    throw new HttpError(403, "Acesso restrito ao proprio provedor");
-  }
+/**
+ * Escopo de provedor. Ver escopoService.assertProvedorPermitido: admin/gestor
+ * passam (desenho), provedor so no proprio, e o TECNICO so onde tem OS
+ * atribuida — sem isso qualquer tecnico desautorizava ONU de qualquer ISP.
+ */
+async function assertProvedor(req: any, provedorId: string): Promise<void> {
+  await assertProvedorPermitido(req.user!, provedorId, (tecnicoId, pid) =>
+    prisma.ordemServico.count({ where: { tecnicoId, provedorId: pid } }),
+  );
 }
 
 async function connectorDoProvedor(provedorId: string) {
@@ -47,7 +55,7 @@ fttxRouter.get(
   "/olts",
   asyncHandler(async (req, res) => {
     const { provedorId } = req.params;
-    assertProvedor(req, provedorId);
+    await assertProvedor(req, provedorId);
 
     const emCache = oltsCache.get(provedorId);
     if (emCache && emCache.expiraEm > Date.now()) {
@@ -73,7 +81,7 @@ fttxRouter.get(
   "/olts/:oltId/onus",
   asyncHandler(async (req, res) => {
     const { provedorId, oltId } = req.params;
-    assertProvedor(req, provedorId);
+    await assertProvedor(req, provedorId);
     const { status, contrato, cpfcnpj } = onusQuery.parse(req.query);
 
     const connector = await connectorDoProvedor(provedorId);
@@ -94,7 +102,7 @@ fttxRouter.get(
   "/olts/:oltId/templates",
   asyncHandler(async (req, res) => {
     const { provedorId, oltId } = req.params;
-    assertProvedor(req, provedorId);
+    await assertProvedor(req, provedorId);
     const connector = await connectorDoProvedor(provedorId);
     res.json(await connector.listarTemplatesOnu(oltId));
   }),
@@ -123,7 +131,7 @@ fttxRouter.post(
   requireRole(...escritaRoles),
   asyncHandler(async (req, res) => {
     const { provedorId, oltId } = req.params;
-    assertProvedor(req, provedorId);
+    await assertProvedor(req, provedorId);
     const dados = autorizarSchema.parse(req.body);
     const connector = await connectorDoProvedor(provedorId);
     const resultado = await connector.provisionarOnu(oltId, dados);
@@ -137,7 +145,7 @@ fttxRouter.post(
   requireRole(...escritaRoles),
   asyncHandler(async (req, res) => {
     const { provedorId, onuId } = req.params;
-    assertProvedor(req, provedorId);
+    await assertProvedor(req, provedorId);
     const connector = await connectorDoProvedor(provedorId);
     res.json(await connector.desautorizarOnu(onuId));
   }),

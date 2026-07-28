@@ -1,10 +1,10 @@
 import { Router } from "express";
 import type { DetalhesTecnicos } from "@isphub/shared";
-import { UserRole } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth } from "../middleware/auth.js";
 import { buildConnector } from "../services/erpConnectorService.js";
+import { assertProvedorPermitido } from "../services/escopoService.js";
 import { comConcorrenciaLimitada } from "../lib/limitador.js";
 
 export const conexaoRouter = Router({ mergeParams: true });
@@ -24,6 +24,22 @@ const DETALHES_MAX_CONCORRENTE_POR_PROVEDOR = 4;
 const detalhesCache = new Map<string, { valor: DetalhesTecnicos; expiraEm: number }>();
 
 /**
+ * Escopo de provedor. Ver escopoService.assertProvedorPermitido.
+ *
+ * Antes so barrava `role=provedor`, entao qualquer autenticado consultava
+ * qualquer provedor — e `contratoId` e um numero sequencial do SGP, entao dava
+ * pra iterar 1..N e colher endereco e lat/lng de assinante por assinante de um
+ * ISP com o qual o usuario nao tem nenhuma relacao. Nao ha rate limit aqui: o
+ * `comConcorrenciaLimitada` e uma FILA de concorrencia (limita quantas ao mesmo
+ * tempo), nunca recusa — nao segura enumeracao sequencial.
+ */
+async function assertProvedor(req: any, provedorId: string): Promise<void> {
+  await assertProvedorPermitido(req.user!, provedorId, (tecnicoId, pid) =>
+    prisma.ordemServico.count({ where: { tecnicoId, provedorId: pid } }),
+  );
+}
+
+/**
  * Consulta ao vivo (nao faz parte do sync em massa — chamada sob demanda ao
  * abrir o detalhe de uma OS/ocorrencia) se o servico do contrato esta
  * online ou offline agora no SGP.
@@ -33,9 +49,7 @@ conexaoRouter.get(
   asyncHandler(async (req, res) => {
     const { provedorId, contratoId } = req.params;
 
-    if (req.user!.role === UserRole.PROVEDOR && req.user!.provedorId !== provedorId) {
-      throw new HttpError(403, "Acesso restrito ao proprio provedor");
-    }
+    await assertProvedor(req, provedorId);
 
     const config = await prisma.erpConfig.findFirst({ where: { provedorId, tipo: "SGP", ativo: true } });
     if (!config) throw new HttpError(404, "Integracao SGP nao configurada/ativa para este provedor");
@@ -57,9 +71,7 @@ conexaoRouter.get(
   asyncHandler(async (req, res) => {
     const { provedorId, contratoId } = req.params;
 
-    if (req.user!.role === UserRole.PROVEDOR && req.user!.provedorId !== provedorId) {
-      throw new HttpError(403, "Acesso restrito ao proprio provedor");
-    }
+    await assertProvedor(req, provedorId);
 
     const chaveCache = `${provedorId}:${contratoId}`;
     const emCache = detalhesCache.get(chaveCache);
