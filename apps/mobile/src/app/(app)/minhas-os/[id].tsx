@@ -9,6 +9,7 @@ import { apiFetch } from "@/lib/api";
 import { Button, Card, Field, Muted, Screen, Title } from "@/components/ui";
 import { colors, font, radius, space } from "@/theme/tokens";
 import { useAcoesOs } from "@/features/minhas-os/acoes";
+import { ConexaoStatus } from "@/features/minhas-os/conexao-status";
 import { useCriarConversa } from "@/features/chat/hooks";
 
 function soDigitos(tel: string): string {
@@ -102,6 +103,8 @@ export default function DetalheOs() {
               <Button label="Abrir no mapa" variant="ghost" onPress={abrirMapa} />
             </View>
           </Card>
+
+          <ConexaoStatus provedorId={os.provedorId} contratoId={os.contratoId} />
 
           {os.telefone ? (
             <View style={{ flexDirection: "row", gap: space.sm }}>
