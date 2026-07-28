@@ -217,13 +217,33 @@ export async function criarConversaGrupo(titulo: string, participanteIds: string
 }
 
 /**
- * Canal unico "Avisos" — leitura pra todo interno ativo, escrita restrita a
- * ADMIN/GESTOR (checado em enviarMensagem, nao aqui). Sem @unique pra travar
- * "1 por tipo" no schema (so a OS-thread precisa disso); em vez disso
- * fazemos find-or-create e, se ja existe, adicionamos o chamador como
- * participante caso ainda nao esteja (cobre gente contratada depois da
- * criacao do canal, sem precisar resincronizar a lista toda a cada request).
+ * Sem @unique pra travar "1 por tipo" no schema (so a OS-thread precisa
+ * disso, via ordemServicoId). Duas abas/usuarios abrindo o chat pela
+ * primeira vez ao mesmo tempo cairiam os dois no "nao existe ainda" e cada
+ * um criaria o SEU canal — travado aqui por um lock em memoria (mesmo
+ * espirito single-process do realtimeHub): a 2a chamada concorrente espera
+ * a promise da 1a em vez de criar de novo. So protege dentro de UM processo
+ * Node — suficiente pro deploy atual (ver nota do realtimeHub).
  */
+let avisosPromiseEmCriacao: Promise<{ id: string }> | null = null;
+
+async function criarConversaAvisos(autorId: string): Promise<{ id: string }> {
+  const internos = await prisma.usuario.findMany({
+    where: { ativo: true, role: { in: [UserRole.ADMIN, UserRole.GESTOR, UserRole.TECNICO] } },
+    select: { id: true },
+  });
+  return prisma.conversa.create({
+    data: {
+      tipo: ConversaTipo.AVISOS,
+      titulo: "Avisos",
+      criadoPorId: autorId,
+      participantes: { create: internos.map((u) => ({ usuarioId: u.id, admin: u.id === autorId })) },
+    },
+    select: { id: true },
+  });
+}
+
+/** Canal unico "Avisos" — leitura pra todo interno ativo, escrita restrita a ADMIN/GESTOR (checado em enviarMensagem, nao aqui). */
 export async function garantirConversaAvisos(autorId: string): Promise<ConversaResumo> {
   const existente = await prisma.conversa.findFirst({ where: { tipo: ConversaTipo.AVISOS }, select: { id: true } });
   if (existente) {
@@ -235,19 +255,19 @@ export async function garantirConversaAvisos(autorId: string): Promise<ConversaR
     return montarConversaResumo(existente.id, autorId);
   }
 
-  const internos = await prisma.usuario.findMany({
-    where: { ativo: true, role: { in: [UserRole.ADMIN, UserRole.GESTOR, UserRole.TECNICO] } },
-    select: { id: true },
+  if (!avisosPromiseEmCriacao) {
+    avisosPromiseEmCriacao = criarConversaAvisos(autorId).finally(() => {
+      avisosPromiseEmCriacao = null;
+    });
+  }
+  const conversa = await avisosPromiseEmCriacao;
+  // Se outro request venceu a corrida, garante que EU tambem viro participante.
+  await prisma.conversaParticipante.upsert({
+    where: { conversaId_usuarioId: { conversaId: conversa.id, usuarioId: autorId } },
+    update: { saiuEm: null },
+    create: { conversaId: conversa.id, usuarioId: autorId },
   });
-  const criada = await prisma.conversa.create({
-    data: {
-      tipo: ConversaTipo.AVISOS,
-      titulo: "Avisos",
-      criadoPorId: autorId,
-      participantes: { create: internos.map((u) => ({ usuarioId: u.id, admin: u.id === autorId })) },
-    },
-  });
-  return montarConversaResumo(criada.id, autorId);
+  return montarConversaResumo(conversa.id, autorId);
 }
 
 /**
