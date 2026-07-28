@@ -3,7 +3,7 @@ import { useRouter } from "expo-router";
 import { Image, Linking, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { useQuery } from "@tanstack/react-query";
-import { MensagemTipo, OS_STATUS_LABEL, type Mensagem } from "@isphub/shared";
+import { EMOJIS_REACAO, MensagemTipo, OS_STATUS_LABEL, type Mensagem } from "@isphub/shared";
 import { apiFetch, API_BASE, baixarAnexoAutenticado } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { colors, font, radius, space } from "@/theme/tokens";
@@ -12,7 +12,6 @@ import { formatHora } from "./format";
 import { urlAnexo } from "./hooks";
 import type { OrdemServico } from "@isphub/shared";
 
-const EMOJIS_RAPIDOS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
 function OsRefCard({ ordemServicoId }: { ordemServicoId: string }) {
   const { token } = useAuth();
@@ -103,7 +102,7 @@ function MenuMensagem({
       <Pressable style={styles.modalFundo} onPress={onFechar}>
         <View style={styles.menu}>
           <View style={styles.menuEmojis}>
-            {EMOJIS_RAPIDOS.map((emoji) => (
+            {EMOJIS_REACAO.map((emoji) => (
               <Pressable
                 key={emoji}
                 onPress={() => {

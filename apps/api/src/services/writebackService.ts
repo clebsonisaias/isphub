@@ -193,6 +193,33 @@ export async function atribuirTecnico(ordemServicoId: string, tecnicoId: string,
     }),
   ]);
 
+  // Reconcilia a thread de chat da OS, se existir. A lista de participantes era
+  // congelada na criacao (o upsert de garantirConversaDeOs usa `update: {}`),
+  // entao numa reatribuicao o tecnico ANTERIOR continuava dentro da conversa —
+  // lendo mensagens, fotos e GPS sobre o cliente de uma OS que nao e mais dele
+  // — e o tecnico NOVO nunca entrava, levando 403 na conversa da propria OS.
+  const conversa = await prisma.conversa.findUnique({ where: { ordemServicoId }, select: { id: true } });
+  if (conversa) {
+    const anteriorId = os.tecnicoId;
+    await prisma.$transaction([
+      prisma.conversaParticipante.upsert({
+        where: { conversaId_usuarioId: { conversaId: conversa.id, usuarioId: tecnicoId } },
+        update: { saiuEm: null },
+        create: { conversaId: conversa.id, usuarioId: tecnicoId },
+      }),
+      // Sai da conversa, mas o historico fica (soft): o que foi dito na OS e
+      // registro operacional, nao some porque a OS trocou de mao.
+      ...(anteriorId && anteriorId !== tecnicoId
+        ? [
+            prisma.conversaParticipante.updateMany({
+              where: { conversaId: conversa.id, usuarioId: anteriorId, saiuEm: null },
+              data: { saiuEm: new Date() },
+            }),
+          ]
+        : []),
+    ]);
+  }
+
   // Nova OS pro tecnico: empurra pra lista dele aparecer na hora + badge.
   notificarTecnico(tecnicoId, "os-atribuida", ordemServicoId);
   return osAtualizada;

@@ -114,3 +114,17 @@ export interface ContatoChat {
   role: UserRole;
   online: boolean;
 }
+
+/**
+ * Emojis permitidos como reacao — fonte unica pra API e pros dois clientes.
+ *
+ * O servidor VALIDA contra esta lista (z.enum). Antes o campo era string livre
+ * de ate 8 chars: como a chave unica e (mensagem, usuario, emoji), cada string
+ * diferente virava uma linha nova e nada na API apagava reacao de terceiro —
+ * um laco enchia a tabela indefinidamente e quem abrisse a conversa carregava
+ * tudo pra memoria. A lista tambem vivia duplicada em MessageBubble do web e
+ * do app, livre pra divergir do que o servidor aceitasse.
+ */
+export const EMOJIS_REACAO = ["👍", "❤️", "😂", "😮", "😢", "🙏", "✅", "🚀"] as const;
+
+export type EmojiReacao = (typeof EMOJIS_REACAO)[number];

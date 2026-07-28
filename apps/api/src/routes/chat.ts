@@ -1,7 +1,7 @@
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
-import { MensagemTipo, UserRole } from "@isphub/shared";
+import { EMOJIS_REACAO, MensagemTipo, UserRole } from "@isphub/shared";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import * as chatService from "../services/chatService.js";
@@ -18,6 +18,35 @@ const enviarMensagemLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => req.user!.sub,
   message: { error: "Muitas mensagens em pouco tempo. Aguarde um instante." },
+});
+
+/**
+ * Reacoes sao baratas de mandar e criam linha no banco — sem limite proprio,
+ * um loop enchia a tabela indefinidamente. Teto mais alto que o de mensagem
+ * porque reagir em varias mensagens seguidas e uso normal.
+ */
+const reagirLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user!.sub,
+  message: { error: "Muitas reacoes em pouco tempo. Aguarde um instante." },
+});
+
+/**
+ * Resposta rapida NAO e texto: escreve status na OS e no SGP do provedor, e
+ * "preciso de apoio" notifica todo admin/gestor. Estava fora de qualquer
+ * limite — era o caminho mais barato pra floodar notificacao e martelar o SGP
+ * de um provedor. Teto baixo de proposito: no uso real sao poucos cliques.
+ */
+const respostaRapidaLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user!.sub,
+  message: { error: "Muitas acoes em pouco tempo. Aguarde um instante." },
 });
 
 /** PROVEDOR nunca chega no chat — bloqueado antes de qualquer rota abaixo. */
@@ -82,7 +111,7 @@ chatRouter.post(
 chatRouter.post(
   "/conversas/os/:ordemServicoId",
   asyncHandler(async (req, res) => {
-    res.status(201).json(await chatService.garantirConversaDeOs(req.params.ordemServicoId, req.user!.sub));
+    res.status(201).json(await chatService.garantirConversaDeOs(req.user!, req.params.ordemServicoId));
   }),
 );
 
@@ -101,7 +130,14 @@ chatRouter.get(
 );
 
 const enviarMensagemSchema = z.object({
-  tipo: z.nativeEnum(MensagemTipo).default(MensagemTipo.TEXTO),
+  // `sistema` fica DE FORA de proposito: mensagem de sistema so nasce no
+  // servidor (aplicarRespostaRapidaOs). Quando o cliente podia manda-la, um
+  // tecnico publicava aviso sem autor no canal da empresa toda — os dois
+  // clientes desenham SISTEMA como pilula centralizada, sem nome nem avatar.
+  tipo: z
+    .nativeEnum(MensagemTipo)
+    .refine((t) => t !== MensagemTipo.SISTEMA, { message: "Tipo de mensagem invalido" })
+    .default(MensagemTipo.TEXTO),
   corpo: z.string().trim().min(1).max(4000).optional(),
   anexoBase64: z.string().optional(),
   anexoMime: z.string().optional(),
@@ -146,21 +182,26 @@ const respostaRapidaSchema = z.object({
 
 chatRouter.post(
   "/conversas/:conversaId/os/resposta-rapida",
+  respostaRapidaLimiter,
   asyncHandler(async (req, res) => {
     await chatService.exigirParticipacao(req.user!, req.params.conversaId);
     const { tipo } = respostaRapidaSchema.parse(req.body);
-    res.status(201).json(await chatService.aplicarRespostaRapidaOs(req.params.conversaId, tipo, req.user!.sub));
+    res.status(201).json(await chatService.aplicarRespostaRapidaOs(req.user!, req.params.conversaId, tipo));
   }),
 );
 
-const reagirSchema = z.object({ emoji: z.string().trim().min(1).max(8) });
+const reagirSchema = z.object({ emoji: z.enum(EMOJIS_REACAO) });
 
 chatRouter.post(
   "/conversas/:conversaId/mensagens/:mensagemId/reagir",
+  reagirLimiter,
   asyncHandler(async (req, res) => {
     await chatService.exigirParticipacao(req.user!, req.params.conversaId);
     const { emoji } = reagirSchema.parse(req.body);
-    await chatService.reagir(req.params.mensagemId, req.user!.sub, emoji);
+    // conversaId vai junto: amarra a mensagem A ESTA conversa (a que acabou de
+    // passar por exigirParticipacao), senao participar de uma autoriza reagir
+    // na mensagem de outra.
+    await chatService.reagir(req.params.conversaId, req.params.mensagemId, req.user!.sub, emoji);
     res.status(204).send();
   }),
 );

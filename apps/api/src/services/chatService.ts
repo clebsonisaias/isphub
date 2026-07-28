@@ -13,6 +13,7 @@ import {
 import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../middleware/errorHandler.js";
 import { emitParaUsuario } from "./realtimeHub.js";
+import { podeAcessarOs } from "./escopoService.js";
 import * as writebackService from "./writebackService.js";
 import type { JwtPayload } from "./authService.js";
 
@@ -288,9 +289,23 @@ export async function garantirConversaAvisos(autorId: string): Promise<ConversaR
  * o tecnico atribuido (se houver) + todo admin/gestor ATIVO — o time inteiro
  * de despacho ve a conversa, nao so quem a abriu primeiro.
  */
-export async function garantirConversaDeOs(ordemServicoId: string, autorId: string): Promise<ConversaResumo> {
-  const os = await prisma.ordemServico.findUnique({ where: { id: ordemServicoId }, select: { id: true, tecnicoId: true } });
+export async function garantirConversaDeOs(user: JwtPayload, ordemServicoId: string): Promise<ConversaResumo> {
+  const autorId = user.sub;
+  const os = await prisma.ordemServico.findUnique({
+    where: { id: ordemServicoId },
+    select: { id: true, tecnicoId: true, provedorId: true },
+  });
   if (!os) throw new HttpError(404, "Ordem de servico nao encontrada");
+
+  // MESMA autorizacao da rota REST da OS. Sem isto havia dois caminhos pro
+  // mesmo estado com regras diferentes: /ordens-servico/:id/* exigia
+  // podeAcessarOs, e esta rota nao exigia nada — bastava conhecer o uuid da OS
+  // (ex.: uma OS que foi REATRIBUIDA pra outro tecnico) pra virar participante
+  // da thread e, de dentro dela, disparar resposta-rapida, que escreve status
+  // no SGP do provedor. A porta dos fundos tinha mais poder que a da frente.
+  if (!podeAcessarOs(user, os)) {
+    throw new HttpError(403, "Acesso restrito ao proprio provedor/tecnico");
+  }
 
   const internos = await prisma.usuario.findMany({
     where: { ativo: true, role: { in: ROLES_INTERNOS } },
@@ -309,6 +324,17 @@ export async function garantirConversaDeOs(ordemServicoId: string, autorId: stri
       participantes: { create: Array.from(participanteIds).map((usuarioId) => ({ usuarioId })) },
     },
   });
+
+  // Numa thread que JA existia o `update: {}` nao inscreve ninguem — quem tem
+  // acesso a OS mas nao estava na lista (ex.: o tecnico que acabou de receber
+  // a OS) ficava de fora da propria conversa. Reconcilia aqui: passou no
+  // podeAcessarOs acima, entao entra (ou volta, se tinha saido).
+  await prisma.conversaParticipante.upsert({
+    where: { conversaId_usuarioId: { conversaId: conversa.id, usuarioId: autorId } },
+    update: { saiuEm: null },
+    create: { conversaId: conversa.id, usuarioId: autorId },
+  });
+
   return montarConversaResumo(conversa.id, autorId);
 }
 
@@ -318,6 +344,8 @@ export async function garantirConversaDeOs(ordemServicoId: string, autorId: stri
 export const LIMITE_FOTO_BYTES = 400 * 1024;
 export const LIMITE_AUDIO_BYTES = 500 * 1024;
 export const LIMITE_AUDIO_SEG = 60;
+/** Teto de reacoes carregadas por mensagem (ver listarMensagens). */
+export const LIMITE_REACOES_POR_MENSAGEM = 50;
 const MIMES_FOTO = ["image/jpeg", "image/png", "image/webp"];
 const MIMES_AUDIO = ["audio/webm", "audio/mp4", "audio/m4a", "audio/ogg"];
 
@@ -385,7 +413,18 @@ export async function enviarMensagem(conversaId: string, autorId: string, input:
   });
   if (!conversa) throw new HttpError(404, "Conversa nao encontrada");
 
-  if (conversa.tipo === ConversaTipo.AVISOS && input.tipo !== MensagemTipo.SISTEMA) {
+  // Avisos e o canal da empresa inteira: so ADMIN/GESTOR posta.
+  //
+  // A versao anterior isentava `tipo === SISTEMA` desta checagem, e o schema da
+  // rota aceitava `sistema` vindo do cliente — entao qualquer tecnico mandava
+  // {"tipo":"sistema"} e publicava um aviso NAO-ATRIBUIDO (os dois clientes
+  // renderizam SISTEMA como pilula centralizada, sem autor nem avatar) pra
+  // empresa toda, com notificacao e push. Vetor perfeito de phishing interno.
+  //
+  // Agora: sem isencao aqui, e `sistema` recusado no schema da rota. Mensagem
+  // de sistema so nasce no servidor (aplicarRespostaRapidaOs), sempre numa
+  // thread de OS — que nunca e do tipo AVISOS, entao nada legitimo quebra.
+  if (conversa.tipo === ConversaTipo.AVISOS) {
     const autorRole = conversa.participantes.find((p) => p.usuarioId === autorId)?.usuario.role;
     if (autorRole !== UserRole.ADMIN && autorRole !== UserRole.GESTOR) {
       throw new HttpError(403, "So admin/gestor pode postar no canal de Avisos");
@@ -527,7 +566,12 @@ export async function listarMensagens(conversaId: string, antesDe?: string, limi
     include: {
       autor: { select: { id: true, nome: true, role: true, ultimaAtividadeEm: true } },
       respondendoA: { include: { autor: { select: { nome: true } } } },
-      reacoes: true,
+      // Teto por mensagem: `reacoes: true` sem limite carregava TODAS as
+      // reacoes de cada mensagem pra memoria. Como a chave unica e
+      // (mensagem, usuario, emoji) e o emoji era string livre, dava pra criar
+      // linhas sem fim numa mensagem do canal Avisos ate estourar o heap de
+      // quem abrisse a conversa. Nenhuma UI mostra mais que algumas dezenas.
+      reacoes: { take: LIMITE_REACOES_POR_MENSAGEM },
     },
   });
 
@@ -570,8 +614,18 @@ export async function contarNaoLidas(usuarioId: string): Promise<number> {
   return totais.reduce((acc, n) => acc + n, 0);
 }
 
-/** Toggle: se o usuario ja reagiu com esse emoji, remove; senao adiciona. */
-export async function reagir(mensagemId: string, usuarioId: string, emoji: string): Promise<void> {
+/**
+ * Toggle: se o usuario ja reagiu com esse emoji, remove; senao adiciona.
+ *
+ * `conversaId` vem da rota (ja passou por exigirParticipacao) e AMARRA a
+ * mensagem aquela conversa: sem isso, participar de uma conversa qualquer
+ * autorizava reagir em mensagem de outra — e o fan-out do SSE ia pros
+ * participantes da conversa alheia.
+ */
+export async function reagir(conversaId: string, mensagemId: string, usuarioId: string, emoji: string): Promise<void> {
+  const alvo = await prisma.mensagem.findUnique({ where: { id: mensagemId }, select: { conversaId: true } });
+  if (!alvo || alvo.conversaId !== conversaId) throw new HttpError(404, "Mensagem nao encontrada");
+
   const existente = await prisma.mensagemReacao.findUnique({
     where: { mensagemId_usuarioId_emoji: { mensagemId, usuarioId, emoji } },
   });
@@ -657,7 +711,8 @@ const ROTULO_RESPOSTA_RAPIDA: Record<RespostaRapidaTipo, string> = {
  * o dialog de detalhe usa) — o OsEvento("status") sai de graca de la, nao
  * duplicamos aqui. So DEPOIS disso postamos a mensagem de sistema no chat.
  */
-export async function aplicarRespostaRapidaOs(conversaId: string, tipo: RespostaRapidaTipo, autorId: string): Promise<MensagemDTO> {
+export async function aplicarRespostaRapidaOs(user: JwtPayload, conversaId: string, tipo: RespostaRapidaTipo): Promise<MensagemDTO> {
+  const autorId = user.sub;
   const [conversa, autor] = await Promise.all([
     prisma.conversa.findUnique({ where: { id: conversaId }, select: { ordemServicoId: true } }),
     prisma.usuario.findUniqueOrThrow({ where: { id: autorId }, select: { nome: true } }),
@@ -665,6 +720,20 @@ export async function aplicarRespostaRapidaOs(conversaId: string, tipo: Resposta
   if (!conversa?.ordemServicoId) throw new HttpError(400, "Esta conversa nao e uma thread de OS");
   const ordemServicoId = conversa.ordemServicoId;
   const autorNome = autor.nome;
+
+  // Segunda guarda, deliberadamente redundante com garantirConversaDeOs: estas
+  // acoes NAO sao texto — escrevem status na OS e no SGP do provedor. Ser
+  // participante da conversa nao basta, porque a lista de participantes e
+  // historica (quem entrou continua la depois de a OS ser reatribuida). A
+  // autorizacao tem que valer AGORA, contra a OS de agora.
+  const os = await prisma.ordemServico.findUnique({
+    where: { id: ordemServicoId },
+    select: { provedorId: true, tecnicoId: true },
+  });
+  if (!os) throw new HttpError(404, "Ordem de servico nao encontrada");
+  if (!podeAcessarOs(user, os)) {
+    throw new HttpError(403, "Acesso restrito ao proprio provedor/tecnico");
+  }
 
   if (tipo === "a_caminho") {
     await writebackService.marcarACaminho(ordemServicoId, autorId);

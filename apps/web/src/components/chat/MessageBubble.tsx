@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { MensagemTipo, type Mensagem } from "@isphub/shared";
+import { EMOJIS_REACAO, MensagemTipo, type Mensagem } from "@isphub/shared";
 import { Avatar } from "@/components/Avatar";
 import { StatusBadge } from "@/components/StatusBadge";
 import {
@@ -17,7 +17,6 @@ import { cn } from "@/lib/utils";
 import { MoreHorizontal, Reply, Copy, Trash2, MapPin } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-const EMOJIS_RAPIDOS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
 function formatHora(iso: string): string {
   return new Date(iso).toLocaleTimeString("pt-BR", {
@@ -295,7 +294,7 @@ export function MessageBubble({
             align={souEu ? "end" : "start"}
           >
             <div className="flex gap-0.5 border-b border-border px-1 pb-1.5">
-              {EMOJIS_RAPIDOS.map((emoji) => (
+              {EMOJIS_REACAO.map((emoji) => (
                 <button
                   key={emoji}
                   type="button"
