@@ -1,35 +1,103 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import type { DashboardMetrics } from "@isphub/shared";
 import { gsap, useGSAP, ScrollTrigger } from "@/lib/gsapSetup";
 import { AppShell } from "@/components/AppShell";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/EmptyState";
+import { ErrorState } from "@/components/ErrorState";
 import { CountUp } from "@/components/CountUp";
-import { MiniMeter } from "@/components/MiniMeter";
-import { StatusBadge } from "@/components/StatusBadge";
+import { RankedBars } from "@/components/RankedBars";
+import { StatusDonut } from "@/components/StatusDonut";
 import { dashboardApi } from "@/lib/dashboardApi";
 import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
-import { iconeCategoria } from "@/lib/categoriaIcons";
-import { ArrowRight, PackageX } from "lucide-react";
+import { ArrowRight, PackageX, Inbox, CheckCircle2, Building2, AlarmClock, type LucideIcon } from "lucide-react";
 
 function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
 }
 
-/** Stat tile: label + valor grande com count-up. Cor reservada para leitura de estado (ok/critico). */
-function StatTile({ label, value, tone = "default" }: { label: string; value: number; tone?: "default" | "critico" }) {
+/**
+ * Bloco de KPI colorido — a marca do "painel vivo": numero gigante em Sora,
+ * fundo cheio na cor do que ele representa (indigo/verde/azul), exceto SLA
+ * estourado, que so vira bloco vermelho quando > 0 (destructive e RESERVADO
+ * pro sinal — aqui e literalmente o sinal, nao decoracao; em 0 fica neutro).
+ *
+ * `variacao`/sparkline: a API (DashboardMetrics) ainda nao expoe historico
+ * (nenhuma serie temporal no tipo) — o prop existe pronto pra quando existir,
+ * mas NAO e alimentado com numero inventado enquanto o backend nao tiver o
+ * dado. Ver packages/shared/src/types.ts:222 (DashboardMetrics).
+ */
+function KpiTile({
+  label,
+  value,
+  tone,
+  icon: Icon,
+  variacaoPct,
+}: {
+  label: string;
+  value: number;
+  tone: "indigo" | "green" | "blue" | "critico";
+  icon: LucideIcon;
+  variacaoPct?: number;
+}) {
+  const critico = tone === "critico";
+  const emAlerta = critico && value > 0;
+  const toneClasses =
+    tone === "indigo"
+      ? "bg-primary text-primary-foreground"
+      : tone === "green"
+        ? "bg-accent-green text-accent-green-foreground"
+        : tone === "blue"
+          ? "bg-accent-blue text-accent-blue-foreground"
+          : emAlerta
+            ? "border border-destructive/30 bg-destructive/10 text-destructive"
+            : "border border-border bg-card text-foreground";
+  const labelToneClasses = tone === "critico" ? (emAlerta ? "text-destructive/80" : "text-muted-foreground") : "opacity-85";
+
   return (
-    <Card className="dash-top-card opacity-0">
-      <CardContent className="py-5">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-        <CountUp
-          value={value}
-          className={`mt-1 block text-3xl font-semibold ${tone === "critico" && value > 0 ? "text-destructive" : "text-foreground"}`}
-        />
+    <Card className={`dash-top-card overflow-hidden opacity-0 ${toneClasses}`}>
+      <CardContent className="flex items-start justify-between gap-2 py-5">
+        <div>
+          <p className={`text-xs font-medium uppercase tracking-wide ${labelToneClasses}`}>{label}</p>
+          <CountUp value={value} className="mt-1 block font-display text-4xl font-bold" />
+          {variacaoPct != null && (
+            <span className="mt-1 inline-block text-xs font-medium opacity-85">
+              {variacaoPct >= 0 ? "▲" : "▼"} {Math.abs(variacaoPct)}% vs. período anterior
+            </span>
+          )}
+        </div>
+        <Icon className="size-5 shrink-0 opacity-70" />
       </CardContent>
     </Card>
+  );
+}
+
+function SecaoVazia({ titulo }: { titulo: string }) {
+  return <EmptyState title={titulo} className="py-6" />;
+}
+
+function DashboardSkeleton() {
+  return (
+    <AppShell>
+      <div className="mb-6">
+        <Skeleton className="h-8 w-48 rounded-md" />
+        <Skeleton className="mt-2 h-4 w-80 rounded-md" />
+      </div>
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-24 rounded-xl" />
+        ))}
+      </div>
+      <Skeleton className="mb-6 h-40 rounded-xl" />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-64 rounded-xl" />
+        ))}
+      </div>
+    </AppShell>
   );
 }
 
@@ -39,19 +107,30 @@ export function DashboardPage() {
   const [carregando, setCarregando] = useState(true);
   const pageRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  function carregar() {
+    setCarregando(true);
     dashboardApi
       .metrics()
       .then(setMetrics)
-      .catch((err) => toast({ titulo: "Erro ao carregar métricas", descricao: mensagem(err), variante: "erro" }))
+      .catch((err) => {
+        toast({ titulo: "Erro ao carregar métricas", descricao: mensagem(err), variante: "erro" });
+      })
       .finally(() => setCarregando(false));
+  }
+
+  useEffect(() => {
+    carregar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Reveal do Dashboard: os KPIs + card de Retiradas ja estao visiveis no
-  // primeiro frame (stagger simples no mount). Os 4 cards de baixo costumam
+  // primeiro frame (stagger simples no mount). Os cards de baixo costumam
   // ficar abaixo da dobra em telas de notebook — usam ScrollTrigger.batch
   // (sem pin/scrub, so "anima quando entra na tela", once:true) em vez de
-  // reveal-on-mount, que os deixaria pular pra vista mesmo fora da tela.
+  // reveal-on-mount, que os deixaria pular pra vista mesmo fora da tela. Por
+  // isso o Dashboard NAO usa <AnimatedPage> (Bloco 1): esse reveal ligado a
+  // scroll e o unico lugar do redesign onde GSAP continua sendo a ferramenta
+  // certa — Framer Motion nao tem um equivalente direto a ScrollTrigger.batch.
   useGSAP(
     () => {
       if (!pageRef.current || !metrics) return;
@@ -78,285 +157,157 @@ export function DashboardPage() {
     { scope: pageRef, dependencies: [metrics] },
   );
 
-  if (carregando) {
-    return (
-      <AppShell>
-        <p className="text-sm text-muted-foreground">Carregando...</p>
-      </AppShell>
-    );
-  }
+  if (carregando) return <DashboardSkeleton />;
 
   if (!metrics) {
     return (
       <AppShell>
-        <p className="text-sm text-muted-foreground">Não foi possível carregar as métricas.</p>
+        <ErrorState message="Não foi possível carregar as métricas." onRetry={carregar} />
       </AppShell>
     );
   }
 
-  const maxProvedor = Math.max(1, ...metrics.porProvedor.map((p) => p.abertas + p.concluidas));
-  const maxTecnico = Math.max(1, ...metrics.porTecnico.map((t) => t.abertas + t.concluidas));
-  const maxStatus = Math.max(1, ...metrics.porStatus.map((s) => s.total));
-  const maxCategoria = Math.max(1, ...metrics.porCategoria.map((c) => c.abertas + c.concluidas));
-  const maxRetiradaProvedor = Math.max(1, ...metrics.retiradas.porProvedor.map((p) => p.abertas + p.concluidas));
-
   return (
     <AppShell>
       <div ref={pageRef}>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">
-          Visão geral da operação em todos os provedores — retiradas contam à parte.
-        </p>
-      </div>
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <p className="text-sm text-muted-foreground">
+            Visão geral da operação em todos os provedores — retiradas contam à parte.
+          </p>
+        </div>
 
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatTile label="OS abertas" value={metrics.totalAbertas} />
-        <StatTile label="OS concluídas" value={metrics.totalConcluidas} />
-        <StatTile label="SLA estourado" value={metrics.slaEstourado} tone="critico" />
-        <StatTile label="Provedores" value={metrics.porProvedor.length} />
-      </div>
+        <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <KpiTile label="OS abertas" value={metrics.totalAbertas} tone="indigo" icon={Inbox} />
+          <KpiTile label="OS concluídas" value={metrics.totalConcluidas} tone="green" icon={CheckCircle2} />
+          <KpiTile label="Provedores" value={metrics.porProvedor.length} tone="blue" icon={Building2} />
+          <KpiTile label="SLA estourado" value={metrics.slaEstourado} tone="critico" icon={AlarmClock} />
+        </div>
 
-      {/* Retiradas/cancelamentos ficam separadas: sao executadas por equipe de
-          fora, entao nao entram nos numeros da operacao acima. */}
-      <Card className="dash-top-card mb-6 opacity-0">
-        <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <PackageX className="size-4 text-muted-foreground" />
-              Retiradas / cancelamentos
-            </CardTitle>
-            <CardDescription>Executadas por equipes de fora — não entram nos números acima.</CardDescription>
-          </div>
-          <Link
-            to="/retiradas"
-            className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
-          >
-            Ver fila de retiradas
-            <ArrowRight className="size-3.5" />
-          </Link>
-        </CardHeader>
-        <CardContent>
-          <div className="mb-4 grid grid-cols-3 gap-3">
+        {/* Retiradas/cancelamentos ficam separadas: sao executadas por equipe de
+            fora, entao nao entram nos numeros da operacao acima. */}
+        <Card className="dash-top-card mb-6 opacity-0">
+          <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">A retirar</p>
-              <p className="mt-1 text-2xl font-semibold text-foreground">{metrics.retiradas.abertas}</p>
+              <CardTitle className="flex items-center gap-2">
+                <PackageX className="size-4 text-muted-foreground" />
+                Retiradas / cancelamentos
+              </CardTitle>
+              <CardDescription>Executadas por equipes de fora — não entram nos números acima.</CardDescription>
             </div>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Concluídas</p>
-              <p className="mt-1 text-2xl font-semibold text-foreground">{metrics.retiradas.concluidas}</p>
+            <Link to="/retiradas" className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">
+              Ver fila de retiradas
+              <ArrowRight className="size-3.5" />
+            </Link>
+          </CardHeader>
+          <CardContent>
+            <div className="mb-4 grid grid-cols-3 gap-3">
+              <MiniStat label="A retirar" value={metrics.retiradas.abertas} />
+              <MiniStat label="Concluídas" value={metrics.retiradas.concluidas} />
+              <MiniStat label="Fora do prazo" value={metrics.retiradas.slaEstourado} critico />
             </div>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Fora do prazo</p>
-              <p
-                className={`mt-1 text-2xl font-semibold ${metrics.retiradas.slaEstourado > 0 ? "text-destructive" : "text-foreground"}`}
-              >
-                {metrics.retiradas.slaEstourado}
-              </p>
-            </div>
-          </div>
-          {metrics.retiradas.porProvedor.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nenhuma retirada registrada.</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Provedor</TableHead>
-                  <TableHead>A retirar</TableHead>
-                  <TableHead>Concluídas</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {metrics.retiradas.porProvedor.map((p) => (
-                  <TableRow key={p.provedorId}>
-                    <TableCell>
-                      <span className="inline-flex items-center gap-2">
-                        <span className="size-2.5 rounded-full" style={{ backgroundColor: p.cor }} />
-                        {p.provedorNome}
-                      </span>
-                    </TableCell>
-                    <TableCell className="w-32">
-                      <div className="flex items-center gap-2">
-                        <span className="w-6 text-right tabular-nums">{p.abertas}</span>
-                        <MiniMeter value={p.abertas} max={maxRetiradaProvedor} colorClassName="bg-primary" />
-                      </div>
-                    </TableCell>
-                    <TableCell className="w-32">
-                      <div className="flex items-center gap-2">
-                        <span className="w-6 text-right tabular-nums">{p.concluidas}</span>
-                        <MiniMeter value={p.concluidas} max={maxRetiradaProvedor} colorClassName="bg-success" />
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card className="dash-reveal-card opacity-0">
-          <CardHeader>
-            <CardTitle>Por provedor</CardTitle>
-            <CardDescription>OS abertas e concluídas em cada provedor atendido.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {metrics.porProvedor.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Sem dados ainda.</p>
+            {metrics.retiradas.porProvedor.length === 0 ? (
+              <SecaoVazia titulo="Nenhuma retirada registrada" />
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Provedor</TableHead>
-                    <TableHead>Abertas</TableHead>
-                    <TableHead>Concluídas</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {metrics.porProvedor.map((p) => (
-                    <TableRow key={p.provedorId}>
-                      <TableCell>
-                        <span className="inline-flex items-center gap-2">
-                          <span className="size-2.5 rounded-full" style={{ backgroundColor: p.cor }} />
-                          {p.provedorNome}
-                        </span>
-                      </TableCell>
-                      <TableCell className="w-32">
-                        <div className="flex items-center gap-2">
-                          <span className="w-6 text-right tabular-nums">{p.abertas}</span>
-                          <MiniMeter value={p.abertas} max={maxProvedor} colorClassName="bg-primary" />
-                        </div>
-                      </TableCell>
-                      <TableCell className="w-32">
-                        <div className="flex items-center gap-2">
-                          <span className="w-6 text-right tabular-nums">{p.concluidas}</span>
-                          <MiniMeter value={p.concluidas} max={maxProvedor} colorClassName="bg-success" />
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <RankedBars
+                itens={metrics.retiradas.porProvedor.map((p) => ({
+                  id: p.provedorId,
+                  nome: p.provedorNome,
+                  cor: p.cor,
+                  abertas: p.abertas,
+                  concluidas: p.concluidas,
+                }))}
+              />
             )}
           </CardContent>
         </Card>
 
-        <Card className="dash-reveal-card opacity-0">
-          <CardHeader>
-            <CardTitle>Por status</CardTitle>
-            <CardDescription>Distribuição das OS por status atual.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {metrics.porStatus.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Sem dados ainda.</p>
-            ) : (
-              <div className="flex flex-col gap-3">
-                {metrics.porStatus.map((s) => (
-                  <div key={s.status} className="flex items-center gap-3">
-                    <div className="w-28 shrink-0">
-                      <StatusBadge status={s.status} />
-                    </div>
-                    <MiniMeter value={s.total} max={maxStatus} colorClassName="bg-primary" />
-                    <span className="w-8 text-right text-sm tabular-nums text-muted-foreground">{s.total}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Card className="dash-reveal-card opacity-0">
+            <CardHeader>
+              <CardTitle>Por provedor</CardTitle>
+              <CardDescription>OS abertas e concluídas em cada provedor atendido, do maior para o menor.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {metrics.porProvedor.length === 0 ? (
+                <SecaoVazia titulo="Sem dados ainda" />
+              ) : (
+                <RankedBars
+                  itens={metrics.porProvedor.map((p) => ({
+                    id: p.provedorId,
+                    nome: p.provedorNome,
+                    cor: p.cor,
+                    abertas: p.abertas,
+                    concluidas: p.concluidas,
+                  }))}
+                />
+              )}
+            </CardContent>
+          </Card>
 
-        <Card className="dash-reveal-card opacity-0">
-          <CardHeader>
-            <CardTitle>Por categoria</CardTitle>
-            <CardDescription>OS abertas e concluídas por categoria canônica da ISPhub.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {metrics.porCategoria.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Sem dados ainda.</p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Categoria</TableHead>
-                    <TableHead>Abertas</TableHead>
-                    <TableHead>Concluídas</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {metrics.porCategoria.map((c) => {
-                    const Icone = iconeCategoria(c.icone);
-                    return (
-                      <TableRow key={c.categoriaId ?? "sem_categoria"}>
-                        <TableCell>
-                          <span className="inline-flex items-center gap-1.5" style={{ color: c.categoriaId ? c.cor : undefined }}>
-                            <Icone className="size-3.5" />
-                            <span className={c.categoriaId ? "text-foreground" : "text-muted-foreground"}>{c.nome}</span>
-                          </span>
-                        </TableCell>
-                        <TableCell className="w-32">
-                          <div className="flex items-center gap-2">
-                            <span className="w-6 text-right tabular-nums">{c.abertas}</span>
-                            <MiniMeter value={c.abertas} max={maxCategoria} colorClassName="bg-primary" />
-                          </div>
-                        </TableCell>
-                        <TableCell className="w-32">
-                          <div className="flex items-center gap-2">
-                            <span className="w-6 text-right tabular-nums">{c.concluidas}</span>
-                            <MiniMeter value={c.concluidas} max={maxCategoria} colorClassName="bg-success" />
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+          <Card className="dash-reveal-card opacity-0">
+            <CardHeader>
+              <CardTitle>Por status</CardTitle>
+              <CardDescription>Distribuição das OS por status atual.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {metrics.porStatus.length === 0 ? <SecaoVazia titulo="Sem dados ainda" /> : <StatusDonut dados={metrics.porStatus} />}
+            </CardContent>
+          </Card>
 
-        <Card className="dash-reveal-card opacity-0 lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Por técnico</CardTitle>
-            <CardDescription>Carga de trabalho de cada técnico, em todos os provedores.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {metrics.porTecnico.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Nenhuma OS atribuída ainda.</p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Técnico</TableHead>
-                    <TableHead>Abertas</TableHead>
-                    <TableHead>Concluídas</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {metrics.porTecnico.map((t) => (
-                    <TableRow key={t.tecnicoId}>
-                      <TableCell>{t.tecnicoNome}</TableCell>
-                      <TableCell className="w-32">
-                        <div className="flex items-center gap-2">
-                          <span className="w-6 text-right tabular-nums">{t.abertas}</span>
-                          <MiniMeter value={t.abertas} max={maxTecnico} colorClassName="bg-primary" />
-                        </div>
-                      </TableCell>
-                      <TableCell className="w-32">
-                        <div className="flex items-center gap-2">
-                          <span className="w-6 text-right tabular-nums">{t.concluidas}</span>
-                          <MiniMeter value={t.concluidas} max={maxTecnico} colorClassName="bg-success" />
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+          <Card className="dash-reveal-card opacity-0">
+            <CardHeader>
+              <CardTitle>Por categoria</CardTitle>
+              <CardDescription>OS abertas e concluídas por categoria canônica da ISPhub.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {metrics.porCategoria.length === 0 ? (
+                <SecaoVazia titulo="Sem dados ainda" />
+              ) : (
+                <RankedBars
+                  itens={metrics.porCategoria.map((c) => ({
+                    id: c.categoriaId ?? "sem_categoria",
+                    nome: c.nome,
+                    cor: c.categoriaId ? c.cor : null,
+                    abertas: c.abertas,
+                    concluidas: c.concluidas,
+                  }))}
+                />
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="dash-reveal-card opacity-0 lg:col-span-2">
+            <CardHeader>
+              <CardTitle>Por técnico</CardTitle>
+              <CardDescription>Carga de trabalho de cada técnico, em todos os provedores.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {metrics.porTecnico.length === 0 ? (
+                <SecaoVazia titulo="Nenhuma OS atribuída ainda" />
+              ) : (
+                <RankedBars
+                  itens={metrics.porTecnico.map((t) => ({
+                    id: t.tecnicoId,
+                    nome: t.tecnicoNome,
+                    abertas: t.abertas,
+                    concluidas: t.concluidas,
+                  }))}
+                />
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </AppShell>
+  );
+}
+
+function MiniStat({ label, value, critico }: { label: string; value: number; critico?: boolean }): ReactNode {
+  return (
+    <div>
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className={`mt-1 text-2xl font-semibold ${critico && value > 0 ? "text-destructive" : "text-foreground"}`}>{value}</p>
+    </div>
   );
 }
