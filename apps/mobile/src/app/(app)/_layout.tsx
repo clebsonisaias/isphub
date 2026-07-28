@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { useModulos } from "@/lib/config";
 import { useRealtime } from "@/lib/realtime";
 import { ROTAS_MODULO } from "@/lib/modulo-registry";
+import { ModuloIcon } from "@/lib/modulo-icones";
 import { colors } from "@/theme/tokens";
 
 /**
@@ -44,7 +45,14 @@ export default function AppLayout() {
       }}
     >
       {tabs.map((m) => (
-        <Tabs.Screen key={m.id} name={ROTAS_MODULO[m.id]!.rota} options={{ title: m.nome }} />
+        <Tabs.Screen
+          key={m.id}
+          name={ROTAS_MODULO[m.id]!.rota}
+          options={{
+            title: m.nome,
+            tabBarIcon: ({ color, size }) => <ModuloIcon id={m.id} color={color} size={size} />,
+          }}
+        />
       ))}
       {ocultas.map((id) => (
         <Tabs.Screen key={id} name={ROTAS_MODULO[id]!.rota} options={{ href: null }} />
