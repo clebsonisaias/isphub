@@ -1,4 +1,5 @@
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { MensagemTipo, UserRole } from "@isphub/shared";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
@@ -8,6 +9,16 @@ import * as chatService from "../services/chatService.js";
 export const chatRouter = Router();
 
 chatRouter.use(requireAuth);
+
+/** Trava contra flood (bug de retry no cliente ou abuso) — por usuario, nao por IP. */
+const enviarMensagemLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user!.sub,
+  message: { error: "Muitas mensagens em pouco tempo. Aguarde um instante." },
+});
 
 /** PROVEDOR nunca chega no chat — bloqueado antes de qualquer rota abaixo. */
 chatRouter.use((req, _res, next) => {
@@ -31,9 +42,16 @@ chatRouter.get(
 
 /** Endpoint leve pro badge do sino do chat — so o total, sem montar as conversas. */
 chatRouter.get(
-  "/conversas/nao-lidas",
+  "/nao-lidas",
   asyncHandler(async (req, res) => {
     res.json({ naoLidas: await chatService.contarNaoLidas(req.user!.sub) });
+  }),
+);
+
+chatRouter.post(
+  "/conversas/avisos",
+  asyncHandler(async (req, res) => {
+    res.status(201).json(await chatService.garantirConversaAvisos(req.user!.sub));
   }),
 );
 
@@ -96,6 +114,7 @@ const enviarMensagemSchema = z.object({
 
 chatRouter.post(
   "/conversas/:conversaId/mensagens",
+  enviarMensagemLimiter,
   asyncHandler(async (req, res) => {
     await chatService.exigirParticipacao(req.user!, req.params.conversaId);
     const input = enviarMensagemSchema.parse(req.body);
@@ -164,5 +183,17 @@ chatRouter.delete(
     const ehAdmin = req.user!.role === UserRole.ADMIN;
     await chatService.apagarMensagem(req.params.mensagemId, req.user!.sub, ehAdmin);
     res.status(204).send();
+  }),
+);
+
+/** Bytes de foto/audio — existencia primeiro, participacao so depois (mesma ordem de obterArquivoEvidencia). */
+chatRouter.get(
+  "/mensagens/:mensagemId/anexo",
+  asyncHandler(async (req, res) => {
+    const anexo = await chatService.obterAnexo(req.params.mensagemId);
+    if (!anexo) throw new HttpError(404, "Anexo nao encontrado");
+    await chatService.exigirParticipacao(req.user!, anexo.conversaId);
+    res.setHeader("Content-Type", anexo.mime);
+    res.send(anexo.dados);
   }),
 );

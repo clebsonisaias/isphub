@@ -217,6 +217,40 @@ export async function criarConversaGrupo(titulo: string, participanteIds: string
 }
 
 /**
+ * Canal unico "Avisos" — leitura pra todo interno ativo, escrita restrita a
+ * ADMIN/GESTOR (checado em enviarMensagem, nao aqui). Sem @unique pra travar
+ * "1 por tipo" no schema (so a OS-thread precisa disso); em vez disso
+ * fazemos find-or-create e, se ja existe, adicionamos o chamador como
+ * participante caso ainda nao esteja (cobre gente contratada depois da
+ * criacao do canal, sem precisar resincronizar a lista toda a cada request).
+ */
+export async function garantirConversaAvisos(autorId: string): Promise<ConversaResumo> {
+  const existente = await prisma.conversa.findFirst({ where: { tipo: ConversaTipo.AVISOS }, select: { id: true } });
+  if (existente) {
+    await prisma.conversaParticipante.upsert({
+      where: { conversaId_usuarioId: { conversaId: existente.id, usuarioId: autorId } },
+      update: { saiuEm: null },
+      create: { conversaId: existente.id, usuarioId: autorId },
+    });
+    return montarConversaResumo(existente.id, autorId);
+  }
+
+  const internos = await prisma.usuario.findMany({
+    where: { ativo: true, role: { in: [UserRole.ADMIN, UserRole.GESTOR, UserRole.TECNICO] } },
+    select: { id: true },
+  });
+  const criada = await prisma.conversa.create({
+    data: {
+      tipo: ConversaTipo.AVISOS,
+      titulo: "Avisos",
+      criadoPorId: autorId,
+      participantes: { create: internos.map((u) => ({ usuarioId: u.id, admin: u.id === autorId })) },
+    },
+  });
+  return montarConversaResumo(criada.id, autorId);
+}
+
+/**
  * Thread da OS — idempotente gracas ao @unique em Conversa.ordemServicoId
  * (upsert evita corrida entre dois cliques quase simultaneos). Participantes:
  * o tecnico atribuido (se houver) + todo admin/gestor ATIVO — o time inteiro
@@ -315,9 +349,16 @@ function resolverMencoes(corpo: string, participantes: { usuarioId: string; nome
 export async function enviarMensagem(conversaId: string, autorId: string, input: EnviarMensagemInput): Promise<MensagemDTO> {
   const conversa = await prisma.conversa.findUnique({
     where: { id: conversaId },
-    include: { participantes: { where: { saiuEm: null }, include: { usuario: { select: { id: true, nome: true } } } } },
+    include: { participantes: { where: { saiuEm: null }, include: { usuario: { select: { id: true, nome: true, role: true } } } } },
   });
   if (!conversa) throw new HttpError(404, "Conversa nao encontrada");
+
+  if (conversa.tipo === ConversaTipo.AVISOS && input.tipo !== MensagemTipo.SISTEMA) {
+    const autorRole = conversa.participantes.find((p) => p.usuarioId === autorId)?.usuario.role;
+    if (autorRole !== UserRole.ADMIN && autorRole !== UserRole.GESTOR) {
+      throw new HttpError(403, "So admin/gestor pode postar no canal de Avisos");
+    }
+  }
 
   const { dados, tamanho } = validarMidia(input);
 
@@ -422,6 +463,27 @@ function paraMensagemDTO(m: MensagemComAutor, respondendoA?: { id: string; autor
     apagadoEm: m.apagadoEm?.toISOString() ?? null,
     criadoEm: m.criadoEm.toISOString(),
   };
+}
+
+export interface AnexoMensagem {
+  conversaId: string;
+  dados: Buffer;
+  mime: string;
+}
+
+/**
+ * Bytes do anexo (foto/audio), pra rota servir com o Content-Type certo — a
+ * checagem de participacao fica na rota, DEPOIS de achar a conversaId aqui
+ * (mesma ordem que obterArquivoEvidencia usa: existencia antes de permissao).
+ * null pra mensagem inexistente, sem anexo, ou apagada.
+ */
+export async function obterAnexo(mensagemId: string): Promise<AnexoMensagem | null> {
+  const m = await prisma.mensagem.findUnique({
+    where: { id: mensagemId },
+    select: { conversaId: true, anexoDados: true, anexoMime: true, apagadoEm: true },
+  });
+  if (!m || m.apagadoEm || !m.anexoDados || !m.anexoMime) return null;
+  return { conversaId: m.conversaId, dados: Buffer.from(m.anexoDados), mime: m.anexoMime };
 }
 
 /** Paginacao por cursor (criadoEm), mais recentes primeiro. */
