@@ -4,24 +4,26 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ISPhub</title>
+    <!--
+      CSP do app web. O ponto que importa e `script-src 'self'` SEM
+      'unsafe-inline': o token de sessao mora em localStorage desta origem, e
+      sem isto qualquer HTML que virasse um documento same-origin (ex.: um
+      blob: criado a partir de bytes vindos do SGP de um provedor) executava
+      script com acesso a ele. `object-src 'none'` e `base-uri 'self'` fecham
+      os desvios classicos; `frame-ancestors 'none'` impede clickjacking.
+      connect-src fica permissivo porque a URL da API e definida no build.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' blob:; connect-src 'self' http: https:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+    />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
     />
-    <script>
-      // Aplica o tema antes do primeiro paint (evita flash do tema errado).
-      (function () {
-        try {
-          var salvo = localStorage.getItem("isphub_theme");
-          var tema = salvo === "light" || salvo === "dark"
-            ? salvo
-            : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-          document.documentElement.dataset.theme = tema;
-        } catch (e) {}
-      })();
-    </script>
+    <script src="/tema.js"></script>
   </head>
   <body>
     <div id="root"></div>

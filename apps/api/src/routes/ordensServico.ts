@@ -1,4 +1,4 @@
-import { Router } from "express";
+import express, { Router } from "express";
 import { z } from "zod";
 import { OsStatus, UserRole } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
@@ -127,9 +127,17 @@ const evidenciaSchema = z.object({
  * Fotos de evidencia sao hospedadas no proprio SGP (nao ha storage local) —
  * essas 3 rotas so validam/repassam pro conector; ver writebackService.ts.
  */
+/**
+ * Parser proprio: o limite global do app e 1MB (aperta a superficie de DoS em
+ * todas as outras rotas), mas uma foto de 2MB vira ~2,7MB em base64. So esta
+ * rota — que valida tamanho e MIME logo abaixo — aceita corpo grande.
+ */
+const parserEvidencia = express.json({ limit: "4mb" });
+
 ordensServicoRouter.post(
   "/:id/evidencias",
   requireRole(...acoesRoles),
+  parserEvidencia,
   asyncHandler(async (req, res) => {
     await assertAcesso(req, req.params.id);
     const { dados, legenda } = evidenciaSchema.parse(req.body);
@@ -158,9 +166,21 @@ ordensServicoRouter.get(
   "/:id/evidencias/:anexoId/arquivo",
   asyncHandler(async (req, res) => {
     await assertAcesso(req, req.params.id);
+    // `anexoId` e um id sequencial do SGP. Sem amarrar o anexo A ESTA OS, quem
+    // tem UMA OS legitima itera 1..N e baixa a foto de qualquer OS daquele
+    // provedor (IDOR). A lista ja e escopada pela OS — ela e a autorizacao.
+    const evidencias = await writeback.listarEvidencias(req.params.id);
+    if (!evidencias.some((e) => String(e.id) === String(req.params.anexoId))) {
+      throw new HttpError(404, "Evidencia nao encontrada");
+    }
+
     const arquivo = await writeback.obterArquivoEvidencia(req.params.id, req.params.anexoId);
     if (!arquivo) throw new HttpError(404, "Evidencia nao encontrada");
     res.setHeader("Content-Type", arquivo.contentType);
+    // Defesa em profundidade junto do sniff de bytes no conector: mesmo que um
+    // tipo inesperado escape, o browser baixa em vez de renderizar na origem.
+    res.setHeader("Content-Disposition", "attachment");
+    res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Cache-Control", "private, max-age=300");
     res.send(Buffer.from(arquivo.bytes));
   }),

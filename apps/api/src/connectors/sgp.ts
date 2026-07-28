@@ -172,8 +172,12 @@ async function sgpGetBinary(
   // nao e um arquivo de verdade — trata como "nao encontrado".
   if (contentTypeSgp.includes("application/json")) return null;
   const bytes = new Uint8Array(await res.arrayBuffer());
-  // Os bytes mandam mais que o cabecalho do SGP (ver detectarMimeTypeImagem).
-  return { contentType: detectarMimeTypeImagem(bytes) ?? contentTypeSgp, bytes };
+  // SO os bytes mandam. O cabecalho do SGP NUNCA vira Content-Type nosso: o SGP
+  // e de terceiro (o provedor opera o dele), e um SGP malicioso ou comprometido
+  // que respondesse `text/html` fazia a nossa API servir HTML na propria origem
+  // — que o web transforma em blob: URL da origem do SPA, executando script com
+  // acesso ao token em localStorage. Bytes irreconheciveis viram octet-stream.
+  return { contentType: detectarMimeTypeImagem(bytes) ?? "application/octet-stream", bytes };
 }
 
 async function sgpGet(creds: ErpCredentials, path: string, params: Record<string, unknown> = {}) {
@@ -460,7 +464,13 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
         limit: params.limit,
       });
       const raw = asArray(data, "ordens_servicos", "resultados");
-      if (env.SGP_DEBUG_RAW) console.log("[sgp-debug] os[0] raw:", JSON.stringify(raw[0]));
+      // O objetivo do debug e descobrir NOMES DE CAMPO do SGP, nunca os valores.
+      // Antes isto despejava o registro cru inteiro — nome, CPF/CNPJ, endereco e
+      // telefone do assinante — nos logs do container, a cada ciclo de sync de
+      // cada provedor (padrao: 180s). Agora sai so o formato.
+      if (env.SGP_DEBUG_RAW && raw[0]) {
+        console.log("[sgp-debug] campos da os:", JSON.stringify(Object.keys(raw[0] as object).sort()));
+      }
       return raw.map(normalizeOs);
     },
 
