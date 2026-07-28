@@ -208,6 +208,35 @@ async function sgpGet(creds: ErpCredentials, path: string, params: Record<string
   return parseJsonOrThrow(res, path);
 }
 
+const PAGINACAO_MAX_PAGINAS = 50;
+
+/**
+ * Segue paginacao estilo Django REST Framework (`{count,next,previous,results}`)
+ * se o SGP usar — a doc oficial mostra `/olt/list/` como array puro, mas um
+ * provedor com muitas OLTs pode cair no paginador padrao do framework mesmo
+ * sem isso estar documentado (foi visto na pratica: NetGo com so 1 OLT
+ * aparecendo quando tinha mais). Sem isso, tudo alem da 1a pagina
+ * simplesmente sumia da lista, sem erro nenhum. `next` vem como URL absoluta
+ * do proprio SGP — refeita com os mesmos headers de auth do path original.
+ * Teto de paginas como rede de seguranca contra um `next` que nunca esvazia.
+ */
+async function sgpGetPaginado(creds: ErpCredentials, path: string, ...possibleKeys: string[]): Promise<any[]> {
+  const primeira = await sgpGet(creds, path);
+  const itens = asArray(primeira, ...possibleKeys, "resultados", "results");
+  let proxima = typeof (primeira as { next?: unknown })?.next === "string" ? (primeira as { next: string }).next : null;
+
+  for (let pagina = 0; proxima && pagina < PAGINACAO_MAX_PAGINAS; pagina++) {
+    const res = await fetch(proxima, {
+      headers: { Accept: "application/json", Authorization: `Token ${creds.token}`, "X-SGP-Token": creds.token },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    const corpo = await parseJsonOrThrow(res, path);
+    itens.push(...asArray(corpo, ...possibleKeys, "resultados", "results"));
+    proxima = typeof (corpo as { next?: unknown })?.next === "string" ? (corpo as { next: string }).next : null;
+  }
+  return itens;
+}
+
 /**
  * Consulta ao vivo (PPPoE/RADIUS) se o servico do contrato esta online —
  * usada tanto por checkConnectionStatus (sozinha) quanto por
@@ -622,8 +651,8 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
     // ---- FTTX / provisionamento de ONU (por OLT do provedor) ----
 
     async listarOlts(): Promise<Olt[]> {
-      const data = await sgpGet(creds, "/api/fttx/olt/list/");
-      return asArray(data, "olts", "resultados").map((item) => ({
+      const itens = await sgpGetPaginado(creds, "/api/fttx/olt/list/", "olts");
+      return itens.map((item) => ({
         id: String(pick(item, "id")),
         nome: String(pick(item, "nome", "name") ?? ""),
         fabricante: pickString(item, "fabricante", "fabricante_nome", "marca"),

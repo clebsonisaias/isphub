@@ -753,6 +753,34 @@ describe("createSgpConnector", () => {
       expect(String(fetchMock.mock.calls[0][0])).toContain("/api/fttx/olt/list/");
     });
 
+    it("listarOlts segue paginacao estilo DRF (next) — nao paravam antes na 1a pagina", async () => {
+      // Reproduz o bug real: NetGo so mostrava 1 OLT porque o SGP paginou a
+      // resposta e o codigo antigo nunca seguia o `next`.
+      fetchMock
+        .mockResolvedValueOnce(
+          jsonResponse({
+            count: 2,
+            next: "https://sgp.exemplo.com.br/api/fttx/olt/list/?page=2",
+            previous: null,
+            results: [{ id: 1, nome: "OLT-PAGINA-1" }],
+          }),
+        )
+        .mockResolvedValueOnce(
+          jsonResponse({ count: 2, next: null, previous: "...", results: [{ id: 2, nome: "OLT-PAGINA-2" }] }),
+        );
+
+      const conn = createSgpConnector(creds);
+      const olts = await conn.listarOlts();
+
+      expect(olts).toEqual([
+        { id: "1", nome: "OLT-PAGINA-1", fabricante: null },
+        { id: "2", nome: "OLT-PAGINA-2", fabricante: null },
+      ]);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(String(fetchMock.mock.calls[1][0])).toBe("https://sgp.exemplo.com.br/api/fttx/olt/list/?page=2");
+      expect((fetchMock.mock.calls[1][1].headers as Record<string, string>).Authorization).toBe(`Token ${creds.token}`);
+    });
+
     it("listarOnusNaoAutorizadas mapeia phy_addr->serial e info_rx->sinalRxDbm", async () => {
       fetchMock.mockResolvedValueOnce(
         jsonResponse({
