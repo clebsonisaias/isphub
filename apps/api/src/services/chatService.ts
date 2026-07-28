@@ -1,6 +1,7 @@
 import {
   ConversaTipo,
   MensagemTipo,
+  OsStatus,
   ROLES_INTERNOS,
   UserRole,
   type ConversaResumo,
@@ -543,12 +544,13 @@ export async function editarMensagem(mensagemId: string, usuarioId: string, novo
   return paraMensagemDTO(atualizada);
 }
 
-export function emitirDigitando(conversaId: string, autorId: string, participanteIds: string[]): void {
+export async function emitirDigitando(conversaId: string, autorId: string): Promise<void> {
+  const participantes = await prisma.conversaParticipante.findMany({
+    where: { conversaId, saiuEm: null, usuarioId: { not: autorId } },
+    select: { usuarioId: true },
+  });
   const em = new Date().toISOString();
-  for (const usuarioId of participanteIds) {
-    if (usuarioId === autorId) continue;
-    emitParaUsuario(usuarioId, { tipo: "chat-digitando", conversaId, autorId, em });
-  }
+  for (const p of participantes) emitParaUsuario(p.usuarioId, { tipo: "chat-digitando", conversaId, autorId, em });
 }
 
 // ---- Respostas rapidas de OS (chat como ferramenta de operacao) ----
@@ -569,19 +571,21 @@ const ROTULO_RESPOSTA_RAPIDA: Record<RespostaRapidaTipo, string> = {
  * o dialog de detalhe usa) — o OsEvento("status") sai de graca de la, nao
  * duplicamos aqui. So DEPOIS disso postamos a mensagem de sistema no chat.
  */
-export async function aplicarRespostaRapidaOs(
-  conversaId: string,
-  ordemServicoId: string,
-  tipo: RespostaRapidaTipo,
-  autorId: string,
-  autorNome: string,
-): Promise<MensagemDTO> {
+export async function aplicarRespostaRapidaOs(conversaId: string, tipo: RespostaRapidaTipo, autorId: string): Promise<MensagemDTO> {
+  const [conversa, autor] = await Promise.all([
+    prisma.conversa.findUnique({ where: { id: conversaId }, select: { ordemServicoId: true } }),
+    prisma.usuario.findUniqueOrThrow({ where: { id: autorId }, select: { nome: true } }),
+  ]);
+  if (!conversa?.ordemServicoId) throw new HttpError(400, "Esta conversa nao e uma thread de OS");
+  const ordemServicoId = conversa.ordemServicoId;
+  const autorNome = autor.nome;
+
   if (tipo === "a_caminho") {
     await writebackService.marcarACaminho(ordemServicoId, autorId);
   } else if (tipo === "cheguei") {
-    await writebackService.mudarStatus(ordemServicoId, "em_execucao" as never, autorId);
+    await writebackService.mudarStatus(ordemServicoId, OsStatus.EM_EXECUCAO, autorId);
   } else if (tipo === "cliente_ausente") {
-    await writebackService.mudarStatus(ordemServicoId, "pendente" as never, autorId);
+    await writebackService.mudarStatus(ordemServicoId, OsStatus.PENDENTE, autorId);
   } else {
     const gestores = await prisma.usuario.findMany({ where: { ativo: true, role: { in: ROLES_INTERNOS } }, select: { id: true } });
     await prisma.notificacao.createMany({
