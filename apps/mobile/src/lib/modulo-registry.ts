@@ -8,4 +8,5 @@ import type { ModuloId } from "@isphub/shared";
  */
 export const ROTAS_MODULO: Partial<Record<ModuloId, { rota: string }>> = {
   "minhas-os": { rota: "minhas-os" },
+  provisionamento: { rota: "provisionamento" },
 };

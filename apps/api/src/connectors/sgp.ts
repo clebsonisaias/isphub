@@ -4,6 +4,12 @@ import type {
   ErpConnector,
   ErpCredentials,
   ListOsParams,
+  Olt,
+  OnuAutorizada,
+  OnuNaoAutorizada,
+  OnuTemplate,
+  ProvisionarOnuInput,
+  ProvisionarOnuResultado,
   RawOs,
   RawOsType,
   SgpImagem,
@@ -403,6 +409,28 @@ function asArray(payload: any, ...possibleKeys: string[]): any[] {
   return [];
 }
 
+/** Converte um valor do SGP (string|number|""|null) em number ou null. */
+function numeroOuNull(v: unknown): number | null {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Copia os params de provisionamento com os SEGREDOS mascarados, pra poder
+ * logar o payload (debug FTTX) sem vazar credencial. SGP_DEBUG_RAW esta ligado
+ * em producao e loga corpo cru — a senha PPPoE/Wi-Fi e o token nunca podem ir
+ * pro log. Exportada pra ser testada isoladamente.
+ */
+export function redigirSegredosFttx<T extends Record<string, unknown>>(params: T): T {
+  const CHAVES_SECRETAS = ["pppoe_password", "wifi_password", "token"];
+  const copia: Record<string, unknown> = { ...params };
+  for (const chave of CHAVES_SECRETAS) {
+    if (copia[chave] != null && copia[chave] !== "") copia[chave] = "***";
+  }
+  return copia as T;
+}
+
 export function createSgpConnector(creds: ErpCredentials): ErpConnector {
   return {
     async testConnection() {
@@ -579,6 +607,107 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
       // "Visualizar Anexo por ID" — unico endpoint desta familia que devolve
       // o arquivo em si (binario), nao um JSON de metadados.
       return sgpGetBinary(creds, `/api/os/imagem/${encodeURIComponent(anexoId)}`);
+    },
+
+    // ---- FTTX / provisionamento de ONU (por OLT do provedor) ----
+
+    async listarOlts(): Promise<Olt[]> {
+      const data = await sgpGet(creds, "/api/fttx/olt/list/");
+      return asArray(data, "olts", "resultados").map((item) => ({
+        id: String(pick(item, "id")),
+        nome: String(pick(item, "nome", "name") ?? ""),
+        fabricante: pickString(item, "fabricante", "fabricante_nome", "marca"),
+      }));
+    },
+
+    async listarOnusNaoAutorizadas(oltId: string): Promise<OnuNaoAutorizada[]> {
+      // Preferido: GET /olt/:id/unauth/. Algumas instancias so expoem
+      // POST /onu/unauthorized/ {olt_id} — cai pra ela se a primeira falhar.
+      let data: any;
+      try {
+        data = await sgpGet(creds, `/api/fttx/olt/${encodeURIComponent(oltId)}/unauth/`);
+      } catch {
+        data = await sgpPostForm(creds, "/api/fttx/onu/unauthorized/", { olt_id: oltId });
+      }
+      return asArray(data, "onus", "unauth", "resultados").map((item) => ({
+        id: String(pick(item, "id", "onu_id") ?? ""),
+        serial: String(pick(item, "phy_addr", "serial", "sn") ?? ""),
+        slot: pickString(item, "slot"),
+        pon: pickString(item, "pon"),
+        tipo: pickString(item, "type", "onutype", "tipo"),
+        vlan: numeroOuNull(pick(item, "vlan")),
+        sinalRxDbm: numeroOuNull(pick(item, "info_rx", "rx")),
+      }));
+    },
+
+    async listarOnusAutorizadas(
+      oltId: string,
+      filtro: { contrato?: string; cpfcnpj?: string } = {},
+    ): Promise<OnuAutorizada[]> {
+      const data = await sgpGet(creds, `/api/fttx/olt/${encodeURIComponent(oltId)}/onu/list/`, {
+        contrato: filtro.contrato,
+        cpfcnpj: filtro.cpfcnpj,
+      });
+      return asArray(data, "onus", "resultados").map((item) => ({
+        id: String(pick(item, "id", "onu_id") ?? ""),
+        serial: String(pick(item, "phy_addr", "serial", "sn") ?? ""),
+        slot: pickString(item, "slot"),
+        pon: pickString(item, "pon"),
+        contrato: pickString(item, "service_contrato", "contrato"),
+        clienteNome: pickString(item, "service_cliente", "cliente", "cliente_nome"),
+        sinalRxDbm: numeroOuNull(pick(item, "info_rx", "rx")),
+        online: null,
+      }));
+    },
+
+    async listarTemplatesOnu(oltId: string): Promise<OnuTemplate[]> {
+      const data = await sgpGet(creds, "/api/fttx/onutemplate/list/", { olt_id: oltId });
+      // O SGP nomeia o template em `description` (ingles); mantemos os aliases.
+      return asArray(data, "onutemplates", "templates", "resultados").map((item) => ({
+        id: String(pick(item, "id") ?? ""),
+        nome: String(pick(item, "description", "nome", "name", "descricao") ?? ""),
+      }));
+    },
+
+    async provisionarOnu(oltId: string, dados: ProvisionarOnuInput): Promise<ProvisionarOnuResultado> {
+      const path = `/api/fttx/olt/${encodeURIComponent(oltId)}/auth/`;
+      // `id` no corpo do SGP = o serial/phy_addr da ONU (a doc chama de id).
+      const params: Record<string, unknown> = {
+        slot: dados.slot,
+        pon: dados.pon,
+        id: dados.serial,
+        // onutype e opcional: quando ausente, o SGP detecta o modelo pelo SN.
+        onutype: dados.onutype ?? undefined,
+        mode: dados.mode,
+        vlan: dados.vlan ?? undefined,
+        contrato: dados.contrato ?? undefined,
+        service: dados.service ?? undefined,
+        pppoe_login: dados.pppoeLogin ?? undefined,
+        pppoe_password: dados.pppoeSenha ?? undefined,
+        onutemplate: dados.onutemplate ?? undefined,
+        description: dados.descricao ?? undefined,
+        ident: dados.ident ?? undefined,
+      };
+      // SGP_DEBUG_RAW loga corpo cru em producao — redige a senha/token antes.
+      if (env.SGP_DEBUG_RAW) {
+        console.log("[sgp-debug] fttx auth:", path, JSON.stringify(redigirSegredosFttx({ ...params, token: creds.token })));
+      }
+      const data = await sgpPostForm(creds, path, params);
+      assertSgpEscritaOk(data, path);
+      return {
+        ok: true,
+        mensagem: pickString(data ?? {}, "msg", "mensagem"),
+        onuId: pickString(data ?? {}, "id", "onu_id"),
+      };
+    },
+
+    async desautorizarOnu(onuId: string): Promise<{ ok: boolean; mensagem: string | null }> {
+      // deauth e um GET que MUTA (design do SGP); a intencao aqui e efetivar a
+      // remocao, entao nao mandamos no_commit.
+      const path = `/api/fttx/onu/${encodeURIComponent(onuId)}/deauth/`;
+      const data = await sgpGet(creds, path);
+      assertSgpEscritaOk(data, path);
+      return { ok: true, mensagem: pickString(data ?? {}, "msg", "mensagem") };
     },
   };
 }

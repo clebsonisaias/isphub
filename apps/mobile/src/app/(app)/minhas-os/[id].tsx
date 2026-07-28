@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Stack, useLocalSearchParams } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { ActivityIndicator, Linking, ScrollView, Text, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { OS_STATUS_LABEL, OsStatus, type OrdemServico } from "@isphub/shared";
 import { useAuth } from "@/lib/auth";
+import { useModulos } from "@/lib/config";
 import { apiFetch } from "@/lib/api";
 import { Button, Card, Field, Muted, Screen, Title } from "@/components/ui";
 import { colors, font, radius, space } from "@/theme/tokens";
@@ -31,6 +32,9 @@ function proximaAcao(status: OsStatus): { label: string; alvo: OsStatus | "acami
 export default function DetalheOs() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { token } = useAuth();
+  const router = useRouter();
+  const { modulos } = useModulos();
+  const temProvisionamento = modulos.some((m) => m.id === "provisionamento");
   const [nota, setNota] = useState("");
   const { marcarACaminho, mudarStatus, anotar } = useAcoesOs(id);
 
@@ -136,6 +140,25 @@ export default function DetalheOs() {
           {acao ? (
             <View style={{ marginTop: space.sm }}>
               <Button label={executando ? "Enviando…" : acao.label} loading={executando} onPress={rodarAcao} />
+            </View>
+          ) : null}
+
+          {temProvisionamento ? (
+            <View>
+              <Button
+                label="Provisionar ONU"
+                variant="ghost"
+                onPress={() =>
+                  router.push({
+                    pathname: "/provisionamento",
+                    params: {
+                      provedorId: os.provedorId,
+                      ...(os.contratoId ? { contrato: os.contratoId } : {}),
+                      ...(os.clienteNome ? { descricao: os.clienteNome } : {}),
+                    },
+                  })
+                }
+              />
             </View>
           ) : null}
         </ScrollView>

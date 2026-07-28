@@ -8,13 +8,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { modulosApi, type ModuloAdmin } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
-import { LayoutList, Camera, Route, Wifi, PenLine, PackageX, Bell, Lock, ChevronUp, ChevronDown, type LucideIcon } from "lucide-react";
+import { LayoutList, Camera, Route, Wifi, PenLine, PackageX, Bell, Router, Lock, ChevronUp, ChevronDown, type LucideIcon } from "lucide-react";
 
 const ICONES: Record<ModuloId, LucideIcon> = {
   "minhas-os": LayoutList,
   evidencias: Camera,
   rota: Route,
   conexao: Wifi,
+  provisionamento: Router,
   assinatura: PenLine,
   retiradas: PackageX,
   notificacoes: Bell,
@@ -25,6 +26,7 @@ const DESCRICOES: Record<ModuloId, string> = {
   evidencias: "Fotos pela câmera → proxy SGP, fila offline",
   rota: "Mapa e navegação até o cliente",
   conexao: "ONU rx/tx, OLT, online/offline ao vivo",
+  provisionamento: "Autorizar/desautorizar ONU na OLT (FTTX)",
   assinatura: "Coleta de assinatura no fim da OS",
   retiradas: "Fila de retirada/cancelamento (equipe externa)",
   notificacoes: "Nova OS atribuída · mudança relevante",

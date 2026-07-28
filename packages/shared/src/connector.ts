@@ -108,6 +108,83 @@ export interface SgpImagemArquivo {
 }
 
 /**
+ * OLT (equipamento FTTX) do provedor. O provisionamento comeca escolhendo a
+ * OLT — cada provedor tem o seu SGP, com as suas proprias OLTs.
+ */
+export interface Olt {
+  id: string;
+  nome: string;
+  fabricante: string | null;
+}
+
+/**
+ * ONU ainda NAO autorizada numa OLT: aparece quando o equipamento e ligado na
+ * rede mas ainda nao foi provisionado. `id` e o identificador que o SGP usa pra
+ * autorizar; `serial` (phy_addr) e o numero de serie fisico do aparelho.
+ */
+export interface OnuNaoAutorizada {
+  id: string;
+  serial: string;
+  slot: string | null;
+  pon: string | null;
+  /** onutype sugerido pelo SGP (modelo do equipamento). */
+  tipo: string | null;
+  vlan: number | null;
+  /** Potencia optica recebida, em dBm (faixa normal: -8 a -27). */
+  sinalRxDbm: number | null;
+}
+
+/** ONU ja autorizada/provisionada numa OLT (com cliente/contrato vinculado). */
+export interface OnuAutorizada {
+  id: string;
+  serial: string;
+  slot: string | null;
+  pon: string | null;
+  contrato: string | null;
+  clienteNome: string | null;
+  sinalRxDbm: number | null;
+  online: boolean | null;
+}
+
+/** Perfil/template de ONU do SGP — provisiona com vlan/onutype pre-definidos. */
+export interface OnuTemplate {
+  id: string;
+  nome: string;
+}
+
+/**
+ * Dados para autorizar (provisionar) uma ONU numa OLT — espelha os campos do
+ * endpoint FTTX de autorizacao do SGP. `mode`: 1=bridge, 2=pppoe.
+ */
+export interface ProvisionarOnuInput {
+  slot: string;
+  pon: string;
+  /** Serial/phy_addr (SN) da ONU — o SGP chama de `id` no corpo do auth. */
+  serial: string;
+  /** Modelo da ONU. OPCIONAL: quando omitido, o SGP detecta pelo SN (autofind). */
+  onutype?: string;
+  mode: 1 | 2;
+  vlan?: number | null;
+  /** Contrato do cliente (associa a ONU ao contrato). */
+  contrato?: string | null;
+  /** Servico/login do cliente (associacao alternativa ao contrato). */
+  service?: string | null;
+  pppoeLogin?: string | null;
+  /** SEGREDO — nunca logar (ver redigirSegredosFttx em sgp.ts). */
+  pppoeSenha?: string | null;
+  onutemplate?: string | null;
+  descricao?: string | null;
+  /** Identificacao fisica (CTO/caixa). */
+  ident?: string | null;
+}
+
+export interface ProvisionarOnuResultado {
+  ok: boolean;
+  mensagem: string | null;
+  onuId?: string | null;
+}
+
+/**
  * Contrato de integracao com um ERP. Cada ERP (SGP, e futuros) implementa esta
  * interface; o nucleo do ISPhub (sync + write-back) so conhece este contrato,
  * nunca os detalhes de cada API.
@@ -170,6 +247,26 @@ export interface ErpConnector {
 
   /** Baixa os bytes de uma foto anexada, pra proxy autenticado ao front. */
   getOsImageFile(anexoId: string): Promise<SgpImagemArquivo | null>;
+
+  // ---- FTTX / provisionamento de ONU (por OLT do provedor) ----
+
+  /** OLTs cadastradas no SGP do provedor. */
+  listarOlts(): Promise<Olt[]>;
+
+  /** ONUs que apareceram na OLT mas ainda nao foram autorizadas. */
+  listarOnusNaoAutorizadas(oltId: string): Promise<OnuNaoAutorizada[]>;
+
+  /** ONUs ja autorizadas na OLT (opcionalmente filtradas por contrato/CPF). */
+  listarOnusAutorizadas(oltId: string, filtro?: { contrato?: string; cpfcnpj?: string }): Promise<OnuAutorizada[]>;
+
+  /** Templates/perfis de ONU disponiveis na OLT. */
+  listarTemplatesOnu(oltId: string): Promise<OnuTemplate[]>;
+
+  /** Autoriza (provisiona) uma ONU na OLT — ESCRITA de rede. */
+  provisionarOnu(oltId: string, dados: ProvisionarOnuInput): Promise<ProvisionarOnuResultado>;
+
+  /** Desautoriza (remove) uma ONU autorizada — ESCRITA de rede. */
+  desautorizarOnu(onuId: string): Promise<{ ok: boolean; mensagem: string | null }>;
 }
 
 /** Fabrica de conector a partir de credenciais (um por provedor). */

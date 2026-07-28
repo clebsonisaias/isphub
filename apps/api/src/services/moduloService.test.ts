@@ -8,7 +8,7 @@ describe("montarModulosHabilitados", () => {
   it("banco vazio: devolve os modulos ligados no lancamento pro tecnico, ordenados", () => {
     const ids = montarModulosHabilitados(semRegistros, UserRole.TECNICO).map((m) => m.id);
     // Nucleo enxuto: minhas-os (core) + conexao + evidencias + rota + notificacoes.
-    // assinatura e retiradas nascem desligados (ativoPadrao=false).
+    // assinatura, provisionamento e retiradas nascem desligados (ativoPadrao=false).
     expect(ids).toEqual(["minhas-os", "conexao", "evidencias", "rota", "notificacoes"]);
   });
 

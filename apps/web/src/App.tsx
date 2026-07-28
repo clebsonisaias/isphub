@@ -9,6 +9,7 @@ import { PainelPage } from "@/pages/PainelPage";
 import { RetiradasPage } from "@/pages/RetiradasPage";
 import { MapaPage } from "@/pages/MapaPage";
 import { DashboardPage } from "@/pages/DashboardPage";
+import { ProvisionamentoPage } from "@/pages/ProvisionamentoPage";
 import { ProvedoresPage } from "@/pages/admin/ProvedoresPage";
 import { ProvedorDetailPage } from "@/pages/admin/ProvedorDetailPage";
 import { CategoriasPage } from "@/pages/admin/CategoriasPage";
@@ -53,6 +54,14 @@ function App() {
                 element={
                   <RequireAuth roles={[UserRole.ADMIN, UserRole.GESTOR, UserRole.PROVEDOR]}>
                     <DashboardPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/provisionamento"
+                element={
+                  <RequireAuth roles={[UserRole.ADMIN, UserRole.GESTOR, UserRole.PROVEDOR]}>
+                    <ProvisionamentoPage />
                   </RequireAuth>
                 }
               />

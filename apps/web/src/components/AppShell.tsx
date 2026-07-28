@@ -8,7 +8,7 @@ import { NotificationBell } from "@/components/NotificationBell";
 import { HeaderClock } from "@/components/HeaderClock";
 import { cn } from "@/lib/utils";
 import { APP_BUILD_ID, APP_VERSION_LABEL } from "@/lib/version";
-import { LogOut, Map, LayoutGrid, BarChart3, Settings, PackageX } from "lucide-react";
+import { LogOut, Map, LayoutGrid, BarChart3, Settings, PackageX, Router } from "lucide-react";
 
 /** Dashboard e Retiradas sao so pra quem enxerga mais de uma OS/provedor — tecnico ve so as proprias. */
 const NAV_ITEMS = [
@@ -18,6 +18,8 @@ const NAV_ITEMS = [
   // uma, a tela seria sempre vazia pra ele.
   { to: "/retiradas", label: "Retiradas", icon: PackageX, ocultoPara: [UserRole.TECNICO] },
   { to: "/dashboard", label: "Dashboard", icon: BarChart3, ocultoPara: [UserRole.TECNICO] },
+  // Provisionar ONU (FTTX): técnico faz pelo app; na web é ferramenta de admin/gestor/provedor.
+  { to: "/provisionamento", label: "Provisionar", icon: Router, ocultoPara: [UserRole.TECNICO] },
 ];
 
 /**

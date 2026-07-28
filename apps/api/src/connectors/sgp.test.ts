@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mapSgpOsStatus, OsStatus } from "@isphub/shared";
-import { createSgpConnector } from "./sgp.js";
+import { createSgpConnector, redigirSegredosFttx } from "./sgp.js";
 
 const creds = { url: "https://sgp.exemplo.com.br", app: "isphub", token: "tok-abc123" };
 
@@ -734,6 +734,165 @@ describe("createSgpConnector", () => {
 
       const conn = createSgpConnector(creds);
       expect(await conn.getOsImageFile("999999")).toBeNull();
+    });
+  });
+
+  describe("FTTX / provisionamento de ONU", () => {
+    it("listarOlts normaliza id/nome/fabricante e bate em /api/fttx/olt/list/", async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({ olts: [{ id: 3, nome: "OLT-CENTRO", fabricante: "Huawei" }, { id: 4, name: "OLT-SUL" }] }),
+      );
+
+      const conn = createSgpConnector(creds);
+      const olts = await conn.listarOlts();
+
+      expect(olts).toEqual([
+        { id: "3", nome: "OLT-CENTRO", fabricante: "Huawei" },
+        { id: "4", nome: "OLT-SUL", fabricante: null },
+      ]);
+      expect(String(fetchMock.mock.calls[0][0])).toContain("/api/fttx/olt/list/");
+    });
+
+    it("listarOnusNaoAutorizadas mapeia phy_addr->serial e info_rx->sinalRxDbm", async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({
+          onus: [{ id: 10, phy_addr: "HWTC12345678", slot: 1, pon: 2, type: "HG8310", vlan: 100, info_rx: "-21.5" }],
+        }),
+      );
+
+      const conn = createSgpConnector(creds);
+      const [onu] = await conn.listarOnusNaoAutorizadas("3");
+
+      expect(onu).toEqual({
+        id: "10",
+        serial: "HWTC12345678",
+        slot: "1",
+        pon: "2",
+        tipo: "HG8310",
+        vlan: 100,
+        sinalRxDbm: -21.5,
+      });
+      expect(String(fetchMock.mock.calls[0][0])).toContain("/api/fttx/olt/3/unauth/");
+    });
+
+    it("listarOnusNaoAutorizadas cai pro POST /onu/unauthorized/ quando o GET /unauth/ falha", async () => {
+      fetchMock
+        .mockResolvedValueOnce(new Response("nao encontrado", { status: 404 }))
+        .mockResolvedValueOnce(jsonResponse({ onus: [{ id: 11, phy_addr: "SN2", slot: 0, pon: 0 }] }));
+
+      const conn = createSgpConnector(creds);
+      const onus = await conn.listarOnusNaoAutorizadas("3");
+
+      expect(onus).toHaveLength(1);
+      expect(onus[0].serial).toBe("SN2");
+      expect(String(fetchMock.mock.calls[1][0])).toContain("/api/fttx/onu/unauthorized/");
+      expect(new URLSearchParams(fetchMock.mock.calls[1][1].body as string).get("olt_id")).toBe("3");
+    });
+
+    it("listarOnusAutorizadas passa contrato como query e mapeia service_cliente/service_contrato", async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({
+          onus: [{ id: 5, phy_addr: "SN9", slot: 1, pon: 1, service_contrato: 1268, service_cliente: "MARIA", info_rx: "-20" }],
+        }),
+      );
+
+      const conn = createSgpConnector(creds);
+      const [onu] = await conn.listarOnusAutorizadas("3", { contrato: "1268" });
+
+      expect(onu.contrato).toBe("1268");
+      expect(onu.clienteNome).toBe("MARIA");
+      expect(onu.sinalRxDbm).toBeCloseTo(-20);
+      expect(String(fetchMock.mock.calls[0][0])).toContain("/api/fttx/olt/3/onu/list/");
+      expect(String(fetchMock.mock.calls[0][0])).toContain("contrato=1268");
+    });
+
+    it("provisionarOnu faz POST /api/fttx/olt/:id/auth/ com slot/pon/id/onutype/mode no corpo", async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ msg: "ONU autorizada", id: 77 }));
+
+      const conn = createSgpConnector(creds);
+      const r = await conn.provisionarOnu("3", {
+        slot: "1",
+        pon: "2",
+        serial: "HWTC1",
+        onutype: "HG8310",
+        mode: 2,
+        vlan: 100,
+        service: "500",
+        pppoeLogin: "cliente",
+        pppoeSenha: "s3nha",
+        contrato: "1268",
+        descricao: "Instalacao",
+        ident: "CTO-05",
+      });
+
+      expect(r).toEqual({ ok: true, mensagem: "ONU autorizada", onuId: "77" });
+
+      const [url, options] = fetchMock.mock.calls[0];
+      expect(String(url)).toContain("/api/fttx/olt/3/auth/");
+      expect(options.method).toBe("POST");
+      const body = new URLSearchParams(options.body as string);
+      expect(body.get("slot")).toBe("1");
+      expect(body.get("pon")).toBe("2");
+      // serial -> "id" no corpo do SGP
+      expect(body.get("id")).toBe("HWTC1");
+      expect(body.get("onutype")).toBe("HG8310");
+      expect(body.get("mode")).toBe("2");
+      expect(body.get("service")).toBe("500");
+      expect(body.get("pppoe_login")).toBe("cliente");
+      expect(body.get("ident")).toBe("CTO-05");
+      expect(body.get("app")).toBe(creds.app);
+      expect(body.get("token")).toBe(creds.token);
+    });
+
+    it("provisionarOnu omite onutype quando ausente (o SGP detecta o modelo pelo SN)", async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ msg: "ONU autorizada" }));
+
+      const conn = createSgpConnector(creds);
+      await conn.provisionarOnu("3", { slot: "1", pon: "1", serial: "SN-AUTOFIND", mode: 1 });
+
+      const body = new URLSearchParams(fetchMock.mock.calls[0][1].body as string);
+      expect(body.has("onutype")).toBe(false);
+      expect(body.get("id")).toBe("SN-AUTOFIND");
+      expect(body.get("mode")).toBe("1");
+    });
+
+    it("provisionarOnu rejeita quando o SGP recusa a autorizacao (erro no corpo, HTTP 200)", async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ erro: "Serial ja autorizado" }));
+
+      const conn = createSgpConnector(creds);
+      await expect(
+        conn.provisionarOnu("3", { slot: "1", pon: "2", serial: "X", onutype: "T", mode: 1 }),
+      ).rejects.toThrow(/Serial ja autorizado/);
+    });
+
+    it("desautorizarOnu bate em /api/fttx/onu/:id/deauth/", async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ msg: "ONU removida" }));
+
+      const conn = createSgpConnector(creds);
+      const r = await conn.desautorizarOnu("77");
+
+      expect(r.ok).toBe(true);
+      expect(r.mensagem).toBe("ONU removida");
+      expect(String(fetchMock.mock.calls[0][0])).toContain("/api/fttx/onu/77/deauth/");
+    });
+
+    it("redigirSegredosFttx mascara senha PPPoE/Wi-Fi e token, preservando o resto", () => {
+      const red = redigirSegredosFttx({
+        id: "SN123",
+        pppoe_login: "user",
+        pppoe_password: "s3nha",
+        wifi_password: "wpa2",
+        token: "tok-secreto",
+        slot: "1",
+      });
+
+      expect(red.pppoe_password).toBe("***");
+      expect(red.wifi_password).toBe("***");
+      expect(red.token).toBe("***");
+      // nao-segredos preservados
+      expect(red.pppoe_login).toBe("user");
+      expect(red.id).toBe("SN123");
+      expect(red.slot).toBe("1");
     });
   });
 });

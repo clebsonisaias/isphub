@@ -1,5 +1,6 @@
 import { Redirect, Tabs } from "expo-router";
 import { ActivityIndicator, View } from "react-native";
+import type { ModuloId } from "@isphub/shared";
 import { useAuth } from "@/lib/auth";
 import { useModulos } from "@/lib/config";
 import { useRealtime } from "@/lib/realtime";
@@ -26,6 +27,12 @@ export default function AppLayout() {
   if (!token) return <Redirect href="/login" />;
 
   const tabs = modulos.filter((m) => ROTAS_MODULO[m.id]);
+  const habilitadas = new Set(tabs.map((m) => m.id));
+  // Toda rota implementada que NAO esta habilitada pro usuario precisa ser
+  // escondida explicitamente (href: null) — senao o expo-router monta uma tab
+  // automatica com o nome cru da pasta (ex.: "provisionamento" quando o modulo
+  // esta desligado). So `adicionar` as habilitadas nao basta.
+  const ocultas = (Object.keys(ROTAS_MODULO) as ModuloId[]).filter((id) => !habilitadas.has(id));
 
   return (
     <Tabs
@@ -38,6 +45,9 @@ export default function AppLayout() {
     >
       {tabs.map((m) => (
         <Tabs.Screen key={m.id} name={ROTAS_MODULO[m.id]!.rota} options={{ title: m.nome }} />
+      ))}
+      {ocultas.map((id) => (
+        <Tabs.Screen key={id} name={ROTAS_MODULO[id]!.rota} options={{ href: null }} />
       ))}
     </Tabs>
   );

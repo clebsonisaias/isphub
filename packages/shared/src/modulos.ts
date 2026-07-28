@@ -13,6 +13,7 @@ export const MODULO_IDS = [
   "evidencias", // camera -> proxy SGP, fila offline
   "rota", // mapa + GPS
   "conexao", // ONU rx/tx, OLT, online/offline
+  "provisionamento", // autorizar/desautorizar ONU na OLT (FTTX)
   "assinatura", // assinatura do cliente no fim da OS
   "retiradas", // fila de retirada/cancelamento (equipe externa)
   "notificacoes", // in-app + (depois) push
@@ -51,6 +52,8 @@ export interface ModuloMeta {
 export const MODULO_CATALOGO: Record<ModuloId, ModuloMeta> = {
   "minhas-os": { id: "minhas-os", nome: "Minhas OS", icone: "list", core: true, ativoPadrao: true, ordemPadrao: 0, rolesPadrao: [UserRole.TECNICO] },
   conexao: { id: "conexao", nome: "Conexão", icone: "wifi", core: false, ativoPadrao: true, ordemPadrao: 10, rolesPadrao: [UserRole.TECNICO] },
+  // ativoPadrao:false — nem todo provedor tem FTTX e autorizar e escrita sensivel; o admin liga em /admin/modulos.
+  provisionamento: { id: "provisionamento", nome: "Provisionar", icone: "router", core: false, ativoPadrao: false, ordemPadrao: 15, rolesPadrao: [UserRole.GESTOR, UserRole.TECNICO] },
   evidencias: { id: "evidencias", nome: "Evidências", icone: "camera", core: false, ativoPadrao: true, ordemPadrao: 20, rolesPadrao: [UserRole.TECNICO] },
   rota: { id: "rota", nome: "Rota", icone: "route", core: false, ativoPadrao: true, ordemPadrao: 30, rolesPadrao: [UserRole.TECNICO] },
   notificacoes: { id: "notificacoes", nome: "Notificações", icone: "bell", core: false, ativoPadrao: true, ordemPadrao: 40, rolesPadrao: [UserRole.TECNICO] },
