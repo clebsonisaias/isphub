@@ -94,7 +94,7 @@ function UserMenu({ nome, role, onLogout }: { nome: string; role: UserRole; onLo
         <button
           type="button"
           title={`${nome} — ${USER_ROLE_LABEL[role]}`}
-          className="flex items-center gap-2 rounded-full py-1 pl-1 pr-1 transition-colors hover:bg-secondary/60 lg:pr-2.5"
+          className="flex items-center gap-2 rounded-full py-1 pl-1 pr-1 outline-none transition-colors hover:bg-secondary/60 focus-visible:ring-2 focus-visible:ring-ring lg:pr-2.5"
         >
           <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-secondary font-display text-xs font-semibold text-foreground">
             {iniciais(nome)}
@@ -113,7 +113,7 @@ function UserMenu({ nome, role, onLogout }: { nome: string; role: UserRole; onLo
         <Link
           to="/perfil"
           onClick={() => setAberto(false)}
-          className="mt-1 flex items-center gap-2 rounded-md px-2.5 py-2 text-sm text-foreground transition-colors hover:bg-secondary"
+          className="mt-1 flex items-center gap-2 rounded-md px-2.5 py-2 text-sm text-foreground outline-none transition-colors hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring"
         >
           <UserCircle className="size-4 text-muted-foreground" />
           Meu perfil
@@ -121,7 +121,7 @@ function UserMenu({ nome, role, onLogout }: { nome: string; role: UserRole; onLo
         <button
           type="button"
           onClick={toggleTheme}
-          className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-secondary"
+          className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-foreground outline-none transition-colors hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring"
         >
           {theme === "dark" ? (
             <Sun className="size-4 text-muted-foreground" />
@@ -136,7 +136,7 @@ function UserMenu({ nome, role, onLogout }: { nome: string; role: UserRole; onLo
             setAberto(false);
             onLogout();
           }}
-          className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-destructive transition-colors hover:bg-destructive/10"
+          className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-destructive outline-none transition-colors hover:bg-destructive/10 focus-visible:ring-2 focus-visible:ring-destructive"
         >
           <LogOut className="size-4" />
           Sair

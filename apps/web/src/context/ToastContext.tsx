@@ -1,12 +1,13 @@
 import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { CheckCircle2, XCircle, Info, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Toast {
   id: number;
   titulo: string;
   descricao?: string;
-  variante: "sucesso" | "erro";
+  variante: "sucesso" | "erro" | "info";
 }
 
 interface ToastContextValue {
@@ -14,6 +15,13 @@ interface ToastContextValue {
 }
 
 const ToastContext = createContext<ToastContextValue | undefined>(undefined);
+
+/** Hierarquia por variante — cor + icone, tokens semanticos (sucesso/destructive) ou indigo pra info. */
+const VARIANTE_ESTILO: Record<Toast["variante"], { classe: string; icone: LucideIcon; iconeClasse: string }> = {
+  sucesso: { classe: "border-success/40 bg-success/10", icone: CheckCircle2, iconeClasse: "text-success" },
+  erro: { classe: "border-destructive/40 bg-destructive/10", icone: XCircle, iconeClasse: "text-destructive" },
+  info: { classe: "border-primary/30 bg-primary/10", icone: Info, iconeClasse: "text-primary" },
+};
 
 let nextId = 1;
 
@@ -33,25 +41,31 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       <div className="pointer-events-none fixed right-4 top-4 z-50 flex w-80 flex-col gap-2">
         <AnimatePresence>
-          {toasts.map((t) => (
-            <motion.div
-              key={t.id}
-              layout
-              initial={shouldReduceMotion ? false : { opacity: 0, y: -12, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
-              className={cn(
-                "pointer-events-auto rounded-lg border p-3 text-sm shadow-lg backdrop-blur",
-                t.variante === "sucesso"
-                  ? "border-success/40 bg-success/10 text-foreground"
-                  : "border-destructive/40 bg-destructive/10 text-foreground",
-              )}
-            >
-              <p className="font-medium">{t.titulo}</p>
-              {t.descricao && <p className="mt-0.5 text-muted-foreground">{t.descricao}</p>}
-            </motion.div>
-          ))}
+          {toasts.map((t) => {
+            const estilo = VARIANTE_ESTILO[t.variante];
+            const Icone = estilo.icone;
+            return (
+              <motion.div
+                key={t.id}
+                layout
+                initial={shouldReduceMotion ? false : { opacity: 0, y: -12, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.95 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+                className={cn(
+                  "pointer-events-auto flex items-start gap-2.5 rounded-lg border p-3 text-sm shadow-soft-lg backdrop-blur",
+                  estilo.classe,
+                  "text-foreground",
+                )}
+              >
+                <Icone className={cn("mt-0.5 size-4 shrink-0", estilo.iconeClasse)} />
+                <div className="min-w-0">
+                  <p className="font-medium">{t.titulo}</p>
+                  {t.descricao && <p className="mt-0.5 text-muted-foreground">{t.descricao}</p>}
+                </div>
+              </motion.div>
+            );
+          })}
         </AnimatePresence>
       </div>
     </ToastContext.Provider>

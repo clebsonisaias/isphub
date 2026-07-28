@@ -161,7 +161,7 @@ export function CommandPalette() {
         onClick={() => setAberto(true)}
         title="Buscar (Ctrl+K)"
         aria-label="Abrir busca rápida"
-        className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+        className="flex size-9 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-secondary hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
         <Search className="size-4" />
       </button>
@@ -252,7 +252,7 @@ function CommandItem({ ativo, onClick, children }: { ativo: boolean; onClick: ()
       type="button"
       onClick={onClick}
       className={cn(
-        "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors",
+        "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
         ativo ? "bg-primary/10 text-primary" : "text-foreground hover:bg-secondary",
       )}
     >
