@@ -11,6 +11,7 @@ import { RetiradasPage } from "@/pages/RetiradasPage";
 import { MapaPage } from "@/pages/MapaPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { ProvisionamentoPage } from "@/pages/ProvisionamentoPage";
+import { ChatPage } from "@/pages/ChatPage";
 import { ProvedoresPage } from "@/pages/admin/ProvedoresPage";
 import { ProvedorDetailPage } from "@/pages/admin/ProvedorDetailPage";
 import { CategoriasPage } from "@/pages/admin/CategoriasPage";
@@ -82,6 +83,20 @@ function App() {
                       ]}
                     >
                       <ProvisionamentoPage />
+                    </RequireAuth>
+                  }
+                />
+                <Route
+                  path="/chat"
+                  element={
+                    <RequireAuth
+                      roles={[
+                        UserRole.ADMIN,
+                        UserRole.GESTOR,
+                        UserRole.TECNICO,
+                      ]}
+                    >
+                      <ChatPage />
                     </RequireAuth>
                   }
                 />
