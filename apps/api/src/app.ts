@@ -21,6 +21,7 @@ import { horaRouter } from "./routes/hora.js";
 import { configRouter, adminModulosRouter } from "./routes/config.js";
 import { eventosRouter } from "./routes/eventos.js";
 import { syncMinhasRouter } from "./routes/syncMinhas.js";
+import { chatRouter } from "./routes/chat.js";
 
 export function createApp() {
   const app = express();
@@ -44,6 +45,7 @@ export function createApp() {
   app.use("/admin/modulos", adminModulosRouter);
   app.use("/eventos", eventosRouter);
   app.use("/sync", syncMinhasRouter);
+  app.use("/chat", chatRouter);
   app.use("/provedores/:provedorId/erp-config", erpConfigRouter);
   app.use("/provedores/:provedorId/tipos-os", tiposOsRouter);
   app.use("/provedores/:provedorId/sync", syncRouter);

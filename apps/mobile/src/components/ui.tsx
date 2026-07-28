@@ -7,6 +7,7 @@ import {
   TextInput,
   View,
   type TextInputProps,
+  type TextProps,
   type ViewProps,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -26,8 +27,12 @@ export function Title({ children }: { children: ReactNode }) {
   return <Text style={styles.title}>{children}</Text>;
 }
 
-export function Muted({ children }: { children: ReactNode }) {
-  return <Text style={styles.muted}>{children}</Text>;
+export function Muted({ children, style, ...rest }: TextProps) {
+  return (
+    <Text style={[styles.muted, style]} {...rest}>
+      {children}
+    </Text>
+  );
 }
 
 export function Card({ children, style, ...rest }: ViewProps) {

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { Notificacao } from "@isphub/shared";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Skeleton } from "@/components/ui/skeleton";
 import { notificacoesApi } from "@/lib/notificacoesApi";
 import { Bell, CheckCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -89,7 +90,11 @@ export function NotificationBell() {
         </div>
         <div className="max-h-80 overflow-y-auto">
           {notificacoes === null ? (
-            <p className="p-4 text-center text-sm text-muted-foreground">Carregando...</p>
+            <div className="flex flex-col gap-2 p-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 rounded-md" />
+              ))}
+            </div>
           ) : notificacoes.length === 0 ? (
             <p className="p-4 text-center text-sm text-muted-foreground">Nenhuma notificação ainda.</p>
           ) : (

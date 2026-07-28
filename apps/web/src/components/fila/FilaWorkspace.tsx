@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { OS_STATUS_ABERTOS, UserRole, type Categoria, type EquipeFiltro, type FilaItem, type Provedor } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
@@ -6,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/EmptyState";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { cn } from "@/lib/utils";
@@ -50,7 +53,7 @@ const TAMANHOS_PAGINA = [10, 20, 50];
 
 function EstatCard({ icon, valor, label, tom }: { icon: React.ReactNode; valor: number; label: string; tom: string }) {
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 shadow-sm">
+    <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 shadow-soft-sm">
       <span className={`flex size-9 items-center justify-center rounded-lg ${tom}`}>{icon}</span>
       <div className="leading-tight">
         <p className="text-xl font-bold tabular-nums text-foreground">{valor}</p>
@@ -126,6 +129,16 @@ export function FilaWorkspace({
   const [agora, setAgora] = useState(() => Date.now());
 
   const shouldReduceMotion = useReducedMotion();
+  const [searchParams] = useSearchParams();
+
+  // Chegada via Command Palette (Cmd/Ctrl+K "buscar OS") — aplica o termo na
+  // busca já existente da tela, em vez de reinventar um jeito de abrir o
+  // detalhe direto de outra rota.
+  useEffect(() => {
+    const q = searchParams.get("q");
+    if (q) setBusca(q);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   useEffect(() => {
     provedoresApi.listar().then(setProvedores).catch(() => {});
@@ -461,7 +474,7 @@ export function FilaWorkspace({
           {primeiraCarga ? (
             <div className="flex flex-col gap-2">
               {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="h-28 animate-pulse rounded-xl border border-border bg-card" />
+                <Skeleton key={i} className="h-28 rounded-xl border border-border" />
               ))}
             </div>
           ) : paginaItens.length === 0 ? (
@@ -471,16 +484,18 @@ export function FilaWorkspace({
               transition={{ duration: 0.2 }}
             >
               <Card>
-                <CardContent className="flex flex-col items-center gap-3 py-12 text-center text-sm text-muted-foreground">
+                <CardContent>
                   {temFiltroAtivo ? (
-                    <>
-                      <span>Nenhuma OS com os filtros atuais.</span>
-                      <Button variant="outline" size="sm" onClick={limparFiltros}>
-                        Limpar filtros
-                      </Button>
-                    </>
+                    <EmptyState
+                      title="Nenhuma OS com os filtros atuais"
+                      action={
+                        <Button variant="outline" size="sm" onClick={limparFiltros}>
+                          Limpar filtros
+                        </Button>
+                      }
+                    />
                   ) : (
-                    <span>{visao === "concluidas" ? vazioConcluidas : vazioAbertas}</span>
+                    <EmptyState title={visao === "concluidas" ? vazioConcluidas : vazioAbertas} />
                   )}
                 </CardContent>
               </Card>

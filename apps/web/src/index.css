@@ -2,11 +2,12 @@
 @plugin "tailwindcss-animate";
 
 /*
- * ISPhub — tema claro (padrao) e escuro, alternavel (ver ThemeContext).
- * Gradiente azul->roxo da marca preservado nos dois. Claro inspirado num
- * padrao de dashboard operacional (fundo cinza-azulado bem claro, cards
- * brancos, badges de status em pilula) — mesma familia visual do Painel
- * Unificado. Tokens seguem a convencao shadcn/ui para os componentes de UI.
+ * ISPhub — tema "playful-ops": indigo profundo + acentos vibrantes sobre uma
+ * base clara lavanda, geometria Memphis discreta e ilustracao flat nos
+ * momentos de maior expressao (login, vazios, herois). Densidade de dado
+ * (fila, tabelas, formularios) continua branca/neutra — cor ali e so SINAL
+ * (categoria/status/SLA), nunca decoracao atras de texto operacional. Tokens
+ * seguem a convencao shadcn/ui para os componentes de UI.
  */
 
 @theme inline {
@@ -32,75 +33,120 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  /* Acentos decorativos (KPIs, pilulas, Memphis) — NUNCA o semaforo de SLA. */
+  --color-accent-blue: var(--accent-blue);
+  --color-accent-blue-foreground: var(--accent-blue-foreground);
+  --color-accent-yellow: var(--accent-yellow);
+  --color-accent-yellow-foreground: var(--accent-yellow-foreground);
+  --color-accent-pink: var(--accent-pink);
+  --color-accent-pink-foreground: var(--accent-pink-foreground);
+  --color-accent-orange: var(--accent-orange);
+  --color-accent-orange-foreground: var(--accent-orange-foreground);
+  --color-accent-green: var(--accent-green);
+  --color-accent-green-foreground: var(--accent-green-foreground);
+  --color-accent-teal: var(--accent-teal);
+  --color-accent-teal-foreground: var(--accent-teal-foreground);
+
+  --radius-sm: calc(var(--radius) - 8px);
+  --radius-md: calc(var(--radius) - 4px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 
-  /* Tipografia: par distintivo, nao generico. Display com carater (leve flare
-     nos terminais) pra titulos/marca; corpo tecnico/legivel pro resto; mono
-     reservado pra dado "duro" (ids de OS, horarios, contadores tabulares) —
-     reforca a identidade de central de operacoes de rede. */
-  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
-  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  /* Tipografia: geometrica com carater (Sora) pra titulos/marca/numeros-heroi;
+     humanista e densa (Plus Jakarta Sans) pro corpo; mono reservado pra dado
+     "duro" (ids de OS, horarios, contadores tabulares) — reforca a identidade
+     de central de operacoes de rede. */
+  --font-display: "Sora", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
 }
 
-/* Claro (padrao). Cores de status/semanticas mais escuras que no dark —
-   precisam de contraste >=4.5:1 como TEXTO solido sobre fundo quase branco,
-   nao so como preenchimento translucido. */
+/* Claro (padrao). Fundo lavanda bem claro, cards brancos, indigo profundo de
+   marca. Cores de status/semanticas (destructive/warning/success) sao SINAL
+   reservado (ver acentos decorativos abaixo) — nao tocadas aqui, ja validadas
+   com contraste >=4.5:1 como texto solido. */
 :root {
-  --background: oklch(0.97 0.007 264);
-  --foreground: oklch(0.24 0.03 264);
+  --background: oklch(0.965 0.014 292);
+  --foreground: oklch(0.24 0.03 289);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.24 0.03 264);
+  --card-foreground: oklch(0.24 0.03 289);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.24 0.03 264);
-  --primary: oklch(0.52 0.19 289);
+  --popover-foreground: oklch(0.24 0.03 289);
+  --primary: oklch(0.46 0.19 289);
   --primary-foreground: oklch(0.98 0 0);
-  --secondary: oklch(0.94 0.012 264);
-  --secondary-foreground: oklch(0.32 0.03 264);
-  --muted: oklch(0.95 0.008 264);
-  --muted-foreground: oklch(0.47 0.02 264);
-  --accent: oklch(0.92 0.03 275);
-  --accent-foreground: oklch(0.32 0.03 264);
+  --secondary: oklch(0.935 0.018 292);
+  --secondary-foreground: oklch(0.32 0.03 289);
+  --muted: oklch(0.945 0.014 292);
+  --muted-foreground: oklch(0.47 0.02 285);
+  --accent: oklch(0.91 0.035 289);
+  --accent-foreground: oklch(0.32 0.03 289);
   --destructive: oklch(0.5 0.2 25);
   --destructive-foreground: oklch(0.98 0 0);
-  --border: oklch(0.88 0.012 264);
-  --input: oklch(0.88 0.012 264);
-  --ring: oklch(0.52 0.19 289);
+  --border: oklch(0.875 0.018 292);
+  --input: oklch(0.875 0.018 292);
+  --ring: oklch(0.46 0.19 289);
   --success: oklch(0.45 0.13 145);
   --warning: oklch(0.5 0.15 70);
-  --radius: 0.75rem;
+  --radius: 1.25rem;
 
-  /* Gradiente da marca (logo ISPhub): azul -> roxo. Igual nos dois temas. */
-  --brand-from: #3b82f6;
+  /* Gradiente da marca (logo ISPhub): indigo -> violeta. Igual nos dois temas. */
+  --brand-from: #5b3fe0;
   --brand-to: #8b5cf6;
+
+  /*
+   * Paleta de ACENTO decorativa (blocos de KPI, pilulas de categoria/status,
+   * geometria Memphis) — NUNCA usada pro semaforo de SLA (esse e o par
+   * destructive/warning/success acima, que sempre le primeiro). Cada acento
+   * tem seu par "-foreground" pra garantir AA como TEXTO solido por cima:
+   * branco nos tons mais escuros/saturados, quase-preto nos mais claros
+   * (amarelo, laranja, teal).
+   */
+  --accent-blue: #4263eb;
+  --accent-blue-foreground: #ffffff;
+  --accent-yellow: #fcc419;
+  --accent-yellow-foreground: #1a1400;
+  --accent-pink: #e64980;
+  --accent-pink-foreground: #ffffff;
+  --accent-orange: #fd7e14;
+  --accent-orange-foreground: #1a0f00;
+  --accent-green: #2fb344;
+  --accent-green-foreground: #ffffff;
+  --accent-teal: #22c3d6;
+  --accent-teal-foreground: #00272b;
 }
 
-/* Escuro — inalterado (ja validado). Ativado via [data-theme="dark"] no <html>. */
+/* Escuro — mesmo matiz indigo do primary puxado pro fundo (antes era um azul
+   neutro 264; agora 284, mais proximo do primary 289), levemente mais
+   saturado, pra ler como "indigo quase-preto" em vez de cinza-azulado. */
 [data-theme="dark"] {
-  --background: oklch(0.14 0.02 264);
-  --foreground: oklch(0.97 0.005 264);
-  --card: oklch(0.18 0.02 264);
-  --card-foreground: oklch(0.97 0.005 264);
-  --popover: oklch(0.18 0.02 264);
-  --popover-foreground: oklch(0.97 0.005 264);
-  --primary: oklch(0.62 0.19 289);
+  --background: oklch(0.15 0.025 284);
+  --foreground: oklch(0.97 0.005 289);
+  --card: oklch(0.19 0.028 284);
+  --card-foreground: oklch(0.97 0.005 289);
+  --popover: oklch(0.19 0.028 284);
+  --popover-foreground: oklch(0.97 0.005 289);
+  --primary: oklch(0.64 0.19 289);
   --primary-foreground: oklch(0.98 0 0);
-  --secondary: oklch(0.24 0.02 264);
-  --secondary-foreground: oklch(0.92 0.01 264);
-  --muted: oklch(0.22 0.02 264);
-  --muted-foreground: oklch(0.65 0.02 264);
-  --accent: oklch(0.27 0.05 275);
+  --secondary: oklch(0.25 0.025 284);
+  --secondary-foreground: oklch(0.92 0.01 289);
+  --muted: oklch(0.23 0.025 284);
+  --muted-foreground: oklch(0.66 0.02 285);
+  --accent: oklch(0.29 0.055 289);
   --accent-foreground: oklch(0.98 0 0);
   --destructive: oklch(0.6 0.22 25);
   --destructive-foreground: oklch(0.98 0 0);
-  --border: oklch(0.28 0.02 264 / 60%);
-  --input: oklch(0.28 0.02 264 / 60%);
-  --ring: oklch(0.62 0.19 289);
+  --border: oklch(0.3 0.025 284 / 60%);
+  --input: oklch(0.3 0.025 284 / 60%);
+  --ring: oklch(0.64 0.19 289);
   --success: oklch(0.72 0.17 145);
   --warning: oklch(0.8 0.16 85);
+
+  --accent-blue-foreground: #ffffff;
+  --accent-yellow-foreground: #1a1400;
+  --accent-pink-foreground: #ffffff;
+  --accent-orange-foreground: #1a0f00;
+  --accent-green-foreground: #04140a;
+  --accent-teal-foreground: #00272b;
 }
 
 html {
@@ -151,4 +197,32 @@ h1, h2, h3 {
 
 .brand-gradient-bg {
   background: linear-gradient(135deg, var(--brand-from), var(--brand-to));
+}
+
+/*
+ * Sombras com TINTA indigo (nao cinza neutro) — 3 niveis de elevacao usados
+ * pelos primitivos de ui/ (card, dialog, popover, tabs, switch). No escuro, a
+ * "sombra" vira um leve GLOW violeta: uma sombra escura de verdade nao le como
+ * elevacao sobre um fundo ja quase-preto.
+ */
+@layer utilities {
+  .shadow-soft-sm {
+    box-shadow: 0 2px 8px -3px rgba(76, 63, 191, 0.16);
+  }
+  .shadow-soft-md {
+    box-shadow: 0 8px 20px -8px rgba(76, 63, 191, 0.2);
+  }
+  .shadow-soft-lg {
+    box-shadow: 0 12px 30px -12px rgba(76, 63, 191, 0.22);
+  }
+}
+
+[data-theme="dark"] .shadow-soft-sm {
+  box-shadow: 0 2px 10px -4px rgba(139, 92, 246, 0.25);
+}
+[data-theme="dark"] .shadow-soft-md {
+  box-shadow: 0 10px 24px -10px rgba(139, 92, 246, 0.3);
+}
+[data-theme="dark"] .shadow-soft-lg {
+  box-shadow: 0 16px 36px -14px rgba(139, 92, 246, 0.35);
 }

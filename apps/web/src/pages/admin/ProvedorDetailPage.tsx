@@ -2,7 +2,10 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { Categoria, ErpConfigPublic, Provedor, TipoOs } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
+import { AnimatedPage } from "@/components/AnimatedPage";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/EmptyState";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -35,6 +38,7 @@ export function ProvedorDetailPage() {
 
   return (
     <AppShell>
+      <AnimatedPage>
       <Link to="/admin" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="size-4" /> Provedores
       </Link>
@@ -58,6 +62,7 @@ export function ProvedorDetailPage() {
           <TiposOsManager provedorId={id} />
         </TabsContent>
       </Tabs>
+      </AnimatedPage>
     </AppShell>
   );
 }
@@ -318,11 +323,16 @@ function TiposOsManager({ provedorId }: { provedorId: string }) {
       </CardHeader>
       <CardContent>
         {carregando ? (
-          <p className="text-sm text-muted-foreground">Carregando...</p>
+          <div className="flex flex-col gap-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-9 rounded-md" />
+            ))}
+          </div>
         ) : tipos.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Nenhum tipo importado ainda. Configure a integração SGP e clique em "Importar do SGP".
-          </p>
+          <EmptyState
+            title="Nenhum tipo importado ainda"
+            description='Configure a integração SGP e clique em "Importar do SGP".'
+          />
         ) : (
           <Table>
             <TableHeader>

@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { ProvedorBadge } from "@/components/ProvedorBadge";
 import { StatusBadge } from "@/components/StatusBadge";
+import { SlaBadge } from "@/components/SlaBadge";
 import { ContratoStatusBadge } from "@/components/ContratoStatusBadge";
 import { ConexaoStatus } from "@/components/ConexaoStatus";
 import { OsTimeline } from "@/components/OsTimeline";
@@ -132,14 +133,20 @@ export function OrdemServicoDetailDialog({
       <DialogContent className="max-w-xl">
         <DialogHeader>
           <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-border bg-secondary/50 px-2.5 py-0.5 font-mono text-xs font-semibold text-muted-foreground">
+              OS #{os.sgpOsId}
+            </span>
             <ProvedorBadge provedor={os.provedor} />
             <StatusBadge status={os.status} />
             <ContratoStatusBadge status={os.contratoStatus} />
             <ConexaoStatus provedorId={os.provedorId} contratoId={os.contratoId} onDetalhes={setDetalhesLive} />
           </div>
-          <DialogTitle>{os.clienteNome ?? "Cliente não identificado"}</DialogTitle>
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <DialogTitle>{os.clienteNome ?? "Cliente não identificado"}</DialogTitle>
+            <SlaBadge sla={os.sla} />
+          </div>
           <DialogDescription>
-            {os.tipoDescricao ?? "OS"} · SGP #{os.sgpOsId}
+            {os.tipoDescricao ?? "OS"}
             {os.protocolo ? ` · Protocolo ${os.protocolo}` : ""}
           </DialogDescription>
         </DialogHeader>
@@ -187,6 +194,7 @@ export function OrdemServicoDetailDialog({
             )}
 
             <div className="mt-4 flex flex-col gap-4 border-t border-border pt-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ações</p>
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   variant="outline"
@@ -220,7 +228,9 @@ export function OrdemServicoDetailDialog({
               </div>
 
               {podeDespachar && (
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-col gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Despacho</p>
+                  <div className="flex flex-wrap items-center gap-2">
                   <select
                     value={tecnicoSelecionado}
                     onChange={(e) => setTecnicoSelecionado(e.target.value)}
@@ -241,10 +251,12 @@ export function OrdemServicoDetailDialog({
                   >
                     {acaoEmCurso === "atribuir" ? "Atribuindo..." : "Atribuir"}
                   </Button>
+                  </div>
                 </div>
               )}
 
               <div className="flex flex-col gap-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Anotação</p>
                 <textarea
                   value={textoAnotacao}
                   onChange={(e) => setTextoAnotacao(e.target.value)}

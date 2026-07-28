@@ -211,7 +211,8 @@ export interface EvidenciaResumo {
 /** Notificacao in-app de um usuario. */
 export interface Notificacao {
   id: string;
-  tipo: "atribuicao" | "sla_estourado";
+  /** "mensagem" = chat generico; "mencao" = "@fulano" numa mensagem que cita este usuario. */
+  tipo: "atribuicao" | "sla_estourado" | "mensagem" | "mencao";
   mensagem: string;
   ordemServicoId?: string | null;
   lida: boolean;

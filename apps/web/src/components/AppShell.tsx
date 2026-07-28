@@ -1,25 +1,68 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { motion, useReducedMotion } from "framer-motion";
 import { USER_ROLE_LABEL, UserRole } from "@isphub/shared";
 import { useAuth } from "@/context/AuthContext";
-import { Button } from "@/components/ui/button";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import { useTheme } from "@/context/ThemeContext";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { NotificationBell } from "@/components/NotificationBell";
+import { CommandPalette } from "@/components/CommandPalette";
 import { HeaderClock } from "@/components/HeaderClock";
-import { cn } from "@/lib/utils";
+import { chatApi } from "@/lib/chatApi";
+import { useRealtime } from "@/lib/realtime";
+import { cn, iniciais } from "@/lib/utils";
 import { APP_BUILD_ID, APP_VERSION_LABEL } from "@/lib/version";
-import { LogOut, Map, LayoutGrid, BarChart3, Settings, PackageX, Router } from "lucide-react";
+import {
+  LogOut,
+  Map,
+  LayoutGrid,
+  BarChart3,
+  Settings,
+  PackageX,
+  Router,
+  UserCircle,
+  Sun,
+  Moon,
+  MessageCircle,
+} from "lucide-react";
+
+const INTERVALO_POLLING_NAO_LIDAS_MS = 45_000;
 
 /** Dashboard e Retiradas sao so pra quem enxerga mais de uma OS/provedor — tecnico ve so as proprias. */
 const NAV_ITEMS = [
   { to: "/", label: "Painel", icon: LayoutGrid, ocultoPara: [] as UserRole[] },
   { to: "/mapa", label: "Mapa", icon: Map, ocultoPara: [] as UserRole[] },
+  {
+    to: "/chat",
+    label: "Chat",
+    icon: MessageCircle,
+    ocultoPara: [UserRole.PROVEDOR],
+  },
   // Retirada e feita por equipe de fora — tecnico da ISPhub nunca executa
   // uma, a tela seria sempre vazia pra ele.
-  { to: "/retiradas", label: "Retiradas", icon: PackageX, ocultoPara: [UserRole.TECNICO] },
-  { to: "/dashboard", label: "Dashboard", icon: BarChart3, ocultoPara: [UserRole.TECNICO] },
+  {
+    to: "/retiradas",
+    label: "Retiradas",
+    icon: PackageX,
+    ocultoPara: [UserRole.TECNICO],
+  },
+  {
+    to: "/dashboard",
+    label: "Dashboard",
+    icon: BarChart3,
+    ocultoPara: [UserRole.TECNICO],
+  },
   // Provisionar ONU (FTTX): técnico faz pelo app; na web é ferramenta de admin/gestor/provedor.
-  { to: "/provisionamento", label: "Provisionar", icon: Router, ocultoPara: [UserRole.TECNICO] },
+  {
+    to: "/provisionamento",
+    label: "Provisionar",
+    icon: Router,
+    ocultoPara: [UserRole.TECNICO],
+  },
 ];
 
 /**
@@ -32,37 +75,181 @@ const NAV_ITEMS = [
  */
 function navItemClass(ativo: boolean): string {
   return cn(
-    "group flex flex-1 flex-col items-center justify-center gap-0.5 rounded-lg py-2 text-[0.65rem] font-medium transition-colors lg:flex-none lg:flex-row lg:gap-1.5 lg:rounded-full lg:px-3 lg:py-1.5 lg:text-sm",
+    "group relative flex flex-1 flex-col items-center justify-center gap-0.5 rounded-lg py-2 text-[0.65rem] font-medium transition-colors lg:flex-none lg:flex-row lg:gap-1.5 lg:rounded-full lg:px-3 lg:py-1.5 lg:text-sm",
     ativo
-      ? "text-primary lg:bg-primary/12 lg:text-primary"
+      ? "text-primary"
       : "text-muted-foreground hover:text-foreground lg:hover:bg-secondary/60",
   );
 }
 
-function NavIcon({ Icon, ativo }: { Icon: typeof LayoutGrid; ativo: boolean }) {
+/**
+ * Pilula de fundo do item de rota ativo no desktop — um unico elemento com
+ * `layoutId` compartilhado entre os Links (motor de layout do Framer Motion
+ * ve a posicao/tamanho mudar entre renders com IDs iguais e anima a
+ * transicao), entao ela DESLIZA pra pilula seguinte em vez de piscar. So no
+ * desktop (`hidden lg:block`) — no mobile o destaque já vem do icone-chip do
+ * NavIcon, que não precisa de deslizamento (abas fixas, sem espaço de sobra).
+ */
+function NavActivePill({
+  shouldReduceMotion,
+}: {
+  shouldReduceMotion: boolean;
+}) {
+  return (
+    <motion.span
+      aria-hidden
+      layoutId="nav-active-pill"
+      className="absolute inset-0 hidden rounded-full bg-primary/12 lg:block"
+      transition={
+        shouldReduceMotion
+          ? { duration: 0 }
+          : { type: "spring", stiffness: 500, damping: 34 }
+      }
+    />
+  );
+}
+
+function NavIcon({
+  Icon,
+  ativo,
+  badge,
+}: {
+  Icon: typeof LayoutGrid;
+  ativo: boolean;
+  badge?: number;
+}) {
   return (
     <span
       className={cn(
-        "flex size-7 items-center justify-center rounded-lg transition-colors lg:size-auto lg:rounded-none lg:bg-transparent",
+        "relative flex size-7 items-center justify-center rounded-lg transition-colors lg:size-auto lg:rounded-none lg:bg-transparent",
         ativo && "bg-primary/12 lg:bg-transparent",
       )}
     >
       <Icon className="size-[1.15rem] shrink-0 lg:size-4" />
+      {!!badge && (
+        <span className="absolute -right-1.5 -top-1.5 flex min-w-4 items-center justify-center rounded-full bg-accent-yellow px-1 text-[0.6rem] font-bold leading-4 text-accent-yellow-foreground lg:-right-2 lg:-top-2">
+          {badge > 9 ? "9+" : badge}
+        </span>
+      )}
     </span>
   );
 }
 
-/** Iniciais do nome (ate 2 letras) pro avatar compacto do cabecalho. */
-function iniciais(nome: string): string {
-  const partes = nome.trim().split(/\s+/);
-  const letras = partes.length > 1 ? [partes[0][0], partes[partes.length - 1][0]] : [partes[0]?.[0] ?? "?"];
-  return letras.join("").toUpperCase();
+/**
+ * Menu do usuario (avatar) em popover — Perfil/Tema/Sair. Antes "Meu perfil"
+ * ficava `hidden lg:flex` (sumia inteiro no mobile) e tema/sair eram botoes
+ * soltos no cabecalho; agora e uma UNICA affordance, visivel em qualquer
+ * largura — mais descobrivel no mobile e menos poluicao de icones no header.
+ */
+function UserMenu({
+  nome,
+  role,
+  onLogout,
+}: {
+  nome: string;
+  role: UserRole;
+  onLogout: () => void;
+}) {
+  const { theme, toggleTheme } = useTheme();
+  const [aberto, setAberto] = useState(false);
+
+  return (
+    <Popover open={aberto} onOpenChange={setAberto}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          title={`${nome} — ${USER_ROLE_LABEL[role]}`}
+          className="flex items-center gap-2 rounded-full py-1 pl-1 pr-1 outline-none transition-colors hover:bg-secondary/60 focus-visible:ring-2 focus-visible:ring-ring lg:pr-2.5"
+        >
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-secondary font-display text-xs font-semibold text-foreground">
+            {iniciais(nome)}
+          </span>
+          <span className="hidden text-left leading-tight xl:block">
+            <span className="block text-sm font-medium text-foreground">
+              {nome}
+            </span>
+            <span className="block text-xs text-muted-foreground">
+              {USER_ROLE_LABEL[role]}
+            </span>
+          </span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-1.5">
+        <div className="border-b border-border px-2.5 pb-2 pt-1 lg:hidden">
+          <p className="truncate text-sm font-medium text-foreground">{nome}</p>
+          <p className="text-xs text-muted-foreground">
+            {USER_ROLE_LABEL[role]}
+          </p>
+        </div>
+        <Link
+          to="/perfil"
+          onClick={() => setAberto(false)}
+          className="mt-1 flex items-center gap-2 rounded-md px-2.5 py-2 text-sm text-foreground outline-none transition-colors hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <UserCircle className="size-4 text-muted-foreground" />
+          Meu perfil
+        </Link>
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-foreground outline-none transition-colors hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {theme === "dark" ? (
+            <Sun className="size-4 text-muted-foreground" />
+          ) : (
+            <Moon className="size-4 text-muted-foreground" />
+          )}
+          {theme === "dark" ? "Tema claro" : "Tema escuro"}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setAberto(false);
+            onLogout();
+          }}
+          className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-destructive outline-none transition-colors hover:bg-destructive/10 focus-visible:ring-2 focus-visible:ring-destructive"
+        >
+          <LogOut className="size-4" />
+          Sair
+        </button>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 /** Casca comum das telas autenticadas: cabecalho com marca, navegação, usuario e logout. */
 export function AppShell({ children }: { children: ReactNode }) {
   const { usuario, logout } = useAuth();
   const location = useLocation();
+  const shouldReduceMotion = useReducedMotion();
+  const [naoLidasChat, setNaoLidasChat] = useState(0);
+
+  useEffect(() => {
+    if (!usuario || usuario.role === UserRole.PROVEDOR) return;
+    async function atualizar() {
+      try {
+        const { naoLidas } = await chatApi.naoLidas();
+        setNaoLidasChat(naoLidas);
+      } catch {
+        // sino do chat nao deve interromper a navegacao por causa de polling
+      }
+    }
+    void atualizar();
+    const t = setInterval(
+      () => void atualizar(),
+      INTERVALO_POLLING_NAO_LIDAS_MS,
+    );
+    return () => clearInterval(t);
+  }, [usuario]);
+
+  useRealtime((evento) => {
+    if (evento.tipo === "chat-mensagem" || evento.tipo === "chat-leitura") {
+      chatApi
+        .naoLidas()
+        .then(({ naoLidas }) => setNaoLidasChat(naoLidas))
+        .catch(() => {});
+    }
+  });
 
   return (
     <div className="min-h-svh">
@@ -75,7 +262,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       */}
       <header className="sticky top-0 z-30 border-b border-border bg-background/95">
         {/* Fio de marca — um unico detalhe de cor no cabecalho, discreto. */}
-        <div aria-hidden className="h-[2px] w-full brand-gradient-bg opacity-70" />
+        <div
+          aria-hidden
+          className="h-[2px] w-full brand-gradient-bg opacity-70"
+        />
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-3 sm:gap-3 sm:px-4 lg:gap-2">
           <Link to="/" className="flex shrink-0 items-center gap-2">
             <span className="font-display text-lg font-bold tracking-tight">
@@ -102,19 +292,47 @@ export function AppShell({ children }: { children: ReactNode }) {
               className="fixed inset-x-0 bottom-0 z-30 flex items-stretch justify-around border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:static lg:inset-auto lg:z-auto lg:flex-1 lg:items-center lg:justify-start lg:gap-1 lg:border-t-0 lg:bg-transparent lg:pb-0 lg:backdrop-blur-none"
               aria-label="Navegação principal"
             >
-              {NAV_ITEMS.filter((item) => !item.ocultoPara.includes(usuario.role)).map(({ to, label, icon: Icon }) => {
+              {NAV_ITEMS.filter(
+                (item) => !item.ocultoPara.includes(usuario.role),
+              ).map(({ to, label, icon: Icon }) => {
                 const ativo = location.pathname === to;
                 return (
-                  <Link key={to} to={to} title={label} className={navItemClass(ativo)}>
-                    <NavIcon Icon={Icon} ativo={ativo} />
-                    <span>{label}</span>
+                  <Link
+                    key={to}
+                    to={to}
+                    title={label}
+                    className={navItemClass(ativo)}
+                  >
+                    {ativo && (
+                      <NavActivePill
+                        shouldReduceMotion={!!shouldReduceMotion}
+                      />
+                    )}
+                    <NavIcon
+                      Icon={Icon}
+                      ativo={ativo}
+                      badge={to === "/chat" ? naoLidasChat : undefined}
+                    />
+                    <span className="relative">{label}</span>
                   </Link>
                 );
               })}
               {usuario.role === UserRole.ADMIN && (
-                <Link to="/admin" title="Administração" className={navItemClass(location.pathname.startsWith("/admin"))}>
-                  <NavIcon Icon={Settings} ativo={location.pathname.startsWith("/admin")} />
-                  <span>Administração</span>
+                <Link
+                  to="/admin"
+                  title="Administração"
+                  className={navItemClass(
+                    location.pathname.startsWith("/admin"),
+                  )}
+                >
+                  {location.pathname.startsWith("/admin") && (
+                    <NavActivePill shouldReduceMotion={!!shouldReduceMotion} />
+                  )}
+                  <NavIcon
+                    Icon={Settings}
+                    ativo={location.pathname.startsWith("/admin")}
+                  />
+                  <span className="relative">Administração</span>
                 </Link>
               )}
             </nav>
@@ -122,27 +340,14 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
             {usuario && <HeaderClock />}
-            {usuario && (
-              <Link
-                to="/perfil"
-                className="hidden items-center gap-2 rounded-full py-1 pl-1 pr-2.5 transition-colors hover:bg-secondary/60 lg:flex"
-                title={`${usuario.nome} — ${USER_ROLE_LABEL[usuario.role]}`}
-              >
-                <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-secondary font-display text-xs font-semibold text-foreground">
-                  {iniciais(usuario.nome)}
-                </span>
-                <span className="hidden text-left leading-tight xl:block">
-                  <span className="block text-sm font-medium text-foreground">{usuario.nome}</span>
-                  <span className="block text-xs text-muted-foreground">{USER_ROLE_LABEL[usuario.role]}</span>
-                </span>
-              </Link>
-            )}
+            {usuario && <CommandPalette />}
             {usuario && <NotificationBell />}
-            <ThemeToggle />
             {usuario && (
-              <Button variant="ghost" size="icon" onClick={logout} title="Sair" aria-label="Sair">
-                <LogOut />
-              </Button>
+              <UserMenu
+                nome={usuario.nome}
+                role={usuario.role}
+                onLogout={logout}
+              />
             )}
           </div>
         </div>
@@ -150,13 +355,19 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {/* pb extra no mobile: a aba de navegacao fixa no rodape nao pode
           cobrir o final da lista/conteudo. */}
-      <main className="mx-auto max-w-7xl px-4 py-6 pb-24 lg:pb-6">{children}</main>
+      <main className="mx-auto max-w-7xl px-4 py-6 pb-24 lg:pb-6">
+        {children}
+      </main>
 
       <footer className="mx-auto hidden max-w-7xl items-center justify-between px-4 py-4 text-xs text-muted-foreground lg:flex">
         <span>
-          <span className="brand-gradient-text font-semibold">ISPhub</span> — central de campo multi-provedor
+          <span className="brand-gradient-text font-semibold">ISPhub</span> —
+          central de campo multi-provedor
         </span>
-        <span className="font-mono tabular-nums" title={APP_BUILD_ID ? `Build ${APP_BUILD_ID}` : undefined}>
+        <span
+          className="font-mono tabular-nums"
+          title={APP_BUILD_ID ? `Build ${APP_BUILD_ID}` : undefined}
+        >
           {APP_VERSION_LABEL}
         </span>
       </footer>
