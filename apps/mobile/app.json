@@ -6,7 +6,8 @@
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "isphub",
-    "userInterfaceStyle": "automatic",
+    "//userInterfaceStyle": "Era 'automatic', mas a paleta em src/theme/tokens.ts e SO clara (alto contraste, pensada pra leitura sob sol) e nao existe useColorScheme em lugar nenhum — o app declarava que se adaptava ao tema do sistema e nao se adaptava, o que so causava incoerencia visual em aparelho no escuro. Fica 'light' ate existir uma paleta escura de verdade.",
+    "userInterfaceStyle": "light",
     "ios": {
       "icon": "./assets/expo.icon"
     },

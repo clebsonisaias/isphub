@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { RecordingPresets, IOSOutputFormat, AudioQuality, useAudioRecorder, useAudioRecorderState, requestRecordingPermissionsAsync } from "expo-audio";
 import { MensagemTipo } from "@isphub/shared";
 import { colors, font, radius, space } from "@/theme/tokens";
@@ -149,8 +150,13 @@ export function Composer({
               {respondendoA.resumo}
             </Text>
           </View>
-          <Pressable onPress={onCancelarResposta} hitSlop={8}>
-            <Text style={styles.respostaFechar}>✕</Text>
+          <Pressable
+            onPress={onCancelarResposta}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Cancelar resposta"
+          >
+            <Ionicons name="close" size={18} color={colors.muted} />
           </Pressable>
         </View>
       )}
@@ -167,11 +173,25 @@ export function Composer({
           </View>
         ) : (
           <>
-            <Pressable onPress={handleAnexarFoto} disabled={processando} style={styles.botaoIcone} hitSlop={8}>
-              <Text style={styles.icone}>📎</Text>
+            <Pressable
+              onPress={handleAnexarFoto}
+              disabled={processando}
+              style={styles.botaoIcone}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Anexar foto"
+            >
+              <Ionicons name="camera-outline" size={24} color={colors.ink2} />
             </Pressable>
-            <Pressable onPress={handleLocalizacao} disabled={processando} style={styles.botaoIcone} hitSlop={8}>
-              <Text style={styles.icone}>📍</Text>
+            <Pressable
+              onPress={handleLocalizacao}
+              disabled={processando}
+              style={styles.botaoIcone}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Enviar minha localização"
+            >
+              <Ionicons name="location-outline" size={24} color={colors.ink2} />
             </Pressable>
             <TextInput
               value={texto}
@@ -191,20 +211,44 @@ export function Composer({
           <ActivityIndicator color={colors.brand} style={styles.botaoEnviar} />
         ) : estadoGravacao.isRecording ? (
           <>
-            <Pressable onPress={() => pararGravacao(true)} style={styles.botaoIcone} hitSlop={8}>
-              <Text style={styles.icone}>✕</Text>
+            <Pressable
+              onPress={() => pararGravacao(true)}
+              style={styles.botaoIcone}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Cancelar gravação"
+            >
+              <Ionicons name="close" size={24} color={colors.ink2} />
             </Pressable>
-            <Pressable onPress={() => pararGravacao(false)} style={styles.botaoEnviarBrand} hitSlop={8}>
-              <Text style={styles.botaoEnviarTexto}>■</Text>
+            <Pressable
+              onPress={() => pararGravacao(false)}
+              style={styles.botaoEnviarBrand}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Enviar áudio"
+            >
+              <Ionicons name="stop" size={20} color={colors.onBrand} />
             </Pressable>
           </>
         ) : texto.trim() ? (
-          <Pressable onPress={enviarTexto} style={styles.botaoEnviarBrand} hitSlop={8}>
-            <Text style={styles.botaoEnviarTexto}>➤</Text>
+          <Pressable
+            onPress={enviarTexto}
+            style={styles.botaoEnviarBrand}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Enviar mensagem"
+          >
+            <Ionicons name="send" size={18} color={colors.onBrand} />
           </Pressable>
         ) : (
-          <Pressable onPress={iniciarGravacao} style={styles.botaoIcone} hitSlop={8}>
-            <Text style={styles.icone}>🎤</Text>
+          <Pressable
+            onPress={iniciarGravacao}
+            style={styles.botaoIcone}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Gravar áudio"
+          >
+            <Ionicons name="mic-outline" size={24} color={colors.ink2} />
           </Pressable>
         )}
       </View>
