@@ -1,3 +1,4 @@
+import compression from "compression";
 import cors from "cors";
 import express from "express";
 import helmet from "helmet";
@@ -26,9 +27,22 @@ import { chatRouter } from "./routes/chat.js";
 export function createApp() {
   const app = express();
 
+  // A API roda atras do proxy do Coolify (Traefik). Sem isto, `req.ip` e o IP
+  // do proxy — IGUAL pra todo mundo — e todo rate limit vira um balde unico
+  // global: 10 logins errados de um desconhecido travavam o login de TODA a
+  // operacao por 15 min (e o brute-force real ficava sem barreira nenhuma).
+  // `1` = confia num unico proxy a frente; nao usar `true` (confia em qualquer
+  // X-Forwarded-For, o cliente forja o proprio IP e escapa do limite).
+  app.set("trust proxy", 1);
+
   app.use(helmet());
   app.use(cors({ origin: env.WEB_ORIGIN, credentials: true }));
-  app.use(express.json({ limit: "5mb" }));
+  // Compressao antes das rotas: a fila devolve ate 2000 itens de JSON muito
+  // repetitivo — gzip corta a maior parte do trafego do app em campo (3G/4G).
+  app.use(compression());
+  // Limite global apertado. O corpo grande so e legitimo em anexos (foto/audio
+  // em base64), que tem rota propria — nao ha motivo pra /auth/login aceitar 5MB.
+  app.use(express.json({ limit: "1mb" }));
 
   app.get("/health", (_req, res) => {
     res.json({ ok: true, service: "isphub-api" });
