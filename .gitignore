@@ -32,3 +32,6 @@ apps/api/uploads/
 # editor
 .vscode/
 .idea/
+
+# Ferramental local do Claude Code (settings, worktrees) — nao versionado
+.claude/

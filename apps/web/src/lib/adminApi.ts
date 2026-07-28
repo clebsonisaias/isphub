@@ -1,5 +1,22 @@
-import type { Categoria, ErpConfigPublic, Provedor, TipoOs, UserRole, UsuarioPublic } from "@isphub/shared";
+import type { Categoria, ErpConfigPublic, ModuloId, Provedor, TipoOs, UserRole, UsuarioPublic } from "@isphub/shared";
 import { api } from "@/lib/apiClient";
+
+/** Item do catálogo de módulos com o estado atual (o que GET /admin/modulos devolve). */
+export interface ModuloAdmin {
+  id: ModuloId;
+  nome: string;
+  icone: string;
+  core: boolean;
+  ativo: boolean;
+  ordem: number;
+  rolesPermitidos: UserRole[];
+}
+
+export const modulosApi = {
+  listar: () => api.get<ModuloAdmin[]>("/admin/modulos"),
+  atualizar: (moduloId: ModuloId, data: Partial<{ ativo: boolean; ordem: number; rolesPermitidos: UserRole[] }>) =>
+    api.patch<unknown>(`/admin/modulos/${moduloId}`, data),
+};
 
 export const provedoresApi = {
   listar: () => api.get<Provedor[]>("/provedores"),

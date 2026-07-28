@@ -1,7 +1,21 @@
-import { OS_STATUS_LABEL, OsStatus, SgpOsStatus, UserRole, toSgpOsStatus, type OsEventoTipo } from "@isphub/shared";
+import {
+  OS_STATUS_LABEL,
+  OsStatus,
+  SgpOsStatus,
+  UserRole,
+  toSgpOsStatus,
+  type OsEventoTipo,
+  type RealtimeEventoTipo,
+} from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../middleware/errorHandler.js";
 import { buildConnector } from "./erpConnectorService.js";
+import { emitParaUsuario } from "./realtimeHub.js";
+
+/** Empurra um evento realtime pro tecnico da OS (best-effort — SSE so reduz latencia). */
+function notificarTecnico(tecnicoId: string | null, tipo: RealtimeEventoTipo, osId: string) {
+  emitParaUsuario(tecnicoId, { tipo, osId, em: new Date().toISOString() });
+}
 
 /**
  * Servico de write-back: toda acao do usuario sobre uma OS chama primeiro o
@@ -62,6 +76,7 @@ export async function marcarACaminho(ordemServicoId: string, autorId: string) {
     }),
     evento(os.id, "status", autorId, "Marcado como a caminho"),
   ]);
+  notificarTecnico(osAtualizada.tecnicoId, "os-alterada", os.id);
   return osAtualizada;
 }
 
@@ -92,6 +107,7 @@ export async function mudarStatus(ordemServicoId: string, novoStatus: OsStatus, 
     }),
     evento(os.id, "status", autorId, descricao),
   ]);
+  notificarTecnico(osAtualizada.tecnicoId, "os-alterada", os.id);
   return osAtualizada;
 }
 
@@ -113,6 +129,7 @@ export async function adicionarAnotacao(ordemServicoId: string, texto: string, a
     }),
     evento(os.id, "anotacao", autorId, texto),
   ]);
+  notificarTecnico(osAtualizada.tecnicoId, "os-alterada", os.id);
   return osAtualizada;
 }
 
@@ -176,5 +193,7 @@ export async function atribuirTecnico(ordemServicoId: string, tecnicoId: string,
     }),
   ]);
 
+  // Nova OS pro tecnico: empurra pra lista dele aparecer na hora + badge.
+  notificarTecnico(tecnicoId, "os-atribuida", ordemServicoId);
   return osAtualizada;
 }

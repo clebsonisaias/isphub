@@ -15,8 +15,12 @@ import { ordensServicoRouter } from "./routes/ordensServico.js";
 import { dashboardRouter } from "./routes/dashboard.js";
 import { tecnicosRouter } from "./routes/tecnicos.js";
 import { conexaoRouter } from "./routes/conexao.js";
+import { fttxRouter } from "./routes/fttx.js";
 import { notificacoesRouter } from "./routes/notificacoes.js";
 import { horaRouter } from "./routes/hora.js";
+import { configRouter, adminModulosRouter } from "./routes/config.js";
+import { eventosRouter } from "./routes/eventos.js";
+import { syncMinhasRouter } from "./routes/syncMinhas.js";
 
 export function createApp() {
   const app = express();
@@ -36,10 +40,15 @@ export function createApp() {
   app.use("/tecnicos", tecnicosRouter);
   app.use("/notificacoes", notificacoesRouter);
   app.use("/hora", horaRouter);
+  app.use("/config", configRouter);
+  app.use("/admin/modulos", adminModulosRouter);
+  app.use("/eventos", eventosRouter);
+  app.use("/sync", syncMinhasRouter);
   app.use("/provedores/:provedorId/erp-config", erpConfigRouter);
   app.use("/provedores/:provedorId/tipos-os", tiposOsRouter);
   app.use("/provedores/:provedorId/sync", syncRouter);
   app.use("/provedores/:provedorId/conexao", conexaoRouter);
+  app.use("/provedores/:provedorId/fttx", fttxRouter);
   app.use("/fila", filaRouter);
   app.use("/ordens-servico", ordensServicoRouter);
   app.use("/dashboard", dashboardRouter);
