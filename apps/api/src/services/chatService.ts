@@ -30,9 +30,25 @@ import type { JwtPayload } from "./authService.js";
 /** ~2min sem atividade = offline. Mesma janela usada pelo middleware de presenca. */
 const JANELA_ONLINE_MS = 2 * 60_000;
 
-function estaOnline(ultimaAtividadeEm: Date | null): boolean {
+export function estaOnline(ultimaAtividadeEm: Date | null): boolean {
   if (!ultimaAtividadeEm) return false;
   return Date.now() - ultimaAtividadeEm.getTime() < JANELA_ONLINE_MS;
+}
+
+/**
+ * A marca d'agua de nao-lidas: sem uma linha "lido" por mensagem, conta
+ * quantas mensagens (nao apagadas) chegaram DEPOIS da ultima leitura
+ * registrada. `ultimaLeituraEm: null` (nunca leu) conta TODAS as mensagens
+ * nao apagadas da conversa — por isso o espalhamento condicional em vez de
+ * `criadoEm: { gt: null }` (que o Prisma trataria como "sem filtro", nao como
+ * "tudo", numa leitura ingenua).
+ */
+export function whereMensagensNaoLidas(conversaId: string, ultimaLeituraEm: Date | null) {
+  return {
+    conversaId,
+    apagadoEm: null,
+    ...(ultimaLeituraEm ? { criadoEm: { gt: ultimaLeituraEm } } : {}),
+  };
 }
 
 function participanteResumo(u: { id: string; nome: string; role: string; ultimaAtividadeEm: Date | null }): ParticipanteResumo {
@@ -46,7 +62,7 @@ function participanteResumo(u: { id: string; nome: string; role: string; ultimaA
 }
 
 /** Preview curto pra resposta citada / ultima mensagem — bolha ainda nao apagada. */
-function resumoConteudo(m: { tipo: string; corpo: string | null; apagadoEm: Date | null }): string {
+export function resumoConteudo(m: { tipo: string; corpo: string | null; apagadoEm: Date | null }): string {
   if (m.apagadoEm) return "Mensagem apagada";
   if (m.corpo) return m.corpo.length > 80 ? `${m.corpo.slice(0, 80)}…` : m.corpo;
   switch (m.tipo) {
@@ -132,11 +148,7 @@ async function montarConversaResumo(conversaId: string, usuarioId: string): Prom
         : "Conversa");
 
   const naoLidas = await prisma.mensagem.count({
-    where: {
-      conversaId,
-      apagadoEm: null,
-      ...(meuParticipante?.ultimaLeituraEm ? { criadoEm: { gt: meuParticipante.ultimaLeituraEm } } : {}),
-    },
+    where: whereMensagensNaoLidas(conversaId, meuParticipante?.ultimaLeituraEm ?? null),
   });
 
   const ultimaMensagem: MensagemResumo | null = ultima
@@ -321,7 +333,7 @@ export interface EnviarMensagemInput {
   respondendoAId?: string | null;
 }
 
-function validarMidia(input: EnviarMensagemInput): { dados: Buffer | null; tamanho: number | null } {
+export function validarMidia(input: EnviarMensagemInput): { dados: Buffer | null; tamanho: number | null } {
   if (input.tipo === MensagemTipo.FOTO) {
     if (!input.anexoBase64 || !input.anexoMime) throw new HttpError(400, "Foto sem dados/mime");
     if (!MIMES_FOTO.includes(input.anexoMime)) throw new HttpError(400, "Formato de foto nao suportado");
@@ -345,7 +357,7 @@ function validarMidia(input: EnviarMensagemInput): { dados: Buffer | null; taman
 }
 
 /** Extrai "@nome" do corpo e resolve pra participantes cujo nome (ou primeiro nome) bate, case-insensitive. */
-function resolverMencoes(corpo: string, participantes: { usuarioId: string; nome: string }[]): string[] {
+export function resolverMencoes(corpo: string, participantes: { usuarioId: string; nome: string }[]): string[] {
   const arrobas = Array.from(corpo.matchAll(/@([\p{L}0-9._-]+)/gu)).map((m) => m[1].toLowerCase());
   if (arrobas.length === 0) return [];
   const encontrados = new Set<string>();
@@ -553,15 +565,7 @@ export async function contarNaoLidas(usuarioId: string): Promise<number> {
     select: { conversaId: true, ultimaLeituraEm: true },
   });
   const totais = await Promise.all(
-    participacoes.map((p) =>
-      prisma.mensagem.count({
-        where: {
-          conversaId: p.conversaId,
-          apagadoEm: null,
-          ...(p.ultimaLeituraEm ? { criadoEm: { gt: p.ultimaLeituraEm } } : {}),
-        },
-      }),
-    ),
+    participacoes.map((p) => prisma.mensagem.count({ where: whereMensagensNaoLidas(p.conversaId, p.ultimaLeituraEm) })),
   );
   return totais.reduce((acc, n) => acc + n, 0);
 }
