@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { USER_ROLE_LABEL } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
+import { AnimatedPage } from "@/components/AnimatedPage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -47,6 +48,7 @@ export function PerfilPage() {
 
   return (
     <AppShell>
+      <AnimatedPage>
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Meu perfil</h1>
         <p className="text-sm text-muted-foreground">
@@ -106,6 +108,7 @@ export function PerfilPage() {
           </form>
         </CardContent>
       </Card>
+      </AnimatedPage>
     </AppShell>
   );
 }

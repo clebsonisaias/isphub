@@ -5,6 +5,8 @@ import { ordensServicoApi } from "@/lib/filaApi";
 import { api, ApiError } from "@/lib/apiClient";
 import { comprimirImagem } from "@/lib/imagem";
 import { useToast } from "@/context/ToastContext";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/EmptyState";
 import { Camera, ImageOff } from "lucide-react";
 
 function mensagem(err: unknown): string {
@@ -113,9 +115,13 @@ export function EvidenciaGallery({ ordemServicoId }: { ordemServicoId: string })
       </Button>
 
       {evidencias === null ? (
-        <p className="text-sm text-muted-foreground">Carregando...</p>
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="aspect-square rounded-lg" />
+          ))}
+        </div>
       ) : evidencias.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nenhuma foto anexada ainda.</p>
+        <EmptyState title="Nenhuma foto anexada ainda" className="py-6" />
       ) : (
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
           {evidencias.map((ev) => (

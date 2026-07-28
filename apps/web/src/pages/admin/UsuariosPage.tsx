@@ -1,11 +1,14 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { UserRole, USER_ROLE_LABEL, type Provedor, type UsuarioPublic } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
+import { AnimatedPage } from "@/components/AnimatedPage";
 import { AdminNav } from "@/components/admin/AdminNav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/EmptyState";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
@@ -79,6 +82,7 @@ export function UsuariosPage() {
 
   return (
     <AppShell>
+      <AnimatedPage>
       <AdminNav />
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -93,11 +97,15 @@ export function UsuariosPage() {
       </div>
 
       {carregando ? (
-        <p className="text-sm text-muted-foreground">Carregando...</p>
+        <div className="flex flex-col gap-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-16 rounded-xl" />
+          ))}
+        </div>
       ) : usuarios.length === 0 ? (
         <Card>
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            Nenhum usuário cadastrado ainda.
+          <CardContent>
+            <EmptyState title="Nenhum usuário cadastrado ainda" />
           </CardContent>
         </Card>
       ) : (
@@ -142,6 +150,7 @@ export function UsuariosPage() {
         }}
       />
       <RedefinirSenhaDialog usuario={senhaAlvo} onClose={() => setSenhaAlvo(null)} />
+      </AnimatedPage>
     </AppShell>
   );
 }

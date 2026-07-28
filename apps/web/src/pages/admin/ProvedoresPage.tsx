@@ -2,10 +2,13 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import type { Provedor } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
+import { AnimatedPage } from "@/components/AnimatedPage";
 import { AdminNav } from "@/components/admin/AdminNav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/EmptyState";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
@@ -46,6 +49,7 @@ export function ProvedoresPage() {
 
   return (
     <AppShell>
+      <AnimatedPage>
       <AdminNav />
       <div className="mb-6 flex items-center justify-between">
         <div>
@@ -65,11 +69,15 @@ export function ProvedoresPage() {
       </div>
 
       {carregando ? (
-        <p className="text-sm text-muted-foreground">Carregando...</p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-20 rounded-xl" />
+          ))}
+        </div>
       ) : provedores.length === 0 ? (
         <Card>
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            Nenhum provedor cadastrado ainda. Clique em "Novo provedor" para comecar.
+          <CardContent>
+            <EmptyState title="Nenhum provedor cadastrado ainda" description='Clique em "Novo provedor" para começar.' />
           </CardContent>
         </Card>
       ) : (
@@ -92,6 +100,7 @@ export function ProvedoresPage() {
           ))}
         </div>
       )}
+      </AnimatedPage>
     </AppShell>
   );
 }

@@ -4,6 +4,8 @@ import L from "leaflet";
 import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
 import type { FilaItem, Provedor } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
+import { AnimatedPage } from "@/components/AnimatedPage";
+import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ProvedorBadge } from "@/components/ProvedorBadge";
 import { ContratoStatusBadge } from "@/components/ContratoStatusBadge";
@@ -92,6 +94,7 @@ export function MapaPage() {
 
   return (
     <AppShell>
+      <AnimatedPage>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Mapa</h1>
@@ -116,7 +119,7 @@ export function MapaPage() {
       </div>
 
       {carregando ? (
-        <p className="text-sm text-muted-foreground">Carregando...</p>
+        <Skeleton className="h-[70vh] w-full rounded-xl" />
       ) : (
         <div className="overflow-hidden rounded-xl border border-border" style={{ height: "70vh" }}>
           <MapContainer center={BRASIL_CENTER} zoom={4} style={{ height: "100%", width: "100%" }}>
@@ -158,6 +161,7 @@ export function MapaPage() {
           </MapContainer>
         </div>
       )}
+      </AnimatedPage>
     </AppShell>
   );
 }

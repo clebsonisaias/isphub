@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/EmptyState";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { cn } from "@/lib/utils";
@@ -461,7 +463,7 @@ export function FilaWorkspace({
           {primeiraCarga ? (
             <div className="flex flex-col gap-2">
               {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="h-28 animate-pulse rounded-xl border border-border bg-card" />
+                <Skeleton key={i} className="h-28 rounded-xl border border-border" />
               ))}
             </div>
           ) : paginaItens.length === 0 ? (
@@ -471,16 +473,18 @@ export function FilaWorkspace({
               transition={{ duration: 0.2 }}
             >
               <Card>
-                <CardContent className="flex flex-col items-center gap-3 py-12 text-center text-sm text-muted-foreground">
+                <CardContent>
                   {temFiltroAtivo ? (
-                    <>
-                      <span>Nenhuma OS com os filtros atuais.</span>
-                      <Button variant="outline" size="sm" onClick={limparFiltros}>
-                        Limpar filtros
-                      </Button>
-                    </>
+                    <EmptyState
+                      title="Nenhuma OS com os filtros atuais"
+                      action={
+                        <Button variant="outline" size="sm" onClick={limparFiltros}>
+                          Limpar filtros
+                        </Button>
+                      }
+                    />
                   ) : (
-                    <span>{visao === "concluidas" ? vazioConcluidas : vazioAbertas}</span>
+                    <EmptyState title={visao === "concluidas" ? vazioConcluidas : vazioAbertas} />
                   )}
                 </CardContent>
               </Card>

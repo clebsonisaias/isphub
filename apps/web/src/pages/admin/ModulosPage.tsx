@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import type { ModuloId } from "@isphub/shared";
 import { USER_ROLE_LABEL } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
+import { AnimatedPage } from "@/components/AnimatedPage";
 import { AdminNav } from "@/components/admin/AdminNav";
 import { Switch } from "@/components/ui/switch";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { modulosApi, type ModuloAdmin } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
@@ -86,6 +88,7 @@ export function ModulosPage() {
 
   return (
     <AppShell>
+      <AnimatedPage>
       <AdminNav />
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Módulos do app</h1>
@@ -96,7 +99,11 @@ export function ModulosPage() {
       </div>
 
       {carregando ? (
-        <p className="text-sm text-muted-foreground">Carregando...</p>
+        <div className="flex flex-col gap-2.5">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-16 rounded-xl" />
+          ))}
+        </div>
       ) : (
         <div className="flex flex-col gap-2.5">
           {modulos.map((m, i) => {
@@ -164,6 +171,7 @@ export function ModulosPage() {
           })}
         </div>
       )}
+      </AnimatedPage>
     </AppShell>
   );
 }

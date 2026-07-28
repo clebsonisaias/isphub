@@ -1,11 +1,14 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { Categoria } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
+import { AnimatedPage } from "@/components/AnimatedPage";
 import { AdminNav } from "@/components/admin/AdminNav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/EmptyState";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
@@ -82,6 +85,7 @@ export function CategoriasPage() {
 
   return (
     <AppShell>
+      <AnimatedPage>
       <AdminNav />
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -97,11 +101,15 @@ export function CategoriasPage() {
       </div>
 
       {carregando ? (
-        <p className="text-sm text-muted-foreground">Carregando...</p>
+        <div className="flex flex-col gap-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-16 rounded-xl" />
+          ))}
+        </div>
       ) : categorias.length === 0 ? (
         <Card>
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            Nenhuma categoria cadastrada ainda.
+          <CardContent>
+            <EmptyState title="Nenhuma categoria cadastrada ainda" />
           </CardContent>
         </Card>
       ) : (
@@ -170,6 +178,7 @@ export function CategoriasPage() {
           void carregar();
         }}
       />
+      </AnimatedPage>
     </AppShell>
   );
 }
