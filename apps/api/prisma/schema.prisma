@@ -207,6 +207,8 @@ model OrdemServico {
   atribuicoes   Atribuicao[]
   eventos       OsEvento[]
   notificacoes  Notificacao[]
+  /// Thread de chat da OS — no maximo 1 por OS (ver Conversa.ordemServicoId @unique).
+  conversa      Conversa?
 
   @@unique([provedorId, sgpOsId])
   @@index([provedorId, status])
@@ -227,11 +229,20 @@ model Usuario {
   provedor     Provedor? @relation(fields: [provedorId], references: [id], onDelete: SetNull)
   ativo        Boolean  @default(true)
   criadoEm     DateTime @default(now())
+  /// Presenca barata do chat: atualizado (com throttle de ~60s, ver
+  /// middleware de presenca) a cada request autenticado. online = visto nos
+  /// ultimos ~2min — nunca calculado no cliente.
+  ultimaAtividadeEm DateTime?
 
   ordensServico OrdemServico[]
   atribuicoes   Atribuicao[]
   eventos       OsEvento[]
   notificacoes  Notificacao[]
+
+  conversasCriadas     Conversa[]             @relation("ConversasCriadas")
+  participacoesChat    ConversaParticipante[]
+  mensagens            Mensagem[]             @relation("MensagensDoAutor")
+  mensagemReacoes      MensagemReacao[]
 
   @@map("usuarios")
 }
@@ -317,4 +328,123 @@ model SyncLog {
 
   @@index([provedorId, iniciadoEm])
   @@map("sync_logs")
+}
+
+// ---- Chat interno de operacao ----
+// Coordenacao de campo ancorada no trabalho (thread por OS), auditavel (soft
+// delete, nunca apaga de verdade), restrita a equipe interna — PROVEDOR nunca
+// participa (a guarda de verdade e no servidor: chatService.podeParticipar).
+
+enum ConversaTipo {
+  direta
+  grupo
+  os
+  avisos
+}
+
+enum MensagemTipo {
+  texto
+  foto
+  audio
+  localizacao
+  os_ref
+  sistema
+}
+
+model Conversa {
+  id             String        @id @default(uuid())
+  tipo           ConversaTipo
+  /// Titulo explicito (grupo/avisos) — DM e thread de OS derivam o titulo no
+  /// servidor (nome do outro participante / "OS #sgpOsId"), nao fica salvo aqui.
+  titulo         String?
+  /// Thread de OS: no maximo 1 conversa por OS (idempotencia de
+  /// garantirConversaDeOs vem desse @unique).
+  ordemServicoId String?       @unique
+  ordemServico   OrdemServico? @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
+  criadoPorId    String?
+  criadoPor      Usuario?      @relation("ConversasCriadas", fields: [criadoPorId], references: [id], onDelete: SetNull)
+  /// Denormalizado: ordena a lista de conversas sem varrer mensagens (evita N+1).
+  ultimaMensagemEm DateTime?
+  arquivada      Boolean       @default(false)
+  criadoEm       DateTime      @default(now())
+
+  participantes  ConversaParticipante[]
+  mensagens      Mensagem[]
+
+  @@index([tipo, ultimaMensagemEm])
+  @@map("conversas")
+}
+
+model ConversaParticipante {
+  id          String    @id @default(uuid())
+  conversaId  String
+  conversa    Conversa  @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  usuarioId   String
+  usuario     Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  /// Pode renomear/adicionar/remover participante (grupo). Sem efeito em DM/OS/avisos.
+  admin       Boolean   @default(false)
+  /// Marca d'agua de leitura: nao-lidas = mensagens com criadoEm > este valor.
+  /// Evita uma linha de "lido" por mensagem, que explodiria em volume.
+  ultimaLeituraEm DateTime?
+  silenciado  Boolean   @default(false)
+  /// Saiu do grupo (soft — preserva o historico de quem participou quando).
+  saiuEm      DateTime?
+
+  @@unique([conversaId, usuarioId])
+  @@index([usuarioId, conversaId])
+  @@map("conversa_participantes")
+}
+
+model Mensagem {
+  id            String       @id @default(uuid())
+  conversaId    String
+  conversa      Conversa     @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  /// null = mensagem do sistema ("Fulano assumiu a OS"), sem autor humano.
+  autorId       String?
+  autor         Usuario?     @relation("MensagensDoAutor", fields: [autorId], references: [id], onDelete: SetNull)
+  tipo          MensagemTipo
+  /// Texto, legenda da foto, ou rotulo do sistema.
+  corpo         String?
+  /// Midia local (chat NAO e evidencia de OS — nao espelha o SGP, entao nao
+  /// segue o padrao de proxy-ao-vivo das fotos de evidencia). Limite validado
+  /// no servidor: foto <=400KB, audio <=60s e <=500KB (ver chatService). Se o
+  /// volume crescer, migrar pra S3/MinIO e trocar `anexoDados` por uma URL —
+  /// o contrato de API (Mensagem.anexoMime/anexoTamanho) nao muda.
+  anexoDados    Bytes?
+  anexoMime     String?
+  anexoTamanho  Int?
+  /// Audio, em segundos.
+  duracaoSeg    Int?
+  lat           Float?
+  lng           Float?
+  /// Card de OS compartilhado no chat (tipo os_ref).
+  ordemServicoId String?
+  respondendoAId String?
+  respondendoA  Mensagem?    @relation("Respostas", fields: [respondendoAId], references: [id], onDelete: SetNull)
+  respostas     Mensagem[]   @relation("Respostas")
+  editadoEm     DateTime?
+  /// SOFT DELETE — contexto operacional e prova; nada some do banco. Quem
+  /// apagou fica so como String (mesmo padrao de Atribuicao.atribuidoPor —
+  /// auditoria informativa, sem FK).
+  apagadoEm     DateTime?
+  apagadoPorId  String?
+  criadoEm      DateTime     @default(now())
+
+  reacoes       MensagemReacao[]
+
+  @@index([conversaId, criadoEm])
+  @@map("mensagens")
+}
+
+model MensagemReacao {
+  id         String   @id @default(uuid())
+  mensagemId String
+  mensagem   Mensagem @relation(fields: [mensagemId], references: [id], onDelete: Cascade)
+  usuarioId  String
+  usuario    Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  emoji      String
+  criadoEm   DateTime @default(now())
+
+  @@unique([mensagemId, usuarioId, emoji])
+  @@map("mensagem_reacoes")
 }
