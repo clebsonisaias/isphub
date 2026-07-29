@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { RecordingPresets, IOSOutputFormat, AudioQuality, useAudioRecorder, useAudioRecorderState, requestRecordingPermissionsAsync } from "expo-audio";
 import { MensagemTipo } from "@isphub/shared";
@@ -36,6 +37,7 @@ export function Composer({
   podeEnviar: boolean;
   motivoBloqueio?: string;
 }) {
+  const insets = useSafeAreaInsets();
   const [texto, setTexto] = useState("");
   const [processando, setProcessando] = useState(false);
   const recorder = useAudioRecorder(OPCOES_GRAVACAO);
@@ -132,14 +134,14 @@ export function Composer({
 
   if (!podeEnviar) {
     return (
-      <View style={styles.bloqueado}>
+      <View style={[styles.bloqueado, { paddingBottom: space.md + insets.bottom }]}>
         <Text style={styles.bloqueadoTexto}>{motivoBloqueio ?? "Você não pode enviar mensagens nesta conversa."}</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, { paddingBottom: insets.bottom }]}>
       {respondendoA && (
         <View style={styles.respostaBar}>
           <View style={styles.respostaTexto}>

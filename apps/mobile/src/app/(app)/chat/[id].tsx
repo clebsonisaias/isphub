@@ -136,7 +136,12 @@ export default function ChatThread() {
   const fotoUri = useAvatarUri(outroParticipante?.usuarioId, outroParticipante?.temFoto, outroParticipante?.fotoVersao);
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={90}>
+    // O composer fica no FUNDO do KAV: com o behavior aplicado, o padding/altura
+    // vira exatamente a altura do teclado, entao ele sobe pra cima do teclado —
+    // offset 0 e o certo (o valor antigo so criava um vao). O bug era o Android
+    // com behavior=undefined nao fazer NADA (com edge-to-edge a janela nao
+    // redimensiona sozinha), deixando o composer atras do teclado.
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={0}>
       <Stack.Screen
         options={{
           headerShown: true,

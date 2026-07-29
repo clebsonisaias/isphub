@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Platform, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CANAL_WHATSAPP_LABEL, CanalWhatsapp, MensagemClienteDirecao, type MensagemClienteDTO } from "@isphub/shared";
 import { useAuth } from "@/lib/auth";
 import { Button, Field, Muted, Screen } from "@/components/ui";
@@ -55,6 +56,7 @@ function Bolha({ mensagem, souAutor }: { mensagem: MensagemClienteDTO; souAutor:
 export default function ClienteChatThread() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { usuario } = useAuth();
+  const insets = useSafeAreaInsets();
   const podeSupervisionar = usePodeSupervisionar();
   const [texto, setTexto] = useState("");
   const mensagensQuery = useMensagensCliente(id);
@@ -94,7 +96,9 @@ export default function ClienteChatThread() {
   }
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={90}>
+    // Ver nota na thread do chat interno: o composer fica no fundo do KAV, entao
+    // offset 0 o encosta no teclado; o bug era o Android sem behavior nao reagir.
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={0}>
       <Screen style={{ paddingHorizontal: 0 }}>
         <Stack.Screen options={{ headerShown: true, title: conversa?.nomeContato ?? conversa?.telefone ?? "Conversa" }} />
 
@@ -128,7 +132,7 @@ export default function ClienteChatThread() {
           </Muted>
         )}
 
-        <View style={{ flexDirection: "row", gap: space.sm, paddingHorizontal: space.lg, paddingVertical: space.sm, alignItems: "center" }}>
+        <View style={{ flexDirection: "row", gap: space.sm, paddingHorizontal: space.lg, paddingTop: space.sm, paddingBottom: space.sm + insets.bottom, alignItems: "center", borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: colors.card }}>
           <Field
             value={texto}
             onChangeText={setTexto}
