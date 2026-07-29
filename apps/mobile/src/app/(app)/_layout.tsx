@@ -1,3 +1,4 @@
+import { Feather } from "@expo/vector-icons";
 import { Redirect, Tabs } from "expo-router";
 import { ActivityIndicator, View } from "react-native";
 import type { ModuloId } from "@isphub/shared";
@@ -57,6 +58,15 @@ export default function AppLayout() {
       {ocultas.map((id) => (
         <Tabs.Screen key={id} name={ROTAS_MODULO[id]!.rota} options={{ href: null }} />
       ))}
+      {/* Perfil/conta NAO e modulo de negocio — sempre presente, independente
+          dos toggles do admin em /admin/modulos. */}
+      <Tabs.Screen
+        name="perfil"
+        options={{
+          title: "Perfil",
+          tabBarIcon: ({ color, size }) => <Feather name="user" color={color} size={size} />,
+        }}
+      />
     </Tabs>
   );
 }

@@ -18,6 +18,7 @@ export const MODULO_IDS = [
   "retiradas", // fila de retirada/cancelamento (equipe externa)
   "notificacoes", // in-app + (depois) push
   "chat", // conversa interna (DM, grupo, thread por OS, avisos)
+  "chat-clientes", // caixa de entrada omnichannel de WhatsApp (Meta/Evolution) com clientes
 ] as const;
 
 export type ModuloId = (typeof MODULO_IDS)[number];
@@ -69,6 +70,8 @@ export const MODULO_CATALOGO: Record<ModuloId, ModuloMeta> = {
   retiradas: { id: "retiradas", nome: "Retiradas", icone: "package-x", core: false, ativoPadrao: false, ordemPadrao: 60, rolesPadrao: [UserRole.ADMIN, UserRole.GESTOR, UserRole.TECNICO] },
   // Coordenacao de campo (nao social): DM, grupo, thread por OS, avisos. PROVEDOR nunca participa (ver chatService.podeParticipar).
   chat: { id: "chat", nome: "Chat", icone: "message-circle", core: false, ativoPadrao: true, ordemPadrao: 45, rolesPadrao: [UserRole.ADMIN, UserRole.GESTOR, UserRole.TECNICO] },
+  // ativoPadrao:false — inutil ate um admin configurar pelo menos um canal WhatsApp em /admin/canais-whatsapp.
+  "chat-clientes": { id: "chat-clientes", nome: "Conversas com clientes", icone: "message-square-text", core: false, ativoPadrao: false, ordemPadrao: 55, rolesPadrao: [UserRole.ADMIN, UserRole.GESTOR, UserRole.TECNICO] },
 };
 
 /** Modulo ja resolvido para um usuario (o que `GET /config` devolve). */
@@ -105,7 +108,9 @@ export type RealtimeEventoTipo =
   | "chat-mensagem"
   | "chat-leitura"
   | "chat-digitando"
-  | "chat-conversa";
+  | "chat-conversa"
+  | "cliente-chat-mensagem"
+  | "cliente-chat-conversa";
 
 export interface RealtimeEvento {
   tipo: RealtimeEventoTipo;

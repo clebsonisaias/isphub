@@ -147,7 +147,19 @@ export function useAcoesChat(conversaId: string) {
       const otimista: Mensagem = {
         id: `otimista-${Date.now()}`,
         conversaId,
-        autor: usuario ? { usuarioId: usuario.id, nome: usuario.nome, role: usuario.role, online: true, ultimaAtividadeEm: null } : null,
+        autor: usuario
+          ? {
+              usuarioId: usuario.id,
+              nome: usuario.nome,
+              role: usuario.role,
+              online: true,
+              ultimaAtividadeEm: null,
+              temFoto: usuario.temFoto,
+              fotoVersao: usuario.fotoVersao,
+              status: usuario.status,
+              statusTexto: usuario.statusTexto,
+            }
+          : null,
         tipo: input.tipo,
         corpo: input.corpo ?? null,
         anexoMime: input.anexoMime ?? null,

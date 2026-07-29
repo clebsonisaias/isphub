@@ -20,6 +20,7 @@ const ICONE_MODULO: Record<ModuloId, { familia: "feather" | "mci"; nome: string 
   assinatura: { familia: "mci", nome: "draw-pen" },
   retiradas: { familia: "mci", nome: "package-variant-remove" },
   chat: { familia: "feather", nome: "message-circle" },
+  "chat-clientes": { familia: "mci", nome: "whatsapp" },
 };
 
 export function ModuloIcon({ id, color, size }: { id: ModuloId; color: ColorValue; size: number }) {

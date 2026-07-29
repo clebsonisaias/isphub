@@ -10,7 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { modulosApi, type ModuloAdmin } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
-import { LayoutList, Camera, Route, Wifi, PenLine, PackageX, Bell, Router, MessageCircle, Lock, ChevronUp, ChevronDown, type LucideIcon } from "lucide-react";
+import { LayoutList, Camera, Route, Wifi, PenLine, PackageX, Bell, Router, MessageCircle, MessageSquareText, Lock, ChevronUp, ChevronDown, type LucideIcon } from "lucide-react";
 
 const ICONES: Record<ModuloId, LucideIcon> = {
   "minhas-os": LayoutList,
@@ -22,6 +22,7 @@ const ICONES: Record<ModuloId, LucideIcon> = {
   retiradas: PackageX,
   notificacoes: Bell,
   chat: MessageCircle,
+  "chat-clientes": MessageSquareText,
 };
 
 const DESCRICOES: Record<ModuloId, string> = {
@@ -34,6 +35,7 @@ const DESCRICOES: Record<ModuloId, string> = {
   retiradas: "Fila de retirada/cancelamento (equipe externa)",
   notificacoes: "Nova OS atribuída · mudança relevante",
   chat: "Conversa interna — DM, grupo, thread por OS, avisos",
+  "chat-clientes": "Caixa de entrada WhatsApp com clientes (Meta/Evolution) — configure em Canais WhatsApp",
 };
 
 function mensagem(err: unknown): string {

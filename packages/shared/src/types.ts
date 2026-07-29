@@ -134,6 +134,24 @@ export interface OrdemServico {
   sincronizadoEm: string;
 }
 
+/**
+ * Status manual que o proprio usuario define no perfil — sibling da presenca
+ * automatica (`online`, calculada de ultimaAtividadeEm), nunca a substitui.
+ */
+export enum StatusPreset {
+  DISPONIVEL = "disponivel",
+  EM_CAMPO = "em_campo",
+  ALMOCO = "almoco",
+  INDISPONIVEL = "indisponivel",
+}
+
+export const STATUS_PRESET_LABEL: Record<StatusPreset, string> = {
+  [StatusPreset.DISPONIVEL]: "Disponível",
+  [StatusPreset.EM_CAMPO]: "Em campo",
+  [StatusPreset.ALMOCO]: "Almoço",
+  [StatusPreset.INDISPONIVEL]: "Indisponível",
+};
+
 /** Usuario (shape publico, sem hash de senha). Tecnico e um Usuario com role=tecnico. */
 export interface UsuarioPublic {
   id: string;
@@ -143,6 +161,20 @@ export interface UsuarioPublic {
   /** Preenchido apenas para role=provedor. */
   provedorId?: string | null;
   ativo: boolean;
+  /** Foto de perfil: nunca os bytes, so a existencia + versao (cache-busting). */
+  temFoto: boolean;
+  fotoVersao: number;
+  status?: StatusPreset | null;
+  statusTexto?: string | null;
+  /** Apelido editavel exibido no chat/UI — `nome` continua fixo (cadastro). */
+  nomeExibicao?: string | null;
+  bio?: string | null;
+  /** Distinto das credenciais de login (email/senha). */
+  telefoneContato?: string | null;
+  /** Anexada as mensagens deste usuario no chat interno. */
+  assinaturaChat?: string | null;
+  /** Hex "#rrggbb" — pessoal, nao confundir com Provedor.cor. */
+  corDestaque?: string | null;
 }
 
 /** Semaforo de SLA calculado no servidor. */

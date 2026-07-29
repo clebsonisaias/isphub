@@ -251,6 +251,10 @@ export function MessageBubble({
             <p className="whitespace-pre-wrap break-words">{mensagem.corpo}</p>
           )}
 
+          {!apagada && mensagem.tipo === MensagemTipo.TEXTO && mensagem.autor?.assinaturaChat && (
+            <p className="mt-1 text-xs italic opacity-70">{mensagem.autor.assinaturaChat}</p>
+          )}
+
           <div
             className={cn(
               "mt-1 flex items-center gap-1 text-[0.65rem] font-mono opacity-70",

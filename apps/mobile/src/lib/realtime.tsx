@@ -78,6 +78,11 @@ export function useRealtime(): void {
         case "chat-digitando":
           if (ev.conversaId && ev.autorId) emitirDigitando(ev.conversaId, ev.autorId);
           break;
+        case "cliente-chat-mensagem":
+        case "cliente-chat-conversa":
+          qc.invalidateQueries({ queryKey: ["cliente-chat", "conversas"] });
+          if (ev.conversaId) qc.invalidateQueries({ queryKey: ["cliente-chat", "mensagens", ev.conversaId] });
+          break;
       }
     };
 

@@ -12,6 +12,9 @@ interface AuthValue {
   carregando: boolean;
   login: (email: string, senha: string) => Promise<void>;
   logout: () => Promise<void>;
+  /** Re-busca GET /auth/me e atualiza `usuario` em memoria — chamar apos editar
+   * foto/status no perfil (fonte unica de verdade continua sendo o servidor). */
+  refetchMe: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthValue | undefined>(undefined);
@@ -64,6 +67,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await tokenStore.del(TOKEN_KEY);
         setToken(null);
         setUsuario(null);
+      },
+      async refetchMe() {
+        if (!token) return;
+        const me = await apiFetch<UsuarioPublic>("/auth/me", { token });
+        setUsuario(me);
       },
     }),
     [token, usuario, carregando],

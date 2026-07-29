@@ -2,6 +2,20 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import type { UserRole } from "@isphub/shared";
 import { env } from "../config/env.js";
+import { HttpError } from "../middleware/errorHandler.js";
+import { MIMES_FOTO } from "./chatService.js";
+
+/** Avatar so e exibido pequeno/circular — bem menor que o teto de anexo do chat (400KB). */
+export const LIMITE_AVATAR_BYTES = 200 * 1024;
+
+/** Valida e decodifica uma foto de perfil (base64) — mesmas regras de mime do anexo de chat, teto menor. */
+export function validarFotoPerfil(fotoBase64: string, fotoMime: string): Buffer {
+  if (!MIMES_FOTO.includes(fotoMime)) throw new HttpError(400, "Formato de foto nao suportado");
+  const dados = Buffer.from(fotoBase64, "base64");
+  if (dados.byteLength === 0) throw new HttpError(400, "Foto vazia");
+  if (dados.byteLength > LIMITE_AVATAR_BYTES) throw new HttpError(400, `Foto maior que ${LIMITE_AVATAR_BYTES / 1024}KB`);
+  return dados;
+}
 
 const SALT_ROUNDS = 12;
 

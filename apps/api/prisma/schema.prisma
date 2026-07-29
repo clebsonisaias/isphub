@@ -242,6 +242,35 @@ model Usuario {
   /// ultimos ~2min — nunca calculado no cliente.
   ultimaAtividadeEm DateTime?
 
+  /// Foto de perfil (bytes-in-postgres, mesmo padrao do anexo de chat —
+  /// Mensagem.anexoDados). Null = sem foto, cliente cai pro circulo de iniciais.
+  fotoDados    Bytes?
+  fotoMime     String?
+  /// Denormalizado: evita selecionar fotoDados (bytes crus) em toda query de
+  /// lista de contatos/mensagens so pra saber se a foto existe.
+  temFoto      Boolean  @default(false)
+  /// Incrementado a cada upload/remocao de foto. Nunca exibido — vira `?v=`
+  /// no path da foto (GET /auth/foto/:id?v=N) pra invalidar o cache local do
+  /// app baseado-em-arquivo (ver baixarAnexoAutenticado em apps/mobile),
+  /// que senao guardaria a foto antiga pra sempre pela mesma chave de path.
+  fotoVersao   Int      @default(0)
+  /// Status manual (um StatusPreset — ver packages/shared). Sibling do
+  /// `online` computado acima: nunca substitui a presenca automatica.
+  status       String?
+  /// Complemento livre opcional ao status (ex.: "cliente X ate 15h").
+  statusTexto  String?  @db.VarChar(140)
+
+  /// Apelido editavel exibido no chat/UI — `nome` continua fixo (cadastro).
+  nomeExibicao    String? @db.VarChar(80)
+  bio             String? @db.VarChar(280)
+  /// Telefone de contato — distinto das credenciais de login (email/senha).
+  telefoneContato String? @db.VarChar(30)
+  /// Assinatura opcional anexada as mensagens do chat interno deste usuario.
+  assinaturaChat  String? @db.VarChar(140)
+  /// Cor de destaque pessoal (hex "#rrggbb") — sibling de Provedor.cor, mas de
+  /// uso pessoal (perfil), nao de identidade de marca/badge cross-cutting.
+  corDestaque     String? @db.VarChar(7)
+
   ordensServico OrdemServico[]
   atribuicoes   Atribuicao[]
   eventos       OsEvento[]
@@ -251,6 +280,9 @@ model Usuario {
   participacoesChat    ConversaParticipante[]
   mensagens            Mensagem[]             @relation("MensagensDoAutor")
   mensagemReacoes      MensagemReacao[]
+
+  conversasClienteAtendidas ConversaCliente[] @relation("ConversaClienteAgente")
+  mensagensClienteEnviadas  MensagemCliente[] @relation("MensagemClienteAutor")
 
   @@map("usuarios")
 }
@@ -455,4 +487,104 @@ model MensagemReacao {
 
   @@unique([mensagemId, usuarioId, emoji])
   @@map("mensagem_reacoes")
+}
+
+// ---- Chat com clientes (WhatsApp) ----
+// Separado de propósito de Conversa/Mensagem/ConversaParticipante (chat
+// interno) — um cliente de WhatsApp não tem Usuario/login, só telefone, e
+// ConversaParticipante.usuarioId é FK obrigatória. Ver plano da feature.
+
+enum CanalWhatsapp {
+  meta
+  evolution
+}
+
+enum MensagemClienteDirecao {
+  entrada
+  saida
+}
+
+enum MensagemClienteTipo {
+  texto
+  imagem
+  audio
+  documento
+  localizacao
+  sistema
+}
+
+/// Config global (nao por provedor) de cada integracao WhatsApp — mirror de
+/// ErpConfig sem provedorId: ha so UMA conta Meta + UMA instancia Evolution
+/// pro ISPhub inteiro (decisao explicita do usuario).
+model CanalWhatsappConfig {
+  id                        String        @id @default(uuid())
+  tipo                      CanalWhatsapp @unique
+  /// JSON do config inteiro (phoneNumberId/accessToken/verifyToken/appSecret
+  /// pra meta; baseUrl/apiKey/instanceName pra evolution) cifrado como UM
+  /// blob via encrypt() ja existente — mesmo formato de ErpConfig.tokenCifrado.
+  configCifrado             String
+  ativo                     Boolean       @default(true)
+  ultimaVerificacaoEm       DateTime?
+  ultimaVerificacaoOk       Boolean?
+  ultimaVerificacaoMensagem String?
+  criadoEm                  DateTime      @default(now())
+  atualizadoEm              DateTime      @updatedAt
+
+  @@map("canais_whatsapp_configs")
+}
+
+/// Conversa com um CLIENTE via WhatsApp — sem Usuario do lado do cliente.
+model ConversaCliente {
+  id               String        @id @default(uuid())
+  /// E.164 sem prefixo, ex "5584999999999". Mesmo numero em canais diferentes
+  /// e uma conversa DISTINTA por canal (cada canal e um numero/instancia diferente).
+  telefone         String
+  canal            CanalWhatsapp
+  /// Nome de perfil do WhatsApp do cliente — informativo, nunca chave.
+  nomeContato      String?
+  /// null = fila compartilhada (qualquer staff elegivel assume).
+  agenteId         String?
+  agente           Usuario?      @relation("ConversaClienteAgente", fields: [agenteId], references: [id], onDelete: SetNull)
+  arquivada        Boolean       @default(false)
+  ultimaMensagemEm DateTime?
+  criadoEm         DateTime      @default(now())
+
+  mensagens MensagemCliente[]
+
+  @@unique([telefone, canal])
+  @@index([canal, arquivada, ultimaMensagemEm])
+  @@index([agenteId])
+  @@map("conversas_clientes")
+}
+
+model MensagemCliente {
+  id               String                 @id @default(uuid())
+  conversaId       String
+  conversa         ConversaCliente        @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  /// Denormalizado de conversa.canal — so pro @@unique abaixo (webhooks
+  /// WhatsApp reentregam o mesmo evento; isto torna a ingestao idempotente).
+  canal            CanalWhatsapp
+  direcao          MensagemClienteDirecao
+  /// Staff que enviou (direcao=saida). Null em mensagens do cliente/sistema.
+  autorId          String?
+  autor            Usuario?               @relation("MensagemClienteAutor", fields: [autorId], references: [id], onDelete: SetNull)
+  tipo             MensagemClienteTipo
+  corpo            String?
+  /// Midia recebida do WhatsApp — baixada e persistida (URLs da Meta expiram
+  /// ~5min, nao da pra so referenciar). Teto de 5MB, ver LIMITE_MIDIA_CLIENTE_BYTES.
+  anexoDados       Bytes?
+  anexoMime        String?
+  anexoTamanho     Int?
+  duracaoSeg       Int?
+  lat              Float?
+  lng              Float?
+  /// Id da mensagem no provedor (wamid do Meta / id da Evolution).
+  waMessageId      String
+  /// Falha ao ENVIAR (direcao=saida) — erro do connector, exibido na bolha.
+  falhaEnvio       String?
+  criadoEm         DateTime               @default(now())
+
+  @@unique([canal, waMessageId])
+  @@index([conversaId, criadoEm])
+  @@map("mensagens_clientes")
 }

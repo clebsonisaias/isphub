@@ -1,12 +1,13 @@
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { Building2, Tags, Users, Blocks } from "lucide-react";
+import { Building2, Tags, Users, Blocks, MessageSquareText } from "lucide-react";
 
 const ITEMS = [
   { to: "/admin", label: "Provedores", icon: Building2, match: (p: string) => p === "/admin" || p.startsWith("/admin/provedores") },
   { to: "/admin/categorias", label: "Categorias", icon: Tags, match: (p: string) => p.startsWith("/admin/categorias") },
   { to: "/admin/usuarios", label: "Usuários", icon: Users, match: (p: string) => p.startsWith("/admin/usuarios") },
   { to: "/admin/modulos", label: "Módulos", icon: Blocks, match: (p: string) => p.startsWith("/admin/modulos") },
+  { to: "/admin/canais-whatsapp", label: "Canais WhatsApp", icon: MessageSquareText, match: (p: string) => p.startsWith("/admin/canais-whatsapp") },
 ];
 
 /** Sub-navegação da área Administração (Provedores x Categorias x Usuários). */

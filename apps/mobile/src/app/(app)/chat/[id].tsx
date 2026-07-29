@@ -8,7 +8,7 @@ import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Muted } from "@/components/ui";
 import { colors, font, radius, space } from "@/theme/tokens";
-import { Avatar } from "@/features/chat/avatar";
+import { Avatar, useAvatarUri } from "@/features/chat/avatar";
 import { MessageBubble } from "@/features/chat/message-bubble";
 import { Composer } from "@/features/chat/composer";
 import { useAcoesChat, useConversas, useMensagens, type EnviarMensagemInput, type RespostaRapidaTipo } from "@/features/chat/hooks";
@@ -132,6 +132,9 @@ export default function ChatThread() {
     [mensagens, meuId, ehAdmin],
   );
 
+  const outroParticipante = conversa?.tipo === ConversaTipo.DIRETA ? conversa.participantes.find((p) => p.usuarioId !== meuId) : undefined;
+  const fotoUri = useAvatarUri(outroParticipante?.usuarioId, outroParticipante?.temFoto, outroParticipante?.fotoVersao);
+
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={90}>
       <Stack.Screen
@@ -142,7 +145,7 @@ export default function ChatThread() {
       />
 
       <View style={styles.subHeader}>
-        {conversa && <Avatar nome={conversa.titulo} online={conversa.tipo === ConversaTipo.DIRETA ? conversa.participantes.find((p) => p.usuarioId !== meuId)?.online : undefined} size="sm" />}
+        {conversa && <Avatar nome={conversa.titulo} online={conversa.tipo === ConversaTipo.DIRETA ? outroParticipante?.online : undefined} fotoUri={fotoUri} size="sm" />}
         <Text style={styles.subHeaderTexto} numberOfLines={1}>
           {digitandoNome ? `${digitandoNome} está digitando…` : conversa ? tituloPresenca(conversa, meuId) : ""}
         </Text>

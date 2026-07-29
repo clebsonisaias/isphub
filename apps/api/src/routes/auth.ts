@@ -1,11 +1,11 @@
 import { Router } from "express";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
-import type { UsuarioPublic } from "@isphub/shared";
+import { StatusPreset, UserRole, type UsuarioPublic } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth } from "../middleware/auth.js";
-import { hashPassword, signToken, verifyPassword } from "../services/authService.js";
+import { hashPassword, signToken, validarFotoPerfil, verifyPassword } from "../services/authService.js";
 import { invalidarCacheSessao } from "../services/sessaoService.js";
 
 export const authRouter = Router();
@@ -50,6 +50,15 @@ function toPublic(u: {
   role: string;
   provedorId: string | null;
   ativo: boolean;
+  temFoto: boolean;
+  fotoVersao: number;
+  status: string | null;
+  statusTexto: string | null;
+  nomeExibicao: string | null;
+  bio: string | null;
+  telefoneContato: string | null;
+  assinaturaChat: string | null;
+  corDestaque: string | null;
 }): UsuarioPublic {
   return {
     id: u.id,
@@ -58,6 +67,15 @@ function toPublic(u: {
     role: u.role as UsuarioPublic["role"],
     provedorId: u.provedorId,
     ativo: u.ativo,
+    temFoto: u.temFoto,
+    fotoVersao: u.fotoVersao,
+    status: u.status as StatusPreset | null,
+    statusTexto: u.statusTexto,
+    nomeExibicao: u.nomeExibicao,
+    bio: u.bio,
+    telefoneContato: u.telefoneContato,
+    assinaturaChat: u.assinaturaChat,
+    corDestaque: u.corDestaque,
   };
 }
 
@@ -136,5 +154,119 @@ authRouter.post(
       tv: atualizado.tokenVersion,
     });
     res.json({ token });
+  }),
+);
+
+const fotoSchema = z.object({
+  fotoBase64: z.string().min(1),
+  fotoMime: z.string().min(1),
+});
+
+/** Troca de foto e barata (bytes pequenos), mas ainda assim limitada — protecao
+ * contra um retry-loop client bugado martelando escritas no banco. */
+const fotoLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.sub ?? ipKeyGenerator(req.ip ?? ""),
+});
+
+authRouter.patch(
+  "/foto",
+  requireAuth,
+  fotoLimiter,
+  asyncHandler(async (req, res) => {
+    const { fotoBase64, fotoMime } = fotoSchema.parse(req.body);
+    const dados = validarFotoPerfil(fotoBase64, fotoMime);
+    const atualizado = await prisma.usuario.update({
+      where: { id: req.user!.sub },
+      data: { fotoDados: new Uint8Array(dados), fotoMime, temFoto: true, fotoVersao: { increment: 1 } },
+    });
+    res.json(toPublic(atualizado));
+  }),
+);
+
+authRouter.delete(
+  "/foto",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const atualizado = await prisma.usuario.update({
+      where: { id: req.user!.sub },
+      data: { fotoDados: null, fotoMime: null, temFoto: false, fotoVersao: { increment: 1 } },
+    });
+    res.json(toPublic(atualizado));
+  }),
+);
+
+const statusSchema = z.object({
+  status: z.nativeEnum(StatusPreset).nullable(),
+  statusTexto: z.string().trim().max(140).nullable().optional(),
+});
+
+authRouter.patch(
+  "/status",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { status, statusTexto } = statusSchema.parse(req.body);
+    const atualizado = await prisma.usuario.update({
+      where: { id: req.user!.sub },
+      data: { status, statusTexto: statusTexto ?? null },
+    });
+    res.json(toPublic(atualizado));
+  }),
+);
+
+/**
+ * Foto de QUALQUER usuario interno — diferente das rotas acima (self-only),
+ * esta existe pra renderizar o avatar dos colegas no chat. PROVEDOR fica de
+ * fora (mesma fronteira que ja vale pro chat: nunca participa/ve equipe interna).
+ * Existence-check antes do resto, mesmo padrao de GET /chat/mensagens/:id/anexo.
+ */
+authRouter.get(
+  "/foto/:usuarioId",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    if (req.user!.role === UserRole.PROVEDOR) throw new HttpError(403, "Sem acesso");
+    const usuario = await prisma.usuario.findUnique({
+      where: { id: req.params.usuarioId },
+      select: { fotoDados: true, fotoMime: true },
+    });
+    if (!usuario?.fotoDados || !usuario.fotoMime) throw new HttpError(404, "Sem foto");
+    // Cache longo e seguro aqui: o cliente muda a URL (?v=fotoVersao) sempre
+    // que o conteudo muda, entao uma URL nunca aponta pra bytes diferentes.
+    res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
+    res.setHeader("Content-Type", usuario.fotoMime);
+    res.send(Buffer.from(usuario.fotoDados));
+  }),
+);
+
+const perfilSchema = z.object({
+  nomeExibicao: z.string().trim().max(80).nullable().optional(),
+  bio: z.string().trim().max(280).nullable().optional(),
+  telefoneContato: z.string().trim().max(30).nullable().optional(),
+  assinaturaChat: z.string().trim().max(140).nullable().optional(),
+  corDestaque: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, "Cor deve ser um hex #rrggbb")
+    .nullable()
+    .optional(),
+});
+
+/**
+ * Campos de "sobre mim" do perfil — rota dedicada, separada de /status (outra
+ * preocupacao: disponibilidade manual) e de /foto (binario). Mesmo grao do
+ * resto deste arquivo: endpoints estreitos em vez de um PATCH canivete-suico.
+ */
+authRouter.patch(
+  "/perfil",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const dados = perfilSchema.parse(req.body);
+    const atualizado = await prisma.usuario.update({
+      where: { id: req.user!.sub },
+      data: dados,
+    });
+    res.json(toPublic(atualizado));
   }),
 );

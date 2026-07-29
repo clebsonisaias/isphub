@@ -23,6 +23,9 @@ import { configRouter, adminModulosRouter } from "./routes/config.js";
 import { eventosRouter } from "./routes/eventos.js";
 import { syncMinhasRouter } from "./routes/syncMinhas.js";
 import { chatRouter } from "./routes/chat.js";
+import { canaisWhatsappRouter } from "./routes/canaisWhatsapp.js";
+import { webhooksWhatsappRouter } from "./routes/webhooksWhatsapp.js";
+import { clienteChatRouter } from "./routes/clienteChat.js";
 
 export function createApp() {
   const app = express();
@@ -40,6 +43,21 @@ export function createApp() {
   // Compressao antes das rotas: a fila devolve ate 2000 itens de JSON muito
   // repetitivo — gzip corta a maior parte do trafego do app em campo (3G/4G).
   app.use(compression());
+
+  // Webhooks WhatsApp: PUBLICA (sem requireAuth) e precisa do corpo CRU pra
+  // validar a assinatura HMAC da Meta (X-Hub-Signature-256 e sobre os bytes
+  // exatos, nao sobre um JSON re-serializado). Por isso monta o PROPRIO
+  // express.json ANTES do global abaixo — so esta rota foge do parser global.
+  app.use(
+    "/webhooks/whatsapp",
+    express.json({
+      verify: (req, _res, buf) => {
+        (req as express.Request & { rawBody?: Buffer }).rawBody = buf;
+      },
+    }),
+    webhooksWhatsappRouter,
+  );
+
   // Limite global apertado. O corpo grande so e legitimo em anexos (foto/audio
   // em base64), que tem rota propria — nao ha motivo pra /auth/login aceitar 5MB.
   app.use(express.json({ limit: "1mb" }));
@@ -60,6 +78,8 @@ export function createApp() {
   app.use("/eventos", eventosRouter);
   app.use("/sync", syncMinhasRouter);
   app.use("/chat", chatRouter);
+  app.use("/admin/canais-whatsapp", canaisWhatsappRouter);
+  app.use("/chat-clientes", clienteChatRouter);
   app.use("/provedores/:provedorId/erp-config", erpConfigRouter);
   app.use("/provedores/:provedorId/tipos-os", tiposOsRouter);
   app.use("/provedores/:provedorId/sync", syncRouter);

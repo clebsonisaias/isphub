@@ -7,7 +7,7 @@ import { EMOJIS_REACAO, MensagemTipo, OS_STATUS_LABEL, type Mensagem } from "@is
 import { apiFetch, API_BASE, baixarAnexoAutenticado } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { colors, font, radius, space } from "@/theme/tokens";
-import { Avatar } from "./avatar";
+import { Avatar, useAvatarUri } from "./avatar";
 import { formatHora } from "./format";
 import { urlAnexo } from "./hooks";
 import type { OrdemServico } from "@isphub/shared";
@@ -175,6 +175,7 @@ export function MessageBubble({
   const [menuAberto, setMenuAberto] = useState(false);
   const apagada = !!mensagem.apagadoEm;
   const sistema = mensagem.tipo === MensagemTipo.SISTEMA;
+  const fotoAutorUri = useAvatarUri(mensagem.autor?.usuarioId, mensagem.autor?.temFoto, mensagem.autor?.fotoVersao);
 
   if (sistema) {
     return (
@@ -186,7 +187,7 @@ export function MessageBubble({
 
   return (
     <View style={[styles.linha, souEu && styles.linhaInvertida]}>
-      <View style={styles.avatarSlot}>{!souEu && mostrarAvatar && mensagem.autor && <Avatar nome={mensagem.autor.nome} size="sm" />}</View>
+      <View style={styles.avatarSlot}>{!souEu && mostrarAvatar && mensagem.autor && <Avatar nome={mensagem.autor.nome} fotoUri={fotoAutorUri} size="sm" />}</View>
 
       <Pressable
         onLongPress={() => !apagada && setMenuAberto(true)}
@@ -224,6 +225,10 @@ export function MessageBubble({
           </Pressable>
         ) : (
           <Text style={styles.texto}>{mensagem.corpo}</Text>
+        )}
+
+        {!apagada && mensagem.tipo === MensagemTipo.TEXTO && mensagem.autor?.assinaturaChat && (
+          <Text style={styles.assinatura}>{mensagem.autor.assinaturaChat}</Text>
         )}
 
         <Text style={styles.hora}>
@@ -271,6 +276,7 @@ const styles = StyleSheet.create({
   textoMuted: { fontSize: font.size.sm, color: colors.muted },
   textoApagado: { fontSize: font.size.base, fontStyle: "italic", color: colors.muted },
   hora: { fontSize: font.size.xs, color: colors.muted, marginTop: 4, alignSelf: "flex-end" },
+  assinatura: { fontSize: font.size.xs, fontStyle: "italic", color: colors.muted, marginTop: 2 },
   linkTexto: { fontSize: font.size.base, color: colors.brand, textDecorationLine: "underline" },
   citacao: { borderLeftWidth: 2, borderLeftColor: colors.line2, paddingLeft: space.sm, marginBottom: space.sm, opacity: 0.85 },
   citacaoAutor: { fontSize: font.size.xs, fontWeight: font.weight.medium as "600", color: colors.ink2 },

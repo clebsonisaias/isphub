@@ -10,4 +10,5 @@ export const ROTAS_MODULO: Partial<Record<ModuloId, { rota: string }>> = {
   "minhas-os": { rota: "minhas-os" },
   provisionamento: { rota: "provisionamento" },
   chat: { rota: "chat" },
+  "chat-clientes": { rota: "chat-clientes" },
 };

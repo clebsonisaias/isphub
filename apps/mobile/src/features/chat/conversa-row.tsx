@@ -1,17 +1,18 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { ConversaTipo, type ConversaResumo } from "@isphub/shared";
 import { colors, font, radius, space } from "@/theme/tokens";
-import { Avatar } from "./avatar";
+import { Avatar, useAvatarUri } from "./avatar";
 import { formatHoraOuData, previewMensagem, tituloConversa } from "./format";
 
 /** Linha da lista de conversas — mesma filosofia SLA-first do FilaCard: cor so no que importa (badge de nao-lidas). */
 export function ConversaRow({ conversa, meuId, meuNome, onPress }: { conversa: ConversaResumo; meuId: string; meuNome: string; onPress: () => void }) {
   const outro = conversa.tipo === ConversaTipo.DIRETA ? conversa.participantes.find((p) => p.usuarioId !== meuId) : undefined;
   const naoLido = conversa.naoLidas > 0;
+  const fotoUri = useAvatarUri(outro?.usuarioId, outro?.temFoto, outro?.fotoVersao);
 
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
-      <Avatar nome={conversa.titulo} online={conversa.tipo === ConversaTipo.DIRETA ? outro?.online : undefined} />
+      <Avatar nome={conversa.titulo} online={conversa.tipo === ConversaTipo.DIRETA ? outro?.online : undefined} fotoUri={fotoUri} />
       <View style={styles.conteudo}>
         <View style={styles.linhaTopo}>
           <Text style={styles.titulo} numberOfLines={1}>

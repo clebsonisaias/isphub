@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { MensagemTipo } from "@isphub/shared";
+import { MensagemTipo, StatusPreset } from "@isphub/shared";
 import {
   estaOnline,
+  participanteResumo,
   resolverMencoes,
   resumoConteudo,
   validarMidia,
@@ -11,6 +12,7 @@ import {
   LIMITE_AUDIO_SEG,
   type EnviarMensagemInput,
 } from "./chatService.js";
+import { LIMITE_AVATAR_BYTES, validarFotoPerfil } from "./authService.js";
 
 describe("estaOnline", () => {
   it("null (nunca teve atividade registrada) -> offline", () => {
@@ -23,6 +25,67 @@ describe("estaOnline", () => {
 
   it("atividade a 5 minutos -> offline", () => {
     expect(estaOnline(new Date(Date.now() - 5 * 60_000))).toBe(false);
+  });
+});
+
+describe("participanteResumo (repassa foto/status sem alterar)", () => {
+  it("repassa temFoto/fotoVersao/status/statusTexto do usuario sem transformacao", () => {
+    const resumo = participanteResumo({
+      id: "u1",
+      nome: "Fulano",
+      role: "TECNICO",
+      ultimaAtividadeEm: null,
+      temFoto: true,
+      fotoVersao: 3,
+      status: StatusPreset.EM_CAMPO,
+      statusTexto: "cliente X até 15h",
+      assinaturaChat: "Att, Fulano — suporte técnico",
+    });
+    expect(resumo.temFoto).toBe(true);
+    expect(resumo.fotoVersao).toBe(3);
+    expect(resumo.status).toBe(StatusPreset.EM_CAMPO);
+    expect(resumo.statusTexto).toBe("cliente X até 15h");
+    expect(resumo.assinaturaChat).toBe("Att, Fulano — suporte técnico");
+  });
+
+  it("sem foto/status definidos -> valores default/null passam intactos", () => {
+    const resumo = participanteResumo({
+      id: "u2",
+      nome: "Ciclana",
+      role: "GESTOR",
+      ultimaAtividadeEm: null,
+      temFoto: false,
+      fotoVersao: 0,
+      status: null,
+      statusTexto: null,
+      assinaturaChat: null,
+    });
+    expect(resumo.temFoto).toBe(false);
+    expect(resumo.fotoVersao).toBe(0);
+    expect(resumo.status).toBeNull();
+    expect(resumo.statusTexto).toBeNull();
+  });
+});
+
+describe("validarFotoPerfil (limite de avatar validado no servidor)", () => {
+  const fotoValidaBase64 = Buffer.from("conteudo-fake-de-foto").toString("base64");
+
+  it("mime nao suportado -> rejeita", () => {
+    expect(() => validarFotoPerfil(fotoValidaBase64, "image/gif")).toThrow(/nao suportado/);
+  });
+
+  it("base64 vazio -> rejeita", () => {
+    expect(() => validarFotoPerfil("", "image/jpeg")).toThrow(/vazia/);
+  });
+
+  it("acima do teto de avatar -> rejeita", () => {
+    const grande = Buffer.alloc(LIMITE_AVATAR_BYTES + 1).toString("base64");
+    expect(() => validarFotoPerfil(grande, "image/jpeg")).toThrow(/maior que/);
+  });
+
+  it("dentro do teto e mime valido -> devolve os bytes decodificados", () => {
+    const dados = validarFotoPerfil(fotoValidaBase64, "image/jpeg");
+    expect(dados.toString()).toBe("conteudo-fake-de-foto");
   });
 });
 

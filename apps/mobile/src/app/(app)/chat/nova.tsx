@@ -7,7 +7,7 @@ import { useAuth } from "@/lib/auth";
 import { apiFetch, buildFilaQuery } from "@/lib/api";
 import { Field, Muted, Screen, Title } from "@/components/ui";
 import { colors, font, radius, space } from "@/theme/tokens";
-import { Avatar } from "@/features/chat/avatar";
+import { Avatar, useAvatarUri } from "@/features/chat/avatar";
 import { useContatos, useCriarConversa } from "@/features/chat/hooks";
 
 type Aba = "pessoas" | "grupo" | "os";
@@ -18,6 +18,12 @@ function SegmentButton({ label, ativo, onPress }: { label: string; ativo: boolea
       <Text style={[styles.segTexto, ativo && styles.segTextoAtivo]}>{label}</Text>
     </Pressable>
   );
+}
+
+/** Resolve a foto do contato — extraido em componente proprio pra usar o hook com seguranca dentro do renderItem do FlatList. */
+function ContatoAvatar({ contato, online }: { contato: ContatoChat; online?: boolean }) {
+  const fotoUri = useAvatarUri(contato.id, contato.temFoto, contato.fotoVersao);
+  return <Avatar nome={contato.nome} online={online} fotoUri={fotoUri} size="sm" />;
 }
 
 export default function NovaConversa() {
@@ -111,7 +117,7 @@ export default function NovaConversa() {
               ListEmptyComponent={<Muted style={{ marginTop: space.md }}>Ninguém encontrado.</Muted>}
               renderItem={({ item }) => (
                 <Pressable onPress={() => handleAbrirDireta(item)} style={styles.linhaContato} disabled={criarDireta.isPending}>
-                  <Avatar nome={item.nome} online={item.online} size="sm" />
+                  <ContatoAvatar contato={item} online={item.online} />
                   <Text style={styles.nomeContato}>{item.nome}</Text>
                 </Pressable>
               )}
@@ -130,7 +136,7 @@ export default function NovaConversa() {
             renderItem={({ item }) => (
               <Pressable onPress={() => toggleSelecionado(item.id)} style={styles.linhaContato}>
                 <View style={[styles.checkbox, selecionados.has(item.id) && styles.checkboxMarcado]} />
-                <Avatar nome={item.nome} size="sm" />
+                <ContatoAvatar contato={item} />
                 <Text style={styles.nomeContato}>{item.nome}</Text>
               </Pressable>
             )}

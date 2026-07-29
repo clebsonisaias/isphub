@@ -7,6 +7,8 @@ interface AuthContextValue {
   carregando: boolean;
   login: (email: string, senha: string) => Promise<void>;
   logout: () => void;
+  /** Re-busca GET /auth/me e atualiza `usuario` — chamar apos editar foto/status/perfil. */
+  refetchMe: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -44,7 +46,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUsuario(null);
   }
 
-  return <AuthContext.Provider value={{ usuario, carregando, login, logout }}>{children}</AuthContext.Provider>;
+  async function refetchMe() {
+    if (!getAuthToken()) return;
+    const me = await api.get<UsuarioPublic>("/auth/me");
+    setUsuario(me);
+  }
+
+  return <AuthContext.Provider value={{ usuario, carregando, login, logout, refetchMe }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

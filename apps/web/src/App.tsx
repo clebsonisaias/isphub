@@ -12,11 +12,13 @@ import { MapaPage } from "@/pages/MapaPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { ProvisionamentoPage } from "@/pages/ProvisionamentoPage";
 import { ChatPage } from "@/pages/ChatPage";
+import { ClientesChatPage } from "@/pages/ClientesChatPage";
 import { ProvedoresPage } from "@/pages/admin/ProvedoresPage";
 import { ProvedorDetailPage } from "@/pages/admin/ProvedorDetailPage";
 import { CategoriasPage } from "@/pages/admin/CategoriasPage";
 import { UsuariosPage } from "@/pages/admin/UsuariosPage";
 import { ModulosPage } from "@/pages/admin/ModulosPage";
+import { CanaisWhatsappPage } from "@/pages/admin/CanaisWhatsappPage";
 import { PerfilPage } from "@/pages/PerfilPage";
 
 function App() {
@@ -101,6 +103,20 @@ function App() {
                   }
                 />
                 <Route
+                  path="/chat-clientes"
+                  element={
+                    <RequireAuth
+                      roles={[
+                        UserRole.ADMIN,
+                        UserRole.GESTOR,
+                        UserRole.TECNICO,
+                      ]}
+                    >
+                      <ClientesChatPage />
+                    </RequireAuth>
+                  }
+                />
+                <Route
                   path="/perfil"
                   element={
                     <RequireAuth>
@@ -145,6 +161,14 @@ function App() {
                   element={
                     <RequireAuth roles={[UserRole.ADMIN]}>
                       <ModulosPage />
+                    </RequireAuth>
+                  }
+                />
+                <Route
+                  path="/admin/canais-whatsapp"
+                  element={
+                    <RequireAuth roles={[UserRole.ADMIN]}>
+                      <CanaisWhatsappPage />
                     </RequireAuth>
                   }
                 />

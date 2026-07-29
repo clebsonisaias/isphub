@@ -1,9 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, useReducedMotion } from "framer-motion";
-import { USER_ROLE_LABEL, UserRole } from "@isphub/shared";
+import { USER_ROLE_LABEL, UserRole, type ModuloId } from "@isphub/shared";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
+import { useModulosHabilitados } from "@/lib/modulos";
 import {
   Popover,
   PopoverContent,
@@ -28,19 +29,34 @@ import {
   Sun,
   Moon,
   MessageCircle,
+  MessageSquareText,
 } from "lucide-react";
 
 const INTERVALO_POLLING_NAO_LIDAS_MS = 45_000;
 
-/** Dashboard e Retiradas sao so pra quem enxerga mais de uma OS/provedor — tecnico ve so as proprias. */
-const NAV_ITEMS = [
-  { to: "/", label: "Painel", icon: LayoutGrid, ocultoPara: [] as UserRole[] },
-  { to: "/mapa", label: "Mapa", icon: Map, ocultoPara: [] as UserRole[] },
+/**
+ * Dashboard e Retiradas sao so pra quem enxerga mais de uma OS/provedor —
+ * tecnico ve so as proprias. `modulo`, quando presente, soma um segundo
+ * filtro: o item so aparece se esse modulo estiver habilitado pro usuario
+ * (ver useModulosHabilitados) — sem isto, um modulo desligado por padrao
+ * (ex.: chat-clientes) vira link morto na nav pra todo mundo.
+ */
+const NAV_ITEMS: { to: string; label: string; icon: typeof LayoutGrid; ocultoPara: UserRole[]; modulo?: ModuloId }[] = [
+  { to: "/", label: "Painel", icon: LayoutGrid, ocultoPara: [] },
+  { to: "/mapa", label: "Mapa", icon: Map, ocultoPara: [] },
   {
     to: "/chat",
     label: "Chat",
     icon: MessageCircle,
     ocultoPara: [UserRole.PROVEDOR],
+    modulo: "chat",
+  },
+  {
+    to: "/chat-clientes",
+    label: "Clientes",
+    icon: MessageSquareText,
+    ocultoPara: [UserRole.PROVEDOR],
+    modulo: "chat-clientes",
   },
   // Retirada e feita por equipe de fora — tecnico da ISPhub nunca executa
   // uma, a tela seria sempre vazia pra ele.
@@ -223,6 +239,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const location = useLocation();
   const shouldReduceMotion = useReducedMotion();
   const [naoLidasChat, setNaoLidasChat] = useState(0);
+  const { ids: modulosHabilitados } = useModulosHabilitados();
 
   useEffect(() => {
     if (!usuario || usuario.role === UserRole.PROVEDOR) return;
@@ -293,7 +310,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               aria-label="Navegação principal"
             >
               {NAV_ITEMS.filter(
-                (item) => !item.ocultoPara.includes(usuario.role),
+                (item) => !item.ocultoPara.includes(usuario.role) && (!item.modulo || modulosHabilitados.has(item.modulo)),
               ).map(({ to, label, icon: Icon }) => {
                 const ativo = location.pathname === to;
                 return (

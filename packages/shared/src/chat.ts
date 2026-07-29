@@ -1,4 +1,5 @@
 import type { UserRole } from "./roles.js";
+import type { StatusPreset } from "./types.js";
 
 /**
  * Chat interno de operacao — NAO e messenger social, e coordenacao de campo
@@ -35,6 +36,16 @@ export interface ParticipanteResumo {
   role: UserRole;
   online: boolean;
   ultimaAtividadeEm?: string | null;
+  /** Foto de perfil (sibling de `online`) — nunca os bytes, so existencia + versao. */
+  temFoto: boolean;
+  fotoVersao: number;
+  /** Status manual (sibling de `online` computado) — ver StatusPreset em types.ts. */
+  status?: StatusPreset | null;
+  statusTexto?: string | null;
+  /** Assinatura pessoal do autor — o CLIENTE renderiza abaixo da mensagem;
+   * o servidor nunca concatena isto em `corpo` (congelaria a assinatura
+   * antiga no historico se o usuario trocar depois). */
+  assinaturaChat?: string | null;
 }
 
 /**
@@ -113,6 +124,10 @@ export interface ContatoChat {
   nome: string;
   role: UserRole;
   online: boolean;
+  temFoto: boolean;
+  fotoVersao: number;
+  status?: StatusPreset | null;
+  statusTexto?: string | null;
 }
 
 /**

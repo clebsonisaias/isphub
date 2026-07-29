@@ -52,13 +52,28 @@ export function whereMensagensNaoLidas(conversaId: string, ultimaLeituraEm: Date
   };
 }
 
-function participanteResumo(u: { id: string; nome: string; role: string; ultimaAtividadeEm: Date | null }): ParticipanteResumo {
+export function participanteResumo(u: {
+  id: string;
+  nome: string;
+  role: string;
+  ultimaAtividadeEm: Date | null;
+  temFoto: boolean;
+  fotoVersao: number;
+  status: string | null;
+  statusTexto: string | null;
+  assinaturaChat: string | null;
+}): ParticipanteResumo {
   return {
     usuarioId: u.id,
     nome: u.nome,
     role: u.role as UserRole,
     online: estaOnline(u.ultimaAtividadeEm),
     ultimaAtividadeEm: u.ultimaAtividadeEm?.toISOString() ?? null,
+    temFoto: u.temFoto,
+    fotoVersao: u.fotoVersao,
+    status: u.status as ParticipanteResumo["status"],
+    statusTexto: u.statusTexto,
+    assinaturaChat: u.assinaturaChat,
   };
 }
 
@@ -113,10 +128,19 @@ export async function listarContatos(excetoUsuarioId: string): Promise<ContatoCh
       role: { in: [UserRole.ADMIN, UserRole.GESTOR, UserRole.TECNICO] },
       id: { not: excetoUsuarioId },
     },
-    select: { id: true, nome: true, role: true, ultimaAtividadeEm: true },
+    select: { id: true, nome: true, role: true, ultimaAtividadeEm: true, temFoto: true, fotoVersao: true, status: true, statusTexto: true, assinaturaChat: true },
     orderBy: { nome: "asc" },
   });
-  return usuarios.map((u) => ({ id: u.id, nome: u.nome, role: u.role as UserRole, online: estaOnline(u.ultimaAtividadeEm) }));
+  return usuarios.map((u) => ({
+    id: u.id,
+    nome: u.nome,
+    role: u.role as UserRole,
+    online: estaOnline(u.ultimaAtividadeEm),
+    temFoto: u.temFoto,
+    fotoVersao: u.fotoVersao,
+    status: u.status as ContatoChat["status"],
+    statusTexto: u.statusTexto,
+  }));
 }
 
 // ---- Conversas ----
@@ -128,7 +152,11 @@ async function montarConversaResumo(conversaId: string, usuarioId: string): Prom
       ordemServico: { select: { sgpOsId: true } },
       participantes: {
         where: { saiuEm: null },
-        include: { usuario: { select: { id: true, nome: true, role: true, ultimaAtividadeEm: true } } },
+        include: {
+          usuario: {
+            select: { id: true, nome: true, role: true, ultimaAtividadeEm: true, temFoto: true, fotoVersao: true, status: true, statusTexto: true, assinaturaChat: true },
+          },
+        },
       },
     },
   });
@@ -346,7 +374,7 @@ export const LIMITE_AUDIO_BYTES = 500 * 1024;
 export const LIMITE_AUDIO_SEG = 60;
 /** Teto de reacoes carregadas por mensagem (ver listarMensagens). */
 export const LIMITE_REACOES_POR_MENSAGEM = 50;
-const MIMES_FOTO = ["image/jpeg", "image/png", "image/webp"];
+export const MIMES_FOTO = ["image/jpeg", "image/png", "image/webp"];
 const MIMES_AUDIO = ["audio/webm", "audio/mp4", "audio/m4a", "audio/ogg"];
 
 export interface EnviarMensagemInput {
@@ -449,7 +477,7 @@ export async function enviarMensagem(conversaId: string, autorId: string, input:
         ordemServicoId: input.ordemServicoRefId ?? null,
         respondendoAId: input.respondendoAId ?? null,
       },
-      include: { autor: { select: { id: true, nome: true, role: true, ultimaAtividadeEm: true } } },
+      include: { autor: { select: { id: true, nome: true, role: true, ultimaAtividadeEm: true, temFoto: true, fotoVersao: true, status: true, statusTexto: true, assinaturaChat: true } } },
     }),
     prisma.conversa.update({ where: { id: conversaId }, data: { ultimaMensagemEm: new Date() } }),
     prisma.notificacao.createMany({
@@ -499,7 +527,17 @@ interface MensagemComAutor {
   id: string;
   conversaId: string;
   autorId: string | null;
-  autor: { id: string; nome: string; role: string; ultimaAtividadeEm: Date | null } | null;
+  autor: {
+    id: string;
+    nome: string;
+    role: string;
+    ultimaAtividadeEm: Date | null;
+    temFoto: boolean;
+    fotoVersao: number;
+    status: string | null;
+    statusTexto: string | null;
+    assinaturaChat: string | null;
+  } | null;
   tipo: string;
   corpo: string | null;
   anexoMime: string | null;
@@ -564,7 +602,7 @@ export async function listarMensagens(conversaId: string, antesDe?: string, limi
     orderBy: { criadoEm: "desc" },
     take: Math.min(limit, 100),
     include: {
-      autor: { select: { id: true, nome: true, role: true, ultimaAtividadeEm: true } },
+      autor: { select: { id: true, nome: true, role: true, ultimaAtividadeEm: true, temFoto: true, fotoVersao: true, status: true, statusTexto: true, assinaturaChat: true } },
       respondendoA: { include: { autor: { select: { nome: true } } } },
       // Teto por mensagem: `reacoes: true` sem limite carregava TODAS as
       // reacoes de cada mensagem pra memoria. Como a chave unica e
@@ -671,7 +709,7 @@ export async function editarMensagem(mensagemId: string, usuarioId: string, novo
   const atualizada = await prisma.mensagem.update({
     where: { id: mensagemId },
     data: { corpo: novoCorpo, editadoEm: new Date() },
-    include: { autor: { select: { id: true, nome: true, role: true, ultimaAtividadeEm: true } } },
+    include: { autor: { select: { id: true, nome: true, role: true, ultimaAtividadeEm: true, temFoto: true, fotoVersao: true, status: true, statusTexto: true, assinaturaChat: true } } },
   });
   const participantes = await prisma.conversaParticipante.findMany({
     where: { conversaId: mensagem.conversaId, saiuEm: null },
