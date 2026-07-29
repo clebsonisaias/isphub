@@ -1,10 +1,11 @@
-import { useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { Stack } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import type { StatusPreset } from "@isphub/shared";
 import { USER_ROLE_LABEL } from "@isphub/shared";
 import { useAuth } from "@/lib/auth";
+import { checarBiometria, iconeBiometria, rotuloBiometria, type BiometriaInfo } from "@/lib/biometria";
 import { Avatar, useAvatarUri } from "@/features/chat/avatar";
 import { escolherFoto } from "@/features/chat/media";
 import { comprimirAvatar } from "@/features/perfil/media";
@@ -14,8 +15,10 @@ import { Button, Card, Field, Hero, Muted, Screen } from "@/components/ui";
 import { colors, font, space } from "@/theme/tokens";
 
 export default function Perfil() {
-  const { usuario, token, refetchMe, logout } = useAuth();
+  const { usuario, token, refetchMe, logout, biometriaAtiva, ativarBiometria, desativarBiometria } = useAuth();
   const [enviandoFoto, setEnviandoFoto] = useState(false);
+  const [bioInfo, setBioInfo] = useState<BiometriaInfo | null>(null);
+  const [alternandoBio, setAlternandoBio] = useState(false);
   const [statusLocal, setStatusLocal] = useState<StatusPreset | null>(usuario?.status ?? null);
   const [textoLocal, setTextoLocal] = useState(usuario?.statusTexto ?? "");
   const [salvandoStatus, setSalvandoStatus] = useState(false);
@@ -27,6 +30,30 @@ export default function Perfil() {
   const [assinaturaChat, setAssinaturaChat] = useState(usuario?.assinaturaChat ?? "");
   const [corDestaque, setCorDestaque] = useState(usuario?.corDestaque ?? "");
   const [salvandoPerfil, setSalvandoPerfil] = useState(false);
+
+  useEffect(() => {
+    let vivo = true;
+    checarBiometria().then((info) => {
+      if (vivo) setBioInfo(info);
+    });
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  async function handleAlternarBiometria(ligar: boolean) {
+    setAlternandoBio(true);
+    try {
+      if (ligar) {
+        const ok = await ativarBiometria();
+        if (!ok) return; // usuario cancelou a leitura — o switch volta sozinho
+      } else {
+        await desativarBiometria();
+      }
+    } finally {
+      setAlternandoBio(false);
+    }
+  }
 
   if (!usuario) return null;
 
@@ -158,6 +185,28 @@ export default function Perfil() {
           <Button label={salvandoPerfil ? "Salvando…" : "Salvar perfil"} onPress={handleSalvarPerfil} loading={salvandoPerfil} />
         </Card>
 
+        {bioInfo?.disponivel ? (
+          <Card style={{ gap: space.sm }}>
+            <Text style={{ fontSize: font.size.sm, fontWeight: font.weight.medium as "600", color: colors.ink2 }}>Segurança</Text>
+            <View style={styles.bioRow}>
+              <View style={styles.bioIcon}>
+                <Feather name={iconeBiometria(bioInfo.tipo)} size={18} color={colors.brand} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.bioTitulo}>Desbloqueio por {rotuloBiometria(bioInfo.tipo)}</Text>
+                <Muted>Entre no app sem digitar a senha.</Muted>
+              </View>
+              <Switch
+                value={biometriaAtiva}
+                disabled={alternandoBio}
+                onValueChange={(v) => void handleAlternarBiometria(v)}
+                trackColor={{ true: colors.brand, false: colors.line2 }}
+                thumbColor={colors.card}
+              />
+            </View>
+          </Card>
+        ) : null}
+
         <Pressable onPress={handleLogout} style={{ alignItems: "center", paddingVertical: space.md }}>
           <Text style={{ fontSize: font.size.base, fontWeight: font.weight.medium as "600", color: colors.slaRed }}>Sair</Text>
         </Pressable>
@@ -180,4 +229,14 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.brand,
   },
+  bioRow: { flexDirection: "row", alignItems: "center", gap: space.md },
+  bioIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: colors.brandBg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bioTitulo: { fontSize: font.size.base, fontWeight: font.weight.medium as "600", color: colors.ink },
 });

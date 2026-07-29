@@ -54,6 +54,12 @@
         {
           "locationWhenInUsePermission": "Permite compartilhar sua localização atual no chat interno."
         }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Permite entrar no ISPhub usando o Face ID do aparelho."
+        }
       ]
     ],
     "experiments": {
