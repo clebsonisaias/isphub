@@ -1,34 +1,16 @@
 import { useState } from "react";
 import { useRouter } from "expo-router";
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } from "react-native";
-import { CANAL_WHATSAPP_LABEL, OrigemConversaCliente, type ConversaClienteResumo, type FiltroConversaCliente } from "@isphub/shared";
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { Feather } from "@expo/vector-icons";
+import { CANAL_WHATSAPP_LABEL, CanalWhatsapp, OrigemConversaCliente, type ConversaClienteResumo, type FiltroConversaCliente } from "@isphub/shared";
 import { useAuth } from "@/lib/auth";
-import { Muted, Screen, Title } from "@/components/ui";
-import { colors, font, radius, space } from "@/theme/tokens";
+import { Card, IconButton, Muted, Pill, Screen, Segmented } from "@/components/ui";
+import { colors, font, space } from "@/theme/tokens";
 import { useConversasClientes, usePodeSupervisionar } from "@/features/cliente-chat/hooks";
-
-function SegmentButton({ label, ativo, onPress }: { label: string; ativo: boolean; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={{
-        flex: 1,
-        paddingVertical: space.sm,
-        borderRadius: radius.md,
-        backgroundColor: ativo ? colors.brand : colors.card,
-        borderWidth: 1,
-        borderColor: ativo ? colors.brand : colors.line,
-        alignItems: "center",
-      }}
-    >
-      <Text style={{ fontSize: font.size.sm, fontWeight: font.weight.medium as "600", color: ativo ? colors.onBrand : colors.ink2 }}>{label}</Text>
-    </Pressable>
-  );
-}
 
 function textoVazio(filtro: FiltroConversaCliente, podeSupervisionar: boolean): string {
   if (!podeSupervisionar) {
-    return "Você ainda não iniciou nenhuma conversa. Toque em ✏️ para escolher um modelo aprovado — aqui aparecem só as conversas que você mesmo iniciar.";
+    return "Você ainda não iniciou nenhuma conversa. Toque em Nova conversa (canto superior) para escolher um modelo aprovado — aqui aparecem só as conversas que você mesmo iniciar.";
   }
   if (filtro === "fila") return "Fila vazia — nenhuma conversa do cliente esperando atendimento.";
   if (filtro === "minhas") return "Nenhuma conversa atribuída a você.";
@@ -63,18 +45,22 @@ export default function ClientesChatLista() {
   return (
     <Screen style={{ paddingHorizontal: 0 }}>
       <View style={{ paddingHorizontal: space.lg, paddingVertical: space.md, gap: space.md }}>
-        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-          <Title>Conversas com clientes</Title>
-          <Pressable onPress={() => router.push("/chat-clientes/nova")} hitSlop={8}>
-            <Text style={{ fontSize: font.size.xl }}>✏️</Text>
-          </Pressable>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.sm }}>
+          <Text style={styles.heading} numberOfLines={1}>Conversas com clientes</Text>
+          <IconButton onPress={() => router.push("/chat-clientes/nova")}>
+            <Feather name="edit-3" size={18} color={colors.brand} />
+          </IconButton>
         </View>
         {podeSupervisionar && (
-          <View style={{ flexDirection: "row", gap: space.xs }}>
-            <SegmentButton label="Fila" ativo={aba === "fila"} onPress={() => setAba("fila")} />
-            <SegmentButton label="Minhas" ativo={aba === "minhas"} onPress={() => setAba("minhas")} />
-            <SegmentButton label="Todas" ativo={aba === "todas"} onPress={() => setAba("todas")} />
-          </View>
+          <Segmented
+            value={aba}
+            onChange={(v) => setAba(v)}
+            options={[
+              { value: "fila", label: "Fila" },
+              { value: "minhas", label: "Minhas" },
+              { value: "todas", label: "Todas" },
+            ]}
+          />
         )}
       </View>
 
@@ -84,29 +70,25 @@ export default function ClientesChatLista() {
         <FlatList
           data={query.data ?? []}
           keyExtractor={(c) => c.id}
+          contentContainerStyle={{ paddingHorizontal: space.lg, paddingTop: space.xs, gap: space.md, paddingBottom: space.xxl }}
           refreshControl={<RefreshControl refreshing={query.isFetching} onRefresh={() => query.refetch()} tintColor={colors.brand} />}
           ListEmptyComponent={
-            <Muted style={{ paddingHorizontal: space.lg, marginTop: space.lg }}>
+            <Muted style={{ marginTop: space.lg }}>
               {query.isError ? "Não foi possível carregar as conversas." : textoVazio(filtro, podeSupervisionar)}
             </Muted>
           }
           renderItem={({ item }) => {
             const rodape = rodapeConversa(item, usuario!.id);
             return (
-              <Pressable
-                onPress={() => router.push(`/chat-clientes/${item.id}`)}
-                style={({ pressed }) => [{ paddingHorizontal: space.lg, paddingVertical: space.sm }, pressed && { backgroundColor: colors.ground }]}
-              >
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                  <Text style={{ fontSize: font.size.base, fontWeight: font.weight.medium as "600", color: colors.ink }}>
-                    {item.nomeContato ?? item.telefone}
-                  </Text>
-                  <View style={{ backgroundColor: colors.brandBg, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 2 }}>
-                    <Text style={{ fontSize: font.size.xs, color: colors.brandInk }}>{CANAL_WHATSAPP_LABEL[item.canal]}</Text>
+              <Pressable onPress={() => router.push(`/chat-clientes/${item.id}`)} style={({ pressed }) => pressed && { opacity: 0.9 }}>
+                <Card style={{ gap: 3 }}>
+                  <View style={styles.convTop}>
+                    <Text style={styles.convNome} numberOfLines={1}>{item.nomeContato ?? item.telefone}</Text>
+                    <Pill label={CANAL_WHATSAPP_LABEL[item.canal]} tone={item.canal === CanalWhatsapp.META ? "green" : "teal"} />
                   </View>
-                </View>
-                <Muted numberOfLines={1}>{item.ultimaMensagem?.corpo ?? "Sem mensagens"}</Muted>
-                {rodape && <Muted style={{ fontSize: font.size.xs }}>{rodape}</Muted>}
+                  <Muted numberOfLines={1}>{item.ultimaMensagem?.corpo ?? "Sem mensagens"}</Muted>
+                  {rodape ? <Muted style={{ fontSize: font.size.xs }}>{rodape}</Muted> : null}
+                </Card>
               </Pressable>
             );
           }}
@@ -115,3 +97,9 @@ export default function ClientesChatLista() {
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  heading: { flex: 1, fontSize: font.size.xl, fontWeight: font.weight.black as "800", color: colors.ink, letterSpacing: -0.4 },
+  convTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.sm },
+  convNome: { flex: 1, fontSize: font.size.base, fontWeight: font.weight.bold as "700", color: colors.ink },
+});

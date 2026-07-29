@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Alert, Pressable, ScrollView, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Stack } from "expo-router";
+import { Feather } from "@expo/vector-icons";
 import type { StatusPreset } from "@isphub/shared";
 import { USER_ROLE_LABEL } from "@isphub/shared";
 import { useAuth } from "@/lib/auth";
@@ -9,7 +10,7 @@ import { escolherFoto } from "@/features/chat/media";
 import { comprimirAvatar } from "@/features/perfil/media";
 import { atualizarPerfil, atualizarStatus, enviarFoto, removerFoto } from "@/features/perfil/api";
 import { StatusPicker } from "@/features/perfil/status-picker";
-import { Button, Card, Field, Muted, Screen, Title } from "@/components/ui";
+import { Button, Card, Field, Hero, Muted, Screen } from "@/components/ui";
 import { colors, font, space } from "@/theme/tokens";
 
 export default function Perfil() {
@@ -116,26 +117,24 @@ export default function Perfil() {
     <Screen>
       <Stack.Screen options={{ headerShown: true, title: "Perfil" }} />
       <ScrollView contentContainerStyle={{ gap: space.lg, paddingVertical: space.lg, paddingBottom: space.xxl }}>
-        <View style={{ alignItems: "center", gap: space.sm }}>
-          <Pressable onPress={handleTrocarFoto} disabled={enviandoFoto}>
-            <Avatar nome={usuario.nome} fotoUri={fotoUri} size="lg" />
-          </Pressable>
-          <Text style={{ fontSize: font.size.sm, color: colors.brand, fontWeight: font.weight.medium as "600" }}>
-            {enviandoFoto ? "Enviando…" : "Trocar foto"}
-          </Text>
-        </View>
-
-        <View style={{ alignItems: "center" }}>
-          <Title>{usuario.nome}</Title>
-          <Muted>
-            {usuario.email} · {USER_ROLE_LABEL[usuario.role]}
-          </Muted>
-        </View>
+        <Hero
+          title={usuario.nome}
+          subtitle={USER_ROLE_LABEL[usuario.role]}
+          right={
+            <Pressable onPress={handleTrocarFoto} disabled={enviandoFoto}>
+              <Avatar nome={usuario.nome} fotoUri={fotoUri} size="lg" />
+              <View style={styles.camBadge}>
+                <Feather name="camera" size={11} color={colors.brand} />
+              </View>
+            </Pressable>
+          }
+        />
+        <Muted style={{ marginTop: -space.sm }}>{enviandoFoto ? "Enviando foto…" : usuario.email}</Muted>
 
         <Card style={{ gap: space.md }}>
           <Text style={{ fontSize: font.size.sm, fontWeight: font.weight.medium as "600", color: colors.ink2 }}>Status</Text>
           <StatusPicker status={statusLocal} statusTexto={textoLocal} onMudarStatus={setStatusLocal} onMudarTexto={setTextoLocal} />
-          <Button label={salvandoStatus ? "Salvando…" : "Salvar status"} onPress={handleSalvarStatus} loading={salvandoStatus} variant="ghost" />
+          <Button label={salvandoStatus ? "Salvando…" : "Salvar status"} onPress={handleSalvarStatus} loading={salvandoStatus} />
         </Card>
 
         <Card style={{ gap: space.md }}>
@@ -156,7 +155,7 @@ export default function Perfil() {
               <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: corDestaque, borderWidth: 1, borderColor: colors.line }} />
             )}
           </View>
-          <Button label={salvandoPerfil ? "Salvando…" : "Salvar perfil"} onPress={handleSalvarPerfil} loading={salvandoPerfil} variant="ghost" />
+          <Button label={salvandoPerfil ? "Salvando…" : "Salvar perfil"} onPress={handleSalvarPerfil} loading={salvandoPerfil} />
         </Card>
 
         <Pressable onPress={handleLogout} style={{ alignItems: "center", paddingVertical: space.md }}>
@@ -166,3 +165,19 @@ export default function Perfil() {
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  camBadge: {
+    position: "absolute",
+    right: -2,
+    bottom: -2,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: colors.card,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: colors.brand,
+  },
+});

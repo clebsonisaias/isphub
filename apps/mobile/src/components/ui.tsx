@@ -117,6 +117,65 @@ export function Segmented<T extends string>({
   );
 }
 
+// ---- Hero (bloco de saudacao/identidade, indigo) ----
+
+/**
+ * Bloco indigo do topo — a "pegada" da referencia. Titulo + subtitulo a
+ * esquerda, um slot livre a direita (avatar, botao). Textura sutil de arcos de
+ * "sinal" no canto. O padding inferior extra pode ser passado via `style` pra
+ * uma faixa de conteudo (ex.: contadores) subir por cima.
+ */
+export function Hero({
+  title,
+  subtitle,
+  right,
+  style,
+}: {
+  title: string;
+  subtitle?: string;
+  right?: ReactNode;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <View style={[styles.hero, style]}>
+      <View pointerEvents="none" style={styles.heroRings}>
+        <View style={[styles.heroRing, styles.heroRingA]} />
+        <View style={[styles.heroRing, styles.heroRingB]} />
+      </View>
+      <View style={styles.heroRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.heroTitle}>{title}</Text>
+          {subtitle ? <Text style={styles.heroSub}>{subtitle}</Text> : null}
+        </View>
+        {right}
+      </View>
+    </View>
+  );
+}
+
+// ---- IconButton (acao circular de header) ----
+
+export function IconButton({
+  children,
+  onPress,
+  tone = "brand",
+}: {
+  children: ReactNode;
+  onPress: () => void;
+  /** brand = circulo indigo suave (sobre fundo claro); onBrand = translucido (dentro do Hero). */
+  tone?: "brand" | "onBrand";
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={8}
+      style={({ pressed }) => [styles.iconBtn, tone === "onBrand" ? styles.iconBtnOnBrand : styles.iconBtnBrand, pressed && { opacity: 0.8 }]}
+    >
+      {children}
+    </Pressable>
+  );
+}
+
 // ---- Button ----
 
 type BtnVariant = "primary" | "secondary" | "ghost" | "danger";
@@ -239,4 +298,25 @@ const styles = StyleSheet.create({
   btnInativo: { opacity: 0.55 },
   btnLabelMd: { fontSize: 16, fontWeight: font.weight.bold as "700", letterSpacing: 0.2 },
   btnLabelSm: { fontSize: 14, fontWeight: font.weight.bold as "700", letterSpacing: 0.2 },
+
+  hero: {
+    backgroundColor: colors.brand,
+    borderRadius: radius.xl,
+    paddingHorizontal: space.lg,
+    paddingTop: space.lg,
+    paddingBottom: space.lg,
+    overflow: "hidden",
+    ...shadow.brand,
+  },
+  heroRings: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0 },
+  heroRing: { position: "absolute", borderRadius: 999, borderWidth: 2, borderColor: "rgba(255,255,255,0.14)" },
+  heroRingA: { width: 150, height: 150, top: -60, right: -30 },
+  heroRingB: { width: 100, height: 100, top: -35, right: -5 },
+  heroRow: { flexDirection: "row", alignItems: "center", gap: space.md },
+  heroTitle: { fontSize: font.size.xxl, fontWeight: font.weight.black as "800", color: colors.onBrand, letterSpacing: -0.5 },
+  heroSub: { fontSize: font.size.sm, color: "rgba(255,255,255,0.82)", marginTop: 2, fontWeight: font.weight.medium as "600" },
+
+  iconBtn: { width: 40, height: 40, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
+  iconBtnBrand: { backgroundColor: colors.brandBg },
+  iconBtnOnBrand: { backgroundColor: "rgba(255,255,255,0.18)" },
 });

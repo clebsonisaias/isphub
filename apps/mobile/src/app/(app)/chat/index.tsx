@@ -1,9 +1,10 @@
 import { useEffect } from "react";
 import { useRouter } from "expo-router";
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } from "react-native";
+import { ActivityIndicator, FlatList, RefreshControl, View } from "react-native";
+import { Feather } from "@expo/vector-icons";
 import { useAuth } from "@/lib/auth";
-import { Muted, Screen, Title } from "@/components/ui";
-import { colors, font, space } from "@/theme/tokens";
+import { IconButton, Muted, Screen, Title } from "@/components/ui";
+import { colors, space } from "@/theme/tokens";
 import { ConversaRow } from "@/features/chat/conversa-row";
 import { useConversas, useCriarConversa } from "@/features/chat/hooks";
 
@@ -24,9 +25,9 @@ export default function ChatLista() {
     <Screen style={{ paddingHorizontal: 0 }}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: space.lg, paddingVertical: space.md }}>
         <Title>Chat</Title>
-        <Pressable onPress={() => router.push("/chat/nova")} hitSlop={8}>
-          <Text style={{ fontSize: font.size.xl }}>✏️</Text>
-        </Pressable>
+        <IconButton onPress={() => router.push("/chat/nova")}>
+          <Feather name="edit-3" size={18} color={colors.brand} />
+        </IconButton>
       </View>
 
       {query.isLoading ? (
