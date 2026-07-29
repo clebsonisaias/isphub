@@ -45,13 +45,20 @@ function MetaConfigForm({ config, onSalvo }: { config: CanalWhatsappConfigPublic
   const [accessToken, setAccessToken] = useState("");
   const [verifyToken, setVerifyToken] = useState("");
   const [appSecret, setAppSecret] = useState("");
+  const [wabaId, setWabaId] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [testando, setTestando] = useState(false);
+
+  // Salvar reescreve o blob inteiro: sem repopular o WABA ID já gravado, um save
+  // feito por outro motivo o apagaria e o catálogo de templates pararia de abrir.
+  useEffect(() => {
+    setWabaId(config?.campos.wabaId ?? "");
+  }, [config?.campos.wabaId]);
 
   async function handleSalvar() {
     setSalvando(true);
     try {
-      await canaisWhatsappApi.salvar("meta", { tipo: "meta", phoneNumberId, accessToken, verifyToken, appSecret });
+      await canaisWhatsappApi.salvar("meta", { tipo: "meta", phoneNumberId, accessToken, verifyToken, appSecret, wabaId: wabaId.trim() || undefined });
       setAccessToken("");
       setAppSecret("");
       toast({ titulo: "Meta WhatsApp Cloud API salvo", variante: "sucesso" });
@@ -88,6 +95,13 @@ function MetaConfigForm({ config, onSalvo }: { config: CanalWhatsappConfigPublic
           <div className="flex flex-col gap-2 sm:col-span-2">
             <Label htmlFor="phoneNumberId">Phone Number ID</Label>
             <Input id="phoneNumberId" value={phoneNumberId} onChange={(e) => setPhoneNumberId(e.target.value)} />
+          </div>
+          <div className="flex flex-col gap-2 sm:col-span-2">
+            <Label htmlFor="wabaId">WABA ID</Label>
+            <Input id="wabaId" value={wabaId} onChange={(e) => setWabaId(e.target.value)} placeholder="Ex.: 102938475610293" />
+            <p className="text-xs text-muted-foreground">
+              ID da conta WhatsApp Business, no Business Manager da Meta. Necessário para listar os templates.
+            </p>
           </div>
           <div className="flex flex-col gap-2 sm:col-span-2">
             <Label htmlFor="accessToken">Access Token</Label>

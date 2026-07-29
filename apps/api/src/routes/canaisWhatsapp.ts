@@ -22,6 +22,12 @@ const metaSchema = z.object({
   accessToken: z.string().min(1),
   verifyToken: z.string().min(8),
   appSecret: z.string().min(1),
+  // Opcional (canal ja configurado nao pode virar invalido por causa dele), mas
+  // precisa estar AQUI: o zod descarta chave nao declarada, e o blob cifrado e
+  // escrito a partir do objeto ja validado — sem esta linha o WABA ID enviado
+  // pela tela seria silenciosamente jogado fora e o catalogo de templates
+  // responderia "configure o WABA ID" pra sempre.
+  wabaId: z.string().trim().min(1).optional(),
 });
 
 const evolutionSchema = z.object({

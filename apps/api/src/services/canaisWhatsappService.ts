@@ -17,6 +17,8 @@ export interface MetaWhatsappConfig {
   accessToken: string;
   verifyToken: string;
   appSecret: string;
+  /** So o catalogo de templates precisa dele; envio de texto usa phoneNumberId. Nao e segredo (fora de CAMPOS_SECRETOS). */
+  wabaId?: string;
 }
 
 export interface EvolutionWhatsappConfig {
@@ -47,6 +49,8 @@ export async function upsertConfig(tipo: CanalWhatsapp, data: CanalWhatsappConfi
     create: { tipo, configCifrado },
     update: { configCifrado },
   });
+  // Trocar wabaId/accessToken sem isso serviria o catalogo do WABA antigo por ate 5 min.
+  if (tipo === CanalWhatsapp.META) whatsappMeta.limparCacheTemplates();
   return toPublic({ ...row, tipo: row.tipo as CanalWhatsapp });
 }
 

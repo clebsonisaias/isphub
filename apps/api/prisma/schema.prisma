@@ -42,18 +42,18 @@ enum OsEventoTipo {
 }
 
 model Provedor {
-  id        String   @id @default(uuid())
-  nome      String
-  cor       String   @default("#6366f1")
-  logoUrl   String?
-  ativo     Boolean  @default(true)
-  criadoEm  DateTime @default(now())
+  id       String   @id @default(uuid())
+  nome     String
+  cor      String   @default("#6366f1")
+  logoUrl  String?
+  ativo    Boolean  @default(true)
+  criadoEm DateTime @default(now())
 
-  erpConfigs      ErpConfig[]
-  tiposOs         TipoOs[]
-  ordensServico   OrdemServico[]
-  usuarios        Usuario[]
-  syncLogs        SyncLog[]
+  erpConfigs    ErpConfig[]
+  tiposOs       TipoOs[]
+  ordensServico OrdemServico[]
+  usuarios      Usuario[]
+  syncLogs      SyncLog[]
 
   @@map("provedores")
 }
@@ -135,59 +135,59 @@ model TipoOs {
 
 /// Ordem de Servico espelhada do ERP do provedor.
 model OrdemServico {
-  id              String           @id @default(uuid())
-  provedorId      String
-  provedor        Provedor         @relation(fields: [provedorId], references: [id], onDelete: Cascade)
-  sgpOsId         String
-  tipoOsId        String?
-  tipoOs          TipoOs?          @relation(fields: [tipoOsId], references: [id], onDelete: SetNull)
-  status          OsStatus         @default(aberta)
-  prioridade      Int              @default(2)
-  clienteNome     String?
-  clienteDocumento String?
+  id                   String    @id @default(uuid())
+  provedorId           String
+  provedor             Provedor  @relation(fields: [provedorId], references: [id], onDelete: Cascade)
+  sgpOsId              String
+  tipoOsId             String?
+  tipoOs               TipoOs?   @relation(fields: [tipoOsId], references: [id], onDelete: SetNull)
+  status               OsStatus  @default(aberta)
+  prioridade           Int       @default(2)
+  clienteNome          String?
+  clienteDocumento     String?
   /// Telefone/contato do cliente, do cadastro no SGP (/api/ura/clientes/) —
   /// a listagem de OS nao traz, vem no mesmo backfill do endereco/geo.
-  telefone        String?
-  contratoId      String?
-  protocolo       String?
-  conteudo        String?
-  observacao      String?
-  logradouro      String?
-  numero          String?
-  bairro          String?
-  cidade          String?
-  lat             Float?
-  lng             Float?
+  telefone             String?
+  contratoId           String?
+  protocolo            String?
+  conteudo             String?
+  observacao           String?
+  logradouro           String?
+  numero               String?
+  bairro               String?
+  cidade               String?
+  lat                  Float?
+  lng                  Float?
   /// Localidade/POP do SGP (ex.: "Macaíba") — o SGP nao expoe endereco de
   /// rua nas listagens de OS, isso e o dado de localizacao mais
   /// fino disponivel.
-  pop             String?
+  pop                  String?
   /// Status do contrato no SGP no momento do sync (ex.: "Ativo",
   /// "Cancelado"). Usado para alertar o gestor/tecnico antes de despachar
   /// para um contrato ja cancelado/suspenso.
-  contratoStatus  String?
+  contratoStatus       String?
   /// Usuario do SGP que registrou a OS (auditoria).
-  usuario         String?
+  usuario              String?
   /// Data/hora reais de abertura no SGP (data_cadastro+hora_cadastro) —
   /// distinta de criadoEm, que so reflete quando o ISPhub sincronizou pela
   /// primeira vez.
-  dataCadastro    DateTime?
-  dataAgendamento DateTime?
+  dataCadastro         DateTime?
+  dataAgendamento      DateTime?
   /// Tecnico ISPhub atribuido (Usuario com role=tecnico) — despacho feito
   /// dentro do ISPhub, nao vem do SGP.
-  tecnicoId       String?
-  tecnico         Usuario?         @relation(fields: [tecnicoId], references: [id], onDelete: SetNull)
+  tecnicoId            String?
+  tecnico              Usuario?  @relation(fields: [tecnicoId], references: [id], onDelete: SetNull)
   /// Nome do tecnico designado no SGP do provedor (informativo — o SGP e de
   /// pessoal do provedor, nao do tecnico ISPhub que de fato executa a OS).
-  tecnicoSgpNome  String?
+  tecnicoSgpNome       String?
   /// Marca quando o alerta de "SLA estourado" ja foi disparado pra esta OS —
   /// evita notificar de novo a cada tick do slaAlertScheduler.
-  slaNotificadoEm DateTime?
+  slaNotificadoEm      DateTime?
   /// Quando o status foi alterado por acao humana no ISPhub (writebackService),
   /// nao pelo sync. Usado pra sync nao sobrescrever, por uma janela de graca,
   /// um status recem-confirmado com o SGP enquanto a leitura do SGP ainda
   /// nao refletiu a escrita (consistencia eventual do lado do SGP).
-  statusAlteradoEm DateTime?
+  statusAlteradoEm     DateTime?
   /// Quando a observacao (eco local da ultima anotacao) foi alterada por
   /// acao humana — mesma logica do statusAlteradoEm, mas pro campo
   /// observacao: o SGP nao expoe historico de anotacoes pra confirmar a
@@ -199,16 +199,16 @@ model OrdemServico {
   /// telefone, so esse endpoint traz. Marca a TENTATIVA (com ou sem dado) pra
   /// nao reconsultar pra sempre um contrato que o SGP nao detalha; reconsulta
   /// so apos um TTL (ver syncService.ts).
-  geoConsultadoEm DateTime?
-  criadoEm        DateTime         @default(now())
-  atualizadoEm    DateTime         @updatedAt
-  sincronizadoEm  DateTime         @default(now())
+  geoConsultadoEm      DateTime?
+  criadoEm             DateTime  @default(now())
+  atualizadoEm         DateTime  @updatedAt
+  sincronizadoEm       DateTime  @default(now())
 
-  atribuicoes   Atribuicao[]
-  eventos       OsEvento[]
-  notificacoes  Notificacao[]
+  atribuicoes  Atribuicao[]
+  eventos      OsEvento[]
+  notificacoes Notificacao[]
   /// Thread de chat da OS — no maximo 1 por OS (ver Conversa.ordemServicoId @unique).
-  conversa      Conversa?
+  conversa     Conversa?
 
   @@unique([provedorId, sgpOsId])
   @@index([provedorId, status])
@@ -217,18 +217,17 @@ model OrdemServico {
   @@map("ordens_servico")
 }
 
-
 model Usuario {
-  id           String   @id @default(uuid())
-  nome         String
-  email        String   @unique
-  senhaHash    String
-  role         UserRole
+  id                String    @id @default(uuid())
+  nome              String
+  email             String    @unique
+  senhaHash         String
+  role              UserRole
   /// Preenchido apenas para role=provedor (escopa o acesso a um unico provedor).
-  provedorId   String?
-  provedor     Provedor? @relation(fields: [provedorId], references: [id], onDelete: SetNull)
-  ativo        Boolean  @default(true)
-  criadoEm     DateTime @default(now())
+  provedorId        String?
+  provedor          Provedor? @relation(fields: [provedorId], references: [id], onDelete: SetNull)
+  ativo             Boolean   @default(true)
+  criadoEm          DateTime  @default(now())
   /// Versao da sessao. Vai dentro do JWT; `requireAuth` compara com o valor do
   /// banco e recusa o token se diferir. E o unico jeito de INVALIDAR um token
   /// ja emitido — sem isto, desativar o usuario, trocar a senha, rebaixar o
@@ -236,7 +235,7 @@ model Usuario {
   /// valendo (com o papel ANTIGO) por ate 8h em todas as rotas.
   /// Incrementa em: desativacao, troca de papel, troca de provedor e troca de
   /// senha. Ver services/authService.ts e routes/usuarios.ts.
-  tokenVersion Int      @default(0)
+  tokenVersion      Int       @default(0)
   /// Presenca barata do chat: atualizado (com throttle de ~60s, ver
   /// middleware de presenca) a cada request autenticado. online = visto nos
   /// ultimos ~2min — nunca calculado no cliente.
@@ -244,21 +243,21 @@ model Usuario {
 
   /// Foto de perfil (bytes-in-postgres, mesmo padrao do anexo de chat —
   /// Mensagem.anexoDados). Null = sem foto, cliente cai pro circulo de iniciais.
-  fotoDados    Bytes?
-  fotoMime     String?
+  fotoDados   Bytes?
+  fotoMime    String?
   /// Denormalizado: evita selecionar fotoDados (bytes crus) em toda query de
   /// lista de contatos/mensagens so pra saber se a foto existe.
-  temFoto      Boolean  @default(false)
+  temFoto     Boolean @default(false)
   /// Incrementado a cada upload/remocao de foto. Nunca exibido — vira `?v=`
   /// no path da foto (GET /auth/foto/:id?v=N) pra invalidar o cache local do
   /// app baseado-em-arquivo (ver baixarAnexoAutenticado em apps/mobile),
   /// que senao guardaria a foto antiga pra sempre pela mesma chave de path.
-  fotoVersao   Int      @default(0)
+  fotoVersao  Int     @default(0)
   /// Status manual (um StatusPreset — ver packages/shared). Sibling do
   /// `online` computado acima: nunca substitui a presenca automatica.
-  status       String?
+  status      String?
   /// Complemento livre opcional ao status (ex.: "cliente X ate 15h").
-  statusTexto  String?  @db.VarChar(140)
+  statusTexto String? @db.VarChar(140)
 
   /// Apelido editavel exibido no chat/UI — `nome` continua fixo (cadastro).
   nomeExibicao    String? @db.VarChar(80)
@@ -276,12 +275,13 @@ model Usuario {
   eventos       OsEvento[]
   notificacoes  Notificacao[]
 
-  conversasCriadas     Conversa[]             @relation("ConversasCriadas")
-  participacoesChat    ConversaParticipante[]
-  mensagens            Mensagem[]             @relation("MensagensDoAutor")
-  mensagemReacoes      MensagemReacao[]
+  conversasCriadas  Conversa[]             @relation("ConversasCriadas")
+  participacoesChat ConversaParticipante[]
+  mensagens         Mensagem[]             @relation("MensagensDoAutor")
+  mensagemReacoes   MensagemReacao[]
 
   conversasClienteAtendidas ConversaCliente[] @relation("ConversaClienteAgente")
+  conversasClienteIniciadas ConversaCliente[] @relation("ConversaClienteIniciadaPor")
   mensagensClienteEnviadas  MensagemCliente[] @relation("MensagemClienteAutor")
 
   @@map("usuarios")
@@ -289,12 +289,12 @@ model Usuario {
 
 /// Despacho de uma OS para um tecnico (historico de atribuicoes).
 model Atribuicao {
-  id             String        @id @default(uuid())
+  id             String       @id @default(uuid())
   ordemServicoId String
-  ordemServico   OrdemServico  @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
+  ordemServico   OrdemServico @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
   tecnicoId      String
-  tecnico        Usuario       @relation(fields: [tecnicoId], references: [id], onDelete: Cascade)
-  atribuidoEm    DateTime      @default(now())
+  tecnico        Usuario      @relation(fields: [tecnicoId], references: [id], onDelete: Cascade)
+  atribuidoEm    DateTime     @default(now())
   atribuidoPor   String?
 
   @@index([ordemServicoId])
@@ -358,8 +358,8 @@ model SyncLog {
   id         String   @id @default(uuid())
   provedorId String
   provedor   Provedor @relation(fields: [provedorId], references: [id], onDelete: Cascade)
-  direcao    String   // "pull" | "push"
-  recurso    String   // "os" | "tipos" | "tecnicos" | ...
+  direcao    String // "pull" | "push"
+  recurso    String // "os" | "tipos" | "tecnicos" | ...
   ok         Boolean
   mensagem   String?
   quantidade Int?
@@ -392,43 +392,43 @@ enum MensagemTipo {
 }
 
 model Conversa {
-  id             String        @id @default(uuid())
-  tipo           ConversaTipo
+  id               String        @id @default(uuid())
+  tipo             ConversaTipo
   /// Titulo explicito (grupo/avisos) — DM e thread de OS derivam o titulo no
   /// servidor (nome do outro participante / "OS #sgpOsId"), nao fica salvo aqui.
-  titulo         String?
+  titulo           String?
   /// Thread de OS: no maximo 1 conversa por OS (idempotencia de
   /// garantirConversaDeOs vem desse @unique).
-  ordemServicoId String?       @unique
-  ordemServico   OrdemServico? @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
-  criadoPorId    String?
-  criadoPor      Usuario?      @relation("ConversasCriadas", fields: [criadoPorId], references: [id], onDelete: SetNull)
+  ordemServicoId   String?       @unique
+  ordemServico     OrdemServico? @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
+  criadoPorId      String?
+  criadoPor        Usuario?      @relation("ConversasCriadas", fields: [criadoPorId], references: [id], onDelete: SetNull)
   /// Denormalizado: ordena a lista de conversas sem varrer mensagens (evita N+1).
   ultimaMensagemEm DateTime?
-  arquivada      Boolean       @default(false)
-  criadoEm       DateTime      @default(now())
+  arquivada        Boolean       @default(false)
+  criadoEm         DateTime      @default(now())
 
-  participantes  ConversaParticipante[]
-  mensagens      Mensagem[]
+  participantes ConversaParticipante[]
+  mensagens     Mensagem[]
 
   @@index([tipo, ultimaMensagemEm])
   @@map("conversas")
 }
 
 model ConversaParticipante {
-  id          String    @id @default(uuid())
-  conversaId  String
-  conversa    Conversa  @relation(fields: [conversaId], references: [id], onDelete: Cascade)
-  usuarioId   String
-  usuario     Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  id              String    @id @default(uuid())
+  conversaId      String
+  conversa        Conversa  @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  usuarioId       String
+  usuario         Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
   /// Pode renomear/adicionar/remover participante (grupo). Sem efeito em DM/OS/avisos.
-  admin       Boolean   @default(false)
+  admin           Boolean   @default(false)
   /// Marca d'agua de leitura: nao-lidas = mensagens com criadoEm > este valor.
   /// Evita uma linha de "lido" por mensagem, que explodiria em volume.
   ultimaLeituraEm DateTime?
-  silenciado  Boolean   @default(false)
+  silenciado      Boolean   @default(false)
   /// Saiu do grupo (soft — preserva o historico de quem participou quando).
-  saiuEm      DateTime?
+  saiuEm          DateTime?
 
   @@unique([conversaId, usuarioId])
   @@index([usuarioId, conversaId])
@@ -436,41 +436,41 @@ model ConversaParticipante {
 }
 
 model Mensagem {
-  id            String       @id @default(uuid())
-  conversaId    String
-  conversa      Conversa     @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  id             String       @id @default(uuid())
+  conversaId     String
+  conversa       Conversa     @relation(fields: [conversaId], references: [id], onDelete: Cascade)
   /// null = mensagem do sistema ("Fulano assumiu a OS"), sem autor humano.
-  autorId       String?
-  autor         Usuario?     @relation("MensagensDoAutor", fields: [autorId], references: [id], onDelete: SetNull)
-  tipo          MensagemTipo
+  autorId        String?
+  autor          Usuario?     @relation("MensagensDoAutor", fields: [autorId], references: [id], onDelete: SetNull)
+  tipo           MensagemTipo
   /// Texto, legenda da foto, ou rotulo do sistema.
-  corpo         String?
+  corpo          String?
   /// Midia local (chat NAO e evidencia de OS — nao espelha o SGP, entao nao
   /// segue o padrao de proxy-ao-vivo das fotos de evidencia). Limite validado
   /// no servidor: foto <=400KB, audio <=60s e <=500KB (ver chatService). Se o
   /// volume crescer, migrar pra S3/MinIO e trocar `anexoDados` por uma URL —
   /// o contrato de API (Mensagem.anexoMime/anexoTamanho) nao muda.
-  anexoDados    Bytes?
-  anexoMime     String?
-  anexoTamanho  Int?
+  anexoDados     Bytes?
+  anexoMime      String?
+  anexoTamanho   Int?
   /// Audio, em segundos.
-  duracaoSeg    Int?
-  lat           Float?
-  lng           Float?
+  duracaoSeg     Int?
+  lat            Float?
+  lng            Float?
   /// Card de OS compartilhado no chat (tipo os_ref).
   ordemServicoId String?
   respondendoAId String?
-  respondendoA  Mensagem?    @relation("Respostas", fields: [respondendoAId], references: [id], onDelete: SetNull)
-  respostas     Mensagem[]   @relation("Respostas")
-  editadoEm     DateTime?
+  respondendoA   Mensagem?    @relation("Respostas", fields: [respondendoAId], references: [id], onDelete: SetNull)
+  respostas      Mensagem[]   @relation("Respostas")
+  editadoEm      DateTime?
   /// SOFT DELETE — contexto operacional e prova; nada some do banco. Quem
   /// apagou fica so como String (mesmo padrao de Atribuicao.atribuidoPor —
   /// auditoria informativa, sem FK).
-  apagadoEm     DateTime?
-  apagadoPorId  String?
-  criadoEm      DateTime     @default(now())
+  apagadoEm      DateTime?
+  apagadoPorId   String?
+  criadoEm       DateTime     @default(now())
 
-  reacoes       MensagemReacao[]
+  reacoes MensagemReacao[]
 
   @@index([conversaId, criadoEm])
   @@map("mensagens")
@@ -513,6 +513,16 @@ enum MensagemClienteTipo {
   sistema
 }
 
+/// Quem deu o primeiro passo. `entrada` = cliente mandou mensagem (nasce no
+/// webhook, sem staff envolvido). `saida` = staff iniciou por template HSM.
+/// Existe separado de `iniciadaPorId` porque este ultimo vira null quando o
+/// usuario e deletado (onDelete: SetNull) — e ai a conversa continuaria
+/// parecendo entrante, virando visivel na regra de escopo errada.
+enum OrigemConversaCliente {
+  entrada
+  saida
+}
+
 /// Config global (nao por provedor) de cada integracao WhatsApp — mirror de
 /// ErpConfig sem provedorId: ha so UMA conta Meta + UMA instancia Evolution
 /// pro ISPhub inteiro (decisao explicita do usuario).
@@ -535,54 +545,73 @@ model CanalWhatsappConfig {
 
 /// Conversa com um CLIENTE via WhatsApp — sem Usuario do lado do cliente.
 model ConversaCliente {
-  id               String        @id @default(uuid())
+  id               String                @id @default(uuid())
   /// E.164 sem prefixo, ex "5584999999999". Mesmo numero em canais diferentes
   /// e uma conversa DISTINTA por canal (cada canal e um numero/instancia diferente).
   telefone         String
   canal            CanalWhatsapp
   /// Nome de perfil do WhatsApp do cliente — informativo, nunca chave.
   nomeContato      String?
-  /// null = fila compartilhada (qualquer staff elegivel assume).
+  /// Quem esta atendendo AGORA. Muda com assumir/transferir — nao serve como
+  /// chave de visibilidade do tecnico (transferir tiraria a conversa dele).
   agenteId         String?
-  agente           Usuario?      @relation("ConversaClienteAgente", fields: [agenteId], references: [id], onDelete: SetNull)
-  arquivada        Boolean       @default(false)
+  agente           Usuario?              @relation("ConversaClienteAgente", fields: [agenteId], references: [id], onDelete: SetNull)
+  /// Quem INICIOU a conversa por template. null = entrante (nasceu do webhook).
+  /// E a chave de visibilidade do TECNICO: ele so enxerga o que ele mesmo
+  /// iniciou. Setado APENAS no create do upsert — no update nao se toca, senao
+  /// um segundo tecnico disparando pro mesmo numero roubaria a thread do
+  /// primeiro (ha uma unica thread por telefone+canal, ver @@unique abaixo).
+  iniciadaPorId    String?
+  iniciadaPor      Usuario?              @relation("ConversaClienteIniciadaPor", fields: [iniciadaPorId], references: [id], onDelete: SetNull)
+  origem           OrigemConversaCliente @default(entrada)
+  arquivada        Boolean               @default(false)
   ultimaMensagemEm DateTime?
-  criadoEm         DateTime      @default(now())
+  criadoEm         DateTime              @default(now())
 
   mensagens MensagemCliente[]
 
   @@unique([telefone, canal])
   @@index([canal, arquivada, ultimaMensagemEm])
   @@index([agenteId])
+  /// Escopo do tecnico filtra por este campo em toda listagem — sem indice a
+  /// lista degrada junto com o volume de conversas.
+  @@index([iniciadaPorId])
   @@map("conversas_clientes")
 }
 
 model MensagemCliente {
-  id               String                 @id @default(uuid())
-  conversaId       String
-  conversa         ConversaCliente        @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  id           String                 @id @default(uuid())
+  conversaId   String
+  conversa     ConversaCliente        @relation(fields: [conversaId], references: [id], onDelete: Cascade)
   /// Denormalizado de conversa.canal — so pro @@unique abaixo (webhooks
   /// WhatsApp reentregam o mesmo evento; isto torna a ingestao idempotente).
-  canal            CanalWhatsapp
-  direcao          MensagemClienteDirecao
+  canal        CanalWhatsapp
+  direcao      MensagemClienteDirecao
   /// Staff que enviou (direcao=saida). Null em mensagens do cliente/sistema.
-  autorId          String?
-  autor            Usuario?               @relation("MensagemClienteAutor", fields: [autorId], references: [id], onDelete: SetNull)
-  tipo             MensagemClienteTipo
-  corpo            String?
+  autorId      String?
+  autor        Usuario?               @relation("MensagemClienteAutor", fields: [autorId], references: [id], onDelete: SetNull)
+  tipo         MensagemClienteTipo
+  corpo        String?
   /// Midia recebida do WhatsApp — baixada e persistida (URLs da Meta expiram
   /// ~5min, nao da pra so referenciar). Teto de 5MB, ver LIMITE_MIDIA_CLIENTE_BYTES.
-  anexoDados       Bytes?
-  anexoMime        String?
-  anexoTamanho     Int?
-  duracaoSeg       Int?
-  lat              Float?
-  lng              Float?
+  anexoDados   Bytes?
+  anexoMime    String?
+  anexoTamanho Int?
+  duracaoSeg   Int?
+  lat          Float?
+  lng          Float?
   /// Id da mensagem no provedor (wamid do Meta / id da Evolution).
-  waMessageId      String
+  waMessageId  String
   /// Falha ao ENVIAR (direcao=saida) — erro do connector, exibido na bolha.
-  falhaEnvio       String?
-  criadoEm         DateTime               @default(now())
+  falhaEnvio   String?
+  /// Nome do template HSM disparado (so em mensagens que abriram conversa).
+  /// `corpo` guarda o texto JA RENDERIZADO com as variaveis substituidas — o
+  /// Maxxi grava so o marcador "[Template: nome]" e o atendente fica sem saber
+  /// o que foi realmente enviado ao cliente.
+  templateNome String?
+  /// Variaveis efetivamente enviadas ({ "1": "Joao", "2": "10/08" }).
+  templateVars Json?
+  criadoEm     DateTime               @default(now())
 
   @@unique([canal, waMessageId])
   @@index([conversaId, criadoEm])

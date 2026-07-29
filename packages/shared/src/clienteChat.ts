@@ -32,8 +32,22 @@ export enum MensagemClienteTipo {
   SISTEMA = "sistema",
 }
 
+/** Quem deu o primeiro passo: `entrada` = cliente escreveu; `saida` = staff disparou template. */
+export enum OrigemConversaCliente {
+  ENTRADA = "entrada",
+  SAIDA = "saida",
+}
+
 /** Teto de mídia recebida do WhatsApp — maior que o do chat interno (400KB) pois nao controlamos a compressao do lado do cliente. */
 export const LIMITE_MIDIA_CLIENTE_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Filtro de listagem. `todas` e privilegio de ADMIN/GESTOR — o servidor NUNCA
+ * deixa o filtro do cliente alargar o escopo, so estreitar (ver
+ * escopoConversaClienteWhere). Para TECNICO, `todas` equivale a `minhas`.
+ */
+export const FILTROS_CONVERSA_CLIENTE = ["fila", "minhas", "todas"] as const;
+export type FiltroConversaCliente = (typeof FILTROS_CONVERSA_CLIENTE)[number];
 
 /**
  * Status derivado no SERVIDOR a partir de agenteId/arquivada — o cliente
@@ -49,6 +63,17 @@ export interface ConversaClienteResumo {
   status: StatusConversaCliente;
   agenteId?: string | null;
   agenteNome?: string | null;
+  origem: OrigemConversaCliente;
+  /** Quem abriu por template. null = entrante. Chave de visibilidade do TECNICO. */
+  iniciadaPorId?: string | null;
+  iniciadaPorNome?: string | null;
+  /**
+   * Se a janela de 24h do WhatsApp esta aberta (houve mensagem DO CLIENTE nas
+   * ultimas 24h). Fora dela a Meta so aceita template — sem este campo o
+   * atendente digita, envia, e a mensagem vira uma bolha com falhaEnvio sem
+   * explicacao. Derivado no servidor a partir do historico, nao ha tabela.
+   */
+  dentroJanela24h: boolean;
   ultimaMensagem?: {
     corpo?: string | null;
     tipo: MensagemClienteTipo;
@@ -74,7 +99,40 @@ export interface MensagemClienteDTO {
   lat?: number | null;
   lng?: number | null;
   falhaEnvio?: string | null;
+  /** Template HSM que originou esta mensagem; `corpo` ja vem renderizado. */
+  templateNome?: string | null;
   criadoEm: string;
+}
+
+/**
+ * Template HSM aprovado, lido AO VIVO da Graph API da Meta (mesmo desenho do
+ * Maxxi: sem tabela local, cache de 5 min). Um template pode ser rejeitado pela
+ * Meta a qualquer momento — copia local envelheceria em silencio.
+ */
+export interface TemplateWhatsappDTO {
+  nome: string;
+  /** Codigo do idioma da definicao aprovada (ex.: "pt_BR"). NAO assumir pt_BR. */
+  idioma: string;
+  categoria: string;
+  /** Texto do corpo com os placeholders `{{n}}` ainda no lugar — pra preview. */
+  corpo: string;
+  /** Texto do header, quando ele e do tipo TEXT. */
+  header?: string | null;
+  /**
+   * Indices das variaveis exigidas, em ordem (ex.: [1,2,3]). Derivado dos
+   * placeholders `{{n}}` de header+corpo — e o que define quantos parametros
+   * o disparo precisa mandar.
+   */
+  variaveis: number[];
+}
+
+export interface IniciarConversaClienteInput {
+  telefone: string;
+  nomeContato?: string;
+  canal: CanalWhatsapp;
+  templateNome: string;
+  /** Valor por indice de variavel: { "1": "Joao", "2": "10/08" }. */
+  vars?: Record<string, string>;
 }
 
 /** Config mascarada de um canal — nunca os segredos reais, so o suficiente pra UI mostrar "configurado" + testar. */
@@ -95,6 +153,13 @@ export interface MetaWhatsappConfigInput {
   accessToken: string;
   verifyToken: string;
   appSecret: string;
+  /**
+   * ID da conta WhatsApp Business (WABA). Necessario SO pra listar templates
+   * (`GET /{wabaId}/message_templates`) — o envio de texto usa phoneNumberId e
+   * funciona sem ele. Nao e segredo: nao entra em CAMPOS_SECRETOS, nao e
+   * mascarado. Opcional pra nao invalidar canal ja configurado.
+   */
+  wabaId?: string;
 }
 
 export interface EvolutionWhatsappConfigInput {

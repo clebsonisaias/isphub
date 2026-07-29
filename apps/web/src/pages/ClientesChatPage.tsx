@@ -1,6 +1,18 @@
 import { useEffect, useState } from "react";
-import { CANAL_WHATSAPP_LABEL, type ConversaClienteResumo, type MensagemClienteDTO } from "@isphub/shared";
+import {
+  CANAL_WHATSAPP_LABEL,
+  CanalWhatsapp,
+  FILTROS_CONVERSA_CLIENTE,
+  UserRole,
+  type ConversaClienteResumo,
+  type FiltroConversaCliente,
+  type MensagemClienteDTO,
+} from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
+import { EmptyState } from "@/components/EmptyState";
+import { MensagemClienteBolha } from "@/components/chat-clientes/MensagemClienteBolha";
+import { NovaConversaClienteDialog } from "@/components/chat-clientes/NovaConversaClienteDialog";
+import { TransferirConversaDialog } from "@/components/chat-clientes/TransferirConversaDialog";
 import { useAuth } from "@/context/AuthContext";
 import { useRealtime } from "@/lib/realtime";
 import { clientesChatApi } from "@/lib/clientesChatApi";
@@ -9,12 +21,33 @@ import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
 import { cn } from "@/lib/utils";
+import { SquarePen } from "lucide-react";
+
+const ROTULO_FILTRO: Record<FiltroConversaCliente, string> = {
+  fila: "Fila",
+  minhas: "Minhas",
+  todas: "Todas",
+};
 
 function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
 }
 
+function formatHora(iso: string): string {
+  const data = new Date(iso);
+  const hoje = new Date();
+  if (data.toDateString() === hoje.toDateString()) return data.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  return data.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+}
+
 function ConversaListItem({ conversa, ativa, onClick }: { conversa: ConversaClienteResumo; ativa: boolean; onClick: () => void }) {
+  // Quem responde hoje é o que importa; sem dono, quem disparou o template é a única pista de responsabilidade.
+  const rodape = conversa.agenteNome
+    ? `Com ${conversa.agenteNome}`
+    : conversa.iniciadaPorNome
+      ? `Iniciada por ${conversa.iniciadaPorNome}`
+      : null;
+
   return (
     <button
       type="button"
@@ -28,8 +61,13 @@ function ConversaListItem({ conversa, ativa, onClick }: { conversa: ConversaClie
         <span className="truncate text-sm font-medium">{conversa.nomeContato ?? conversa.telefone}</span>
         <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[0.65rem] text-primary">{CANAL_WHATSAPP_LABEL[conversa.canal]}</span>
       </div>
-      <span className="truncate text-xs text-muted-foreground">{conversa.ultimaMensagem?.corpo ?? "Sem mensagens"}</span>
-      {conversa.agenteNome && <span className="text-[0.65rem] text-muted-foreground">Com {conversa.agenteNome}</span>}
+      <div className="flex items-center justify-between gap-2">
+        <span className="truncate text-xs text-muted-foreground">{conversa.ultimaMensagem?.corpo ?? "Sem mensagens"}</span>
+        {conversa.ultimaMensagem && (
+          <span className="shrink-0 font-mono text-[0.65rem] text-muted-foreground">{formatHora(conversa.ultimaMensagem.criadoEm)}</span>
+        )}
+      </div>
+      {rodape && <span className="text-[0.65rem] text-muted-foreground">{rodape}</span>}
     </button>
   );
 }
@@ -38,16 +76,22 @@ function ConversaListItem({ conversa, ativa, onClick }: { conversa: ConversaClie
 export function ClientesChatPage() {
   const { usuario } = useAuth();
   const { toast } = useToast();
-  const [filtro, setFiltro] = useState<"fila" | "minhas">("fila");
+  // ADMIN/GESTOR enxergam tudo e intervêm; TECNICO só recebe do servidor as
+  // conversas que ele mesmo iniciou — pra ele fila/minhas seriam a mesma lista.
+  const podeVerTudo = usuario?.role === UserRole.ADMIN || usuario?.role === UserRole.GESTOR;
+  const [filtro, setFiltro] = useState<FiltroConversaCliente>("fila");
+  const filtroEfetivo: FiltroConversaCliente = podeVerTudo ? filtro : "todas";
   const [conversas, setConversas] = useState<ConversaClienteResumo[] | null>(null);
   const [selecionada, setSelecionada] = useState<ConversaClienteResumo | null>(null);
   const [mensagens, setMensagens] = useState<MensagemClienteDTO[] | null>(null);
   const [texto, setTexto] = useState("");
   const [enviando, setEnviando] = useState(false);
+  const [novaAberta, setNovaAberta] = useState(false);
+  const [transferirAberta, setTransferirAberta] = useState(false);
 
   async function carregarConversas() {
     try {
-      setConversas(await clientesChatApi.conversas(filtro));
+      setConversas(await clientesChatApi.conversas(filtroEfetivo));
     } catch (err) {
       toast({ titulo: "Erro ao carregar conversas", descricao: mensagem(err), variante: "erro" });
     }
@@ -65,7 +109,7 @@ export function ClientesChatPage() {
     setConversas(null);
     void carregarConversas();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtro]);
+  }, [filtroEfetivo]);
 
   useEffect(() => {
     if (selecionada) void carregarMensagens(selecionada.id);
@@ -115,26 +159,57 @@ export function ClientesChatPage() {
     }
   }
 
+  function handleConversaCriada(conversa: ConversaClienteResumo) {
+    setSelecionada(conversa);
+    void carregarConversas();
+  }
+
   const jaAssumida = !!selecionada?.agenteId;
   const souEuQueAssumi = selecionada?.agenteId === usuario?.id;
+  // Intervenção: ADMIN/GESTOR escrevem em conversa de outro sem tomar a posse dela.
+  const intervindo = !!selecionada && podeVerTudo && jaAssumida && !souEuQueAssumi;
+  const podeEscrever = !!selecionada && (souEuQueAssumi || !jaAssumida || podeVerTudo);
+  // A janela de 24h e regra da API oficial da Meta. No Evolution (nao oficial)
+  // ela nao existe — avisar ali seria mentira na tela.
+  //
+  // So AVISA, nao bloqueia o composer: `dentroJanela24h` e derivado do nosso
+  // proprio historico, entao um webhook nao entregue nos faria calcular "fora
+  // da janela" pra uma conversa em que o cliente acabou de escrever. Trancar o
+  // atendente por engano e pior que deixar enviar — a recusa da Meta ja aparece
+  // na bolha via `falhaEnvio`. O mobile segue o mesmo criterio.
+  const foraDaJanela = !!selecionada && selecionada.canal === CanalWhatsapp.META && !selecionada.dentroJanela24h;
 
   return (
     <AppShell>
       <div className="-mx-4 -my-6 flex h-[calc(100svh-3.5rem-6rem)] overflow-hidden rounded-none border-y border-border bg-card lg:mx-0 lg:my-0 lg:h-[calc(100svh-3.5rem-3rem)] lg:rounded-xl lg:border">
-        <div className={cn("w-full shrink-0 border-r border-border lg:w-80", selecionada && "hidden lg:block")}>
-          <div className="flex gap-1 border-b border-border p-2">
-            <Button variant={filtro === "fila" ? "secondary" : "ghost"} size="sm" className="flex-1" onClick={() => setFiltro("fila")}>
-              Fila
-            </Button>
-            <Button variant={filtro === "minhas" ? "secondary" : "ghost"} size="sm" className="flex-1" onClick={() => setFiltro("minhas")}>
-              Minhas
+        <div className={cn("flex w-full shrink-0 flex-col border-r border-border lg:w-80", selecionada && "hidden lg:flex")}>
+          <div className="flex items-center gap-1 border-b border-border p-2">
+            {podeVerTudo ? (
+              FILTROS_CONVERSA_CLIENTE.map((f) => (
+                <Button key={f} variant={filtro === f ? "secondary" : "ghost"} size="sm" className="flex-1" onClick={() => setFiltro(f)}>
+                  {ROTULO_FILTRO[f]}
+                </Button>
+              ))
+            ) : (
+              <span className="flex-1 px-2 text-sm font-medium text-foreground">Minhas conversas</span>
+            )}
+            <Button variant="ghost" size="icon" title="Nova conversa" aria-label="Nova conversa" onClick={() => setNovaAberta(true)}>
+              <SquarePen />
             </Button>
           </div>
-          <div className="overflow-y-auto">
+          <div className="flex-1 overflow-y-auto">
             {conversas === null ? (
               <p className="p-4 text-sm text-muted-foreground">Carregando...</p>
             ) : conversas.length === 0 ? (
-              <p className="p-4 text-sm text-muted-foreground">{filtro === "fila" ? "Fila vazia." : "Nenhuma conversa sua ainda."}</p>
+              podeVerTudo ? (
+                <p className="p-4 text-sm text-muted-foreground">{filtro === "fila" ? "Fila vazia." : "Nenhuma conversa por aqui ainda."}</p>
+              ) : (
+                <EmptyState
+                  className="m-3"
+                  title="Nenhuma conversa ainda"
+                  description="Aqui aparecem as conversas que você mesmo iniciar por template. Toque no lápis para começar uma."
+                />
+              )
             ) : (
               conversas.map((c) => (
                 <ConversaListItem key={c.id} conversa={c} ativa={selecionada?.id === c.id} onClick={() => setSelecionada(c)} />
@@ -146,45 +221,57 @@ export function ClientesChatPage() {
         <div className={cn("flex min-w-0 flex-1 flex-col", !selecionada && "hidden lg:flex")}>
           {selecionada ? (
             <>
-              <div className="flex items-center justify-between border-b border-border px-4 py-3">
-                <div>
-                  <p className="text-sm font-medium">{selecionada.nomeContato ?? selecionada.telefone}</p>
-                  <p className="text-xs text-muted-foreground">{CANAL_WHATSAPP_LABEL[selecionada.canal]}</p>
+              <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{selecionada.nomeContato ?? selecionada.telefone}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {CANAL_WHATSAPP_LABEL[selecionada.canal]}
+                    {selecionada.agenteNome ? ` · com ${selecionada.agenteNome}` : ""}
+                  </p>
                 </div>
-                {jaAssumida ? (
-                  <Button variant="outline" size="sm" onClick={handleEncerrar}>
-                    Encerrar
-                  </Button>
-                ) : (
-                  <Button variant="brand" size="sm" onClick={handleAssumir}>
-                    Assumir
-                  </Button>
-                )}
+                <div className="flex shrink-0 items-center gap-2">
+                  {podeVerTudo && (
+                    <Button variant="outline" size="sm" onClick={() => setTransferirAberta(true)}>
+                      Passar para outro atendente
+                    </Button>
+                  )}
+                  {jaAssumida ? (
+                    <Button variant="outline" size="sm" onClick={handleEncerrar}>
+                      Encerrar
+                    </Button>
+                  ) : (
+                    <Button variant="brand" size="sm" onClick={handleAssumir}>
+                      Assumir
+                    </Button>
+                  )}
+                </div>
               </div>
               <div className="flex-1 overflow-y-auto p-4">
                 {(mensagens ?? []).map((m) => (
-                  <div key={m.id} className={cn("mb-2 flex", m.direcao === "saida" ? "justify-end" : "justify-start")}>
-                    <div
-                      className={cn(
-                        "max-w-[70%] rounded-lg px-3 py-2 text-sm",
-                        m.direcao === "saida" ? "bg-primary text-primary-foreground" : "border border-border bg-card",
-                      )}
-                    >
-                      <p className="whitespace-pre-wrap break-words">{m.corpo}</p>
-                      {m.falhaEnvio && <p className="mt-1 text-xs text-destructive">Falha ao enviar: {m.falhaEnvio}</p>}
-                    </div>
-                  </div>
+                  <MensagemClienteBolha key={m.id} mensagem={m} />
                 ))}
               </div>
+              {intervindo && (
+                <p className="border-t border-border bg-secondary/40 px-4 py-2 text-xs text-muted-foreground">
+                  Você está intervindo — a conversa continua com {selecionada.agenteNome}.
+                </p>
+              )}
+              {foraDaJanela && (
+                <p className="border-t border-border bg-warning/10 px-4 py-2 text-xs text-warning">
+                  Fora da janela de 24h: o WhatsApp só entrega template agora. Texto livre será recusado pela Meta.
+                </p>
+              )}
               <div className="flex gap-2 border-t border-border p-3">
                 <Input
                   value={texto}
                   onChange={(e) => setTexto(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleEnviar()}
-                  placeholder={souEuQueAssumi || !jaAssumida ? "Mensagem..." : "Assuma a conversa para responder"}
-                  disabled={!(souEuQueAssumi || !jaAssumida)}
+                  placeholder={
+                    !podeEscrever ? "Assuma a conversa para responder" : intervindo ? `Intervir na conversa de ${selecionada.agenteNome}...` : "Mensagem..."
+                  }
+                  disabled={!podeEscrever}
                 />
-                <Button variant="brand" onClick={handleEnviar} disabled={enviando || !texto.trim()}>
+                <Button variant="brand" onClick={handleEnviar} disabled={!podeEscrever || enviando || !texto.trim()}>
                   Enviar
                 </Button>
               </div>
@@ -194,6 +281,20 @@ export function ClientesChatPage() {
           )}
         </div>
       </div>
+
+      <NovaConversaClienteDialog open={novaAberta} onOpenChange={setNovaAberta} onConversaCriada={handleConversaCriada} />
+      {selecionada && (
+        <TransferirConversaDialog
+          open={transferirAberta}
+          onOpenChange={setTransferirAberta}
+          conversaId={selecionada.id}
+          agenteAtualId={selecionada.agenteId}
+          onTransferida={(agenteId, agenteNome) => {
+            setSelecionada((prev) => (prev ? { ...prev, agenteId, agenteNome } : prev));
+            void carregarConversas();
+          }}
+        />
+      )}
     </AppShell>
   );
 }
