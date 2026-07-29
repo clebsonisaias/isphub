@@ -250,15 +250,32 @@ async function sgpGetPaginado(creds: ErpCredentials, path: string, ...possibleKe
   const itens = asArray(primeira, ...possibleKeys, "resultados", "results");
   let proxima = typeof (primeira as { next?: unknown })?.next === "string" ? (primeira as { next: string }).next : null;
 
+  let paginasSeguidas = 0;
   for (let pagina = 0; proxima && pagina < PAGINACAO_MAX_PAGINAS; pagina++) {
-    const res = await fetch(proxima, {
-      headers: { Accept: "application/json", Authorization: `Token ${creds.token}`, "X-SGP-Token": creds.token },
+    // A credencial tem que ir na URL do `next` tambem. O SGP monta esse link a
+    // partir da requisicao original, mas se por qualquer motivo ele vier sem
+    // `token`/`app`, a pagina 2 volta 403 e a lista fica truncada — que e
+    // exatamente o sintoma de "so aparece 1 OLT".
+    const urlProxima = new URL(proxima);
+    if (!urlProxima.searchParams.has("token")) urlProxima.searchParams.set("token", creds.token);
+    if (!urlProxima.searchParams.has("app")) urlProxima.searchParams.set("app", creds.app);
+
+    const res = await fetch(urlProxima.toString(), {
+      headers: { Accept: "application/json", ...authHeaders(creds) },
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     const corpo = await parseJsonOrThrow(res, path);
     itens.push(...asArray(corpo, ...possibleKeys, "resultados", "results"));
     proxima = typeof (corpo as { next?: unknown })?.next === "string" ? (corpo as { next: string }).next : null;
+    paginasSeguidas++;
   }
+
+  // Evidencia pra diagnosticar lista truncada: antes, "veio 1 item" e "o SGP
+  // so tem 1" eram indistinguiveis do lado de fora.
+  console.log(
+    `[sgp] ${path}: ${itens.length} item(ns), ${paginasSeguidas} pagina(s) extra(s)` +
+      `${proxima ? " — PAROU NO TETO DE PAGINAS" : ""}`,
+  );
   return itens;
 }
 

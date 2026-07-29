@@ -863,8 +863,33 @@ describe("createSgpConnector", () => {
         { id: "2", nome: "OLT-PAGINA-2", fabricante: null },
       ]);
       expect(fetchMock).toHaveBeenCalledTimes(2);
-      expect(String(fetchMock.mock.calls[1][0])).toBe("https://sgp.exemplo.com.br/api/fttx/olt/list/?page=2");
+      // A URL do `next` ganha token+app quando o SGP nao os devolve nela. Sem
+      // isso a pagina 2 volta 403 e a lista fica truncada em silencio — o
+      // sintoma de "so aparece 1 OLT".
+      const url2 = new URL(String(fetchMock.mock.calls[1][0]));
+      expect(url2.pathname).toBe("/api/fttx/olt/list/");
+      expect(url2.searchParams.get("page")).toBe("2");
+      expect(url2.searchParams.get("token")).toBe(creds.token);
+      expect(url2.searchParams.get("app")).toBe(creds.app);
       expect((fetchMock.mock.calls[1][1].headers as Record<string, string>).Authorization).toBe(`Token ${creds.token}`);
+    });
+
+    it("next que JA traz token nao ganha um duplicado", async () => {
+      fetchMock
+        .mockResolvedValueOnce(
+          jsonResponse({
+            count: 2,
+            next: `https://sgp.exemplo.com.br/api/fttx/olt/list/?page=2&token=${creds.token}&app=${creds.app}`,
+            results: [{ id: 1, nome: "P1" }],
+          }),
+        )
+        .mockResolvedValueOnce(jsonResponse({ count: 2, next: null, results: [{ id: 2, nome: "P2" }] }));
+
+      await createSgpConnector(creds).listarOlts();
+
+      const url2 = new URL(String(fetchMock.mock.calls[1][0]));
+      expect(url2.searchParams.getAll("token")).toEqual([creds.token]);
+      expect(url2.searchParams.getAll("app")).toEqual([creds.app]);
     });
 
     it("listarOnusNaoAutorizadas mapeia phy_addr->serial e info_rx->sinalRxDbm", async () => {
