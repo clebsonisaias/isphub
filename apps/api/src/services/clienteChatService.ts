@@ -17,6 +17,7 @@ import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../middleware/errorHandler.js";
 import type { JwtPayload } from "./authService.js";
 import { emitParaTodos } from "./realtimeHub.js";
+import { dispararPush } from "./pushService.js";
 import * as canaisWhatsappService from "./canaisWhatsappService.js";
 import * as whatsappMeta from "../connectors/whatsappMeta.js";
 import * as whatsappEvolution from "../connectors/whatsappEvolution.js";
@@ -547,4 +548,60 @@ export async function receberMensagemWebhook(input: {
   await prisma.conversaCliente.update({ where: { id: conversa.id }, data: { ultimaMensagemEm: new Date() } });
 
   emitParaTodos({ tipo: "cliente-chat-mensagem", conversaId: conversa.id, mensagemId: mensagem.id, em: new Date().toISOString() });
+
+  // Push SO quando a mensagem e nova. O upsert acima e idempotente de proposito
+  // (a Meta reentrega o mesmo evento), mas ele devolve a linha existente sem
+  // dizer se criou — e sem esta guarda cada reentrega tocaria o celular de todo
+  // mundo de novo pela MESMA mensagem do cliente.
+  const recemCriada = Date.now() - mensagem.criadoEm.getTime() < 10_000;
+  if (recemCriada) {
+    dispararPush(await destinatariosDaConversa(conversa), {
+      titulo: conversa.nomeContato?.trim() || conversa.telefone,
+      corpo: resumoMensagemCliente(mensagem.tipo, mensagem.corpo),
+      dados: { tela: "chat-clientes", conversaId: conversa.id },
+    });
+  }
+}
+
+/**
+ * Rotulo curto pro push quando a mensagem nao e texto. `tipo` como string
+ * porque aqui chega o enum do Prisma, que o TS trata como distinto do enum do
+ * shared mesmo tendo os mesmos valores.
+ */
+function resumoMensagemCliente(tipo: string, corpo: string | null): string {
+  if (corpo?.trim()) return corpo.length > 120 ? `${corpo.slice(0, 120)}…` : corpo;
+  switch (tipo) {
+    case MensagemClienteTipo.IMAGEM:
+      return "Enviou uma imagem";
+    case MensagemClienteTipo.AUDIO:
+      return "Enviou um áudio";
+    case MensagemClienteTipo.DOCUMENTO:
+      return "Enviou um documento";
+    case MensagemClienteTipo.LOCALIZACAO:
+      return "Enviou uma localização";
+    default:
+      return "Nova mensagem";
+  }
+}
+
+/**
+ * Quem deve ser avisado de uma mensagem do cliente — espelha a MESMA regra de
+ * visibilidade da listagem (ver escopo por papel no topo do arquivo). Avisar
+ * quem nao pode abrir a conversa seria pior que nao avisar: o celular toca e a
+ * tela diz "acesso restrito".
+ *
+ * Com dono definido, so o dono: quando alguem ja assumiu, tocar o celular da
+ * empresa inteira a cada resposta do cliente e o caminho mais rapido pra equipe
+ * desligar a notificacao.
+ */
+async function destinatariosDaConversa(conversa: { agenteId: string | null; iniciadaPorId: string | null }): Promise<string[]> {
+  if (conversa.agenteId) return [conversa.agenteId];
+  const internos = await prisma.usuario.findMany({
+    where: { ativo: true, role: { in: [UserRole.ADMIN, UserRole.GESTOR] } },
+    select: { id: true },
+  });
+  const ids = internos.map((u) => u.id);
+  // O tecnico que abriu por template continua enxergando a conversa dele.
+  if (conversa.iniciadaPorId) ids.push(conversa.iniciadaPorId);
+  return ids;
 }

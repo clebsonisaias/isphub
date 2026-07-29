@@ -284,7 +284,36 @@ model Usuario {
   conversasClienteIniciadas ConversaCliente[] @relation("ConversaClienteIniciadaPor")
   mensagensClienteEnviadas  MensagemCliente[] @relation("MensagemClienteAutor")
 
+  pushTokens PushToken[]
+
   @@map("usuarios")
+}
+
+enum PushPlataforma {
+  android
+  ios
+}
+
+/// Aparelho registrado para receber push (Expo Push Service).
+///
+/// A chave unica e o TOKEN, nao (usuario, token): o token identifica o
+/// APARELHO. Se outro tecnico logar no mesmo celular, o registro tem que
+/// migrar de dono — se fosse unico por par, o aparelho ficaria com dois donos e
+/// o tecnico anterior continuaria recebendo as mensagens do novo (vazamento de
+/// conversa entre pessoas que dividem aparelho, coisa comum em equipe de campo).
+model PushToken {
+  id         String         @id @default(uuid())
+  /// Token do Expo (`ExponentPushToken[...]`).
+  token      String         @unique
+  usuarioId  String
+  usuario    Usuario        @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  plataforma PushPlataforma
+  criadoEm   DateTime       @default(now())
+  /// Toda vez que o app registra de novo — serve pra expirar aparelho parado.
+  vistoEm    DateTime       @updatedAt
+
+  @@index([usuarioId])
+  @@map("push_tokens")
 }
 
 /// Despacho de uma OS para um tecnico (historico de atribuicoes).

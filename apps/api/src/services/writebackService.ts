@@ -11,6 +11,7 @@ import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../middleware/errorHandler.js";
 import { buildConnector } from "./erpConnectorService.js";
 import { emitParaUsuario } from "./realtimeHub.js";
+import { dispararPush } from "./pushService.js";
 
 /** Empurra um evento realtime pro tecnico da OS (best-effort — SSE so reduz latencia). */
 function notificarTecnico(tecnicoId: string | null, tipo: RealtimeEventoTipo, osId: string) {
@@ -222,5 +223,17 @@ export async function atribuirTecnico(ordemServicoId: string, tecnicoId: string,
 
   // Nova OS pro tecnico: empurra pra lista dele aparecer na hora + badge.
   notificarTecnico(tecnicoId, "os-atribuida", ordemServicoId);
+  // ...e toca o celular dele, que e o unico canal que funciona com o app
+  // fechado — despacho que so aparece quando o tecnico resolve abrir o app nao
+  // e despacho. Nao avisa quem se auto-atribuiu.
+  if (tecnicoId !== autorId) {
+    // Onde e pra quando: e o que decide se ele muda a rota agora ou depois.
+    const onde = os.bairro ?? os.cidade ?? os.pop;
+    dispararPush([tecnicoId], {
+      titulo: "Nova OS pra você",
+      corpo: [os.clienteNome ?? `OS #${os.sgpOsId}`, onde].filter(Boolean).join(" — "),
+      dados: { tela: "os", osId: ordemServicoId },
+    });
+  }
   return osAtualizada;
 }

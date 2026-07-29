@@ -13,6 +13,7 @@ import {
 import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../middleware/errorHandler.js";
 import { emitParaUsuario } from "./realtimeHub.js";
+import { dispararPush } from "./pushService.js";
 import { podeAcessarOs } from "./escopoService.js";
 import * as writebackService from "./writebackService.js";
 import type { JwtPayload } from "./authService.js";
@@ -494,10 +495,20 @@ export async function enviarMensagem(conversaId: string, autorId: string, input:
   // Fan-out SSE — best-effort, DEPOIS da transacao (se cair, o polling do
   // cliente cobre; nunca faz a escrita depender do SSE).
   const em = new Date().toISOString();
+  const destinatarios: string[] = [];
   for (const p of conversa.participantes) {
     if (p.usuarioId === autorId) continue;
     emitParaUsuario(p.usuarioId, { tipo: "chat-mensagem", conversaId, mensagemId: mensagemCriada.id, autorId, em });
+    // Mesmo publico da Notificacao acima: fora o autor, fora quem silenciou.
+    // Silenciar tem que valer pro push tambem — senao o "silenciar" nao
+    // silencia nada, que e justamente o que incomoda.
+    if (!p.silenciado) destinatarios.push(p.usuarioId);
   }
+  dispararPush(destinatarios, {
+    titulo: mensagemCriada.autor?.nome ?? "ISPhub",
+    corpo: resumoConteudo(mensagemCriada) || "Nova mensagem",
+    dados: { tela: "chat", conversaId },
+  });
 
   // Mencoes reusam o sistema de Notificacao existente (tipo "mencao") em vez
   // de um segundo canal de alerta — so quando ha corpo de texto pra escanear.

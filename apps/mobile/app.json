@@ -9,7 +9,10 @@
     "//userInterfaceStyle": "Era 'automatic', mas a paleta em src/theme/tokens.ts e SO clara (alto contraste, pensada pra leitura sob sol) e nao existe useColorScheme em lugar nenhum — o app declarava que se adaptava ao tema do sistema e nao se adaptava, o que so causava incoerencia visual em aparelho no escuro. Fica 'light' ate existir uma paleta escura de verdade.",
     "userInterfaceStyle": "light",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "infoPlist": {
+        "UIBackgroundModes": ["remote-notification"]
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -60,8 +63,18 @@
         {
           "faceIDPermission": "Permite entrar no ISPhub usando o Face ID do aparelho."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "//": "Icone monocromatico: o Android desenha a notificacao como silhueta na barra de status — um PNG colorido vira um quadrado branco.",
+          "icon": "./assets/images/android-icon-monochrome.png",
+          "color": "#4F46E5",
+          "defaultChannel": "isphub-avisos"
+        }
       ]
     ],
+    "//notification": "iOS: entrega em segundo plano depende do modo remote-notification declarado aqui; sem ele o aviso so chega com o app em primeiro plano.",
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true

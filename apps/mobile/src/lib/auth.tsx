@@ -3,6 +3,7 @@ import type { UsuarioPublic } from "@isphub/shared";
 import { apiFetch } from "./api";
 import { tokenStore } from "./token-store";
 import { autenticarBiometria, checarBiometria } from "./biometria";
+import { desregistrarPushAtual, limparBadge } from "./push";
 
 const TOKEN_KEY = "isphub_token";
 const BIOMETRIA_KEY = "isphub_biometria"; // "1" = desbloqueio biometrico ligado
@@ -90,6 +91,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setBloqueado(false);
       },
       async logout() {
+        // ANTES de limpar a sessao: desregistrar exige o token de auth, e sem
+        // isto o aparelho continuaria recebendo push das conversas de quem
+        // acabou de sair — grave num celular compartilhado pela equipe.
+        await desregistrarPushAtual(token);
+        await limparBadge();
         await tokenStore.del(TOKEN_KEY);
         await tokenStore.del(BIOMETRIA_KEY);
         setToken(null);

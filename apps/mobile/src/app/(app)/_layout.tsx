@@ -5,6 +5,8 @@ import type { ModuloId } from "@isphub/shared";
 import { useAuth } from "@/lib/auth";
 import { useModulos } from "@/lib/config";
 import { useRealtime } from "@/lib/realtime";
+import { usePush } from "@/features/notificacoes/push-hook";
+import { useNaoLidas } from "@/features/chat/hooks";
 import { ROTAS_MODULO } from "@/lib/modulo-registry";
 import { ModuloIcon } from "@/lib/modulo-icones";
 import { colors } from "@/theme/tokens";
@@ -18,6 +20,8 @@ export default function AppLayout() {
   const { token, carregando } = useAuth();
   const { modulos } = useModulos();
   useRealtime(); // canal SSE ao vivo enquanto o tecnico esta logado
+  usePush(); // notificacao no aparelho — o unico canal que chega com o app fechado
+  const naoLidas = useNaoLidas().data?.naoLidas ?? 0;
 
   if (carregando) {
     return (
@@ -52,6 +56,9 @@ export default function AppLayout() {
           options={{
             title: m.nome,
             tabBarIcon: ({ color, size }) => <ModuloIcon id={m.id} color={color} size={size} />,
+            // Sem isto o tecnico so descobria mensagem nova ABRINDO a aba —
+            // `useNaoLidas` ja existia e nao era consumido em lugar nenhum.
+            ...(m.id === "chat" && naoLidas > 0 ? { tabBarBadge: naoLidas > 99 ? "99+" : naoLidas } : {}),
           }}
         />
       ))}
