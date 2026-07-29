@@ -6,12 +6,14 @@ import {
   Text,
   TextInput,
   View,
-  type TextInputProps,
+  type StyleProp,
   type TextProps,
+  type TextInputProps,
   type ViewProps,
+  type ViewStyle,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { colors, font, radius, space } from "@/theme/tokens";
+import { colors, font, radius, shadow, space } from "@/theme/tokens";
 
 export function Screen({ children, style, ...rest }: ViewProps) {
   return (
@@ -35,6 +37,11 @@ export function Muted({ children, style, ...rest }: TextProps) {
   );
 }
 
+/** Rotulo de secao — caixa-alta, curto, acima de grupos de campos/listas. */
+export function SectionLabel({ children }: { children: ReactNode }) {
+  return <Text style={styles.sectionLabel}>{children}</Text>;
+}
+
 export function Card({ children, style, ...rest }: ViewProps) {
   return (
     <View style={[styles.card, style]} {...rest}>
@@ -47,28 +54,130 @@ export function Field(props: TextInputProps) {
   return <TextInput placeholderTextColor={colors.muted} style={styles.field} {...props} />;
 }
 
+// ---- Pill (badge de status/dado, tinta suave) ----
+
+export type PillTone = "neutral" | "brand" | "blue" | "pink" | "teal" | "green" | "amber" | "red";
+
+const PILL: Record<PillTone, { bg: string; fg: string }> = {
+  neutral: { bg: colors.line2, fg: colors.ink2 },
+  brand: { bg: colors.brandBg, fg: colors.brandInk },
+  blue: { bg: colors.blueBg, fg: colors.blue },
+  pink: { bg: colors.pinkBg, fg: colors.pink },
+  teal: { bg: colors.tealBg, fg: colors.teal },
+  green: { bg: colors.slaGreenBg, fg: colors.slaGreen },
+  amber: { bg: colors.slaAmberBg, fg: colors.slaAmber },
+  red: { bg: colors.slaRedBg, fg: colors.slaRed },
+};
+
+export function Pill({ label, tone = "neutral", style }: { label: string; tone?: PillTone; style?: StyleProp<ViewStyle> }) {
+  const c = PILL[tone];
+  return (
+    <View style={[styles.pill, { backgroundColor: c.bg }, style]}>
+      <Text style={[styles.pillTxt, { color: c.fg }]}>{label}</Text>
+    </View>
+  );
+}
+
+// ---- Chip (opcao selecionavel, ex.: provedor, template) ----
+
+export function Chip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.chip, active && styles.chipActive, pressed && { opacity: 0.8 }]}>
+      <Text style={[styles.chipTxt, active && styles.chipTxtActive]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+// ---- Segmented (troca entre 2+ opcoes — pilula deslizante) ----
+
+export function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <View style={styles.segTrack}>
+      {options.map((o) => {
+        const active = o.value === value;
+        return (
+          <Pressable
+            key={o.value}
+            onPress={() => onChange(o.value)}
+            style={[styles.segItem, active && styles.segItemActive, active && shadow.sm]}
+          >
+            <Text style={[styles.segLabel, active && styles.segLabelActive]}>{o.label}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+// ---- Button ----
+
+type BtnVariant = "primary" | "secondary" | "ghost" | "danger";
+type BtnSize = "md" | "sm";
+
+const BTN: Record<BtnVariant, { bg: string; fg: string; border?: string; elevate?: boolean }> = {
+  primary: { bg: colors.brand, fg: colors.onBrand, elevate: true },
+  secondary: { bg: colors.brandBg, fg: colors.brandInk },
+  danger: { bg: colors.slaRedBg, fg: colors.slaRed },
+  ghost: { bg: colors.card, fg: colors.ink, border: colors.line2 },
+};
+
 export function Button({
   label,
   onPress,
   loading,
+  disabled,
   variant = "primary",
+  size = "md",
+  icon,
+  fullWidth,
 }: {
   label: string;
   onPress: () => void;
   loading?: boolean;
-  variant?: "primary" | "ghost";
+  disabled?: boolean;
+  variant?: BtnVariant;
+  size?: BtnSize;
+  icon?: ReactNode;
+  /**
+   * Sem passar: comportamento contextual (largura cheia numa coluna, abraca o
+   * conteudo numa linha — herda a centralizacao vertical do pai). Passe `true`
+   * pra forcar largura cheia; `false` pra forcar abracar o conteudo.
+   */
+  fullWidth?: boolean;
 }) {
-  const primary = variant === "primary";
+  const v = BTN[variant];
+  const sm = size === "sm";
+  const inativo = !!loading || !!disabled;
   return (
     <Pressable
-      onPress={onPress}
-      disabled={loading}
-      style={({ pressed }) => [styles.btn, primary ? styles.btnPrimary : styles.btnGhost, pressed && styles.btnPressed]}
+      onPress={inativo ? undefined : onPress}
+      disabled={inativo}
+      style={({ pressed }) => [
+        styles.btnBase,
+        sm ? styles.btnSm : styles.btnMd,
+        { backgroundColor: v.bg },
+        v.border ? { borderWidth: 1, borderColor: v.border } : null,
+        v.elevate && !inativo ? shadow.brand : null,
+        fullWidth === true ? { alignSelf: "stretch" } : fullWidth === false ? { alignSelf: "flex-start" } : null,
+        pressed && styles.btnPressed,
+        inativo && styles.btnInativo,
+      ]}
     >
       {loading ? (
-        <ActivityIndicator color={primary ? colors.onBrand : colors.ink} />
+        <ActivityIndicator color={v.fg} size="small" />
       ) : (
-        <Text style={[styles.btnLabel, primary ? styles.btnLabelPrimary : styles.btnLabelGhost]}>{label}</Text>
+        <View style={styles.btnRow}>
+          {icon}
+          <Text style={[sm ? styles.btnLabelSm : styles.btnLabelMd, { color: v.fg }]}>{label}</Text>
+        </View>
       )}
     </Pressable>
   );
@@ -77,15 +186,19 @@ export function Button({
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.ground },
   screenInner: { flex: 1, paddingHorizontal: space.lg },
-  title: { fontSize: font.size.xxl, fontWeight: "700", color: colors.ink, letterSpacing: -0.4 },
+  title: { fontSize: font.size.xxxl, fontWeight: font.weight.black as "800", color: colors.ink, letterSpacing: -0.6 },
   muted: { fontSize: font.size.sm, color: colors.ink2 },
+  sectionLabel: { fontSize: font.size.xs, fontWeight: font.weight.bold as "700", color: colors.ink2, textTransform: "uppercase", letterSpacing: 0.5 },
+
   card: {
     backgroundColor: colors.card,
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.line,
     padding: space.lg,
+    ...shadow.sm,
   },
+
   field: {
     backgroundColor: colors.card,
     borderWidth: 1,
@@ -96,11 +209,34 @@ const styles = StyleSheet.create({
     fontSize: font.size.base,
     color: colors.ink,
   },
-  btn: { borderRadius: radius.md, paddingVertical: 15, alignItems: "center", justifyContent: "center" },
-  btnPrimary: { backgroundColor: colors.brand },
-  btnGhost: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line2 },
-  btnPressed: { opacity: 0.85 },
-  btnLabel: { fontSize: font.size.lg, fontWeight: "600" },
-  btnLabelPrimary: { color: colors.onBrand },
-  btnLabelGhost: { color: colors.ink },
+
+  pill: { alignSelf: "flex-start", borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 3 },
+  pillTxt: { fontSize: font.size.xs, fontWeight: font.weight.bold as "700", letterSpacing: 0.2 },
+
+  chip: {
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.line2,
+    backgroundColor: colors.card,
+  },
+  chipActive: { backgroundColor: colors.brandBg, borderColor: colors.brand },
+  chipTxt: { fontSize: font.size.sm, fontWeight: font.weight.medium as "600", color: colors.ink2 },
+  chipTxtActive: { color: colors.brandInk },
+
+  segTrack: { flexDirection: "row", gap: space.xs, backgroundColor: colors.line2, borderRadius: radius.pill, padding: space.xs },
+  segItem: { flex: 1, paddingVertical: 9, alignItems: "center", justifyContent: "center", borderRadius: radius.pill },
+  segItemActive: { backgroundColor: colors.card },
+  segLabel: { fontSize: font.size.sm, fontWeight: font.weight.medium as "600", color: colors.ink2 },
+  segLabelActive: { color: colors.brandInk, fontWeight: font.weight.bold as "700" },
+
+  btnBase: { borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
+  btnMd: { paddingVertical: 15, paddingHorizontal: space.xl },
+  btnSm: { paddingVertical: 9, paddingHorizontal: space.lg },
+  btnRow: { flexDirection: "row", alignItems: "center", gap: space.sm },
+  btnPressed: { opacity: 0.88, transform: [{ scale: 0.98 }] },
+  btnInativo: { opacity: 0.55 },
+  btnLabelMd: { fontSize: 16, fontWeight: font.weight.bold as "700", letterSpacing: 0.2 },
+  btnLabelSm: { fontSize: 14, fontWeight: font.weight.bold as "700", letterSpacing: 0.2 },
 });

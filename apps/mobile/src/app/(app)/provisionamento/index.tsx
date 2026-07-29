@@ -2,11 +2,12 @@ import { useState } from "react";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
+import { Feather } from "@expo/vector-icons";
 import type { Olt, Provedor } from "@isphub/shared";
 import { useAuth } from "@/lib/auth";
 import { apiFetch } from "@/lib/api";
-import { Card, Muted, Screen } from "@/components/ui";
-import { colors, font, radius, space } from "@/theme/tokens";
+import { Card, Chip, Muted, Screen, SectionLabel } from "@/components/ui";
+import { colors, font, space } from "@/theme/tokens";
 import { fttxKeys, listarOlts } from "@/features/provisionamento/fttx";
 
 /**
@@ -52,23 +53,18 @@ export default function ProvisionamentoIndex() {
   return (
     <Screen>
       <Stack.Screen options={{ headerShown: true, title: "Provisionar ONU" }} />
-      <ScrollView contentContainerStyle={{ gap: space.lg, paddingVertical: space.md, paddingBottom: space.xxl }}>
+      <ScrollView contentContainerStyle={{ gap: space.xl, paddingVertical: space.md, paddingBottom: space.xxl }}>
         <View style={{ gap: space.sm }}>
-          <Text style={styles.rotulo}>Provedor</Text>
+          <SectionLabel>Provedor</SectionLabel>
           {provedores.isLoading ? (
             <ActivityIndicator color={colors.brand} />
           ) : provedores.data?.length === 0 ? (
             <Muted>Nenhum provedor disponível.</Muted>
           ) : (
             <View style={styles.chips}>
-              {(provedores.data ?? []).map((p) => {
-                const ativo = p.id === provedorId;
-                return (
-                  <Pressable key={p.id} onPress={() => setProvedorId(p.id)} style={[styles.chip, ativo && styles.chipAtivo]}>
-                    <Text style={[styles.chipTxt, ativo && styles.chipTxtAtivo]}>{p.nome}</Text>
-                  </Pressable>
-                );
-              })}
+              {(provedores.data ?? []).map((p) => (
+                <Chip key={p.id} label={p.nome} active={p.id === provedorId} onPress={() => setProvedorId(p.id)} />
+              ))}
             </View>
           )}
         </View>
@@ -77,7 +73,7 @@ export default function ProvisionamentoIndex() {
           <Muted>Selecione um provedor para ver as OLTs.</Muted>
         ) : (
           <View style={{ gap: space.sm }}>
-            <Text style={styles.rotulo}>OLTs</Text>
+            <SectionLabel>OLTs</SectionLabel>
             {olts.isLoading ? (
               <ActivityIndicator color={colors.brand} />
             ) : olts.isError ? (
@@ -86,10 +82,16 @@ export default function ProvisionamentoIndex() {
               <Muted>Nenhuma OLT neste provedor (o SGP pode não ter FTTX habilitado).</Muted>
             ) : (
               olts.data!.map((olt) => (
-                <Pressable key={olt.id} onPress={() => abrirOlt(olt)}>
-                  <Card>
-                    <Text style={styles.oltNome}>{olt.nome}</Text>
-                    {olt.fabricante ? <Muted>{olt.fabricante}</Muted> : null}
+                <Pressable key={olt.id} onPress={() => abrirOlt(olt)} style={({ pressed }) => pressed && { opacity: 0.85 }}>
+                  <Card style={styles.oltCard}>
+                    <View style={styles.oltIcon}>
+                      <Feather name="server" size={18} color={colors.brand} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.oltNome}>{olt.nome}</Text>
+                      {olt.fabricante ? <Muted>{olt.fabricante}</Muted> : null}
+                    </View>
+                    <Feather name="chevron-right" size={20} color={colors.muted} />
                   </Card>
                 </Pressable>
               ))
@@ -102,18 +104,15 @@ export default function ProvisionamentoIndex() {
 }
 
 const styles = StyleSheet.create({
-  rotulo: { fontSize: font.size.xs, fontWeight: "600", color: colors.ink2, textTransform: "uppercase", letterSpacing: 0.4 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
-  chip: {
-    paddingHorizontal: space.md,
-    paddingVertical: space.sm,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.line2,
-    backgroundColor: colors.card,
+  oltCard: { flexDirection: "row", alignItems: "center", gap: space.md },
+  oltIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: colors.brandBg,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  chipAtivo: { backgroundColor: colors.brandBg, borderColor: colors.brand },
-  chipTxt: { fontSize: font.size.sm, fontWeight: "600", color: colors.ink2 },
-  chipTxtAtivo: { color: colors.brandInk },
-  oltNome: { fontSize: font.size.base, fontWeight: "600", color: colors.ink },
+  oltNome: { fontSize: font.size.base, fontWeight: font.weight.bold as "700", color: colors.ink },
 });

@@ -1,24 +1,42 @@
 import type { SlaSemaforo } from "@isphub/shared";
 
 /**
- * Design tokens do app do tecnico — claro alto-contraste (leitura sob sol), a
- * cor reservada a urgencia do SLA. Sem lib de estilo: StyleSheet + estes tokens.
+ * Design tokens do app do tecnico. Base clara e arejada — fundo lavanda suave,
+ * cards brancos com sombra difusa (levemente tintada de indigo) e cantos
+ * generosos. A cor FORTE continua reservada a SEMANTICA de dado (SLA e sinal
+ * optico da ONU): verde ok, ambar limite, vermelho ruim. Os acentos
+ * (indigo/azul/rosa/teal) servem so pra hierarquia e estado — pill, chip, badge
+ * — nunca pra colorir informacao a toa. Sem lib de estilo: StyleSheet + estes
+ * tokens.
  */
 export const colors = {
-  ground: "#EEF1F5",
+  // Superficies
+  ground: "#F2F1FB", // lavanda bem clara (ainda ~95% de luz, legivel sob sol)
   card: "#FFFFFF",
-  ink: "#10151F",
-  ink2: "#55606F",
-  muted: "#98A1AF",
-  line: "#E4E8EE",
-  line2: "#D7DCE4",
+  cardAlt: "#FAFAFE", // card levemente tintado (secoes aninhadas)
 
-  brand: "#3730A3",
-  brandInk: "#2A2585",
-  brandBg: "#EEEEFB",
+  // Tinta
+  ink: "#1A1D29",
+  ink2: "#5A6172",
+  muted: "#9AA1B2",
+  line: "#ECEBF6",
+  line2: "#DEDCEF",
+
+  // Marca — indigo vivo (pegada da referencia)
+  brand: "#4F46E5",
+  brandInk: "#3F37C9",
+  brandBg: "#ECEBFE",
   onBrand: "#FFFFFF",
 
-  // Semaforo de SLA — a UNICA cor forte da fila.
+  // Acentos de hierarquia/estado (pills, chips, badges)
+  blue: "#2563EB",
+  blueBg: "#E7EEFE",
+  pink: "#DB2777",
+  pinkBg: "#FCE7F1",
+  teal: "#0D9488",
+  tealBg: "#D6F3EF",
+
+  // Semaforo (SLA + sinal optico) — a UNICA cor ligada a dado
   slaRed: "#C0341D",
   slaRedBg: "#FCEBE8",
   slaAmber: "#B0700A",
@@ -42,8 +60,20 @@ export function corSla(semaforo: SlaSemaforo): string {
 }
 
 export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
-export const radius = { sm: 8, md: 12, lg: 14, pill: 999 } as const;
+export const radius = { sm: 10, md: 14, lg: 20, xl: 28, pill: 999 } as const;
 export const font = {
-  size: { xs: 12, sm: 13, base: 15, lg: 17, xl: 20, xxl: 24 },
-  weight: { regular: "400", medium: "600", bold: "700" },
+  size: { xs: 12, sm: 13, base: 15, lg: 17, xl: 20, xxl: 24, xxxl: 28 },
+  weight: { regular: "400", medium: "600", bold: "700", black: "800" },
+} as const;
+
+/**
+ * Sombras difusas, de baixa opacidade e tintadas de indigo — o "brilho" premium
+ * da referencia. No iOS saem coloridas e macias; no Android o `elevation` cai
+ * no cinza do sistema, o que e aceitavel.
+ */
+export const shadow = {
+  sm: { shadowColor: "#4B3FBE", shadowOpacity: 0.07, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
+  md: { shadowColor: "#40369E", shadowOpacity: 0.1, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 4 },
+  lg: { shadowColor: "#3A3192", shadowOpacity: 0.14, shadowRadius: 28, shadowOffset: { width: 0, height: 14 }, elevation: 9 },
+  brand: { shadowColor: "#4F46E5", shadowOpacity: 0.3, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 6 },
 } as const;

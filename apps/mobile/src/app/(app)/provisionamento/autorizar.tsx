@@ -1,18 +1,18 @@
 import { useState, type ReactNode } from "react";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, ScrollView, StyleSheet, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import type { ProvisionarOnuInput } from "@isphub/shared";
 import { useAuth } from "@/lib/auth";
-import { Button, Field, Muted, Screen } from "@/components/ui";
-import { colors, font, radius, space } from "@/theme/tokens";
+import { Button, Chip, Field, Muted, Screen, SectionLabel, Segmented } from "@/components/ui";
+import { space } from "@/theme/tokens";
 import { fttxKeys, listarTemplates, useProvisionar } from "@/features/provisionamento/fttx";
 
 /** Campo rotulado (label em caixa-alta + input). */
 function Campo({ label, children }: { label: string; children: ReactNode }) {
   return (
     <View style={{ gap: space.xs }}>
-      <Text style={styles.rotulo}>{label}</Text>
+      <SectionLabel>{label}</SectionLabel>
       {children}
     </View>
   );
@@ -127,16 +127,14 @@ export default function AutorizarOnu() {
         </Campo>
 
         <Campo label="Modo">
-          <View style={{ flexDirection: "row", gap: space.sm }}>
-            {([
-              [2, "PPPoE"],
-              [1, "Bridge"],
-            ] as const).map(([valor, rotulo]) => (
-              <Pressable key={valor} onPress={() => setMode(valor)} style={[styles.seg, mode === valor && styles.segAtivo]}>
-                <Text style={[styles.segTxt, mode === valor && styles.segTxtAtivo]}>{rotulo}</Text>
-              </Pressable>
-            ))}
-          </View>
+          <Segmented
+            value={String(mode)}
+            onChange={(v) => setMode(Number(v) as 1 | 2)}
+            options={[
+              { value: "2", label: "PPPoE" },
+              { value: "1", label: "Bridge" },
+            ]}
+          />
         </Campo>
 
         {mode === 2 ? (
@@ -182,18 +180,9 @@ export default function AutorizarOnu() {
         {templates.data && templates.data.length > 0 ? (
           <Campo label="Template (opcional)">
             <View style={styles.chips}>
-              {templates.data.map((t) => {
-                const ativo = t.id === templateId;
-                return (
-                  <Pressable
-                    key={t.id}
-                    onPress={() => setTemplateId(ativo ? null : t.id)}
-                    style={[styles.chip, ativo && styles.chipAtivo]}
-                  >
-                    <Text style={[styles.chipTxt, ativo && styles.chipTxtAtivo]}>{t.nome}</Text>
-                  </Pressable>
-                );
-              })}
+              {templates.data.map((t) => (
+                <Chip key={t.id} label={t.nome} active={t.id === templateId} onPress={() => setTemplateId(t.id === templateId ? null : t.id)} />
+              ))}
             </View>
           </Campo>
         ) : null}
@@ -208,14 +197,5 @@ export default function AutorizarOnu() {
 }
 
 const styles = StyleSheet.create({
-  rotulo: { fontSize: font.size.xs, fontWeight: "600", color: colors.ink2, textTransform: "uppercase", letterSpacing: 0.4 },
-  seg: { flex: 1, paddingVertical: space.sm, alignItems: "center", borderRadius: radius.md, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.card },
-  segAtivo: { backgroundColor: colors.brandBg, borderColor: colors.brand },
-  segTxt: { fontSize: font.size.sm, fontWeight: "600", color: colors.ink2 },
-  segTxtAtivo: { color: colors.brandInk },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
-  chip: { paddingHorizontal: space.md, paddingVertical: space.sm, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.card },
-  chipAtivo: { backgroundColor: colors.brandBg, borderColor: colors.brand },
-  chipTxt: { fontSize: font.size.sm, fontWeight: "600", color: colors.ink2 },
-  chipTxtAtivo: { color: colors.brandInk },
 });

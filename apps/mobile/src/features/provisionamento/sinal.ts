@@ -1,4 +1,5 @@
 import { colors } from "@/theme/tokens";
+import type { PillTone } from "@/components/ui";
 
 /**
  * Cor do sinal optico rx (dBm) da ONU. Faixa normal: -8 a -27; abaixo de -27
@@ -10,6 +11,14 @@ export function corSinal(rx: number | null): string {
   if (rx >= -25 && rx <= -8) return colors.slaGreen;
   if (rx >= -28) return colors.slaAmber;
   return colors.slaRed;
+}
+
+/** Mesma faixa do corSinal, mas como tom de Pill (badge de sinal). */
+export function toneSinal(rx: number | null): PillTone {
+  if (rx == null) return "neutral";
+  if (rx >= -25 && rx <= -8) return "green";
+  if (rx >= -28) return "amber";
+  return "red";
 }
 
 /** Rotulo curto do sinal pra exibir junto do valor. */

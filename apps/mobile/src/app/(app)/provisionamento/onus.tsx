@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import type { OnuAutorizada, OnuNaoAutorizada } from "@isphub/shared";
 import { useAuth } from "@/lib/auth";
-import { Button, Field, Muted, Screen } from "@/components/ui";
-import { colors, font, radius, space } from "@/theme/tokens";
+import { Button, Card, Field, Muted, Pill, Screen, Segmented } from "@/components/ui";
+import { colors, font, space } from "@/theme/tokens";
 import { fttxKeys, listarOnus, useProvisionar, type OnuStatus } from "@/features/provisionamento/fttx";
-import { corSinal, rotuloSinal } from "@/features/provisionamento/sinal";
+import { rotuloSinal, toneSinal } from "@/features/provisionamento/sinal";
 
 /**
  * ONUs de uma OLT: aba "Não autorizadas" (as que apareceram na rede e esperam
@@ -77,14 +77,15 @@ export default function OnusOlt() {
     <Screen style={{ paddingHorizontal: 0 }}>
       <Stack.Screen options={{ headerShown: true, title: oltNome ?? "OLT" }} />
 
-      <View style={styles.tabs}>
-        {(["nao-autorizadas", "autorizadas"] as const).map((t) => (
-          <Pressable key={t} onPress={() => setAba(t)} style={[styles.tab, aba === t && styles.tabAtiva]}>
-            <Text style={[styles.tabTxt, aba === t && styles.tabTxtAtiva]}>
-              {t === "nao-autorizadas" ? "Não autorizadas" : "Autorizadas"}
-            </Text>
-          </Pressable>
-        ))}
+      <View style={styles.topo}>
+        <Segmented
+          value={aba}
+          onChange={(v) => setAba(v)}
+          options={[
+            { value: "nao-autorizadas", label: "Não autorizadas" },
+            { value: "autorizadas", label: "Autorizadas" },
+          ]}
+        />
       </View>
 
       {aba === "autorizadas" ? (
@@ -99,7 +100,7 @@ export default function OnusOlt() {
               returnKeyType="search"
             />
           </View>
-          <Button label="Buscar" variant="ghost" onPress={() => setBuscaAtiva(busca.trim())} />
+          <Button label="Buscar" variant="secondary" size="sm" onPress={() => setBuscaAtiva(busca.trim())} />
         </View>
       ) : null}
 
@@ -115,18 +116,18 @@ export default function OnusOlt() {
             <Muted>{query.isError ? "Não foi possível listar as ONUs." : "Nenhuma ONU aguardando autorização."}</Muted>
           }
           renderItem={({ item }) => (
-            <View style={styles.card}>
-              <View style={{ flex: 1 }}>
+            <Card style={styles.onuRow}>
+              <View style={styles.onuInfo}>
                 <Text style={styles.serial}>{item.serial}</Text>
                 <Muted>
                   {[item.slot != null ? `slot ${item.slot}` : null, item.pon != null ? `pon ${item.pon}` : null, item.tipo]
                     .filter(Boolean)
                     .join(" · ") || "sem detalhes"}
                 </Muted>
-                <Text style={[styles.sinal, { color: corSinal(item.sinalRxDbm) }]}>{rotuloSinal(item.sinalRxDbm)}</Text>
+                <Pill label={rotuloSinal(item.sinalRxDbm)} tone={toneSinal(item.sinalRxDbm)} style={{ marginTop: space.xs }} />
               </View>
-              <Button label="Autorizar" onPress={() => autorizar(item)} />
-            </View>
+              <Button label="Autorizar" size="sm" onPress={() => autorizar(item)} />
+            </Card>
           )}
         />
       ) : (
@@ -139,17 +140,17 @@ export default function OnusOlt() {
             <Muted>{query.isError ? "Não foi possível listar as ONUs." : "Nenhuma ONU autorizada encontrada."}</Muted>
           }
           renderItem={({ item }) => (
-            <View style={styles.card}>
-              <View style={{ flex: 1 }}>
+            <Card style={styles.onuRow}>
+              <View style={styles.onuInfo}>
                 <Text style={styles.serial}>{item.serial}</Text>
                 <Muted>
                   {[item.clienteNome, item.contrato ? `contrato ${item.contrato}` : null].filter(Boolean).join(" · ") ||
                     "sem cliente"}
                 </Muted>
-                <Text style={[styles.sinal, { color: corSinal(item.sinalRxDbm) }]}>{rotuloSinal(item.sinalRxDbm)}</Text>
+                <Pill label={rotuloSinal(item.sinalRxDbm)} tone={toneSinal(item.sinalRxDbm)} style={{ marginTop: space.xs }} />
               </View>
-              <Button label="Remover" variant="ghost" onPress={() => confirmarDesautorizar(item)} />
-            </View>
+              <Button label="Remover" variant="danger" size="sm" onPress={() => confirmarDesautorizar(item)} />
+            </Card>
           )}
         />
       )}
@@ -158,23 +159,10 @@ export default function OnusOlt() {
 }
 
 const styles = StyleSheet.create({
-  tabs: { flexDirection: "row", gap: space.sm, paddingHorizontal: space.lg, paddingTop: space.md },
-  tab: { flex: 1, paddingVertical: space.sm, alignItems: "center", borderRadius: radius.md, borderWidth: 1, borderColor: colors.line2 },
-  tabAtiva: { backgroundColor: colors.brandBg, borderColor: colors.brand },
-  tabTxt: { fontSize: font.size.sm, fontWeight: "600", color: colors.ink2 },
-  tabTxtAtiva: { color: colors.brandInk },
+  topo: { paddingHorizontal: space.lg, paddingTop: space.md },
   buscaLinha: { flexDirection: "row", gap: space.sm, alignItems: "center", paddingHorizontal: space.lg, paddingTop: space.md },
   lista: { gap: space.md, paddingHorizontal: space.lg, paddingVertical: space.md, paddingBottom: space.xxl },
-  card: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space.md,
-    backgroundColor: colors.card,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.line,
-    padding: space.lg,
-  },
-  serial: { fontSize: font.size.base, fontWeight: "700", color: colors.ink, letterSpacing: 0.3 },
-  sinal: { fontSize: font.size.sm, fontWeight: "600", marginTop: 2 },
+  onuRow: { flexDirection: "row", alignItems: "center", gap: space.md },
+  onuInfo: { flex: 1, gap: 2 },
+  serial: { fontSize: font.size.base, fontWeight: font.weight.bold as "700", color: colors.ink, letterSpacing: 0.3 },
 });
