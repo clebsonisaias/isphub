@@ -41,12 +41,43 @@ function evento(ordemServicoId: string, tipo: OsEventoTipo, autorId: string, des
  * recusou a escrita em ...: motivo") — converte pra HttpError(502) pra
  * chegar de verdade no toast do usuario em vez de sumir.
  */
+/**
+ * Traduz a recusa crua do SGP em algo ACIONAVEL.
+ *
+ * "SGP 403 em /api/os/acaminho/id/5326/:" nao diz nada pra quem esta no
+ * quintal do cliente — a pessoa nao sabe se tenta de novo, se liga pro
+ * escritorio ou se o problema e o celular dela. Cada status vira uma frase que
+ * responde exatamente isso.
+ */
+function mensagemAmigavelSgp(bruta: string): string {
+  const status = /SGP (\d{3}) em/.exec(bruta)?.[1];
+  switch (status) {
+    case "401":
+      return "O SGP recusou as credenciais da integração (token inválido ou expirado). Avise o escritório.";
+    case "403":
+      return "O SGP não autorizou esta operação para o token da integração. É permissão no SGP do provedor — avise o escritório.";
+    case "404":
+      return "O SGP não encontrou esta OS. Ela pode ter sido removida ou alterada por lá.";
+    case "500":
+    case "502":
+    case "503":
+      return "O SGP do provedor está fora do ar ou instável. Tente de novo em alguns minutos.";
+    default:
+      if (/timeout|abort/i.test(bruta)) return "O SGP não respondeu a tempo. Tente de novo em alguns instantes.";
+      return bruta;
+  }
+}
+
 async function chamarSgp<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (err) {
     if (err instanceof HttpError) throw err;
-    throw new HttpError(502, err instanceof Error ? err.message : "Falha na comunicacao com o SGP");
+    const bruta = err instanceof Error ? err.message : "Falha na comunicacao com o SGP";
+    // Recusa do SGP nao deixava rastro nenhum: virava 502 e sumia. Sem log, a
+    // unica evidencia era o print do celular do tecnico.
+    console.error("[sgp-writeback] recusa do SGP:", bruta);
+    throw new HttpError(502, mensagemAmigavelSgp(bruta));
   }
 }
 
