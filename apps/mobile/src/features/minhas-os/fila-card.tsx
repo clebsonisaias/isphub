@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { FilaItem } from "@isphub/shared";
 import { colors, corSla, font, radius, space } from "@/theme/tokens";
 import { textoSla } from "./sla";
+import { ConexaoBadge } from "./conexao-badge";
 
 /** Cor de fundo/texto do selo de SLA pelo semaforo. */
 function selo(item: FilaItem): { bg: string; fg: string } {
@@ -53,7 +54,10 @@ export function FilaCard({ item, onPress }: { item: FilaItem; onPress: () => voi
       {local ? <Text style={styles.addr}>{local}</Text> : null}
 
       <View style={styles.metaRow}>
-        {hora ? <Text style={styles.hora}>{hora}</Text> : <View />}
+        <View style={styles.metaLeft}>
+          {hora ? <Text style={styles.hora}>{hora}</Text> : null}
+          <ConexaoBadge provedorId={item.provedorId} contratoId={item.contratoId} />
+        </View>
         <View style={[styles.selo, { backgroundColor: s.bg }]}>
           <Text style={[styles.seloTxt, { color: s.fg }]}>{textoSla(item.sla)}</Text>
         </View>
@@ -81,7 +85,8 @@ const styles = StyleSheet.create({
   categoria: { fontSize: font.size.lg, fontWeight: "700", color: colors.ink, letterSpacing: -0.2 },
   cliente: { fontSize: font.size.base, fontWeight: "600", color: colors.ink },
   addr: { fontSize: font.size.sm, color: colors.ink2 },
-  metaRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 8 },
+  metaRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 8, gap: space.sm },
+  metaLeft: { flexDirection: "row", alignItems: "center", gap: space.sm, flexShrink: 1 },
   hora: { fontSize: font.size.sm, color: colors.ink2, fontWeight: "600" },
   selo: { borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4 },
   seloTxt: { fontSize: font.size.xs, fontWeight: "700" },
