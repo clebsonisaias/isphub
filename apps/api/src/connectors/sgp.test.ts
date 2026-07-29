@@ -228,7 +228,9 @@ describe("createSgpConnector", () => {
     expect(os.endereco.lng).toBeNull();
   });
 
-  it("setOnTheWay chama o endpoint /acaminho/ com app+token no corpo", async () => {
+  it("setOnTheWay envia JSON — como form o SGP recusava com 403 de corpo vazio", async () => {
+    // Regressao real (OS #5326): o 403 sem corpo parecia falta de permissao do
+    // token e mandou a investigacao pro lado errado. Era o Content-Type.
     fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true }));
 
     const conn = createSgpConnector(creds);
@@ -236,9 +238,34 @@ describe("createSgpConnector", () => {
 
     const [url, options] = fetchMock.mock.calls[0];
     expect(String(url)).toContain("/api/os/acaminho/id/555/");
-    const body = new URLSearchParams(options.body as string);
-    expect(body.get("app")).toBe(creds.app);
-    expect(body.get("token")).toBe(creds.token);
+    expect((options.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
+    const body = JSON.parse(options.body as string);
+    expect(body.app).toBe(creds.app);
+    expect(body.token).toBe(creds.token);
+  });
+
+  it("setOnTheWay: SGP antigo que so aceita form recebe a 2a tentativa em form", async () => {
+    // 4xx = recusa, nada foi escrito -> repetir de outro jeito e seguro.
+    fetchMock.mockResolvedValueOnce(new Response("", { status: 415 }));
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true }));
+
+    const conn = createSgpConnector(creds);
+    await conn.setOnTheWay("555");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [, primeira] = fetchMock.mock.calls[0];
+    const [, segunda] = fetchMock.mock.calls[1];
+    expect((primeira.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
+    expect((segunda.headers as Record<string, string>)["Content-Type"]).toBe("application/x-www-form-urlencoded");
+    expect(new URLSearchParams(segunda.body as string).get("token")).toBe(creds.token);
+  });
+
+  it("setOnTheWay: 5xx NAO repete — a escrita pode ter acontecido e repetir duplicaria", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("", { status: 500 }));
+
+    const conn = createSgpConnector(creds);
+    await expect(conn.setOnTheWay("555")).rejects.toThrow(/SGP 500/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("updateOsStatus envia JSON (nao form-urlencoded) — a doc de 'Alterar OS' exige application/json", async () => {

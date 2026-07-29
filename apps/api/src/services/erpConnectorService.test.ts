@@ -30,11 +30,19 @@ beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
 });
 
-/** Extrai o que de fato foi pra rede na ultima chamada. */
+/**
+ * Extrai o que de fato foi pra rede na ultima chamada. Le JSON e form: o SGP
+ * usa os dois conforme o endpoint, e o que este teste certifica e a
+ * CREDENCIAL, nao o formato.
+ */
 function requisicao() {
   const [url, init] = fetchMock.mock.calls.at(-1)!;
-  const corpo = new URLSearchParams(String((init as RequestInit).body));
-  return { url: String(url), app: corpo.get("app"), token: corpo.get("token") };
+  const { body, headers } = init as RequestInit;
+  const tipo = (headers as Record<string, string> | undefined)?.["Content-Type"] ?? "";
+  const corpo = tipo.includes("json")
+    ? (JSON.parse(String(body)) as Record<string, string>)
+    : Object.fromEntries(new URLSearchParams(String(body)));
+  return { url: String(url), app: corpo.app ?? null, token: corpo.token ?? null };
 }
 
 describe("credenciais por provedor chegam na requisicao", () => {

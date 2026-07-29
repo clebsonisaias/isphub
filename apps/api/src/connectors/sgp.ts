@@ -38,6 +38,17 @@ function baseUrl(creds: ErpCredentials): string {
   return creds.url.replace(/\/+$/, "");
 }
 
+/**
+ * O SGP recusou (4xx)? Recusa significa que NADA foi escrito, entao e seguro
+ * repetir a chamada de outro jeito. Distinguir de 5xx/timeout importa: ali a
+ * escrita pode ter acontecido, e repetir duplicaria.
+ */
+function ehRecusa4xx(err: unknown): boolean {
+  if (!(err instanceof SgpError)) return false;
+  const status = Number(/SGP (\d{3}) em/.exec(err.message)?.[1]);
+  return status >= 400 && status < 500;
+}
+
 async function parseJsonOrThrow(res: Response, path: string): Promise<any> {
   const text = await res.text();
   if (!res.ok) {
@@ -503,10 +514,26 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
       return raw.map(normalizeOs);
     },
 
+    /**
+     * JSON, nao form-urlencoded — mesma licao ja aprendida no updateOsStatus
+     * logo abaixo. Como form, este endpoint respondia 403 de corpo VAZIO
+     * (recusa no nivel do framework, antes de olhar credencial), o que parecia
+     * falta de permissao do token e mandava a investigacao pro lado errado.
+     *
+     * Se algum SGP mais antigo so aceitar form, cai pro form no 4xx: a recusa
+     * garante que nada foi escrito, entao repetir e seguro — e a alternativa
+     * seria quebrar o "a caminho" pra quem roda a versao antiga.
+     */
     async setOnTheWay(sgpOsId: string): Promise<void> {
       const path = `/api/os/acaminho/id/${encodeURIComponent(sgpOsId)}/`;
-      const data = await sgpPostForm(creds, path);
-      assertSgpEscritaOk(data, path);
+      try {
+        const data = await sgpPostJson(creds, path);
+        assertSgpEscritaOk(data, path);
+      } catch (err) {
+        if (!ehRecusa4xx(err)) throw err;
+        const data = await sgpPostForm(creds, path);
+        assertSgpEscritaOk(data, path);
+      }
     },
 
     async updateOsStatus(sgpOsId: string, statusCode: number, dataFinalizacao?: string): Promise<void> {
