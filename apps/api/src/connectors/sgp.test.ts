@@ -33,19 +33,41 @@ describe("createSgpConnector", () => {
     expect((options.headers as Record<string, string>).Authorization).toBe(`Token ${creds.token}`);
   });
 
-  it("testConnection retorna ok:false quando o SGP responde erro (incluindo o fallback de token na query)", async () => {
-    // sgpGet tenta token no header primeiro; em 401/403 refaz com token na query.
-    // Aqui simulamos credenciais realmente invalidas: as duas tentativas falham.
-    fetchMock
-      .mockResolvedValueOnce(new Response("credenciais invalidas", { status: 401 }))
-      .mockResolvedValueOnce(new Response("credenciais invalidas", { status: 401 }));
+  it("testConnection retorna ok:false quando o SGP responde erro — em UMA tentativa", async () => {
+    // Antes o token so ia no header e o fallback com token na query gastava uma
+    // 2a ida ao SGP em TODA leitura. Agora token+app vao na query desde a
+    // primeira, como a doc de "Listar OLT" manda — uma requisicao basta.
+    fetchMock.mockResolvedValueOnce(new Response("credenciais invalidas", { status: 401 }));
 
     const conn = createSgpConnector(creds);
     const resultado = await conn.testConnection();
 
     expect(resultado.ok).toBe(false);
     expect(resultado.message).toContain("401");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("GET manda token E app na query (formato documentado)", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
+
+    await createSgpConnector(creds).listarOlts();
+
+    const url = new URL(String(fetchMock.mock.calls[0][0]));
+    expect(url.pathname).toBe("/api/fttx/olt/list/");
+    expect(url.searchParams.get("app")).toBe(creds.app);
+    expect(url.searchParams.get("token")).toBe(creds.token);
+  });
+
+  it("listarOlts le o formato REAL da doc: array cru com name/olttype", async () => {
+    // Resposta literal da doc de "Listar OLT". `olttype` era ignorado, entao o
+    // fabricante vinha sempre null na tela de provisionamento.
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([{ name: "ONU_TESTE", olttype: "Parks", onu_count: 0, host: "172.0.0.201", pon_count: 1, id: 30 }]),
+    );
+
+    const olts = await createSgpConnector(creds).listarOlts();
+
+    expect(olts).toEqual([{ id: "30", nome: "ONU_TESTE", fabricante: "Parks" }]);
   });
 
   it("listOsTypes normaliza codigo/descricao a partir de um array bruto", async () => {
@@ -266,6 +288,43 @@ describe("createSgpConnector", () => {
     const conn = createSgpConnector(creds);
     await expect(conn.setOnTheWay("555")).rejects.toThrow(/SGP 500/);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  describe("credencial no header em TODA escrita", () => {
+    // Regressao real (OS #5326): as escritas iam so com app+token no CORPO,
+    // sem header nenhum, enquanto as leituras sempre mandaram no header. Um
+    // SGP que autentica por header via a escrita chegar sem credencial e
+    // respondia 403 de corpo VAZIO — que parecia falta de permissao do token.
+    const escritas: [string, (c: ReturnType<typeof createSgpConnector>) => Promise<unknown>][] = [
+      ["setOnTheWay (JSON)", (c) => c.setOnTheWay("555")],
+      ["updateOsStatus (JSON)", (c) => c.updateOsStatus("555", 1)],
+      ["addOsNote (form)", (c) => c.addOsNote("555", "nota")],
+      ["provisionarOnu (form)", (c) => c.provisionarOnu("olt-1", { slot: "1", pon: "2", serial: "SN1", mode: 2 })],
+    ];
+
+    for (const [nome, chamar] of escritas) {
+      it(`${nome} manda Authorization e X-SGP-Token`, async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+
+        await chamar(createSgpConnector(creds));
+
+        const [, options] = fetchMock.mock.calls[0];
+        const headers = options.headers as Record<string, string>;
+        expect(headers.Authorization).toBe(`Token ${creds.token}`);
+        expect(headers["X-SGP-Token"]).toBe(creds.token);
+      });
+    }
+
+    it("multipart (verificaacesso) manda credencial no header e NAO fixa Content-Type (boundary do FormData)", async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ msg: "Serviço Online" }));
+
+      await createSgpConnector(creds).checkConnectionStatus("1672");
+
+      const [, options] = fetchMock.mock.calls[0];
+      const headers = options.headers as Record<string, string>;
+      expect(headers.Authorization).toBe(`Token ${creds.token}`);
+      expect(headers["Content-Type"]).toBeUndefined();
+    });
   });
 
   it("updateOsStatus envia JSON (nao form-urlencoded) — a doc de 'Alterar OS' exige application/json", async () => {

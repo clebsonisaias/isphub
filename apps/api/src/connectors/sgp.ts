@@ -79,6 +79,22 @@ function assertSgpEscritaOk(data: any, path: string): void {
   }
 }
 
+/**
+ * Credencial NO HEADER — o mesmo par que as leituras (sgpGet) sempre mandaram.
+ *
+ * As escritas iam so com app+token no CORPO, sem header de autenticacao
+ * nenhum. Como as leituras funcionam com header e o mesmo token, um SGP que
+ * autentica por header via a escrita chegar sem credencial reconhecivel e
+ * respondia 403 de corpo VAZIO — recusa do framework, antes de olhar
+ * permissao. Era o caso do /api/os/acaminho/.
+ *
+ * Mantemos app+token no corpo tambem: instancias que autenticam pelo corpo
+ * continuam funcionando, e header que o SGP nao usa ele simplesmente ignora.
+ */
+function authHeaders(creds: ErpCredentials): Record<string, string> {
+  return { Authorization: `Token ${creds.token}`, "X-SGP-Token": creds.token };
+}
+
 async function sgpPostForm(creds: ErpCredentials, path: string, params: Record<string, unknown> = {}) {
   const body = new URLSearchParams({ app: creds.app, token: creds.token });
   for (const [k, v] of Object.entries(params)) {
@@ -86,7 +102,7 @@ async function sgpPostForm(creds: ErpCredentials, path: string, params: Record<s
   }
   const res = await fetch(`${baseUrl(creds)}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers: { "Content-Type": "application/x-www-form-urlencoded", ...authHeaders(creds) },
     body: body.toString(),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
@@ -97,7 +113,7 @@ async function sgpPostJson(creds: ErpCredentials, path: string, params: Record<s
   const body = { app: creds.app, token: creds.token, ...params };
   const res = await fetch(`${baseUrl(creds)}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders(creds) },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
@@ -126,6 +142,8 @@ async function sgpMultipart(
   }
   const res = await fetch(`${baseUrl(creds)}${path}`, {
     method,
+    // Sem Content-Type: o FormData define o boundary sozinho. So a credencial.
+    headers: authHeaders(creds),
     body,
     signal: AbortSignal.timeout(timeoutMs),
   });
@@ -191,31 +209,27 @@ async function sgpGetBinary(
   return { contentType: detectarMimeTypeImagem(bytes) ?? "application/octet-stream", bytes };
 }
 
+/**
+ * GET autenticado do jeito DOCUMENTADO: `token` + `app` como parametros.
+ *
+ * Antes so o `app` ia na query e o token so no header (`Authorization: Token`),
+ * um esquema que a doc do SGP nao cita — quem seguia a doc respondia 401/403 e
+ * so entao caia no fallback com token na query. Funcionava, mas gastando DUAS
+ * idas ao SGP em toda leitura: com o limite de 3 chamadas FTTX simultaneas por
+ * provedor, isso e metade da vazao jogada fora.
+ *
+ * Os headers continuam indo junto: instancias que autenticam por header
+ * seguem funcionando, e header que o SGP nao usa ele ignora.
+ */
 async function sgpGet(creds: ErpCredentials, path: string, params: Record<string, unknown> = {}) {
-  const qs = new URLSearchParams({ app: creds.app });
+  const qs = new URLSearchParams({ app: creds.app, token: creds.token });
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== null) qs.set(k, String(v));
   }
   const res = await fetch(`${baseUrl(creds)}${path}?${qs.toString()}`, {
-    headers: {
-      Accept: "application/json",
-      Authorization: `Token ${creds.token}`,
-      "X-SGP-Token": creds.token,
-    },
+    headers: { Accept: "application/json", ...authHeaders(creds) },
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
-  if (res.status === 401 || res.status === 403) {
-    // fallback: alguns endpoints antigos do SGP so aceitam token na query
-    const qs2 = new URLSearchParams({ app: creds.app, token: creds.token });
-    for (const [k, v] of Object.entries(params)) {
-      if (v !== undefined && v !== null) qs2.set(k, String(v));
-    }
-    const res2 = await fetch(`${baseUrl(creds)}${path}?${qs2.toString()}`, {
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-    return parseJsonOrThrow(res2, path);
-  }
   return parseJsonOrThrow(res, path);
 }
 
@@ -682,7 +696,11 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
       return itens.map((item) => ({
         id: String(pick(item, "id")),
         nome: String(pick(item, "nome", "name") ?? ""),
-        fabricante: pickString(item, "fabricante", "fabricante_nome", "marca"),
+        // `olttype` e o campo REAL da doc de "Listar OLT" (ex.: "Parks") — sem
+        // ele o fabricante vinha sempre null, e a tela de provisionamento
+        // mostrava a OLT sem o unico dado que diz ao tecnico com que
+        // equipamento ele esta lidando.
+        fabricante: pickString(item, "olttype", "fabricante", "fabricante_nome", "marca"),
       }));
     },
 
