@@ -46,40 +46,61 @@ Duas garantias deliberadas:
 Sem estes passos o app **não recebe push**: `obterTokenPush()` devolve `null`,
 registra nada e segue funcionando normalmente (sem quebrar).
 
-### Android
+### ✅ Já feito — projeto EAS
 
-1. **Projeto EAS** (dá o `projectId` que identifica o app no serviço de push):
-   ```bash
-   cd apps/mobile && npx eas init
-   ```
-   Isso grava `extra.eas.projectId` no `app.json`. Precisa de conta Expo (grátis).
+O projeto já existe e o `projectId` já está no `app.json`:
 
-2. **Projeto no Firebase** → adicionar app Android com o pacote exato:
-   `com.clebsonisaias.isphubtecnico`
-   Baixar o `google-services.json` e salvar em `apps/mobile/google-services.json`.
-   Depois, declarar no `app.json`, dentro de `expo.android`:
+- `@clebsonisaias/isphub-tecnico` — ID `43324a7a-92e3-42d7-8dbb-fd10f6bd7e2e`
+- https://expo.dev/accounts/clebsonisaias/projects/isphub-tecnico
+
+Serve para Android **e** iOS. Não precisa repetir.
+
+### Android — reaproveitando o Firebase do Maxxi
+
+O projeto Firebase da CITmax é o **`erp-citmax`** (o mesmo do Maxxi Equipe). Dá
+para reusá-lo — mas **não basta copiar o `google-services.json` de lá**: aquele
+arquivo só registra `br.com.citmax.cliente` e `br.com.citmax.equipe`. Com um
+pacote não registrado, o plugin do Google Services **quebra o build** com
+`No matching client found for package name`.
+
+O ISPhub precisa entrar como um **terceiro app dentro do mesmo projeto**:
+
+1. Console do Firebase → projeto **`erp-citmax`** → *Adicionar app* → Android
+   → nome do pacote **exatamente**: `com.clebsonisaias.isphubtecnico`
+   (apelido sugerido: "ISPhub Técnico"). SHA-1 não é necessário para push.
+
+2. Baixar o `google-services.json` **novo** (vem com os três apps) e salvar em
+   `apps/mobile/google-services.json`. Depois declarar no `app.json`, dentro de
+   `expo.android`:
    ```json
    "googleServicesFile": "./google-services.json"
    ```
 
-3. **Credencial FCM V1 para o Expo** — no Firebase:
-   Configurações do projeto → Contas de serviço → *Gerar nova chave privada*.
-   Enviar ao Expo:
+3. **Credencial FCM V1 para o Expo** — Firebase → Configurações do projeto →
+   Contas de serviço → *Gerar nova chave privada*. Enviar ao Expo:
    ```bash
    cd apps/mobile && npx eas credentials
    ```
    → Android → *Google Service Account Key for Push Notifications V1*.
+   É a mesma chave que serve o Maxxi: a conta de serviço pertence ao **projeto**,
+   não ao app. Se já houver uma guardada, pode reusar.
 
-4. **Recompilar o app** (o `google-services.json` entra no build nativo):
+4. **Recompilar** (o `google-services.json` entra no build nativo):
    ```bash
    cd apps/mobile && npx expo run:android
    ```
+
+> **Por que não automatizei:** registrar o app exige permissão na API do
+> Firebase, e a conta do `gcloud` desta máquina (`clebsoncitnetbr@gmail.com`)
+> não tem `serviceusage.serviceUsageConsumer` em `erp-citmax`. Conceder esse
+> papel mexeria no IAM de um projeto de produção — não é passo para automatizar
+> por conta própria.
 
 ### iOS
 
 Precisa de conta paga do Apple Developer.
 
-1. Mesmo `eas init` do passo 1 acima (serve para as duas plataformas).
+1. O projeto EAS já existe (serve para as duas plataformas).
 2. Gerar uma **APNs Key** (.p8) no portal da Apple e enviar com
    `npx eas credentials` → iOS → *Push Notifications Key*.
 3. Recompilar. O `UIBackgroundModes: ["remote-notification"]` já está no

@@ -77,9 +77,30 @@ export async function obterTokenPush(): Promise<string | null> {
     const { data } = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
     return data ?? null;
   } catch (err) {
-    console.warn("[push] nao foi possivel obter o token:", err);
+    avisarFalhaToken(err);
     return null;
   }
+}
+
+/** Ja avisou nesta sessao? Evita repetir a cada abertura/re-render. */
+let jaAvisouFalhaToken = false;
+
+/**
+ * "Firebase nao configurado" e um estado ESPERADO enquanto a credencial nao
+ * chega — nao e defeito. Como `console.warn` no dev vira caixa amarela por
+ * cima do app, esse caso sai como log discreto e UMA vez por sessao; ficar
+ * gritando a cada abertura treina a equipe a ignorar aviso de verdade.
+ */
+function avisarFalhaToken(err: unknown) {
+  if (jaAvisouFalhaToken) return;
+  jaAvisouFalhaToken = true;
+  const msg = err instanceof Error ? err.message : String(err);
+  const semCredencial = /FirebaseApp|googleServicesFile|Firebase Messaging|APNS|apns/i.test(msg);
+  if (semCredencial) {
+    console.log("[push] desligado: falta a credencial do Firebase/APNs (ver docs/push-notificacoes.md). O resto do app segue normal.");
+    return;
+  }
+  console.warn("[push] nao foi possivel obter o token:", err);
 }
 
 /**
