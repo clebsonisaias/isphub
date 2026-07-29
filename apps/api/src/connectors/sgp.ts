@@ -49,10 +49,26 @@ function ehRecusa4xx(err: unknown): boolean {
   return status >= 400 && status < 500;
 }
 
+/**
+ * SO a origem (https://host), NUNCA a URL completa: os GETs levam `token` na
+ * query, entao logar a URL inteira jogaria a credencial do provedor no log do
+ * servidor. A origem responde "foi pro SGP de quem?" sem vazar nada.
+ */
+function origemSegura(url: string): string {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return "?";
+  }
+}
+
 async function parseJsonOrThrow(res: Response, path: string): Promise<any> {
   const text = await res.text();
   if (!res.ok) {
-    throw new SgpError(`SGP ${res.status} em ${path}: ${text.slice(0, 500)}`);
+    // Sem o host, "SGP 403 em /api/os/acaminho/" nao diz de qual provedor veio
+    // a recusa — e com varios SGPs atendidos, essa era a primeira pergunta
+    // que o log nao respondia.
+    throw new SgpError(`SGP ${res.status} em ${origemSegura(res.url)}${path}: ${text.slice(0, 500)}`);
   }
   try {
     return text ? JSON.parse(text) : null;
