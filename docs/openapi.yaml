@@ -1,0 +1,3475 @@
+openapi: 3.1.0
+
+info:
+  title: ISPhub API
+  version: 1.0.0
+  summary: Fila unificada de OS, chat e provisionamento FTTX para provedores de internet.
+  description: |
+    API da ISPhub — plataforma que unifica as Ordens de Serviço de vários
+    provedores (tenants), cada um com seu próprio ERP (hoje só o SGP).
+
+    ## Convenções que valem para toda a API
+
+    - **Idioma:** nomes de campo e mensagens de erro em português, sem acento
+      nas mensagens do servidor.
+    - **Datas:** sempre string ISO 8601 UTC (`date-time`).
+    - **Erros:** todo erro devolve `{ "error": "<mensagem>" }`. Erros de
+      validação (zod) acrescentam `detalhes` com o `flatten()` do zod.
+    - **Corpo:** `application/json`, limite global de 1 MB (`413` acima disso).
+      Uploads são base64 dentro do JSON — a API não usa `multipart/form-data`.
+    - **Autenticação:** `Authorization: Bearer <jwt>` em tudo, exceto
+      `POST /auth/login`, `GET /health` e os webhooks do WhatsApp.
+
+    ## Papéis
+
+    O papel vem dentro do JWT e decide o que cada rota devolve:
+
+    | Papel | Alcance |
+    |---|---|
+    | `admin` | Tudo: provedores, integrações, usuários, módulos, canais. |
+    | `gestor` | Opera a fila unificada e despacha técnicos. |
+    | `tecnico` | Executa as OS atribuídas a si (app mobile). |
+    | `provedor` | Só as próprias OS. Nunca entra em nenhum dos chats. |
+
+    ## Sessão e revogação
+
+    O JWT carrega `tv` (tokenVersion). Toda requisição autenticada confere esse
+    valor contra o banco: trocar a senha, mudar o papel ou desativar o usuário
+    incrementa a versão e **derruba na hora** todos os tokens já emitidos, sem
+    esperar a expiração.
+
+  contact:
+    name: ISPhub
+  license:
+    name: Proprietária
+
+servers:
+  - url: https://api.isphub.net.br
+    description: Produção
+  - url: http://localhost:4000
+    description: Desenvolvimento local
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Autenticação
+    description: Login, sessão e perfil do próprio usuário.
+  - name: Usuários
+    description: Administração de contas (somente `admin`).
+  - name: Configuração
+    description: Módulos habilitados por papel — o que o app do técnico mostra.
+  - name: Notificações
+    description: Notificações in-app do próprio usuário.
+  - name: Realtime
+    description: Canal SSE de eventos.
+  - name: Provedores
+    description: Tenants atendidos pela plataforma.
+  - name: Categorias
+    description: Taxonomia canônica que unifica os motivos de OS entre provedores.
+  - name: Integração SGP
+    description: Credenciais, catálogo de tipos e sincronização com o ERP de cada provedor.
+  - name: Fila
+    description: Fila unificada de OS e métricas.
+  - name: Ordens de serviço
+    description: Detalhe, write-back de status e evidências.
+  - name: Conexão
+    description: Status e sinal óptico do contrato, consultados ao vivo no SGP.
+  - name: Provisionamento FTTX
+    description: OLTs e autorização de ONU.
+  - name: Chat interno
+    description: Coordenação de campo — DM, grupo, thread de OS e avisos.
+  - name: Chat com clientes
+    description: Caixa de entrada de WhatsApp, só para a equipe.
+  - name: Canais WhatsApp
+    description: Configuração das integrações Meta e Evolution.
+  - name: Webhooks
+    description: Entrada pública das mensagens de WhatsApp.
+  - name: Utilidades
+    description: Saúde do serviço e hora de referência.
+
+paths:
+  /health:
+    get:
+      tags: [Utilidades]
+      summary: Saúde do serviço
+      description: Sem autenticação — usado por health check do orquestrador.
+      security: []
+      operationId: health
+      responses:
+        "200":
+          description: Serviço no ar.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, service]
+                properties:
+                  ok: { type: boolean, const: true }
+                  service: { type: string, const: isphub-api }
+              example: { ok: true, service: isphub-api }
+
+  /hora:
+    get:
+      tags: [Utilidades]
+      summary: Hora de referência da operação
+      description: |
+        Hora oficial usada pelo app para não depender do relógio do aparelho
+        (que o técnico pode ter errado). Busca de um serviço externo com timeout
+        de 4 s e **cai silenciosamente** para o relógio do servidor — o campo
+        `fonte` diz qual das duas respondeu. Cache em memória de 60 s,
+        compartilhado por todo o processo.
+      operationId: obterHora
+      responses:
+        "200":
+          description: Hora corrente.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Hora" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+
+  /auth/login:
+    post:
+      tags: [Autenticação]
+      summary: Autenticar e obter token
+      description: |
+        Única rota que emite token. Limitada a **10 tentativas por 15 min** por
+        combinação de IP + e-mail (tentativas bem-sucedidas não contam).
+
+        Usuário inexistente, conta desativada e senha errada devolvem a **mesma**
+        mensagem, de propósito: distinguir os casos entregaria a atacantes a
+        lista de e-mails válidos.
+      security: []
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, senha]
+              properties:
+                email: { type: string, format: email }
+                senha: { type: string, minLength: 1, maxLength: 200 }
+            example: { email: tecnico@provedor.com.br, senha: "umaSenhaForte" }
+      responses:
+        "200":
+          description: Autenticado.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, usuario]
+                properties:
+                  token:
+                    type: string
+                    description: "JWT HS256. Enviar como `Authorization: Bearer <token>`."
+                  usuario: { $ref: "#/components/schemas/UsuarioPublic" }
+        "400": { $ref: "#/components/responses/DadosInvalidos" }
+        "401":
+          description: Credenciais inválidas, conta desativada ou inexistente.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+              example: { error: "Credenciais invalidas" }
+        "429":
+          description: Excesso de tentativas.
+          headers:
+            RateLimit-Limit: { $ref: "#/components/headers/RateLimitLimit" }
+            RateLimit-Remaining: { $ref: "#/components/headers/RateLimitRemaining" }
+            RateLimit-Reset: { $ref: "#/components/headers/RateLimitReset" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+              example:
+                error: "Muitas tentativas de login. Tente novamente em alguns minutos."
+
+  /auth/me:
+    get:
+      tags: [Autenticação]
+      summary: Dados do usuário autenticado
+      description: |
+        Revalida a sessão contra o banco (usuário ativo + `tokenVersion`), então
+        serve também como "meu token ainda vale?" — é o que o app usa ao
+        restaurar a sessão guardada.
+      operationId: me
+      responses:
+        "200":
+          description: Usuário autenticado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UsuarioPublic" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+
+  /auth/senha:
+    post:
+      tags: [Autenticação]
+      summary: Trocar a própria senha
+      description: |
+        Incrementa o `tokenVersion`, o que **encerra todas as outras sessões**
+        do usuário. Por isso devolve um token novo — sem ele, quem trocou a
+        senha se deslogaria a si mesmo.
+      operationId: trocarSenha
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [senhaAtual, novaSenha]
+              properties:
+                senhaAtual: { type: string, minLength: 1 }
+                novaSenha:
+                  type: string
+                  minLength: 8
+                  description: Mínimo de 8 caracteres.
+      responses:
+        "200":
+          description: Senha trocada; token novo emitido.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token]
+                properties:
+                  token: { type: string }
+        "400": { $ref: "#/components/responses/DadosInvalidos" }
+        "401":
+          description: Senha atual incorreta, ou sessão inválida.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+              example: { error: "Senha atual incorreta" }
+
+  /auth/perfil:
+    patch:
+      tags: [Autenticação]
+      summary: Editar o próprio perfil
+      description: |
+        Patch parcial de verdade: campo ausente fica como está, campo com `null`
+        é apagado. Sempre atua sobre o usuário do token — não há como editar o
+        perfil de outra pessoa por aqui.
+      operationId: atualizarPerfil
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nomeExibicao:
+                  type: [string, "null"]
+                  maxLength: 80
+                  description: Apelido exibido no chat. O `nome` do cadastro não muda.
+                bio: { type: [string, "null"], maxLength: 280 }
+                telefoneContato:
+                  type: [string, "null"]
+                  maxLength: 30
+                  description: Contato pessoal — distinto das credenciais de login.
+                assinaturaChat:
+                  type: [string, "null"]
+                  maxLength: 140
+                  description: Renderizada abaixo das mensagens deste autor no chat interno.
+                corDestaque:
+                  type: [string, "null"]
+                  pattern: "^#[0-9a-fA-F]{6}$"
+                  description: Hex pessoal. Não confundir com a cor do provedor.
+            example: { nomeExibicao: "Cleb", corDestaque: "#4F46E5" }
+      responses:
+        "200":
+          description: Perfil atualizado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UsuarioPublic" }
+        "400": { $ref: "#/components/responses/DadosInvalidos" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+
+  /auth/status:
+    patch:
+      tags: [Autenticação]
+      summary: Definir status manual
+      description: |
+        Status escolhido pela pessoa (`disponivel`, `em_campo`, …), irmão da
+        presença automática `online` — nunca a substitui.
+
+        Atenção: `statusTexto` **não** é patch parcial. Omitir o campo apaga o
+        texto atual; para mantê-lo, reenvie o valor.
+      operationId: atualizarStatus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  oneOf:
+                    - { $ref: "#/components/schemas/StatusPreset" }
+                    - { type: "null" }
+                statusTexto:
+                  type: [string, "null"]
+                  maxLength: 140
+            example: { status: em_campo, statusTexto: "Instalação no Alecrim" }
+      responses:
+        "200":
+          description: Status atualizado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UsuarioPublic" }
+        "400": { $ref: "#/components/responses/DadosInvalidos" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+
+  /auth/foto:
+    patch:
+      tags: [Autenticação]
+      summary: Enviar foto de perfil
+      description: |
+        A imagem vai em base64 dentro do JSON (não `multipart`). Máximo de
+        **200 KB já decodificados** e no máximo 5 envios por minuto — o cliente
+        deve comprimir antes de enviar.
+
+        Cada envio incrementa `fotoVersao`, que serve de cache-buster na URL de
+        leitura.
+      operationId: enviarFoto
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fotoBase64, fotoMime]
+              properties:
+                fotoBase64: { type: string, minLength: 1, contentEncoding: base64 }
+                fotoMime:
+                  type: string
+                  enum: [image/jpeg, image/png, image/webp]
+      responses:
+        "200":
+          description: Foto salva.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UsuarioPublic" }
+        "400":
+          description: Formato não suportado, imagem vazia ou acima de 200 KB.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+              example: { error: "Foto maior que 200KB" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "413": { $ref: "#/components/responses/CorpoGrandeDemais" }
+        "429":
+          description: |
+            Mais de 5 envios em 60 s. Atenção: esta resposta é **texto puro**,
+            não JSON — diferente do 429 do login.
+          content:
+            text/html:
+              schema: { type: string }
+              example: "Too many requests, please try again later."
+    delete:
+      tags: [Autenticação]
+      summary: Remover a foto de perfil
+      operationId: removerFoto
+      responses:
+        "200":
+          description: Foto removida.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UsuarioPublic" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+
+  /auth/foto/{usuarioId}:
+    get:
+      tags: [Autenticação]
+      summary: Baixar a foto de um usuário
+      description: |
+        Devolve os **bytes da imagem**, não JSON. Marcada como imutável no cache
+        do cliente: para invalidar, use o `fotoVersao` do usuário como query
+        (ex.: `?v=3`) — o servidor ignora o parâmetro, ele existe só para o cache.
+
+        `provedor` não acessa: é o único papel fora dos chats, e a foto só serve
+        para a UI de conversas.
+      operationId: obterFoto
+      parameters:
+        - name: usuarioId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: v
+          in: query
+          required: false
+          description: Cache-buster (`fotoVersao`). Não lido pelo servidor.
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Bytes da imagem.
+          headers:
+            Cache-Control:
+              schema: { type: string }
+              example: "private, max-age=31536000, immutable"
+          content:
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403":
+          description: Papel `provedor` não tem acesso.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+              example: { error: "Sem acesso" }
+        "404":
+          description: |
+            Usuário inexistente **ou** sem foto — a mesma resposta nos dois
+            casos, para não permitir enumerar contas.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+              example: { error: "Sem foto" }
+
+  /usuarios:
+    get:
+      tags: [Usuários]
+      summary: Listar usuários
+      description: |
+        Lista completa, sem paginação, ordenada por nome. O shape aqui **não** é
+        o mesmo de `/auth/me`: traz `criadoEm` e omite os campos de perfil/foto.
+      operationId: listarUsuarios
+      parameters:
+        - name: role
+          in: query
+          required: false
+          description: |
+            Filtra por papel. Valor desconhecido é **ignorado em silêncio**
+            (devolve todos) em vez de dar erro.
+          schema: { $ref: "#/components/schemas/UserRole" }
+      responses:
+        "200":
+          description: Usuários encontrados.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/UsuarioAdmin" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+    post:
+      tags: [Usuários]
+      summary: Criar usuário
+      operationId: criarUsuario
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nome, email, senha, role]
+              properties:
+                nome: { type: string, minLength: 1 }
+                email: { type: string, format: email }
+                senha: { type: string, minLength: 8 }
+                role: { $ref: "#/components/schemas/UserRole" }
+                provedorId:
+                  type: [string, "null"]
+                  format: uuid
+                  description: |
+                    Obrigatório quando `role` é `provedor`; **ignorado** (gravado
+                    como `null`) para os demais papéis.
+      responses:
+        "201":
+          description: Usuário criado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UsuarioAdmin" }
+        "400":
+          description: Dados inválidos, ou `provedorId` ausente para o papel `provedor`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+        "409":
+          description: E-mail já cadastrado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+              example: { error: "Ja existe um usuario com esse e-mail" }
+
+  /usuarios/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      tags: [Usuários]
+      summary: Atualizar usuário
+      description: |
+        Substituição completa (não é patch). Duas travas impedem que a operação
+        fique sem dono: ninguém remove o próprio acesso de admin, e o último
+        admin ativo não pode ser rebaixado nem desativado.
+
+        Mudar papel/provedor ou desativar incrementa o `tokenVersion` — a pessoa
+        cai da sessão imediatamente.
+      operationId: atualizarUsuario
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nome, email, role, ativo]
+              properties:
+                nome: { type: string, minLength: 1 }
+                email: { type: string, format: email }
+                role: { $ref: "#/components/schemas/UserRole" }
+                provedorId: { type: [string, "null"], format: uuid }
+                ativo: { type: boolean }
+      responses:
+        "200":
+          description: Usuário atualizado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UsuarioAdmin" }
+        "400":
+          description: |
+            Dados inválidos, `provedorId` faltando para papel `provedor`, ou
+            tentativa de remover o próprio acesso de administrador.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+              example: { error: "Voce nao pode remover seu proprio acesso de administrador" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+        "409":
+          description: E-mail duplicado, ou último administrador ativo.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+              example: { error: "Nao e possivel remover o ultimo administrador ativo" }
+    delete:
+      tags: [Usuários]
+      summary: Desativar usuário
+      description: |
+        **Soft delete** — a conta é marcada como inativa e devolvida no corpo,
+        nada é apagado. Histórico de OS e mensagens continua atribuído à pessoa.
+      operationId: desativarUsuario
+      responses:
+        "200":
+          description: "Usuário desativado (`ativo: false`)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UsuarioAdmin" }
+        "400":
+          description: Tentativa de desativar a própria conta.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+              example: { error: "Voce nao pode desativar sua propria conta" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+        "409":
+          description: É o último administrador ativo.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+
+  /usuarios/{id}/senha:
+    post:
+      tags: [Usuários]
+      summary: Redefinir a senha de um usuário
+      description: |
+        Reset administrativo, sem exigir a senha antiga. Derruba todas as
+        sessões daquele usuário.
+      operationId: redefinirSenhaUsuario
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [novaSenha]
+              properties:
+                novaSenha: { type: string, minLength: 8 }
+      responses:
+        "200":
+          description: Senha redefinida.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UsuarioAdmin" }
+        "400": { $ref: "#/components/responses/DadosInvalidos" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+
+  /tecnicos:
+    get:
+      tags: [Usuários]
+      summary: Listar técnicos ativos
+      description: |
+        Recorte enxuto para os seletores de despacho: só `role=tecnico` e
+        `ativo=true`, e apenas os campos necessários para montar a lista.
+      operationId: listarTecnicos
+      responses:
+        "200":
+          description: Técnicos ativos, ordenados por nome.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [id, nome, email]
+                  properties:
+                    id: { type: string, format: uuid }
+                    nome: { type: string }
+                    email: { type: string, format: email }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+
+  /config:
+    get:
+      tags: [Configuração]
+      summary: Módulos habilitados para o usuário atual
+      description: |
+        O app do técnico monta o menu a partir daqui — o conjunto varia conforme
+        o papel do token. `minhas-os` é core: sempre presente, ignora tanto o
+        toggle do admin quanto o filtro de papel, para que o app nunca abra sem
+        nenhuma tela.
+      operationId: obterConfig
+      responses:
+        "200":
+          description: Configuração efetiva.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppConfig" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+
+  /admin/modulos:
+    get:
+      tags: [Configuração]
+      summary: Catálogo de módulos com o estado salvo
+      description: Sempre devolve os 10 módulos do catálogo, mesclados com o que o admin já alterou.
+      operationId: listarModulos
+      responses:
+        "200":
+          description: Catálogo completo.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ModuloAdmin" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+
+  /admin/modulos/{moduloId}:
+    patch:
+      tags: [Configuração]
+      summary: Ligar, desligar ou reordenar um módulo
+      description: |
+        Emite `config-alterada` para **todas** as conexões SSE abertas, então os
+        apps já conectados atualizam o menu sem precisar reabrir.
+
+        A resposta é a linha salva no banco, cujo shape difere do `GET` acima
+        (que é a projeção do catálogo).
+      operationId: atualizarModulo
+      parameters:
+        - name: moduloId
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ModuloId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ativo: { type: boolean }
+                ordem: { type: integer }
+                rolesPermitidos:
+                  type: array
+                  items: { $ref: "#/components/schemas/UserRole" }
+            example: { ativo: true, ordem: 15, rolesPermitidos: [admin, tecnico] }
+      responses:
+        "200":
+          description: Módulo atualizado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModuloConfigSalvo" }
+        "400": { $ref: "#/components/responses/DadosInvalidos" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+        "404":
+          description: "`moduloId` fora do catálogo."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+              example: { error: "Modulo desconhecido" }
+        "422":
+          description: Tentativa de desativar um módulo core.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+              example: { error: "Este modulo e essencial e nao pode ser desativado" }
+
+  /notificacoes:
+    get:
+      tags: [Notificações]
+      summary: Listar notificações do usuário
+      description: Sempre escopado ao usuário do token; não há como ler as de outra pessoa.
+      operationId: listarNotificacoes
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 30 }
+      responses:
+        "200":
+          description: Notificações, da mais recente para a mais antiga.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Notificacao" }
+        "400": { $ref: "#/components/responses/DadosInvalidos" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+
+  /notificacoes/contagem:
+    get:
+      tags: [Notificações]
+      summary: Quantas não lidas
+      description: Endpoint barato, feito para o polling do sino.
+      operationId: contarNaoLidas
+      responses:
+        "200":
+          description: Contagem.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [naoLidas]
+                properties:
+                  naoLidas: { type: integer, minimum: 0 }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+
+  /notificacoes/{id}/lida:
+    post:
+      tags: [Notificações]
+      summary: Marcar uma notificação como lida
+      operationId: marcarNotificacaoLida
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Marcada. Sem corpo. }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "404":
+          description: |
+            Inexistente **ou** de outro usuário — mesma resposta nos dois casos.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+              example: { error: "Notificacao nao encontrada" }
+
+  /notificacoes/marcar-todas-lidas:
+    post:
+      tags: [Notificações]
+      summary: Marcar todas como lidas
+      description: Idempotente — devolve 204 mesmo quando não havia nenhuma não lida.
+      operationId: marcarTodasLidas
+      responses:
+        "204": { description: Marcadas. Sem corpo. }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+
+  /eventos:
+    get:
+      tags: [Realtime]
+      summary: Canal de eventos (SSE)
+      description: |
+        Stream `text/event-stream` escopado ao usuário do token. É o que mantém
+        fila, OS e chat atualizados sem polling.
+
+        **Protocolo:** cada evento chega como `data: <json>`, sem campos `event:`
+        nem `id:`. Um comentário `:ping` a cada 25 s segura a conexão viva
+        através de proxies.
+
+        **Entrega best-effort:** o hub vive em memória e não guarda fila. Quem
+        cair perde o que passou durante a queda e deve recarregar o estado por
+        HTTP ao reconectar — não há `Last-Event-ID`.
+
+        **Máximo de 5 conexões simultâneas por usuário.** Ao abrir a sexta, a
+        mais antiga é encerrada sem aviso, em vez de recusar a nova (a aba nova
+        é quase sempre a que a pessoa está olhando).
+
+        O `Cache-Control: no-transform` da resposta é o que impede o middleware
+        de compressão de segurar os eventos no buffer do gzip.
+      operationId: assinarEventos
+      responses:
+        "200":
+          description: Stream aberto.
+          headers:
+            Cache-Control:
+              schema: { type: string }
+              example: "no-cache, no-transform"
+            X-Accel-Buffering:
+              description: Desliga o buffer do nginx, que senão engoliria o stream.
+              schema: { type: string, const: "no" }
+          content:
+            text/event-stream:
+              # O corpo e um stream, nao um JSON unico. O schema abaixo descreve
+              # o objeto que vem em CADA linha `data:` — que e o que o cliente
+              # precisa tipar.
+              schema: { $ref: "#/components/schemas/RealtimeEvento" }
+              example: |
+                :
+
+                data: {"tipo":"os-atribuida","osId":"6f1c…","em":"2026-07-29T05:16:47.000Z"}
+
+                :ping
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+
+  /provedores:
+    get:
+      tags: [Provedores]
+      summary: Listar provedores
+      description: |
+        O papel `provedor` recebe apenas o próprio — o recorte é feito no
+        servidor, nunca por filtro que o cliente possa alargar.
+      operationId: listarProvedores
+      responses:
+        "200":
+          description: Provedores, ordenados por nome.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Provedor" } }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+    post:
+      tags: [Provedores]
+      summary: Cadastrar provedor
+      operationId: criarProvedor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProvedorInput" }
+      responses:
+        "201":
+          description: Provedor criado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Provedor" }
+        "400": { $ref: "#/components/responses/DadosInvalidos" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+
+  /provedores/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Provedores]
+      summary: Detalhe do provedor
+      operationId: obterProvedor
+      responses:
+        "200":
+          description: Provedor.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Provedor" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403":
+          description: Papel `provedor` tentando ler outro provedor.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+              example: { error: "Acesso restrito ao proprio provedor" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+    put:
+      tags: [Provedores]
+      summary: Atualizar provedor
+      description: Patch parcial — só os campos enviados mudam.
+      operationId: atualizarProvedor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProvedorInput" }
+      responses:
+        "200":
+          description: Provedor atualizado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Provedor" }
+        "400": { $ref: "#/components/responses/DadosInvalidos" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+    delete:
+      tags: [Provedores]
+      summary: Remover provedor
+      description: |
+        **Destrutivo e em cascata**: apaga junto a integração, os tipos de OS,
+        as ordens de serviço e os usuários daquele provedor.
+      operationId: removerProvedor
+      responses:
+        "204": { description: Removido. }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+
+  /categorias:
+    get:
+      tags: [Categorias]
+      summary: Listar categorias
+      description: |
+        Taxonomia global que unifica os "motivos" de OS que cada provedor nomeia
+        de um jeito. Devolve ativas **e** inativas — quem exibe decide o filtro.
+        Legível por qualquer papel, porque a categoria aparece em toda OS.
+      operationId: listarCategorias
+      responses:
+        "200":
+          description: Categorias, por ordem e depois nome.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Categoria" } }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+    post:
+      tags: [Categorias]
+      summary: Criar categoria
+      operationId: criarCategoria
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CategoriaInput" }
+      responses:
+        "201":
+          description: Categoria criada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Categoria" }
+        "400": { $ref: "#/components/responses/DadosInvalidos" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+        "409":
+          description: Já existe categoria com esse nome.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+
+  /categorias/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    put:
+      tags: [Categorias]
+      summary: Atualizar categoria
+      operationId: atualizarCategoria
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CategoriaInput" }
+      responses:
+        "200":
+          description: Categoria atualizada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Categoria" }
+        "400": { $ref: "#/components/responses/DadosInvalidos" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+        "409":
+          description: Nome duplicado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+    delete:
+      tags: [Categorias]
+      summary: Remover categoria
+      description: |
+        Duas saídas conforme o uso: se algum tipo de OS ainda aponta para ela,
+        vira **soft delete** (`200` com `ativo: false` e `softDelete: true`),
+        preservando a classificação histórica. Sem vínculo, apaga de fato (`204`).
+      operationId: removerCategoria
+      responses:
+        "200":
+          description: Desativada (havia tipos vinculados).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/Categoria" }
+                  - type: object
+                    properties:
+                      softDelete: { type: boolean, const: true }
+        "204": { description: Apagada (não havia vínculos). }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+
+  /provedores/{provedorId}/erp-config:
+    parameters:
+      - { name: provedorId, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Integração SGP]
+      summary: Ler a configuração do ERP
+      description: O token **nunca** volta em claro — apenas mascarado (`3a4e****aad0`).
+      operationId: obterErpConfig
+      responses:
+        "200":
+          description: Configuração (com token mascarado).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErpConfigPublic" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+        "404":
+          description: Provedor sem integração configurada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+    put:
+      tags: [Integração SGP]
+      summary: Gravar a configuração do ERP
+      description: |
+        O token é re-cifrado a cada gravação (AES-256-GCM). A URL passa por
+        validação anti-SSRF: precisa ser http(s), sem credenciais embutidas, sem
+        query nem fragmento, e **não pode apontar para endereço interno/privado**
+        (`localhost`, `10.*`, `192.168.*`, `169.254.*`, IPv6 local…) — senão a
+        API viraria um proxy para a rede interna de quem a hospeda.
+      operationId: gravarErpConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url, app, token]
+              properties:
+                tipo: { type: string, const: SGP, default: SGP }
+                url: { type: string, format: uri, description: "Base do SGP, ex.: https://sgp.provedor.com.br" }
+                app: { type: string, minLength: 1 }
+                token: { type: string, minLength: 8, writeOnly: true }
+                intervaloPollingSegundos: { type: integer, minimum: 30, maximum: 3600, default: 180 }
+      responses:
+        "200":
+          description: Configuração gravada (200 mesmo quando cria).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErpConfigPublic" }
+        "400": { $ref: "#/components/responses/DadosInvalidos" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+
+  /provedores/{provedorId}/erp-config/testar:
+    post:
+      tags: [Integração SGP]
+      summary: Testar a conexão com o SGP
+      description: |
+        Faz uma chamada leve ao SGP (timeout de 15 s) e grava o resultado como
+        última verificação. Falha de rede **não** vira erro HTTP: responde 200
+        com `ok: false` e a mensagem, porque "não conectou" é o resultado
+        legítimo de um teste, não uma falha da API.
+      operationId: testarErpConfig
+      parameters:
+        - { name: provedorId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Resultado do teste.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResultadoTeste" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+        "404":
+          description: Sem integração configurada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+
+  /provedores/{provedorId}/tipos-os:
+    get:
+      tags: [Integração SGP]
+      summary: Listar tipos de OS do provedor
+      operationId: listarTiposOs
+      parameters:
+        - { name: provedorId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Tipos de OS com a categoria mapeada.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/TipoOs" } }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+
+  /provedores/{provedorId}/tipos-os/importar:
+    post:
+      tags: [Integração SGP]
+      summary: Importar o catálogo de tipos do SGP
+      description: |
+        Reimporta preservando o trabalho manual: em tipos já existentes só a
+        descrição é atualizada — `visivel`, `slaHoras` e a categoria mapeada
+        ficam intactos. Tipos novos ganham uma categoria sugerida por palavra-chave.
+      operationId: importarTiposOs
+      parameters:
+        - { name: provedorId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Catálogo importado.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [importados, tipos]
+                properties:
+                  importados: { type: integer }
+                  tipos: { type: array, items: { $ref: "#/components/schemas/TipoOs" } }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+        "404":
+          description: Sem integração configurada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+
+  /provedores/{provedorId}/tipos-os/auto-classificar:
+    post:
+      tags: [Integração SGP]
+      summary: Sugerir categoria para os tipos não classificados
+      description: Só mexe em tipos ainda sem categoria — nunca sobrescreve mapeamento manual.
+      operationId: autoClassificarTiposOs
+      parameters:
+        - { name: provedorId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Resultado da varredura.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [analisados, classificados]
+                properties:
+                  analisados: { type: integer }
+                  classificados: { type: integer }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+
+  /provedores/{provedorId}/tipos-os/{id}:
+    patch:
+      tags: [Integração SGP]
+      summary: Ajustar visibilidade, SLA ou categoria de um tipo
+      operationId: atualizarTipoOs
+      parameters:
+        - { name: provedorId, in: path, required: true, schema: { type: string } }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                visivel: { type: boolean, description: Se aparece na fila unificada. }
+                slaHoras:
+                  type: [integer, "null"]
+                  minimum: 1
+                  maximum: 720
+                  description: "`null` = herda o SLA padrão da categoria."
+                categoriaId:
+                  type: [string, "null"]
+                  format: uuid
+                  description: "`null` desclassifica o tipo."
+      responses:
+        "200":
+          description: Tipo atualizado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TipoOs" }
+        "400": { $ref: "#/components/responses/DadosInvalidos" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+        "404":
+          description: Tipo ou categoria inexistente.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+
+  /provedores/{provedorId}/sync:
+    post:
+      tags: [Integração SGP]
+      summary: Sincronizar as OS de um provedor
+      description: |
+        Síncrono e bloqueante: puxa as OS em todos os status e faz um backfill de
+        cadastro limitado a 30 contratos por ciclo.
+
+        Falha de negócio **não** vira erro HTTP — responde 200 com `ok: false` e
+        a mensagem, para que a UI mostre o motivo em vez de um erro genérico.
+      operationId: sincronizarProvedor
+      parameters:
+        - { name: provedorId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Resultado da sincronização.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResultadoTeste" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+
+  /provedores/{provedorId}/sync/logs:
+    get:
+      tags: [Integração SGP]
+      summary: Últimas sincronizações
+      description: As 50 mais recentes, da mais nova para a mais antiga. Sem paginação.
+      operationId: listarSyncLogs
+      parameters:
+        - { name: provedorId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Histórico.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/SyncLog" } }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+
+  /sync/minhas-os:
+    post:
+      tags: [Integração SGP]
+      summary: Sincronizar as OS do próprio escopo
+      description: |
+        O que o botão "atualizar" do app chama. Sincroniza só os provedores que
+        têm OS abertas no escopo de quem pediu (o técnico, as suas). Limitado a
+        1 chamada por 30 s por usuário, para que puxar a lista repetidamente não
+        vire enxurrada de requisições ao SGP.
+      operationId: sincronizarMinhas
+      responses:
+        "200":
+          description: Provedores sincronizados.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sincronizados]
+                properties:
+                  sincronizados: { type: integer }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "429":
+          description: Menos de 30 s desde a última sincronização.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+              example: { error: "Aguarde alguns segundos antes de sincronizar de novo" }
+
+  /provedores/{provedorId}/conexao/{contratoId}:
+    get:
+      tags: [Conexão]
+      summary: Contrato está online?
+      description: |
+        Consulta ao vivo no SGP. Falha da consulta devolve **200** com
+        `online: null` e a mensagem — "não deu para saber" é diferente de
+        "está offline", e confundir os dois mandaria técnico a campo à toa.
+      operationId: statusConexao
+      parameters:
+        - { name: provedorId, in: path, required: true, schema: { type: string } }
+        - { name: contratoId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Status da conexão.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConnectionStatus" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemEscopoProvedor" }
+        "404":
+          description: Sem integração ativa.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+
+  /provedores/{provedorId}/conexao/{contratoId}/detalhes:
+    get:
+      tags: [Conexão]
+      summary: Sinal óptico, OLT e endereço do contrato
+      description: |
+        O que alimenta o selo Online/Offline dos cards e a tela de conexão.
+
+        Protegido em duas camadas para não derrubar o SGP do provedor: cache de
+        90 s por contrato e no máximo 4 consultas simultâneas por provedor (fila,
+        não recusa — a chamada espera em vez de falhar).
+      operationId: detalhesConexao
+      parameters:
+        - { name: provedorId, in: path, required: true, schema: { type: string } }
+        - { name: contratoId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Detalhes técnicos.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DetalhesTecnicos" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemEscopoProvedor" }
+        "404":
+          description: Sem integração ativa.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+
+  /provedores/{provedorId}/fttx/olts:
+    get:
+      tags: [Provisionamento FTTX]
+      summary: Listar OLTs
+      description: Cache de 60 s; no máximo 3 consultas FTTX simultâneas por provedor.
+      operationId: listarOlts
+      parameters:
+        - { name: provedorId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OLTs do provedor.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Olt" } }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemEscopoProvedor" }
+        "404":
+          description: Sem integração ativa.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+
+  /provedores/{provedorId}/fttx/olts/{oltId}/onus:
+    get:
+      tags: [Provisionamento FTTX]
+      summary: Listar ONUs de uma OLT
+      description: |
+        Sem cache — o estado muda ao vivo enquanto o técnico trabalha na caixa.
+        O formato da resposta depende de `status`.
+      operationId: listarOnus
+      parameters:
+        - { name: provedorId, in: path, required: true, schema: { type: string } }
+        - { name: oltId, in: path, required: true, schema: { type: string } }
+        - name: status
+          in: query
+          schema: { type: string, enum: [nao-autorizadas, autorizadas], default: nao-autorizadas }
+        - { name: contrato, in: query, schema: { type: string }, description: Só com `status=autorizadas`. }
+        - { name: cpfcnpj, in: query, schema: { type: string }, description: Só com `status=autorizadas`. }
+      responses:
+        "200":
+          description: ONUs encontradas.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { type: array, items: { $ref: "#/components/schemas/OnuNaoAutorizada" } }
+                  - { type: array, items: { $ref: "#/components/schemas/OnuAutorizada" } }
+        "400": { $ref: "#/components/responses/DadosInvalidos" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemEscopoProvedor" }
+        "404":
+          description: Sem integração ativa.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+
+  /provedores/{provedorId}/fttx/olts/{oltId}/templates:
+    get:
+      tags: [Provisionamento FTTX]
+      summary: Perfis de ONU disponíveis na OLT
+      operationId: listarTemplatesOnu
+      parameters:
+        - { name: provedorId, in: path, required: true, schema: { type: string } }
+        - { name: oltId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Templates.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/OnuTemplate" } }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemEscopoProvedor" }
+        "404":
+          description: Sem integração ativa.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+
+  /provedores/{provedorId}/fttx/olts/{oltId}/onus/autorizar:
+    post:
+      tags: [Provisionamento FTTX]
+      summary: Autorizar (provisionar) uma ONU
+      description: |
+        **Escrita real na OLT** — sobe o serviço do cliente. O papel `provedor`
+        não alcança esta rota.
+
+        `pppoeSenha` é segredo: nunca é logada em claro, mesmo com log verboso.
+      operationId: autorizarOnu
+      parameters:
+        - { name: provedorId, in: path, required: true, schema: { type: string } }
+        - { name: oltId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slot, pon, serial, mode]
+              properties:
+                slot: { oneOf: [{ type: string }, { type: integer }] }
+                pon: { oneOf: [{ type: string }, { type: integer }] }
+                serial: { type: string, minLength: 1, description: SN/phy_addr da ONU. }
+                onutype: { type: string, description: Omitido = o SGP descobre pelo SN. }
+                mode:
+                  type: integer
+                  enum: [1, 2]
+                  description: "1 = bridge, 2 = pppoe."
+                vlan: { type: integer }
+                contrato: { type: string }
+                service: { type: string }
+                pppoeLogin: { type: string }
+                pppoeSenha: { type: string, writeOnly: true }
+                onutemplate: { type: string }
+                descricao: { type: string, maxLength: 500 }
+                ident: { type: string, maxLength: 120, description: Identificação da CTO/caixa. }
+      responses:
+        "201":
+          description: ONU autorizada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProvisionarOnuResultado" }
+        "400": { $ref: "#/components/responses/DadosInvalidos" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemEscopoProvedor" }
+        "404":
+          description: Sem integração ativa.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+
+  /provedores/{provedorId}/fttx/onus/{onuId}/desautorizar:
+    post:
+      tags: [Provisionamento FTTX]
+      summary: Desautorizar uma ONU
+      description: "**Escrita real na OLT** — derruba o serviço do cliente."
+      operationId: desautorizarOnu
+      parameters:
+        - { name: provedorId, in: path, required: true, schema: { type: string } }
+        - { name: onuId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: ONU desautorizada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProvisionarOnuResultado" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemEscopoProvedor" }
+        "404":
+          description: Sem integração ativa.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+
+  /fila:
+    get:
+      tags: [Fila]
+      summary: Fila unificada de OS
+      description: |
+        A tela principal da operação. O escopo é sempre do servidor: `provedor`
+        vê só as próprias OS, `tecnico` só as atribuídas a si.
+
+        **Não pagina.** Devolve o conjunto inteiro até um teto de 2000 itens e,
+        se cortou, diz isso em `truncado` — um total que não bate com a lista
+        seria pior que uma lista incompleta assumida. Os campos `page`/`pageSize`
+        são aceitos mas **não têm efeito**.
+      operationId: listarFila
+      parameters:
+        - { name: provedorId, in: query, schema: { type: string, format: uuid } }
+        - name: status
+          in: query
+          description: "CSV de status, ex.: `aberta,pendente`."
+          schema: { type: string }
+        - { name: tipoOsId, in: query, schema: { type: string, format: uuid } }
+        - { name: tecnicoId, in: query, schema: { type: string, format: uuid }, description: Ignorado para o papel `tecnico`. }
+        - name: categoriaId
+          in: query
+          description: UUID, ou `sem_categoria` para os tipos ainda não mapeados.
+          schema: { type: string }
+        - { name: grupo, in: query, schema: { type: string, enum: [abertos, fechados] } }
+        - name: equipe
+          in: query
+          description: Quem executa. O padrão exclui as OS de equipe externa.
+          schema: { $ref: "#/components/schemas/EquipeFiltro" }
+        - { name: busca, in: query, schema: { type: string, maxLength: 120 }, description: Cliente, protocolo, endereço, contrato ou telefone. }
+        - { name: de, in: query, schema: { type: string, format: date-time } }
+        - { name: ate, in: query, schema: { type: string, format: date-time } }
+      responses:
+        "200":
+          description: Fila.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [total, truncado, itens, totais]
+                properties:
+                  total: { type: integer, description: Contagem real no banco para o filtro. }
+                  truncado: { type: boolean, description: "`true` = a lista foi cortada no teto de 2000." }
+                  itens: { type: array, items: { $ref: "#/components/schemas/FilaItem" } }
+                  totais:
+                    type: object
+                    properties:
+                      osAbertas: { type: integer }
+                      osFechadas: { type: integer }
+                      osSlaEstourado: { type: integer }
+        "400": { $ref: "#/components/responses/DadosInvalidos" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+
+  /dashboard/metrics:
+    get:
+      tags: [Fila]
+      summary: Métricas agregadas
+      description: |
+        Todos os números de topo contam **apenas** OS da equipe interna. As de
+        equipe externa (retirada/cancelamento) ficam isoladas em `retiradas` —
+        misturá-las inflaria as métricas da operação com trabalho que não é dela.
+      operationId: obterMetricas
+      responses:
+        "200":
+          description: Métricas.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DashboardMetrics" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+
+  /ordens-servico/{id}:
+    get:
+      tags: [Ordens de serviço]
+      summary: Detalhe da OS
+      operationId: obterOs
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OS com provedor, tipo, técnico e atribuições.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrdemServico" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemAcessoOs" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+
+  /ordens-servico/{id}/acaminho:
+    post:
+      tags: [Ordens de serviço]
+      summary: Marcar deslocamento
+      description: |
+        `em_deslocamento` não existe no SGP — por isso tem rota própria, em vez
+        de passar por `PATCH /status`.
+      operationId: marcarACaminho
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OS atualizada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrdemServico" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemAcessoOs" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+        "409": { $ref: "#/components/responses/SgpIndisponivel" }
+        "502": { $ref: "#/components/responses/SgpRecusou" }
+
+  /ordens-servico/{id}/status:
+    patch:
+      tags: [Ordens de serviço]
+      summary: Mudar o status da OS
+      description: Escreve no SGP e no ISPhub — se o SGP recusar, nada muda aqui.
+      operationId: mudarStatusOs
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { $ref: "#/components/schemas/OsStatus" }
+      responses:
+        "200":
+          description: OS atualizada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrdemServico" }
+        "400": { $ref: "#/components/responses/DadosInvalidos" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemAcessoOs" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+        "409": { $ref: "#/components/responses/SgpIndisponivel" }
+        "502": { $ref: "#/components/responses/SgpRecusou" }
+
+  /ordens-servico/{id}/anotacoes:
+    post:
+      tags: [Ordens de serviço]
+      summary: Anotar na OS
+      operationId: anotarOs
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [texto]
+              properties:
+                texto: { type: string, minLength: 1, maxLength: 2000 }
+      responses:
+        "200":
+          description: OS atualizada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrdemServico" }
+        "400": { $ref: "#/components/responses/DadosInvalidos" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemAcessoOs" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+        "409": { $ref: "#/components/responses/SgpIndisponivel" }
+        "502": { $ref: "#/components/responses/SgpRecusou" }
+
+  /ordens-servico/{id}/atribuir:
+    post:
+      tags: [Ordens de serviço]
+      summary: Atribuir a OS a um técnico
+      description: |
+        Despacho é decisão do ISPhub, não do SGP — esta rota **não** escreve no
+        ERP. Notifica o técnico e reconcilia a thread de chat da OS (o novo entra,
+        o anterior sai).
+      operationId: atribuirOs
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tecnicoId]
+              properties:
+                tecnicoId: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OS atribuída.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrdemServico" }
+        "400": { $ref: "#/components/responses/DadosInvalidos" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+        "404":
+          description: OS ou técnico inexistente.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+        "409":
+          description: Técnico está inativo.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+
+  /ordens-servico/{id}/eventos:
+    get:
+      tags: [Ordens de serviço]
+      summary: Linha do tempo da OS
+      operationId: listarEventosOs
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Eventos, do mais recente para o mais antigo.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/OsEvento" } }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemAcessoOs" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+
+  /ordens-servico/{id}/evidencias:
+    get:
+      tags: [Ordens de serviço]
+      summary: Listar fotos de evidência
+      description: Lidas ao vivo do SGP — a ISPhub não guarda os bytes.
+      operationId: listarEvidencias
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Evidências da OS.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/EvidenciaResumo" } }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemAcessoOs" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+        "409": { $ref: "#/components/responses/SgpIndisponivel" }
+        "502": { $ref: "#/components/responses/SgpRecusou" }
+    post:
+      tags: [Ordens de serviço]
+      summary: Anexar foto de evidência
+      description: |
+        Base64 dentro do JSON (a API não usa `multipart`). Teto de 2 MB já
+        decodificados; esta é a única rota cujo corpo pode passar de 1 MB, com
+        limite próprio de 4 MB para caber a expansão do base64.
+
+        Devolve a lista completa de evidências relida do SGP após o upload.
+      operationId: enviarEvidencia
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dados, mimeType]
+              properties:
+                dados: { type: string, contentEncoding: base64, description: Base64 puro, sem o prefixo `data:`. }
+                mimeType: { type: string, enum: [image/jpeg, image/png, image/webp] }
+                legenda: { type: string, maxLength: 500 }
+      responses:
+        "201":
+          description: Foto anexada; lista atualizada.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/EvidenciaResumo" } }
+        "400":
+          description: Base64 inválido, arquivo vazio ou acima de 2 MB.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemAcessoOs" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+        "409": { $ref: "#/components/responses/SgpIndisponivel" }
+        "413":
+          description: Corpo acima de 4 MB.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+        "502": { $ref: "#/components/responses/SgpRecusou" }
+
+  /ordens-servico/{id}/evidencias/{anexoId}/arquivo:
+    get:
+      tags: [Ordens de serviço]
+      summary: Baixar uma foto de evidência
+      description: |
+        O id da evidência é sequencial no SGP, logo enumerável — por isso o
+        servidor confere que ele consta na lista **desta** OS antes de entregar
+        os bytes. Sem essa checagem, qualquer usuário leria evidência de
+        qualquer OS só chutando números.
+      operationId: baixarEvidencia
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: anexoId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Bytes da imagem.
+          headers:
+            Content-Disposition: { schema: { type: string, const: attachment } }
+            X-Content-Type-Options: { schema: { type: string, const: nosniff } }
+            Cache-Control: { schema: { type: string }, example: "private, max-age=300" }
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemAcessoOs" }
+        "404":
+          description: Evidência não pertence a esta OS, ou não existe.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+        "409": { $ref: "#/components/responses/SgpIndisponivel" }
+        "502": { $ref: "#/components/responses/SgpRecusou" }
+
+  /chat/contatos:
+    get:
+      tags: [Chat interno]
+      summary: Contatos disponíveis para conversar
+      description: Só o mínimo para montar a lista — nunca e-mail, provedor ou hash.
+      operationId: listarContatos
+      responses:
+        "200":
+          description: Equipe ativa, exceto você.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/ContatoChat" } }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/ChatIndisponivel" }
+
+  /chat/conversas:
+    get:
+      tags: [Chat interno]
+      summary: Minhas conversas
+      operationId: listarConversas
+      responses:
+        "200":
+          description: Conversas, da mais recente para a mais antiga.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/ConversaResumo" } }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/ChatIndisponivel" }
+
+  /chat/nao-lidas:
+    get:
+      tags: [Chat interno]
+      summary: Total de mensagens não lidas
+      description: Ignora conversas silenciadas.
+      operationId: chatNaoLidas
+      responses:
+        "200":
+          description: Contagem.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [naoLidas]
+                properties: { naoLidas: { type: integer } }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/ChatIndisponivel" }
+
+  /chat/conversas/avisos:
+    post:
+      tags: [Chat interno]
+      summary: Entrar no canal de Avisos
+      description: Idempotente — cria o canal único na primeira vez e adiciona você.
+      operationId: garantirAvisos
+      responses:
+        "201":
+          description: Canal de avisos.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConversaResumo" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/ChatIndisponivel" }
+
+  /chat/conversas/direta:
+    post:
+      tags: [Chat interno]
+      summary: Abrir uma conversa direta
+      description: Idempotente — se a DM já existe, devolve a mesma.
+      operationId: criarConversaDireta
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [usuarioId]
+              properties: { usuarioId: { type: string, minLength: 1 } }
+      responses:
+        "201":
+          description: Conversa direta.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConversaResumo" }
+        "400":
+          description: Dados inválidos, ou DM consigo mesmo.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/ChatIndisponivel" }
+
+  /chat/conversas/grupo:
+    post:
+      tags: [Chat interno]
+      summary: Criar grupo
+      operationId: criarGrupo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [titulo, participanteIds]
+              properties:
+                titulo: { type: string, minLength: 1, maxLength: 80 }
+                participanteIds: { type: array, minItems: 1, items: { type: string, minLength: 1 } }
+      responses:
+        "201":
+          description: Grupo criado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConversaResumo" }
+        "400": { $ref: "#/components/responses/DadosInvalidos" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+
+  /chat/conversas/os/{ordemServicoId}:
+    post:
+      tags: [Chat interno]
+      summary: Abrir a thread de uma OS
+      description: |
+        A conversa mais importante do app: ancorada no trabalho, não nas pessoas.
+        Idempotente. Entram a equipe interna, quem abriu e o técnico da OS.
+      operationId: criarConversaOs
+      parameters:
+        - { name: ordemServicoId, in: path, required: true, schema: { type: string } }
+      responses:
+        "201":
+          description: Thread da OS.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConversaResumo" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemAcessoOs" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+
+  /chat/conversas/{conversaId}/mensagens:
+    parameters:
+      - { name: conversaId, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Chat interno]
+      summary: Mensagens da conversa
+      description: |
+        Paginação por cursor: passe o `criadoEm` da mensagem mais antiga que já
+        tem em `antesDe`. Retorna da **mais recente para a mais antiga**.
+      operationId: listarMensagens
+      parameters:
+        - { name: antesDe, in: query, schema: { type: string, format: date-time }, description: Cursor — devolve o que é anterior a este instante. }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 30 } }
+      responses:
+        "200":
+          description: Mensagens.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Mensagem" } }
+        "400": { $ref: "#/components/responses/DadosInvalidos" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/NaoParticipa" }
+    post:
+      tags: [Chat interno]
+      summary: Enviar mensagem
+      description: |
+        Anexos vão em base64 no próprio JSON. Limites pensados para 3G/4G em
+        campo: foto até 400 KB, áudio até 500 KB e 60 s. Máximo de 30 mensagens
+        por minuto.
+      operationId: enviarMensagem
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tipo:
+                  allOf: [{ $ref: "#/components/schemas/MensagemTipo" }]
+                  default: texto
+                  description: "`sistema` é recusado — só o servidor cria mensagem de sistema."
+                corpo: { type: string, minLength: 1, maxLength: 4000 }
+                anexoBase64: { type: string, contentEncoding: base64 }
+                anexoMime: { type: string }
+                duracaoSeg: { type: integer, minimum: 1, description: Áudio, em segundos. }
+                lat: { type: number }
+                lng: { type: number }
+                ordemServicoRefId: { type: string, description: Card de OS compartilhado. }
+                respondendoAId: { type: string }
+      responses:
+        "201":
+          description: Mensagem enviada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Mensagem" }
+        "400":
+          description: Dados inválidos, ou anexo fora dos limites.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+              example: { error: "Foto maior que 400KB" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403":
+          description: Não participa da conversa, ou técnico postando em Avisos.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+        "413": { $ref: "#/components/responses/CorpoGrandeDemais" }
+        "429": { $ref: "#/components/responses/MuitasRequisicoes" }
+
+  /chat/conversas/{conversaId}/leitura:
+    post:
+      tags: [Chat interno]
+      summary: Marcar a conversa como lida
+      description: Marca d'água — não há recibo por mensagem.
+      operationId: marcarLeitura
+      parameters:
+        - { name: conversaId, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Marcada. }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/NaoParticipa" }
+
+  /chat/conversas/{conversaId}/digitando:
+    post:
+      tags: [Chat interno]
+      summary: Sinalizar que está digitando
+      operationId: sinalizarDigitando
+      parameters:
+        - { name: conversaId, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Sinalizado. }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/NaoParticipa" }
+
+  /chat/conversas/{conversaId}/os/resposta-rapida:
+    post:
+      tags: [Chat interno]
+      summary: Resposta rápida na thread da OS
+      description: |
+        **Não é só texto** — cada opção move a OS de verdade: `a_caminho` marca
+        deslocamento, `cheguei` inicia a execução, `cliente_ausente` deixa
+        pendente (todas escrevem no SGP), e `preciso_apoio` notifica a equipe
+        interna sem mexer no status. É o atalho de quem está de luva, com uma mão.
+      operationId: respostaRapida
+      parameters:
+        - { name: conversaId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tipo]
+              properties:
+                tipo: { type: string, enum: [a_caminho, cheguei, cliente_ausente, preciso_apoio] }
+      responses:
+        "201":
+          description: Mensagem de sistema criada e OS atualizada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Mensagem" }
+        "400":
+          description: Dados inválidos, ou a conversa não é thread de OS.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemAcessoOs" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+        "409": { $ref: "#/components/responses/SgpIndisponivel" }
+        "429": { $ref: "#/components/responses/MuitasRequisicoes" }
+        "502": { $ref: "#/components/responses/SgpRecusou" }
+
+  /chat/conversas/{conversaId}/mensagens/{mensagemId}:
+    parameters:
+      - { name: conversaId, in: path, required: true, schema: { type: string } }
+      - { name: mensagemId, in: path, required: true, schema: { type: string } }
+    patch:
+      tags: [Chat interno]
+      summary: Editar a própria mensagem
+      operationId: editarMensagem
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [corpo]
+              properties: { corpo: { type: string, minLength: 1, maxLength: 4000 } }
+      responses:
+        "200":
+          description: Mensagem editada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Mensagem" }
+        "400": { $ref: "#/components/responses/DadosInvalidos" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403":
+          description: Só o autor edita — nem admin abre exceção aqui.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+        "409":
+          description: Mensagem apagada não pode ser editada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+    delete:
+      tags: [Chat interno]
+      summary: Apagar mensagem
+      description: |
+        **Soft delete**: a bolha vira "Mensagem apagada" e nada sai do banco —
+        conversa de campo é contexto operacional e prova. Autor ou admin.
+      operationId: apagarMensagem
+      responses:
+        "204": { description: Apagada. }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+
+  /chat/conversas/{conversaId}/mensagens/{mensagemId}/reagir:
+    post:
+      tags: [Chat interno]
+      summary: Reagir a uma mensagem
+      description: |
+        Alterna: reagir de novo com o mesmo emoji remove a reação. A lista de
+        emojis é fechada e validada no servidor — quando era texto livre, cada
+        string diferente virava uma linha nova e a tabela crescia sem limite.
+      operationId: reagirMensagem
+      parameters:
+        - { name: conversaId, in: path, required: true, schema: { type: string } }
+        - { name: mensagemId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [emoji]
+              properties:
+                emoji: { type: string, enum: ["👍", "❤️", "😂", "😮", "😢", "🙏", "✅", "🚀"] }
+      responses:
+        "204": { description: Reação alternada. }
+        "400": { $ref: "#/components/responses/DadosInvalidos" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/NaoParticipa" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+        "429": { $ref: "#/components/responses/MuitasRequisicoes" }
+
+  /chat/mensagens/{mensagemId}/anexo:
+    get:
+      tags: [Chat interno]
+      summary: Baixar o anexo de uma mensagem
+      operationId: baixarAnexoChat
+      parameters:
+        - { name: mensagemId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Bytes do anexo.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/NaoParticipa" }
+        "404":
+          description: Sem anexo, inexistente, ou mensagem apagada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+
+  /chat-clientes/conversas:
+    get:
+      tags: [Chat com clientes]
+      summary: Caixa de entrada do WhatsApp
+      description: |
+        O filtro só **estreita** o que o papel já permite ver: um técnico enxerga
+        apenas as conversas que ele mesmo iniciou, e `todas` não muda isso.
+      operationId: listarConversasCliente
+      parameters:
+        - name: filtro
+          in: query
+          schema: { type: string, enum: [fila, minhas, todas], default: todas }
+          description: "`fila` = sem dono; `minhas` = suas."
+      responses:
+        "200":
+          description: Conversas ativas.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/ConversaClienteResumo" } }
+        "400": { $ref: "#/components/responses/DadosInvalidos" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/ChatIndisponivel" }
+    post:
+      tags: [Chat com clientes]
+      summary: Iniciar conversa por template
+      description: |
+        Fora da janela de 24 h a Meta só aceita template aprovado (HSM) — é o
+        único jeito de a equipe puxar assunto. Cada disparo é **pago**, daí o
+        limite de 5 por minuto. O envio acontece antes de gravar: se a Meta
+        recusar, nenhuma conversa fantasma fica no banco.
+      operationId: iniciarConversaCliente
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [telefone, canal, templateNome]
+              properties:
+                telefone: { type: string, minLength: 8, maxLength: 20, description: "DDD + número; normalizado para 55DDNNNNNNNNN." }
+                nomeContato: { type: string, minLength: 1, maxLength: 120 }
+                canal:
+                  allOf: [{ $ref: "#/components/schemas/CanalWhatsapp" }]
+                  description: Só `meta` — a Evolution não tem template aprovado.
+                templateNome: { type: string, minLength: 1, maxLength: 120 }
+                vars:
+                  type: object
+                  description: 'Valor por índice do placeholder, ex.: {"1": "João"}.'
+                  additionalProperties: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        "200":
+          description: Conversa iniciada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConversaClienteResumo" }
+        "400":
+          description: Canal errado, telefone inválido, template inexistente ou variáveis faltando.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+              example: { error: "Telefone invalido. Informe DDD + numero, ex.: (84) 99999-9999." }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/ChatIndisponivel" }
+        "429": { $ref: "#/components/responses/MuitasRequisicoes" }
+        "502":
+          description: A Meta recusou ou não respondeu.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+
+  /chat-clientes/templates:
+    get:
+      tags: [Chat com clientes]
+      summary: Templates HSM aprovados
+      description: |
+        Lidos ao vivo da Meta (cache de 5 min). Não há cópia local de propósito:
+        a Meta pode reprovar um template a qualquer momento, e uma lista guardada
+        envelheceria em silêncio até o disparo falhar.
+      operationId: listarTemplates
+      responses:
+        "200":
+          description: Templates aprovados.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/TemplateWhatsappDTO" } }
+        "400":
+          description: Canal Meta não configurado, ou sem WABA ID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/ChatIndisponivel" }
+        "502":
+          description: Falha ao consultar a Meta.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+
+  /chat-clientes/conversas/{conversaId}/mensagens:
+    parameters:
+      - { name: conversaId, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Chat com clientes]
+      summary: Mensagens da conversa
+      description: Retorna da **mais antiga para a mais recente** (oposto do chat interno).
+      operationId: listarMensagensCliente
+      parameters:
+        - { name: antesDe, in: query, schema: { type: string, format: date-time } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 30 } }
+      responses:
+        "200":
+          description: Mensagens.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/MensagemClienteDTO" } }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemEscopoConversaCliente" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+    post:
+      tags: [Chat com clientes]
+      summary: Responder ao cliente
+      description: |
+        Só texto. Falha de envio **não** vira erro HTTP: a mensagem é gravada com
+        `falhaEnvio` preenchido e devolvida com 200, para que a bolha apareça na
+        thread com o motivo em vez de sumir. **Sempre inspecione `falhaEnvio`.**
+      operationId: enviarMensagemCliente
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [corpo]
+              properties: { corpo: { type: string, minLength: 1, maxLength: 4000 } }
+      responses:
+        "200":
+          description: Mensagem gravada (confira `falhaEnvio`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MensagemClienteDTO" }
+        "400": { $ref: "#/components/responses/DadosInvalidos" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemEscopoConversaCliente" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+        "429": { $ref: "#/components/responses/MuitasRequisicoes" }
+
+  /chat-clientes/conversas/{conversaId}/assumir:
+    post:
+      tags: [Chat com clientes]
+      summary: Assumir a conversa
+      description: |
+        Reivindicação atômica: se dois atendentes tocarem ao mesmo tempo, um
+        recebe 409 em vez de os dois acharem que assumiram.
+      operationId: assumirConversa
+      parameters:
+        - { name: conversaId, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Assumida. }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemEscopoConversaCliente" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+        "409":
+          description: Outro atendente assumiu primeiro.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+              example: { error: "Esta conversa ja foi assumida por outro atendente" }
+
+  /chat-clientes/conversas/{conversaId}/transferir:
+    post:
+      tags: [Chat com clientes]
+      summary: Transferir para outro atendente
+      operationId: transferirConversa
+      parameters:
+        - { name: conversaId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agenteId]
+              properties: { agenteId: { type: string, minLength: 1 } }
+      responses:
+        "204": { description: Transferida. }
+        "400":
+          description: Destino inexistente, inativo ou fora da equipe.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+
+  /chat-clientes/conversas/{conversaId}/encerrar:
+    post:
+      tags: [Chat com clientes]
+      summary: Encerrar (arquivar) a conversa
+      operationId: encerrarConversa
+      parameters:
+        - { name: conversaId, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Arquivada. }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemEscopoConversaCliente" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+
+  /chat-clientes/mensagens/{mensagemId}/anexo:
+    get:
+      tags: [Chat com clientes]
+      summary: Baixar mídia recebida do cliente
+      description: |
+        Mídia acima de 5 MB não é guardada — a mensagem fica com um aviso e esta
+        rota devolve 404.
+      operationId: baixarAnexoCliente
+      parameters:
+        - { name: mensagemId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Bytes da mídia.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemEscopoConversaCliente" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+
+  /admin/canais-whatsapp:
+    get:
+      tags: [Canais WhatsApp]
+      summary: Estado dos dois canais
+      description: |
+        Sempre devolve as duas entradas (`meta` e `evolution`), configuradas ou
+        não. Segredos vêm mascarados — o valor real nunca sai da API.
+      operationId: listarCanais
+      responses:
+        "200":
+          description: Canais.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/CanalWhatsappConfigPublic" } }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+
+  /admin/canais-whatsapp/{tipo}:
+    put:
+      tags: [Canais WhatsApp]
+      summary: Configurar um canal
+      description: |
+        Substituição completa — o bloco inteiro é re-cifrado a cada gravação,
+        nunca mesclado. Restrito a `admin`: o app secret da Meta permite **forjar
+        webhooks assinados**, então é mais sensível que credencial de SGP.
+
+        A `baseUrl` da Evolution passa pela mesma validação anti-SSRF do SGP.
+      operationId: configurarCanal
+      parameters:
+        - { name: tipo, in: path, required: true, schema: { $ref: "#/components/schemas/CanalWhatsapp" } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  title: Meta (WhatsApp Cloud API)
+                  required: [phoneNumberId, accessToken, verifyToken, appSecret]
+                  properties:
+                    phoneNumberId: { type: string, minLength: 1 }
+                    accessToken: { type: string, minLength: 1, writeOnly: true }
+                    verifyToken: { type: string, minLength: 8, writeOnly: true, description: Ecoado no handshake do webhook. }
+                    appSecret: { type: string, minLength: 1, writeOnly: true, description: Assina os webhooks (HMAC). }
+                    wabaId: { type: string, minLength: 1, description: Necessário só para listar templates. }
+                - type: object
+                  title: Evolution API
+                  required: [baseUrl, apiKey, instanceName]
+                  properties:
+                    baseUrl: { type: string, format: uri }
+                    apiKey: { type: string, minLength: 1, writeOnly: true }
+                    instanceName: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: Canal configurado (mascarado).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CanalWhatsappConfigPublic" }
+        "400": { $ref: "#/components/responses/DadosInvalidos" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+
+  /admin/canais-whatsapp/{tipo}/testar:
+    post:
+      tags: [Canais WhatsApp]
+      summary: Testar o canal
+      description: "Falha de conexão responde 200 com `ok: false` — é o resultado do teste, não um erro da API."
+      operationId: testarCanal
+      parameters:
+        - { name: tipo, in: path, required: true, schema: { $ref: "#/components/schemas/CanalWhatsapp" } }
+      responses:
+        "200":
+          description: Resultado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResultadoTeste" }
+        "400":
+          description: Tipo de canal inválido.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+        "401": { $ref: "#/components/responses/NaoAutenticado" }
+        "403": { $ref: "#/components/responses/SemPermissao" }
+        "404":
+          description: Canal não configurado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+
+  /webhooks/whatsapp/meta:
+    get:
+      tags: [Webhooks]
+      summary: Handshake de verificação da Meta
+      description: |
+        **Rota pública.** A Meta chama uma vez ao cadastrar o webhook e espera o
+        `hub.challenge` de volta em texto puro. Autenticada pelo `verifyToken`
+        configurado no canal.
+      security: []
+      operationId: verificarWebhookMeta
+      parameters:
+        - { name: "hub.mode", in: query, required: true, schema: { type: string, const: subscribe } }
+        - { name: "hub.verify_token", in: query, required: true, schema: { type: string } }
+        - { name: "hub.challenge", in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Desafio ecoado (texto puro).
+          content:
+            text/plain:
+              schema: { type: string }
+        "403":
+          description: Token divergente ou canal inativo (texto puro, não JSON).
+          content:
+            text/plain:
+              schema: { type: string, const: "Verificacao falhou" }
+    post:
+      tags: [Webhooks]
+      summary: Receber mensagens da Meta
+      description: |
+        **Rota pública**, autenticada por HMAC-SHA256 do corpo cru no header
+        `X-Hub-Signature-256`, comparado em tempo constante. Por isso esta rota
+        tem parser próprio: um JSON re-serializado não é byte-idêntico e a
+        assinatura não fecharia.
+
+        **Responde sempre 200 `ok`, inclusive com assinatura inválida** — nesse
+        caso o payload é descartado e registrado. É deliberado: a Meta desativa
+        webhooks que devolvem erro, e um atacante não deve conseguir descobrir se
+        acertou a assinatura pela resposta.
+
+        Ingestão idempotente por id de mensagem: reentrega da Meta não duplica.
+        Mídia acima de 5 MB não é guardada.
+      security: []
+      operationId: receberWebhookMeta
+      parameters:
+        - name: X-Hub-Signature-256
+          in: header
+          required: true
+          schema: { type: string, pattern: "^sha256=[0-9a-f]+$" }
+      requestBody:
+        required: true
+        description: Payload da Meta. Lido de forma defensiva, sem schema rígido.
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: Recebido (mesmo quando descartado).
+          content:
+            text/plain:
+              schema: { type: string, const: ok }
+        "400":
+          description: JSON malformado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+        "413":
+          description: Payload acima de 100 KB.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+
+  /webhooks/whatsapp/evolution:
+    post:
+      tags: [Webhooks]
+      summary: Receber mensagens da Evolution API
+      description: |
+        **Rota pública**, autenticada por token compartilhado no header `apikey`
+        (ou `authorization`), comparado em tempo constante. Mesma política de
+        sempre responder 200 da rota da Meta.
+
+        O formato do payload segue a documentação pública da Evolution e
+        **precisa ser confirmado contra a instância real** antes de confiar em
+        produção — varia por versão.
+      security: []
+      operationId: receberWebhookEvolution
+      parameters:
+        - { name: apikey, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        description: Evento `messages.upsert` da Evolution.
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: Recebido.
+          content:
+            text/plain:
+              schema: { type: string, const: ok }
+        "413":
+          description: Payload acima de 100 KB.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT HS256 emitido por `POST /auth/login`. Carrega `sub` (id do usuário),
+        `role` e `tv` (versão da sessão, conferida contra o banco a cada
+        requisição).
+
+  headers:
+    RateLimitLimit:
+      description: Teto de requisições na janela.
+      schema: { type: integer }
+    RateLimitRemaining:
+      description: Quantas ainda restam na janela.
+      schema: { type: integer }
+    RateLimitReset:
+      description: Segundos até a janela reabrir.
+      schema: { type: integer }
+
+  responses:
+    NaoAutenticado:
+      description: |
+        Token ausente, inválido, expirado, ou sessão encerrada (senha trocada,
+        papel alterado ou conta desativada).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Erro" }
+          example: { error: "Token invalido ou expirado" }
+    SemPermissao:
+      description: Autenticado, mas o papel não alcança este recurso.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Erro" }
+          example: { error: "Sem permissao para este recurso" }
+    NaoEncontrado:
+      description: Recurso inexistente.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Erro" }
+    DadosInvalidos:
+      description: Falha de validação.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErroValidacao" }
+    CorpoGrandeDemais:
+      description: Corpo acima do limite de 1 MB.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Erro" }
+          example: { error: "Conteudo grande demais para esta rota" }
+    MuitasRequisicoes:
+      description: Limite de requisições excedido (janela de 60 s, por usuário).
+      headers:
+        RateLimit-Limit: { $ref: "#/components/headers/RateLimitLimit" }
+        RateLimit-Remaining: { $ref: "#/components/headers/RateLimitRemaining" }
+        RateLimit-Reset: { $ref: "#/components/headers/RateLimitReset" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Erro" }
+    SemEscopoProvedor:
+      description: |
+        Fora do escopo: `provedor` só alcança o próprio, e `tecnico` só provedores
+        onde tenha alguma OS atribuída.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Erro" }
+          example: { error: "Sem OS atribuida neste provedor" }
+    SemAcessoOs:
+      description: A OS não pertence ao seu provedor nem está atribuída a você.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Erro" }
+          example: { error: "Acesso restrito ao proprio provedor/tecnico" }
+    ChatIndisponivel:
+      description: O papel `provedor` nunca participa de nenhum dos chats.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Erro" }
+          example: { error: "Chat nao disponivel para este papel" }
+    NaoParticipa:
+      description: |
+        Você não participa desta conversa. Conversa inexistente cai aqui também —
+        de propósito, para a API não virar um oráculo de ids válidos.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Erro" }
+          example: { error: "Voce nao participa desta conversa" }
+    SemEscopoConversaCliente:
+      description: Técnico só alcança as conversas que ele mesmo iniciou.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Erro" }
+          example: { error: "Acesso restrito as conversas que voce iniciou" }
+    SgpIndisponivel:
+      description: |
+        O provedor desta OS está sem integração SGP ativa — a escrita não tem
+        para onde ir.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Erro" }
+          example: { error: "Integracao SGP nao configurada/ativa para o provedor desta OS" }
+    SgpRecusou:
+      description: |
+        O SGP recusou a escrita ou não respondeu. Nada foi alterado no ISPhub —
+        os dois lados não ficam divergentes.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Erro" }
+
+  schemas:
+    Erro:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string, description: Mensagem legível do erro. }
+
+    ErroValidacao:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string, const: "Dados invalidos" }
+        detalhes:
+          type: object
+          description: Saída do `flatten()` do zod.
+          properties:
+            formErrors: { type: array, items: { type: string } }
+            fieldErrors:
+              type: object
+              additionalProperties: { type: array, items: { type: string } }
+
+    UserRole:
+      type: string
+      enum: [admin, gestor, tecnico, provedor]
+      description: |
+        `admin` administra tudo; `gestor` opera a fila; `tecnico` executa em
+        campo; `provedor` só enxerga as próprias OS e nunca entra nos chats.
+
+    StatusPreset:
+      type: string
+      enum: [disponivel, em_campo, almoco, indisponivel]
+      description: Status escolhido pela pessoa — irmão da presença automática, não a substitui.
+
+    UsuarioPublic:
+      type: object
+      description: |
+        Shape devolvido pelas rotas `/auth/*`. Nunca inclui hash de senha nem os
+        bytes da foto — só a existência (`temFoto`) e a versão para cache.
+      required: [id, nome, email, role, ativo, temFoto, fotoVersao]
+      properties:
+        id: { type: string, format: uuid }
+        nome: { type: string, description: Nome do cadastro, não editável pelo usuário. }
+        email: { type: string, format: email }
+        role: { $ref: "#/components/schemas/UserRole" }
+        provedorId:
+          type: [string, "null"]
+          format: uuid
+          description: Preenchido apenas para `role=provedor`.
+        ativo: { type: boolean }
+        temFoto: { type: boolean }
+        fotoVersao: { type: integer, description: Cache-buster da URL da foto. }
+        status:
+          oneOf:
+            - { $ref: "#/components/schemas/StatusPreset" }
+            - { type: "null" }
+        statusTexto: { type: [string, "null"] }
+        nomeExibicao: { type: [string, "null"] }
+        bio: { type: [string, "null"] }
+        telefoneContato: { type: [string, "null"] }
+        assinaturaChat: { type: [string, "null"] }
+        corDestaque: { type: [string, "null"], pattern: "^#[0-9a-fA-F]{6}$" }
+
+    UsuarioAdmin:
+      type: object
+      description: |
+        Shape das rotas `/usuarios/*` e `/tecnicos`. Deliberadamente diferente
+        de `UsuarioPublic`: traz `criadoEm` (útil na administração) e omite os
+        campos de perfil/foto (irrelevantes numa tabela de contas).
+      required: [id, nome, email, role, ativo, criadoEm]
+      properties:
+        id: { type: string, format: uuid }
+        nome: { type: string }
+        email: { type: string, format: email }
+        role: { $ref: "#/components/schemas/UserRole" }
+        provedorId: { type: [string, "null"], format: uuid }
+        ativo: { type: boolean }
+        criadoEm: { type: string, format: date-time }
+
+    ModuloId:
+      type: string
+      description: União fechada — o app tem código por id, então um id desconhecido não teria tela.
+      enum:
+        - minhas-os
+        - evidencias
+        - rota
+        - conexao
+        - provisionamento
+        - assinatura
+        - retiradas
+        - notificacoes
+        - chat
+        - chat-clientes
+
+    ModuloHabilitado:
+      type: object
+      required: [id, nome, icone, core, ordem]
+      properties:
+        id: { $ref: "#/components/schemas/ModuloId" }
+        nome: { type: string }
+        icone: { type: string, description: Chave de ícone resolvida por cada cliente. }
+        core: { type: boolean, description: Não pode ser desligado. }
+        ordem: { type: integer }
+
+    AppConfig:
+      type: object
+      required: [modulos, geradoEm]
+      properties:
+        modulos:
+          type: array
+          items: { $ref: "#/components/schemas/ModuloHabilitado" }
+        geradoEm: { type: string, format: date-time }
+
+    ModuloAdmin:
+      type: object
+      description: Projeção do catálogo mesclada com o que o admin salvou.
+      required: [id, nome, icone, core, ativo, ordem, rolesPermitidos]
+      properties:
+        id: { $ref: "#/components/schemas/ModuloId" }
+        nome: { type: string }
+        icone: { type: string }
+        core: { type: boolean }
+        ativo: { type: boolean, description: Forçado a `true` quando `core`. }
+        ordem: { type: integer }
+        rolesPermitidos:
+          type: array
+          items: { $ref: "#/components/schemas/UserRole" }
+
+    ModuloConfigSalvo:
+      type: object
+      description: Linha persistida — o que o `PATCH` devolve.
+      required: [id, moduloId, ativo, ordem, rolesPermitidos, atualizadoEm]
+      properties:
+        id: { type: string, format: uuid }
+        moduloId: { $ref: "#/components/schemas/ModuloId" }
+        ativo: { type: boolean }
+        ordem: { type: integer }
+        rolesPermitidos:
+          type: array
+          items: { $ref: "#/components/schemas/UserRole" }
+        atualizadoEm: { type: string, format: date-time }
+
+    Notificacao:
+      type: object
+      required: [id, usuarioId, tipo, mensagem, lida, criadoEm]
+      properties:
+        id: { type: string, format: uuid }
+        usuarioId: { type: string, format: uuid }
+        tipo:
+          type: string
+          description: |
+            Na prática assume `atribuicao`, `sla_estourado`, `mensagem` ou
+            `mencao`, mas a coluna é texto livre — trate como string aberta.
+          examples: [atribuicao, sla_estourado, mensagem, mencao]
+        mensagem: { type: string }
+        ordemServicoId: { type: [string, "null"], format: uuid }
+        lida: { type: boolean }
+        criadoEm: { type: string, format: date-time }
+
+    RealtimeEvento:
+      type: object
+      description: Payload de cada `data:` do stream `/eventos`.
+      required: [tipo, em]
+      properties:
+        tipo:
+          type: string
+          enum:
+            - os-alterada
+            - os-atribuida
+            - os-removida
+            - config-alterada
+            - chat-mensagem
+            - chat-leitura
+            - chat-digitando
+            - chat-conversa
+            - cliente-chat-mensagem
+            - cliente-chat-conversa
+        osId: { type: string, format: uuid }
+        conversaId: { type: string, format: uuid }
+        mensagemId: { type: string, format: uuid }
+        autorId: { type: string, format: uuid }
+        em: { type: string, format: date-time }
+
+    OsStatus:
+      type: string
+      enum: [aberta, em_deslocamento, em_execucao, concluida, cancelada, pendente]
+      description: |
+        Enum interno, mais rico que o do SGP: `em_deslocamento` só existe no
+        fluxo de campo e `cancelada` o SGP não expõe.
+
+    OsPrioridade:
+      type: integer
+      enum: [1, 2, 3]
+      description: 1 = baixa, 2 = normal, 3 = alta.
+
+    EquipeFiltro:
+      type: string
+      enum: [interna, externa, todas]
+      default: interna
+      description: |
+        `externa` = retirada/cancelamento, executadas por equipe de fora. Ficam
+        fora da fila e das métricas da operação por padrão.
+
+    SlaSemaforo:
+      type: string
+      enum: [verde, amarelo, vermelho, sem_sla]
+
+    ResultadoTeste:
+      type: object
+      description: Resultado de uma operação que pode falhar sem ser erro da API.
+      required: [ok]
+      properties:
+        ok: { type: boolean }
+        message: { type: string }
+
+    Provedor:
+      type: object
+      required: [id, nome, cor, ativo, criadoEm]
+      properties:
+        id: { type: string, format: uuid }
+        nome: { type: string }
+        cor: { type: string, pattern: "^#[0-9a-fA-F]{6}$", description: Cor do badge que identifica o provedor. }
+        logoUrl: { type: [string, "null"], format: uri }
+        ativo: { type: boolean }
+        criadoEm: { type: string, format: date-time }
+
+    ProvedorInput:
+      type: object
+      required: [nome]
+      properties:
+        nome: { type: string, minLength: 1 }
+        cor: { type: string, pattern: "^#[0-9a-fA-F]{6}$", default: "#6366f1" }
+        logoUrl: { type: [string, "null"], format: uri, description: Precisa ser http(s). }
+        ativo: { type: boolean }
+
+    ErpConfigPublic:
+      type: object
+      required: [id, provedorId, tipo, url, app, tokenMascarado, intervaloPollingSegundos, ativo]
+      properties:
+        id: { type: string, format: uuid }
+        provedorId: { type: string, format: uuid }
+        tipo: { type: string, const: SGP }
+        url: { type: string, format: uri }
+        app: { type: string }
+        tokenMascarado: { type: string, description: "Ex.: `3a4e****aad0`. Nunca o valor real." }
+        intervaloPollingSegundos: { type: integer }
+        ativo: { type: boolean }
+        ultimaSyncEm: { type: [string, "null"], format: date-time }
+        ultimaSyncOk: { type: [boolean, "null"] }
+        ultimaSyncMensagem: { type: [string, "null"] }
+
+    Categoria:
+      type: object
+      required: [id, nome, cor, palavrasChave, equipeExterna, ordem, ativo]
+      properties:
+        id: { type: string, format: uuid }
+        nome: { type: string }
+        cor: { type: string, pattern: "^#[0-9a-fA-F]{6}$" }
+        icone: { type: [string, "null"], description: Nome de ícone lucide. }
+        palavrasChave:
+          type: array
+          items: { type: string }
+          description: Usadas no auto-mapeamento dos tipos de OS por descrição.
+        slaHorasPadrao: { type: [integer, "null"], description: Herdado por tipos sem SLA próprio. }
+        equipeExterna:
+          type: boolean
+          description: "`true` = executada por equipe de fora; sai da fila e das métricas."
+        ordem: { type: integer }
+        ativo: { type: boolean }
+        criadoEm: { type: string, format: date-time }
+
+    CategoriaInput:
+      type: object
+      required: [nome, cor]
+      properties:
+        nome: { type: string, minLength: 1, maxLength: 80 }
+        cor: { type: string, pattern: "^#[0-9a-fA-F]{6}$" }
+        icone: { type: [string, "null"], maxLength: 60 }
+        palavrasChave: { type: array, maxItems: 30, items: { type: string, minLength: 1, maxLength: 60 } }
+        slaHorasPadrao: { type: [integer, "null"], minimum: 1, maximum: 720 }
+        equipeExterna: { type: boolean }
+        ordem: { type: integer, minimum: 0, maximum: 1000, default: 0 }
+        ativo: { type: boolean }
+
+    CategoriaResumo:
+      type: object
+      description: Vista enxuta embutida em TipoOs e nos itens da fila.
+      required: [id, nome, cor]
+      properties:
+        id: { type: string, format: uuid }
+        nome: { type: string }
+        cor: { type: string }
+        icone: { type: [string, "null"] }
+        slaHorasPadrao: { type: [integer, "null"] }
+
+    TipoOs:
+      type: object
+      required: [id, provedorId, sgpCodigo, descricao, categoriaId, visivel]
+      properties:
+        id: { type: string, format: uuid }
+        provedorId: { type: string, format: uuid }
+        sgpCodigo: { type: string }
+        descricao: { type: string }
+        categoriaId: { type: [string, "null"], format: uuid, description: "`null` = ainda não classificado." }
+        categoria:
+          oneOf:
+            - { $ref: "#/components/schemas/CategoriaResumo" }
+            - { type: "null" }
+        visivel: { type: boolean }
+        slaHoras: { type: [integer, "null"] }
+
+    SyncLog:
+      type: object
+      required: [id, provedorId, direcao, recurso, ok, iniciadoEm]
+      properties:
+        id: { type: string, format: uuid }
+        provedorId: { type: string, format: uuid }
+        direcao: { type: string, examples: [pull, push] }
+        recurso: { type: string, examples: [os] }
+        ok: { type: boolean }
+        mensagem: { type: [string, "null"] }
+        quantidade: { type: [integer, "null"] }
+        iniciadoEm: { type: string, format: date-time }
+        duracaoMs: { type: [integer, "null"] }
+
+    Endereco:
+      type: object
+      properties:
+        logradouro: { type: [string, "null"] }
+        numero: { type: [string, "null"] }
+        bairro: { type: [string, "null"] }
+        cidade: { type: [string, "null"] }
+        lat: { type: [number, "null"] }
+        lng: { type: [number, "null"] }
+
+    SlaInfo:
+      type: object
+      description: Semáforo calculado no servidor — o cliente nunca o deriva sozinho.
+      required: [semaforo]
+      properties:
+        semaforo: { $ref: "#/components/schemas/SlaSemaforo" }
+        minutosRestantes: { type: [integer, "null"], description: Negativo = prazo estourado. }
+        vencimentoEm: { type: [string, "null"], format: date-time }
+
+    OrdemServico:
+      type: object
+      description: OS espelhada do SGP.
+      required: [id, provedorId, sgpOsId, status, prioridade, endereco, criadoEm, atualizadoEm, sincronizadoEm]
+      properties:
+        id: { type: string, format: uuid }
+        provedorId: { type: string, format: uuid }
+        sgpOsId: { type: string, description: Id da OS no SGP. }
+        tipoOsId: { type: [string, "null"], format: uuid }
+        tipoDescricao: { type: [string, "null"] }
+        categoria:
+          oneOf:
+            - { $ref: "#/components/schemas/CategoriaResumo" }
+            - { type: "null" }
+        status: { $ref: "#/components/schemas/OsStatus" }
+        prioridade: { $ref: "#/components/schemas/OsPrioridade" }
+        clienteNome: { type: [string, "null"] }
+        clienteDocumento: { type: [string, "null"] }
+        telefone: { type: [string, "null"] }
+        contratoId: { type: [string, "null"] }
+        contratoStatus: { type: [string, "null"], description: "Status do contrato no SGP — alerta antes de despachar." }
+        protocolo: { type: [string, "null"] }
+        conteudo: { type: [string, "null"] }
+        observacao: { type: [string, "null"] }
+        endereco: { $ref: "#/components/schemas/Endereco" }
+        pop: { type: [string, "null"], description: Localidade do SGP, quando não há endereço de rua. }
+        usuario: { type: [string, "null"] }
+        dataCadastro: { type: [string, "null"], format: date-time, description: Abertura real no SGP — distinta de `criadoEm`. }
+        dataAgendamento: { type: [string, "null"], format: date-time }
+        tecnicoId: { type: [string, "null"], format: uuid }
+        tecnicoNome: { type: [string, "null"] }
+        tecnicoSgpNome: { type: [string, "null"], description: Designado no SGP — informativo, não é o técnico ISPhub. }
+        criadoEm: { type: string, format: date-time }
+        atualizadoEm: { type: string, format: date-time }
+        sincronizadoEm: { type: string, format: date-time }
+
+    FilaItem:
+      allOf:
+        - { $ref: "#/components/schemas/OrdemServico" }
+        - type: object
+          required: [provedor, sla]
+          properties:
+            provedor: { $ref: "#/components/schemas/Provedor" }
+            sla: { $ref: "#/components/schemas/SlaInfo" }
+
+    OsEvento:
+      type: object
+      required: [id, tipo, descricao, criadoEm]
+      properties:
+        id: { type: string, format: uuid }
+        tipo: { type: string, enum: [atribuicao, status, anotacao, foto, edicao] }
+        autorNome: { type: [string, "null"] }
+        descricao: { type: string }
+        criadoEm: { type: string, format: date-time }
+
+    EvidenciaResumo:
+      type: object
+      description: Foto hospedada no SGP — a ISPhub não guarda os bytes.
+      required: [id]
+      properties:
+        id: { type: string }
+        descricao: { type: [string, "null"] }
+        usuario: { type: [string, "null"] }
+        arquivo: { type: [string, "null"] }
+
+    DashboardMetrics:
+      type: object
+      required: [totalAbertas, totalConcluidas, porProvedor, porStatus, porCategoria, porTecnico, slaEstourado, retiradas]
+      properties:
+        totalAbertas: { type: integer }
+        totalConcluidas: { type: integer }
+        porProvedor: { type: array, items: { $ref: "#/components/schemas/ContagemProvedor" } }
+        porStatus:
+          type: array
+          items:
+            type: object
+            properties:
+              status: { $ref: "#/components/schemas/OsStatus" }
+              total: { type: integer }
+        porCategoria:
+          type: array
+          items:
+            type: object
+            properties:
+              categoriaId: { type: [string, "null"] }
+              nome: { type: string, description: '"Não classificado" quando `categoriaId` é nulo.' }
+              cor: { type: string }
+              icone: { type: [string, "null"] }
+              abertas: { type: integer }
+              concluidas: { type: integer }
+        porTecnico:
+          type: array
+          items:
+            type: object
+            properties:
+              tecnicoId: { type: string, format: uuid }
+              tecnicoNome: { type: string }
+              abertas: { type: integer }
+              concluidas: { type: integer }
+        slaEstourado: { type: integer }
+        retiradas: { $ref: "#/components/schemas/DashboardRetiradas" }
+
+    ContagemProvedor:
+      type: object
+      properties:
+        provedorId: { type: string, format: uuid }
+        provedorNome: { type: string }
+        cor: { type: string }
+        abertas: { type: integer }
+        concluidas: { type: integer }
+
+    DashboardRetiradas:
+      type: object
+      description: Bloco isolado das OS de equipe externa — nunca somado às métricas da operação.
+      required: [abertas, concluidas, slaEstourado, porProvedor]
+      properties:
+        abertas: { type: integer }
+        concluidas: { type: integer }
+        slaEstourado: { type: integer }
+        porProvedor: { type: array, items: { $ref: "#/components/schemas/ContagemProvedor" } }
+
+    ConnectionStatus:
+      type: object
+      required: [online, mensagem]
+      properties:
+        online:
+          type: [boolean, "null"]
+          description: "`null` = indeterminado (a consulta falhou) — diferente de offline."
+        mensagem: { type: [string, "null"] }
+
+    DetalhesTecnicos:
+      type: object
+      properties:
+        endereco:
+          oneOf:
+            - { $ref: "#/components/schemas/Endereco" }
+            - { type: "null" }
+        online: { type: [boolean, "null"] }
+        sinalRxDbm: { type: [number, "null"], description: Sinal óptico de recepção. }
+        sinalTxDbm: { type: [number, "null"] }
+        oltNome: { type: [string, "null"] }
+        mensagem: { type: [string, "null"] }
+
+    Olt:
+      type: object
+      required: [id, nome]
+      properties:
+        id: { type: string }
+        nome: { type: string }
+        fabricante: { type: [string, "null"] }
+
+    OnuNaoAutorizada:
+      type: object
+      required: [id, serial]
+      properties:
+        id: { type: string }
+        serial: { type: string }
+        slot: { type: [string, "null"] }
+        pon: { type: [string, "null"] }
+        tipo: { type: [string, "null"] }
+        vlan: { type: [integer, "null"] }
+        sinalRxDbm: { type: [number, "null"] }
+
+    OnuAutorizada:
+      type: object
+      required: [id, serial]
+      properties:
+        id: { type: string }
+        serial: { type: string }
+        slot: { type: [string, "null"] }
+        pon: { type: [string, "null"] }
+        contrato: { type: [string, "null"] }
+        clienteNome: { type: [string, "null"] }
+        sinalRxDbm: { type: [number, "null"] }
+        online: { type: [boolean, "null"], description: Hoje sempre `null` — o conector não preenche. }
+
+    OnuTemplate:
+      type: object
+      required: [id, nome]
+      properties:
+        id: { type: string }
+        nome: { type: string }
+
+    ProvisionarOnuResultado:
+      type: object
+      required: [ok, mensagem]
+      properties:
+        ok: { type: boolean }
+        mensagem: { type: [string, "null"] }
+        onuId: { type: [string, "null"] }
+
+    ConversaTipo:
+      type: string
+      enum: [direta, grupo, os, avisos]
+
+    MensagemTipo:
+      type: string
+      enum: [texto, foto, audio, localizacao, os_ref, sistema]
+
+    ContatoChat:
+      type: object
+      required: [id, nome, role, online, temFoto, fotoVersao]
+      properties:
+        id: { type: string, format: uuid }
+        nome: { type: string }
+        role: { $ref: "#/components/schemas/UserRole" }
+        online: { type: boolean }
+        temFoto: { type: boolean }
+        fotoVersao: { type: integer }
+        status:
+          oneOf:
+            - { $ref: "#/components/schemas/StatusPreset" }
+            - { type: "null" }
+        statusTexto: { type: [string, "null"] }
+
+    ParticipanteResumo:
+      type: object
+      description: Participante com presença já resolvida pelo servidor.
+      required: [usuarioId, nome, role, online, temFoto, fotoVersao]
+      properties:
+        usuarioId: { type: string, format: uuid }
+        nome: { type: string }
+        role: { $ref: "#/components/schemas/UserRole" }
+        online: { type: boolean, description: Derivado da última atividade (~2 min). }
+        ultimaAtividadeEm: { type: [string, "null"], format: date-time }
+        temFoto: { type: boolean }
+        fotoVersao: { type: integer }
+        status:
+          oneOf:
+            - { $ref: "#/components/schemas/StatusPreset" }
+            - { type: "null" }
+        statusTexto: { type: [string, "null"] }
+        assinaturaChat:
+          type: [string, "null"]
+          description: |
+            O **cliente** renderiza abaixo da mensagem. O servidor nunca a
+            concatena em `corpo` — isso congelaria a assinatura antiga no
+            histórico se a pessoa trocasse depois.
+
+    MensagemResumo:
+      type: object
+      description: Preview leve para a lista de conversas.
+      required: [id, tipo, criadoEm]
+      properties:
+        id: { type: string, format: uuid }
+        tipo: { $ref: "#/components/schemas/MensagemTipo" }
+        corpo: { type: [string, "null"] }
+        autorNome: { type: [string, "null"] }
+        apagadoEm: { type: [string, "null"], format: date-time }
+        criadoEm: { type: string, format: date-time }
+
+    ConversaResumo:
+      type: object
+      required: [id, tipo, titulo, participantes, naoLidas, silenciado, atualizadoEm]
+      properties:
+        id: { type: string, format: uuid }
+        tipo: { $ref: "#/components/schemas/ConversaTipo" }
+        titulo:
+          type: string
+          description: DM e thread de OS têm o título derivado no servidor.
+        avatarCor: { type: [string, "null"] }
+        ordemServicoId: { type: [string, "null"], format: uuid }
+        sgpOsId: { type: [string, "null"] }
+        participantes: { type: array, items: { $ref: "#/components/schemas/ParticipanteResumo" } }
+        ultimaMensagem:
+          oneOf:
+            - { $ref: "#/components/schemas/MensagemResumo" }
+            - { type: "null" }
+        naoLidas: { type: integer }
+        silenciado: { type: boolean }
+        atualizadoEm: { type: string, format: date-time }
+
+    Mensagem:
+      type: object
+      required: [id, conversaId, tipo, reacoes, criadoEm]
+      properties:
+        id: { type: string, format: uuid }
+        conversaId: { type: string, format: uuid }
+        autor:
+          oneOf:
+            - { $ref: "#/components/schemas/ParticipanteResumo" }
+            - { type: "null" }
+          description: "`null` = mensagem do sistema, sem autor humano."
+        tipo: { $ref: "#/components/schemas/MensagemTipo" }
+        corpo: { type: [string, "null"] }
+        anexoMime: { type: [string, "null"] }
+        anexoTamanho: { type: [integer, "null"] }
+        duracaoSeg: { type: [integer, "null"] }
+        lat: { type: [number, "null"] }
+        lng: { type: [number, "null"] }
+        ordemServicoId: { type: [string, "null"], format: uuid }
+        respondendoA:
+          oneOf:
+            - type: object
+              properties:
+                id: { type: string, format: uuid }
+                autorNome: { type: [string, "null"] }
+                resumo: { type: string }
+            - { type: "null" }
+        reacoes:
+          type: array
+          items:
+            type: object
+            properties:
+              emoji: { type: string }
+              usuarioIds: { type: array, items: { type: string, format: uuid } }
+        editadoEm: { type: [string, "null"], format: date-time }
+        apagadoEm:
+          type: [string, "null"]
+          format: date-time
+          description: Soft delete — a bolha vira "Mensagem apagada" e os campos de conteúdo vêm nulos.
+        criadoEm: { type: string, format: date-time }
+
+    CanalWhatsapp:
+      type: string
+      enum: [meta, evolution]
+
+    MensagemClienteTipo:
+      type: string
+      enum: [texto, imagem, audio, documento, localizacao, sistema]
+
+    MensagemClienteDirecao:
+      type: string
+      enum: [entrada, saida]
+      description: "`entrada` = do cliente; `saida` = da equipe."
+
+    ConversaClienteResumo:
+      type: object
+      required: [id, telefone, canal, status, origem, dentroJanela24h, naoLidas, atualizadoEm]
+      properties:
+        id: { type: string, format: uuid }
+        telefone: { type: string, description: E.164, ex. 5584999999999. }
+        nomeContato: { type: [string, "null"], description: Nome do perfil no WhatsApp — informativo, nunca chave. }
+        canal: { $ref: "#/components/schemas/CanalWhatsapp" }
+        status:
+          type: string
+          enum: [fila, em_atendimento, arquivada]
+          description: Derivado no servidor — o cliente nunca infere.
+        agenteId: { type: [string, "null"], format: uuid }
+        agenteNome: { type: [string, "null"] }
+        origem: { type: string, enum: [entrada, saida] }
+        iniciadaPorId: { type: [string, "null"], format: uuid }
+        iniciadaPorNome: { type: [string, "null"] }
+        dentroJanela24h:
+          type: boolean
+          description: |
+            Se o cliente escreveu nas últimas 24 h. Fora dela a Meta só aceita
+            template — sem este campo o atendente digitaria, enviaria, e a
+            mensagem viraria uma bolha com erro sem explicação.
+        ultimaMensagem:
+          oneOf:
+            - type: object
+              properties:
+                corpo: { type: [string, "null"] }
+                tipo: { $ref: "#/components/schemas/MensagemClienteTipo" }
+                direcao: { $ref: "#/components/schemas/MensagemClienteDirecao" }
+                criadoEm: { type: string, format: date-time }
+            - { type: "null" }
+        naoLidas: { type: integer, description: Ainda sempre 0 — não há marca d'água de leitura aqui. }
+        atualizadoEm: { type: string, format: date-time }
+
+    MensagemClienteDTO:
+      type: object
+      required: [id, conversaId, canal, direcao, tipo, criadoEm]
+      properties:
+        id: { type: string, format: uuid }
+        conversaId: { type: string, format: uuid }
+        canal: { $ref: "#/components/schemas/CanalWhatsapp" }
+        direcao: { $ref: "#/components/schemas/MensagemClienteDirecao" }
+        autorId: { type: [string, "null"], format: uuid }
+        autorNome: { type: [string, "null"] }
+        tipo: { $ref: "#/components/schemas/MensagemClienteTipo" }
+        corpo: { type: [string, "null"] }
+        anexoMime: { type: [string, "null"] }
+        anexoTamanho: { type: [integer, "null"] }
+        duracaoSeg: { type: [integer, "null"] }
+        lat: { type: [number, "null"] }
+        lng: { type: [number, "null"] }
+        falhaEnvio:
+          type: [string, "null"]
+          description: |
+            Preenchido quando o envio falhou. A mensagem é gravada mesmo assim,
+            para aparecer na thread com o motivo em vez de sumir.
+        templateNome: { type: [string, "null"] }
+        criadoEm: { type: string, format: date-time }
+
+    TemplateWhatsappDTO:
+      type: object
+      required: [nome, idioma, categoria, corpo, variaveis]
+      properties:
+        nome: { type: string }
+        idioma: { type: string, description: "Idioma da versão aprovada, ex.: pt_BR. Não assuma." }
+        categoria: { type: string }
+        corpo: { type: string, description: "Texto com os placeholders `{{n}}` ainda no lugar." }
+        header: { type: [string, "null"] }
+        variaveis:
+          type: array
+          items: { type: integer }
+          description: "Índices exigidos, em ordem — define quantos parâmetros o disparo precisa."
+
+    CanalWhatsappConfigPublic:
+      type: object
+      required: [tipo, configurado, ativo, campos]
+      properties:
+        tipo: { $ref: "#/components/schemas/CanalWhatsapp" }
+        configurado: { type: boolean }
+        ativo: { type: boolean }
+        campos:
+          type: object
+          additionalProperties: { type: string }
+          description: Campos não-secretos em claro; secretos mascarados.
+        ultimaVerificacaoEm: { type: [string, "null"], format: date-time }
+        ultimaVerificacaoOk: { type: [boolean, "null"] }
+        ultimaVerificacaoMensagem: { type: [string, "null"] }
+
+    Hora:
+      type: object
+      required: [isoUtc, timezone, cidade, fonte]
+      properties:
+        isoUtc: { type: string, format: date-time }
+        timezone: { type: string, const: America/Fortaleza }
+        cidade: { type: string, const: "Natal, RN" }
+        fonte:
+          type: string
+          enum: [rede, servidor]
+          description: |
+            `rede` = veio do serviço externo; `servidor` = o serviço externo
+            falhou ou expirou e caiu para o relógio local.

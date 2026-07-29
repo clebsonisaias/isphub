@@ -85,7 +85,15 @@ export default function ClienteChatThread() {
     const corpo = texto.trim();
     if (!corpo) return;
     setTexto("");
-    enviar.mutate(corpo);
+    // Devolve o texto ao campo se o envio falhar. Antes o campo era limpo e a
+    // mensagem simplesmente deixava de existir: nenhuma bolha, nenhum erro — o
+    // que foi digitado com uma mao, de luva, sumia sem deixar rastro.
+    enviar.mutate(corpo, {
+      onError: (erro: unknown) => {
+        setTexto((atual) => (atual.trim() ? atual : corpo));
+        Alert.alert("Não foi possível enviar", erro instanceof Error ? erro.message : "Verifique a conexão e tente de novo.");
+      },
+    });
   }
 
   function handleEncerrar() {

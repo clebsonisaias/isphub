@@ -1,4 +1,4 @@
-import express, { Router } from "express";
+import { Router } from "express";
 import { z } from "zod";
 import { OsStatus, UserRole } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
@@ -128,16 +128,14 @@ const evidenciaSchema = z.object({
  * essas 3 rotas so validam/repassam pro conector; ver writebackService.ts.
  */
 /**
- * Parser proprio: o limite global do app e 1MB (aperta a superficie de DoS em
- * todas as outras rotas), mas uma foto de 2MB vira ~2,7MB em base64. So esta
- * rota — que valida tamanho e MIME logo abaixo — aceita corpo grande.
+ * O teto de corpo desta rota (4MB, pra caber foto de 2MB em base64) e montado
+ * em app.ts ANTES do express.json global — um parser declarado aqui seria
+ * no-op, porque o global ja teria marcado `req._body`. O tamanho real da foto
+ * ainda e validado abaixo, em bytes decodificados.
  */
-const parserEvidencia = express.json({ limit: "4mb" });
-
 ordensServicoRouter.post(
   "/:id/evidencias",
   requireRole(...acoesRoles),
-  parserEvidencia,
   asyncHandler(async (req, res) => {
     await assertAcesso(req, req.params.id);
     const { dados, legenda } = evidenciaSchema.parse(req.body);

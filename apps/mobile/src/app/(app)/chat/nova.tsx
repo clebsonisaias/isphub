@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useRouter } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import type { ContatoChat, FilaItem } from "@isphub/shared";
 import { UserRole } from "@isphub/shared";
@@ -94,6 +94,10 @@ export default function NovaConversa() {
 
   return (
     <Screen>
+      {/* O _layout do chat desliga o header; sem religar aqui esta tela ficava
+          SEM botao de voltar — no iOS a unica saida era o swipe de borda, o
+          gesto mais dificil de acertar de luva, com uma mao, em cima de escada. */}
+      <Stack.Screen options={{ headerShown: true, title: "Nova conversa" }} />
       <View style={{ paddingVertical: space.md }}>
         <Title>Nova conversa</Title>
       </View>

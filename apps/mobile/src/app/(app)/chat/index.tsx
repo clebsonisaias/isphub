@@ -25,7 +25,7 @@ export default function ChatLista() {
     <Screen style={{ paddingHorizontal: 0 }}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: space.lg, paddingVertical: space.md }}>
         <Title>Chat</Title>
-        <IconButton onPress={() => router.push("/chat/nova")}>
+        <IconButton label="Nova conversa" onPress={() => router.push("/chat/nova")}>
           <Feather name="edit-3" size={18} color={colors.brand} />
         </IconButton>
       </View>

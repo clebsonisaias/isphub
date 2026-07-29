@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { Alert, ScrollView, StyleSheet, View } from "react-native";
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import type { ProvisionarOnuInput } from "@isphub/shared";
 import { useAuth } from "@/lib/auth";
@@ -104,9 +104,27 @@ export default function AutorizarOnu() {
   return (
     <Screen>
       <Stack.Screen options={{ headerShown: true, title: "Autorizar ONU" }} />
-      <ScrollView contentContainerStyle={{ gap: space.md, paddingVertical: space.md, paddingBottom: space.xxl }}>
+      {/* Esta e a tela que escreve na OLT — errar aqui derruba ou sobe cliente.
+          Sem o KAV, com o teclado aberto o botao "Autorizar ONU" e os ultimos
+          campos ficavam ATRAS do teclado. E sem keyboardShouldPersistTaps o
+          primeiro toque no botao so fechava o teclado: o segundo toque ja caia
+          noutro lugar, porque o layout tinha subido. */}
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={0}>
+        <ScrollView
+          contentContainerStyle={{ gap: space.md, paddingVertical: space.md, paddingBottom: space.xxl }}
+          keyboardShouldPersistTaps="handled"
+        >
         <Campo label="Serial (SN)">
-          <Field value={serial} onChangeText={setSerial} autoCapitalize="characters" placeholder="Ex.: HWTC12345678" />
+          {/* autoCorrect/spellCheck OFF: o teclado "corrigia" o serial da ONU
+              (ex.: HWTC12345678) e o provisionamento falhava sem motivo visivel. */}
+          <Field
+            value={serial}
+            onChangeText={setSerial}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            spellCheck={false}
+            placeholder="Ex.: HWTC12345678"
+          />
         </Campo>
 
         <View style={{ flexDirection: "row", gap: space.sm }}>
@@ -191,7 +209,8 @@ export default function AutorizarOnu() {
           <Button label={autorizar.isPending ? "Enviando…" : "Autorizar ONU"} loading={autorizar.isPending} onPress={enviar} />
         </View>
         <Muted>Autorizar provisiona a ONU no SGP do provedor — muda o serviço do cliente na OLT.</Muted>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </Screen>
   );
 }

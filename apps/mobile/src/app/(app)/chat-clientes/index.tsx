@@ -47,7 +47,7 @@ export default function ClientesChatLista() {
       <View style={{ paddingHorizontal: space.lg, paddingVertical: space.md, gap: space.md }}>
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.sm }}>
           <Text style={styles.heading} numberOfLines={1}>Conversas com clientes</Text>
-          <IconButton onPress={() => router.push("/chat-clientes/nova")}>
+          <IconButton label="Iniciar conversa com cliente" onPress={() => router.push("/chat-clientes/nova")}>
             <Feather name="edit-3" size={18} color={colors.brand} />
           </IconButton>
         </View>
@@ -84,7 +84,11 @@ export default function ClientesChatLista() {
                 <Card style={{ gap: 3 }}>
                   <View style={styles.convTop}>
                     <Text style={styles.convNome} numberOfLines={1}>{item.nomeContato ?? item.telefone}</Text>
-                    <Pill label={CANAL_WHATSAPP_LABEL[item.canal]} tone={item.canal === CanalWhatsapp.META ? "green" : "teal"} />
+                    {/* Nunca verde/ambar/vermelho aqui: no resto do app essas
+                        cores querem dizer SLA e sinal optico. Pintar "canal =
+                        Meta" de verde faz cada conversa parecer um item
+                        saudavel numa lista onde a cor deveria significar risco. */}
+                    <Pill label={CANAL_WHATSAPP_LABEL[item.canal]} tone={item.canal === CanalWhatsapp.META ? "brand" : "teal"} />
                   </View>
                   <Muted numberOfLines={1}>{item.ultimaMensagem?.corpo ?? "Sem mensagens"}</Muted>
                   {rodape ? <Muted style={{ fontSize: font.size.xs }}>{rodape}</Muted> : null}

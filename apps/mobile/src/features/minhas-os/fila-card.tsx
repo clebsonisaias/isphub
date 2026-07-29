@@ -14,7 +14,7 @@ function selo(item: FilaItem): { bg: string; fg: string } {
     case "verde":
       return { bg: colors.slaGreenBg, fg: colors.slaGreen };
     default:
-      return { bg: "#EEF1F6", fg: colors.ink2 };
+      return { bg: colors.line2, fg: colors.ink2 }; // era um hex solto — o unico do app
   }
 }
 
@@ -41,17 +41,32 @@ export function FilaCard({ item, onPress }: { item: FilaItem; onPress: () => voi
       onPress={onPress}
       style={({ pressed }) => [styles.card, { borderLeftColor: corSla(item.sla.semaforo) }, pressed && styles.pressed]}
     >
+      {/* numberOfLines em tudo: a lista e varrida de relance, ordenada por SLA.
+          Uma categoria longa ou um nome de cliente gigante dobrava a altura do
+          card e derrubava de 5 para 2 as OS visiveis por tela. O provedor ainda
+          leva flexShrink porque Text numa row, sem isso, assume a largura
+          intrinseca e vaza pra fora do card. */}
       <View style={styles.topRow}>
         <Text style={styles.osnum}>OS #{item.sgpOsId}</Text>
         <View style={styles.prov}>
           <View style={[styles.dot, { backgroundColor: item.provedor.cor }]} />
-          <Text style={styles.provName}>{item.provedor.nome}</Text>
+          <Text style={styles.provName} numberOfLines={1}>
+            {item.provedor.nome}
+          </Text>
         </View>
       </View>
 
-      <Text style={styles.categoria}>{item.categoria?.nome ?? "Não classificado"}</Text>
-      <Text style={styles.cliente}>{item.clienteNome ?? "Cliente não identificado"}</Text>
-      {local ? <Text style={styles.addr}>{local}</Text> : null}
+      <Text style={styles.categoria} numberOfLines={1}>
+        {item.categoria?.nome ?? "Não classificado"}
+      </Text>
+      <Text style={styles.cliente} numberOfLines={1}>
+        {item.clienteNome ?? "Cliente não identificado"}
+      </Text>
+      {local ? (
+        <Text style={styles.addr} numberOfLines={2}>
+          {local}
+        </Text>
+      ) : null}
 
       <View style={styles.metaRow}>
         <View style={styles.metaLeft}>
@@ -79,7 +94,7 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.9 },
   topRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 },
   osnum: { fontSize: font.size.xs, fontWeight: "600", color: colors.ink2 },
-  prov: { flexDirection: "row", alignItems: "center", gap: 6 },
+  prov: { flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1, marginLeft: space.sm },
   dot: { width: 9, height: 9, borderRadius: 5 },
   provName: { fontSize: font.size.xs, color: colors.ink2 },
   categoria: { fontSize: font.size.lg, fontWeight: "700", color: colors.ink, letterSpacing: -0.2 },

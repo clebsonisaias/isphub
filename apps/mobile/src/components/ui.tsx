@@ -82,7 +82,12 @@ export function Pill({ label, tone = "neutral", style }: { label: string; tone?:
 
 export function Chip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.chip, active && styles.chipActive, pressed && { opacity: 0.8 }]}>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      style={({ pressed }) => [styles.chip, active && styles.chipActive, pressed && { opacity: 0.8 }]}
+    >
       <Text style={[styles.chipTxt, active && styles.chipTxtActive]}>{label}</Text>
     </Pressable>
   );
@@ -107,6 +112,8 @@ export function Segmented<T extends string>({
           <Pressable
             key={o.value}
             onPress={() => onChange(o.value)}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: active }}
             style={[styles.segItem, active && styles.segItemActive, active && shadow.sm]}
           >
             <Text style={[styles.segLabel, active && styles.segLabelActive]}>{o.label}</Text>
@@ -159,16 +166,22 @@ export function IconButton({
   children,
   onPress,
   tone = "brand",
+  label,
 }: {
   children: ReactNode;
   onPress: () => void;
   /** brand = circulo indigo suave (sobre fundo claro); onBrand = translucido (dentro do Hero). */
   tone?: "brand" | "onBrand";
+  /** Obrigatorio na pratica: so ha um icone aqui, entao sem isto o leitor de
+   * tela anuncia um botao sem nome nenhum. */
+  label: string;
 }) {
   return (
     <Pressable
       onPress={onPress}
       hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={label}
       style={({ pressed }) => [styles.iconBtn, tone === "onBrand" ? styles.iconBtnOnBrand : styles.iconBtnBrand, pressed && { opacity: 0.8 }]}
     >
       {children}
@@ -219,6 +232,9 @@ export function Button({
     <Pressable
       onPress={inativo ? undefined : onPress}
       disabled={inativo}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: inativo, busy: !!loading }}
       style={({ pressed }) => [
         styles.btnBase,
         sm ? styles.btnSm : styles.btnMd,
@@ -230,14 +246,15 @@ export function Button({
         inativo && styles.btnInativo,
       ]}
     >
-      {loading ? (
-        <ActivityIndicator color={v.fg} size="small" />
-      ) : (
-        <View style={styles.btnRow}>
-          {icon}
-          <Text style={[sm ? styles.btnLabelSm : styles.btnLabelMd, { color: v.fg }]}>{label}</Text>
-        </View>
-      )}
+      {/* O spinner entra NO LUGAR do icone, nunca do rotulo. Trocar a linha
+          inteira por um ActivityIndicator deixava 9 telas com um spinner mudo
+          — e apagava os proprios rotulos de progresso que o app ja escrevia
+          ("Enviando…", "Salvando…"). De quebra, o botao encolhia no meio do
+          toque, porque o spinner e mais estreito que o texto. */}
+      <View style={styles.btnRow}>
+        {loading ? <ActivityIndicator color={v.fg} size="small" /> : icon}
+        <Text style={[sm ? styles.btnLabelSm : styles.btnLabelMd, { color: v.fg }]}>{label}</Text>
+      </View>
     </Pressable>
   );
 }
@@ -272,7 +289,13 @@ const styles = StyleSheet.create({
   pill: { alignSelf: "flex-start", borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 3 },
   pillTxt: { fontSize: font.size.xs, fontWeight: font.weight.bold as "700", letterSpacing: 0.2 },
 
+  // ALVO DE TOQUE: os 44 abaixo (Chip, Segmented, Button sm) nao sao enfeite de
+  // acessibilidade — sao "Autorizar"/"Remover" de ONU, PPPoE x Bridge e a troca
+  // de aba. Quem toca neles esta de luva, no sol, com uma mao so, muitas vezes
+  // em cima de escada. Abaixo de 44 o erro de toque numa OLT sai caro.
   chip: {
+    minHeight: 44,
+    justifyContent: "center",
     paddingHorizontal: space.md,
     paddingVertical: space.sm,
     borderRadius: radius.pill,
@@ -285,14 +308,14 @@ const styles = StyleSheet.create({
   chipTxtActive: { color: colors.brandInk },
 
   segTrack: { flexDirection: "row", gap: space.xs, backgroundColor: colors.line2, borderRadius: radius.pill, padding: space.xs },
-  segItem: { flex: 1, paddingVertical: 9, alignItems: "center", justifyContent: "center", borderRadius: radius.pill },
+  segItem: { flex: 1, minHeight: 44, paddingVertical: 9, alignItems: "center", justifyContent: "center", borderRadius: radius.pill },
   segItemActive: { backgroundColor: colors.card },
   segLabel: { fontSize: font.size.sm, fontWeight: font.weight.medium as "600", color: colors.ink2 },
   segLabelActive: { color: colors.brandInk, fontWeight: font.weight.bold as "700" },
 
   btnBase: { borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
   btnMd: { paddingVertical: 15, paddingHorizontal: space.xl },
-  btnSm: { paddingVertical: 9, paddingHorizontal: space.lg },
+  btnSm: { minHeight: 44, paddingVertical: 9, paddingHorizontal: space.lg },
   btnRow: { flexDirection: "row", alignItems: "center", gap: space.sm },
   btnPressed: { opacity: 0.88, transform: [{ scale: 0.98 }] },
   btnInativo: { opacity: 0.55 },

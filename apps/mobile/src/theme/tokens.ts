@@ -18,7 +18,12 @@ export const colors = {
   // Tinta
   ink: "#1A1D29",
   ink2: "#5A6172",
-  muted: "#9AA1B2",
+  // 4.6:1 sobre o card branco. Era #9AA1B2 (2.6:1), que reprovava ate no
+  // criterio de texto grande — e justamente aqui moram os placeholders de todo
+  // campo, a hora das mensagens e o link de "tentar de novo". Num app cuja
+  // razao de ser tema claro e a leitura sob sol, esse era o pior lugar
+  // possivel pra economizar contraste.
+  muted: "#6B7385",
   line: "#ECEBF6",
   line2: "#DEDCEF",
 
