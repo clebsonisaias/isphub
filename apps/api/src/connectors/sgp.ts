@@ -664,9 +664,21 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
        * o ISPhub recebeu menos, recebeu tudo e classificou diferente, ou se o
        * numero comparado era outra coisa. Uma linha por status por ciclo.
        */
+      /*
+       * Alem da contagem, a ORDEM em que o SGP devolve — so id e data, nunca
+       * dado de assinante. Sem isso a truncagem e ambigua: pegando as 10.000
+       * PRIMEIRAS de 72.230, se a lista vier da mais antiga pra mais nova, o
+       * que o sync recebe e arqueologia e nenhuma OS recem-encerrada chega —
+       * ela fica aberta no espelho pra sempre. Se vier da mais nova pra mais
+       * antiga, o corte e inofensivo. Sao correcoes opostas, e chutar errado
+       * aqui custa caro.
+       */
+      const idDe = (o: any) => pick(o ?? {}, "os_id", "id");
+      const dataDe = (o: any) => pickString(o ?? {}, "os_data_cadastro", "data_cadastro", "os_data_abertura");
       console.log(
         `[sgp] ${path} status=${params.status ?? "todos"}: ${itens.length} OS` +
-          `${total !== null ? ` (paginacao.total=${total})` : " (sem paginacao.total no payload)"}`,
+          `${total !== null ? ` (paginacao.total=${total})` : " (sem paginacao.total no payload)"}` +
+          `${itens.length > 1 ? ` — 1o: id=${idDe(itens[0])} ${dataDe(itens[0]) ?? "?"} | ultimo: id=${idDe(itens[itens.length - 1])} ${dataDe(itens[itens.length - 1]) ?? "?"}` : ""}`,
       );
 
       return itens.map(normalizeOs);
