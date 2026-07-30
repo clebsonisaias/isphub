@@ -1226,3 +1226,65 @@ describe("obterFichaOs", () => {
     expect(body.get("token")).toBe(creds.token);
   });
 });
+
+describe("listServiceOrders — paginacao", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function pagina(qtd: number, total: number, primeiroId = 0) {
+    return jsonResponse({
+      paginacao: { total },
+      ordens_servicos: Array.from({ length: qtd }, (_, i) => ({ os_id: String(primeiroId + i), os_status: 0 })),
+    });
+  }
+
+  it("segue TODAS as paginas — antes tudo alem da 1a nunca sincronizava", async () => {
+    // Era a causa do "mostrava aqui mas no SGP ja nao estava": a OS ficava
+    // congelada no espelho e a acao nela batia em 404.
+    fetchMock
+      .mockResolvedValueOnce(pagina(200, 450, 0))
+      .mockResolvedValueOnce(pagina(200, 450, 200))
+      .mockResolvedValueOnce(pagina(50, 450, 400));
+
+    const ordens = await createSgpConnector(creds).listServiceOrders({ status: 0 });
+
+    expect(ordens).toHaveLength(450);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    // offset avanca de pagina em pagina
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string).offset).toBe(0);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body as string).offset).toBe(200);
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body as string).offset).toBe(400);
+  });
+
+  it("manda `limit` explicito — sem ele o espelho dependia do default nao documentado do SGP", async () => {
+    fetchMock.mockResolvedValueOnce(pagina(1, 1));
+    await createSgpConnector(creds).listServiceOrders();
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string).limit).toBe(200);
+  });
+
+  it("pagina incompleta encerra (instancia que nao anuncia paginacao)", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ordens_servicos: [{ os_id: "1", os_status: 0 }] }));
+    const ordens = await createSgpConnector(creds).listServiceOrders();
+    expect(ordens).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("`offset` explicito respeita a janela pedida e NAO pagina", async () => {
+    fetchMock.mockResolvedValueOnce(pagina(200, 999, 0));
+    const ordens = await createSgpConnector(creds).listServiceOrders({ offset: 0, limit: 200 });
+    expect(ordens).toHaveLength(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("total ja alcancado encerra mesmo com pagina cheia", async () => {
+    fetchMock.mockResolvedValueOnce(pagina(200, 200, 0));
+    await createSgpConnector(creds).listServiceOrders();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});

@@ -1,4 +1,4 @@
-import { mapSgpOsStatus, sgpStatusReconhecido, OsStatus, SgpOsStatus, type RawOs } from "@isphub/shared";
+import { mapSgpOsStatus, sgpStatusReconhecido, OS_STATUS_ABERTOS, OsStatus, SgpOsStatus, type RawOs } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { buildConnector } from "./erpConnectorService.js";
 import { emitParaTodos, emitParaUsuario } from "./realtimeHub.js";
@@ -35,6 +35,13 @@ const CAMPO_PROTEGIDO_MS = 5 * 60_000;
  * estouro de centenas de chamadas de uma vez; o que sobra vai nos proximos.
  */
 const GEO_BACKFILL_MAX_POR_SYNC = 30;
+
+/**
+ * Teto de OS "desaparecidas" confirmadas por ciclo. Cada confirmacao e uma ida
+ * ao SGP; sem teto, um provedor com muita OS antiga viraria uma rajada. O
+ * resto vai nos proximos ciclos.
+ */
+const DESAPARECIDAS_MAX_POR_SYNC = 20;
 
 /**
  * Apos consultar a geo de um contrato (com ou sem coordenada), so
@@ -339,6 +346,52 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
       }
     } catch (err) {
       console.warn(`[sync] cadastro backfill falhou no provedor ${provedorId}:`, err instanceof Error ? err.message : err);
+    }
+
+    // --- OS que SUMIU do SGP ---
+    // O espelho tem que refletir o SGP nos dois sentidos. Faltava este: uma OS
+    // apagada por la ficava aqui pra sempre no ultimo status conhecido, e a
+    // acao do tecnico nela batia num 404 ("O SGP nao encontrou esta OS") —
+    // exatamente o erro visto no contrato 1672.
+    //
+    // Ausencia da listagem NAO basta como prova: pode ser instabilidade ou
+    // filtro. Confirma uma por uma na ficha por ID, e SO age com evidencia
+    // positiva de que a OS nao existe mais. Teto por ciclo pra nao virar
+    // rajada no SGP; o resto vai nos proximos.
+    const vistos = new Set(ordens.map((o) => o.sgpOsId));
+    const desaparecidas = osConhecidas
+      .filter((o) => OS_STATUS_ABERTOS.includes(o.status as OsStatus) && !vistos.has(o.sgpOsId))
+      .slice(0, DESAPARECIDAS_MAX_POR_SYNC);
+
+    for (const os of desaparecidas) {
+      let confirmadoAusente = false;
+      try {
+        confirmadoAusente = (await connector.obterFichaOs(os.sgpOsId)) === null;
+      } catch {
+        // Falha na confirmacao = nenhuma evidencia. NAO mexe: marcar OS em
+        // massa por causa de uma instabilidade do SGP seria muito pior que
+        // deixar uma OS velha na fila.
+        continue;
+      }
+      if (!confirmadoAusente) continue;
+
+      await prisma.$transaction([
+        prisma.ordemServico.update({
+          where: { id: os.id },
+          data: { status: OsStatus.CANCELADA, sincronizadoEm: new Date(), statusAlteradoEm: new Date() },
+        }),
+        // Registra o MOTIVO: sem isto, a OS aparece cancelada e ninguem sabe
+        // por que — parece que alguem cancelou.
+        prisma.osEvento.create({
+          data: {
+            ordemServicoId: os.id,
+            tipo: "status",
+            descricao: "Removida no SGP — saiu da fila do ISPhub",
+          },
+        }),
+      ]);
+      mexidas.push({ id: os.id, tecnicoId: os.tecnicoId });
+      console.warn(`[sync] OS ${os.sgpOsId} nao existe mais no SGP do provedor ${provedorId} — cancelada no espelho`);
     }
 
     // --- Avisa quem precisa saber (tempo real) ---

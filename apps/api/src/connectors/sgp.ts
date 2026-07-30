@@ -286,6 +286,13 @@ async function sgpGet(creds: ErpCredentials, path: string, params: Record<string
 const PAGINACAO_MAX_PAGINAS = 50;
 
 /**
+ * Tamanho de pagina ao listar OS. Explicito de proposito: sem `limit` o SGP
+ * aplica o default dele (nao documentado), e o espelho passava a depender de um
+ * numero que a gente nem sabia qual era.
+ */
+const PAGINA_OS = 200;
+
+/**
  * Segue paginacao estilo Django REST Framework (`{count,next,previous,results}`)
  * se o SGP usar — a doc oficial mostra `/olt/list/` como array puro, mas um
  * provedor com muitas OLTs pode cair no paginador padrao do framework mesmo
@@ -554,23 +561,60 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
       }));
     },
 
+    /**
+     * Lista OS SEGUINDO A PAGINACAO ate o fim.
+     *
+     * Antes pedia uma pagina e ficava com ela. O SGP devolve
+     * `paginacao.total`, entao tudo que passasse do tamanho de pagina
+     * simplesmente NUNCA sincronizava: a OS ficava congelada no espelho no
+     * ultimo status conhecido, e uma acao nela batia num 404 do SGP ("OS nao
+     * encontrada") porque de fato ja tinha mudado por la. Espelho parcial e
+     * pior que espelho vazio — ele parece completo.
+     *
+     * Quando o `offset` explicito e passado (uso pontual), respeita e nao
+     * pagina: quem pediu uma janela especifica quer aquela janela.
+     */
     async listServiceOrders(params: ListOsParams = {}): Promise<RawOs[]> {
-      const data = await sgpPostJson(creds, "/api/ura/ordemservico/list/", {
-        status: params.status,
-        motivo: params.motivo,
-        contrato: params.contrato,
-        offset: params.offset,
-        limit: params.limit,
-      });
-      const raw = asArray(data, "ordens_servicos", "resultados");
-      // O objetivo do debug e descobrir NOMES DE CAMPO do SGP, nunca os valores.
-      // Antes isto despejava o registro cru inteiro — nome, CPF/CNPJ, endereco e
-      // telefone do assinante — nos logs do container, a cada ciclo de sync de
-      // cada provedor (padrao: 180s). Agora sai so o formato.
-      if (env.SGP_DEBUG_RAW && raw[0]) {
-        console.log("[sgp-debug] campos da os:", JSON.stringify(Object.keys(raw[0] as object).sort()));
+      const path = "/api/ura/ordemservico/list/";
+      const limite = params.limit ?? PAGINA_OS;
+      const paginaUnica = params.offset !== undefined;
+
+      const itens: any[] = [];
+      let offset = params.offset ?? 0;
+      let total: number | null = null;
+
+      for (let pagina = 0; pagina < PAGINACAO_MAX_PAGINAS; pagina++) {
+        const data = await sgpPostJson(creds, path, {
+          status: params.status,
+          motivo: params.motivo,
+          contrato: params.contrato,
+          offset,
+          limit: limite,
+        });
+        const lote = asArray(data, "ordens_servicos", "resultados");
+
+        // O objetivo do debug e descobrir NOMES DE CAMPO do SGP, nunca os
+        // valores. Antes isto despejava o registro cru inteiro — nome,
+        // CPF/CNPJ, endereco e telefone do assinante — nos logs do container, a
+        // cada ciclo de sync de cada provedor. Agora sai so o formato, e so na
+        // 1a pagina.
+        if (env.SGP_DEBUG_RAW && pagina === 0 && lote[0]) {
+          console.log("[sgp-debug] campos da os:", JSON.stringify(Object.keys(lote[0] as object).sort()));
+        }
+
+        itens.push(...lote);
+        if (paginaUnica) break;
+
+        if (total === null) total = numeroOuNull((data as any)?.paginacao?.total);
+        // Para quando: veio pagina vazia/incompleta (fim natural) ou ja se tem
+        // o total anunciado. Sem `total`, o fim e a pagina incompleta — cobre
+        // instancia que nao anuncia paginacao.
+        if (lote.length < limite) break;
+        if (total !== null && itens.length >= total) break;
+        offset += limite;
       }
-      return raw.map(normalizeOs);
+
+      return itens.map(normalizeOs);
     },
 
     /**
