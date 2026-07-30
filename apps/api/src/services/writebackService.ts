@@ -5,12 +5,14 @@ import {
   UserRole,
   toSgpOsStatus,
   type OsEventoTipo,
+  type OsFichaSgp,
   type RealtimeEventoTipo,
 } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../middleware/errorHandler.js";
 import { buildConnector } from "./erpConnectorService.js";
 import { SgpError } from "../connectors/sgp.js";
+import { comConcorrenciaLimitada } from "../lib/limitador.js";
 import { emitParaUsuario } from "./realtimeHub.js";
 import { dispararPush } from "./pushService.js";
 
@@ -153,6 +155,39 @@ export async function mudarStatus(ordemServicoId: string, novoStatus: OsStatus, 
   ]);
   notificarTecnico(osAtualizada.tecnicoId, "os-alterada", os.id);
   return osAtualizada;
+}
+
+/**
+ * Ficha completa da OS lida ao vivo do SGP — o que o espelho local nao tem
+ * (plano, credenciais PPPoE, ponto de referencia).
+ *
+ * Cache de 90s por OS e teto de concorrencia por PROVEDOR, igual ao
+ * /conexao/detalhes: a tela do tecnico chama isto ao abrir cada OS, e sem os
+ * dois uma fila sendo percorrida vira uma rajada no SGP do provedor.
+ *
+ * Falha do SGP nao derruba a tela: devolve null e o app segue mostrando o
+ * espelho local, que e o que importa pra trabalhar.
+ */
+const FICHA_CACHE_TTL_MS = 90_000;
+const FICHA_MAX_CONCORRENTE_POR_PROVEDOR = 4;
+const fichaCache = new Map<string, { valor: OsFichaSgp | null; expiraEm: number }>();
+
+export async function obterFichaSgp(ordemServicoId: string): Promise<OsFichaSgp | null> {
+  const emCache = fichaCache.get(ordemServicoId);
+  if (emCache && emCache.expiraEm > Date.now()) return emCache.valor;
+
+  const { os, connector } = await loadOsWithConnector(ordemServicoId);
+  let valor: OsFichaSgp | null = null;
+  try {
+    valor = await comConcorrenciaLimitada(os.provedorId, FICHA_MAX_CONCORRENTE_POR_PROVEDOR, () =>
+      connector.obterFichaOs(os.sgpOsId),
+    );
+  } catch (err) {
+    // Best-effort de proposito: a ficha ENRIQUECE a tela, nao a sustenta.
+    console.error("[sgp-ficha] falha ao ler a ficha da OS:", err instanceof Error ? err.message : err);
+  }
+  fichaCache.set(ordemServicoId, { valor, expiraEm: Date.now() + FICHA_CACHE_TTL_MS });
+  return valor;
 }
 
 export async function adicionarAnotacao(ordemServicoId: string, texto: string, autorId: string) {

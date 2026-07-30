@@ -91,6 +91,56 @@ export interface DetalhesTecnicos {
 }
 
 /**
+ * Ficha completa da OS lida AO VIVO do SGP (`/api/os/list/id/{id}/`).
+ *
+ * Complementa o espelho local em vez de substitui-lo: o espelho abre a tela na
+ * hora (e funciona offline), isto chega depois e enriquece — mesmo desenho do
+ * DetalhesTecnicos.
+ *
+ * O recorte e do que muda o trabalho de quem esta na porta do cliente. Ficam
+ * FORA os `*_id` internos, os flags de regra do SGP
+ * (`os_close_edit`, `os_encerrada_impedir_*`, `os_lancamento_comodato`) e o
+ * `os_djson`: nada disso ajuda o tecnico e cada campo a mais e uma linha a
+ * mais pra ele varrer no sol.
+ */
+export interface OsFichaSgp {
+  /** Plano contratado — o tecnico precisa saber a velocidade que DEVERIA entregar. */
+  plano: string | null;
+  planoDownload: string | null;
+  planoUpload: string | null;
+
+  /**
+   * Credenciais PPPoE do servico. E o dado que mais economiza ligacao pro
+   * escritorio: sem isto o tecnico nao configura a ONU sozinho.
+   * `servicoSenha` e SEGREDO — nunca logada, e o app mostra mascarada.
+   */
+  servicoLogin: string | null;
+  servicoSenha: string | null;
+
+  /** Conexao no momento da consulta (complementa o /verificaacesso). */
+  servicoOnline: boolean | null;
+  servicoIp: string | null;
+  /** MAC visto na sessao ativa — confirma que se esta olhando o equipamento certo. */
+  servicoMac: string | null;
+
+  /** Como achar a casa: complemento e ponto de referencia nao existem no espelho. */
+  enderecoComplemento: string | null;
+  enderecoPontoReferencia: string | null;
+
+  /** O que ja foi registrado na OS pelo escritorio ou por quem passou antes. */
+  servicoPrestado: string | null;
+  observacao: string | null;
+
+  /** Com quem ele divide a OS, e o setor dono dela. */
+  tecnicoResponsavel: string | null;
+  tecnicosAuxiliares: string[];
+  setor: string | null;
+
+  /** Contato do cliente como o SGP tem (pode trazer mais de um numero). */
+  clienteContato: string | null;
+}
+
+/**
  * Foto anexada a uma OS no SGP (evidencia de execucao). Hospedada no proprio
  * SGP — a ISPhub nao guarda os bytes, so consulta ao vivo (mesmo padrao de
  * checkConnectionStatus/getDetalhesTecnicos).
@@ -213,6 +263,14 @@ export interface ErpConnector {
    * datas de alteracao/finalizacao.
    */
   updateOsStatus(sgpOsId: string, statusCode: number): Promise<void>;
+
+  /**
+   * Ficha completa da OS no ERP. Complementa o espelho local (que abre a tela
+   * na hora); isto chega depois com o que o espelho nao tem — plano,
+   * credenciais PPPoE, ponto de referencia. `null` quando o ERP nao devolve a
+   * OS (removida por la, id divergente).
+   */
+  obterFichaOs(sgpOsId: string): Promise<OsFichaSgp | null>;
 
   /**
    * Adiciona uma anotacao/andamento na OS.

@@ -1113,3 +1113,116 @@ describe("mensagem de negocio do SGP", () => {
     expect(erro.status).toBe(403);
   });
 });
+
+describe("obterFichaOs", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** Payload literal da doc "Ordem de Servico por ID" (array com 1 item). */
+  const RESPOSTA_DOC = [
+    {
+      cliente_id: 1,
+      os_status: 1,
+      os_observacao: "OS_OBSERVACAO",
+      endereco_complemento: "ENDERECO_COMPLEMENTO",
+      os_servicoprestado: "OS_SERVICO_PRESTADO",
+      plano: "PLANO",
+      servico_online: true,
+      endereco_pontoreferencia: "ENDERECO_PONTO_REFERENCIA",
+      servico_ip: "999.99.99.99",
+      servico_online_ip: "888.88.88.88",
+      servico_login: "SERVICO_LOGIN",
+      servico_mac: "X9:9X:X9:X9:99:99",
+      servico_online_mac: "AA:BB:CC:DD:EE:FF",
+      plano_download: "99999kbps",
+      plano_upload: "88888kbps",
+      servico_password: "SERVICO_PASSWORD",
+      os_djson: {},
+      cliente_contato: "9999999999, 99999999999",
+      os_tecnico_responsavel: "TECNICO_RESPONSAVEL",
+      os_tecnicos_auxiliares: ["TECNICO_1", "TECNICO_2"],
+      os_setor: "SETOR",
+      os_close_edit: false,
+      os_encerrada_impedir_estorno: true,
+    },
+  ];
+
+  it("extrai a ficha do payload real da doc", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(RESPOSTA_DOC));
+
+    const ficha = await createSgpConnector(creds).obterFichaOs("6755");
+
+    expect(ficha).toEqual({
+      plano: "PLANO",
+      planoDownload: "99999kbps",
+      planoUpload: "88888kbps",
+      servicoLogin: "SERVICO_LOGIN",
+      servicoSenha: "SERVICO_PASSWORD",
+      servicoOnline: true,
+      // Prefere o da sessao ATIVA ao cadastrado — e o que vale em campo.
+      servicoIp: "888.88.88.88",
+      servicoMac: "AA:BB:CC:DD:EE:FF",
+      enderecoComplemento: "ENDERECO_COMPLEMENTO",
+      enderecoPontoReferencia: "ENDERECO_PONTO_REFERENCIA",
+      servicoPrestado: "OS_SERVICO_PRESTADO",
+      observacao: "OS_OBSERVACAO",
+      tecnicoResponsavel: "TECNICO_RESPONSAVEL",
+      tecnicosAuxiliares: ["TECNICO_1", "TECNICO_2"],
+      setor: "SETOR",
+      clienteContato: "9999999999, 99999999999",
+    });
+  });
+
+  it("NAO expoe flags internas nem os_djson (ruido pro tecnico)", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(RESPOSTA_DOC));
+
+    const ficha = (await createSgpConnector(creds).obterFichaOs("6755")) as unknown as Record<string, unknown>;
+
+    for (const k of ["os_djson", "os_close_edit", "os_encerrada_impedir_estorno", "cliente_id", "os_status"]) {
+      expect(ficha[k]).toBeUndefined();
+    }
+  });
+
+  it("array vazio (SGP nao conhece a OS): null, nao objeto vazio", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
+    expect(await createSgpConnector(creds).obterFichaOs("999")).toBeNull();
+  });
+
+  it("cai pro IP/MAC cadastrado quando nao ha sessao ativa", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([{ servico_ip: "10.0.0.1", servico_mac: "11:22:33:44:55:66", servico_online: false }]),
+    );
+
+    const ficha = await createSgpConnector(creds).obterFichaOs("1");
+
+    expect(ficha?.servicoIp).toBe("10.0.0.1");
+    expect(ficha?.servicoMac).toBe("11:22:33:44:55:66");
+    expect(ficha?.servicoOnline).toBe(false);
+  });
+
+  it("servico_online ausente vira null (indeterminado), nao false", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([{ plano: "P" }]));
+    const ficha = await createSgpConnector(creds).obterFichaOs("1");
+    expect(ficha?.servicoOnline).toBeNull();
+    expect(ficha?.tecnicosAuxiliares).toEqual([]);
+  });
+
+  it("manda app+token no corpo e bate no caminho documentado", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(RESPOSTA_DOC));
+
+    await createSgpConnector(creds).obterFichaOs("6755");
+
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/api/os/list/id/6755/");
+    expect(options.method).toBe("POST");
+    const body = new URLSearchParams(options.body as string);
+    expect(body.get("app")).toBe(creds.app);
+    expect(body.get("token")).toBe(creds.token);
+  });
+});

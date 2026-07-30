@@ -11,6 +11,7 @@ import { Button, Card, Field, Muted, Pill, Screen, SectionLabel, Title, type Pil
 import { colors, font, space } from "@/theme/tokens";
 import { useAcoesOs } from "@/features/minhas-os/acoes";
 import { ConexaoStatus } from "@/features/minhas-os/conexao-status";
+import { FichaSgp } from "@/features/minhas-os/ficha-sgp";
 import { useCriarConversa } from "@/features/chat/hooks";
 
 function soDigitos(tel: string): string {
@@ -134,6 +135,10 @@ export default function DetalheOs() {
             </Card>
 
             <ConexaoStatus provedorId={os.provedorId} contratoId={os.contratoId} />
+
+            {/* Ficha do SGP: plano, PPPoE, ponto de referencia. Carrega depois
+                e some sozinha se o SGP nao responder — a tela nao depende dela. */}
+            <FichaSgp osId={os.id} />
 
             {/* Contato */}
             {os.telefone ? (

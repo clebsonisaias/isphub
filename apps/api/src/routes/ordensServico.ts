@@ -20,6 +20,23 @@ async function assertAcesso(req: any, ordemServicoId: string) {
   return os;
 }
 
+/**
+ * Ficha completa da OS lida AO VIVO do SGP. Rota SEPARADA do `GET /:id` de
+ * proposito: o detalhe vem do espelho local e abre na hora, enquanto isto
+ * depende do SGP do provedor. Junto, toda abertura de OS ficaria presa
+ * esperando o ERP — mesmo desenho do /conexao/:contratoId/detalhes.
+ *
+ * `null` quando o SGP nao devolve a OS ou falha: a tela segue funcionando com
+ * o espelho.
+ */
+ordensServicoRouter.get(
+  "/:id/ficha-sgp",
+  asyncHandler(async (req, res) => {
+    await assertAcesso(req, req.params.id);
+    res.json(await writeback.obterFichaSgp(req.params.id));
+  }),
+);
+
 ordensServicoRouter.get(
   "/:id",
   asyncHandler(async (req, res) => {

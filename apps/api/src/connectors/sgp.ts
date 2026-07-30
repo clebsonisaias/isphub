@@ -11,6 +11,7 @@ import type {
   ProvisionarOnuInput,
   ProvisionarOnuResultado,
   RawOs,
+  OsFichaSgp,
   RawOsType,
   SgpImagem,
   SgpImagemArquivo,
@@ -627,6 +628,44 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
         const jaEncerrada = statusCode === SgpOsStatus.ENCERRADA && /j[áa]\s*(foi\s+)?encerrada/i.test(msg);
         if (!jaEncerrada) throw err;
       }
+    },
+
+    /**
+     * Ficha completa da OS. O endpoint devolve um ARRAY com um item (formato da
+     * doc "Ordem de Servico por ID"), entao pega o primeiro; array vazio =
+     * o SGP nao conhece essa OS.
+     *
+     * POST com app+token no corpo, como a doc pede — nao e um GET, apesar do
+     * nome "list".
+     */
+    async obterFichaOs(sgpOsId: string): Promise<OsFichaSgp | null> {
+      const path = `/api/os/list/id/${encodeURIComponent(sgpOsId)}/`;
+      const data = await sgpPostForm(creds, path);
+      const [item] = asArray(data, "ordens_servicos", "resultados", "results");
+      if (!item) return null;
+
+      const auxiliares = pick(item, "os_tecnicos_auxiliares");
+      return {
+        plano: pickString(item, "plano"),
+        planoDownload: pickString(item, "plano_download"),
+        planoUpload: pickString(item, "plano_upload"),
+        servicoLogin: pickString(item, "servico_login"),
+        servicoSenha: pickString(item, "servico_password"),
+        // O SGP manda booleano de verdade aqui; null quando nem informa.
+        servicoOnline: typeof item.servico_online === "boolean" ? item.servico_online : null,
+        // `servico_online_ip` e o IP da sessao ATIVA; `servico_ip` e o cadastrado.
+        // Pro tecnico o que vale e o de agora, com o cadastrado como reserva.
+        servicoIp: pickString(item, "servico_online_ip", "servico_ip"),
+        servicoMac: pickString(item, "servico_online_mac", "servico_mac"),
+        enderecoComplemento: pickString(item, "endereco_complemento"),
+        enderecoPontoReferencia: pickString(item, "endereco_pontoreferencia"),
+        servicoPrestado: pickString(item, "os_servicoprestado"),
+        observacao: pickString(item, "os_observacao"),
+        tecnicoResponsavel: pickString(item, "os_tecnico_responsavel"),
+        tecnicosAuxiliares: Array.isArray(auxiliares) ? auxiliares.map(String).filter(Boolean) : [],
+        setor: pickString(item, "os_setor"),
+        clienteContato: pickString(item, "cliente_contato"),
+      };
     },
 
     async addOsNote(sgpOsId: string, texto: string): Promise<void> {
