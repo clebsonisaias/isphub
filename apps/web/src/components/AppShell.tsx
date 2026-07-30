@@ -41,7 +41,21 @@ const INTERVALO_POLLING_NAO_LIDAS_MS = 45_000;
  * (ver useModulosHabilitados) — sem isto, um modulo desligado por padrao
  * (ex.: chat-clientes) vira link morto na nav pra todo mundo.
  */
-const NAV_ITEMS: { to: string; label: string; icon: typeof LayoutGrid; ocultoPara: UserRole[]; modulo?: ModuloId }[] = [
+/**
+ * `labelCurto` e so pro rodape do mobile: com sete abas em 375px cada uma fica
+ * com ~53px, e "Provisionar"/"Administração" preenchiam a fatia inteira — os
+ * rotulos vizinhos se encostavam e liam como uma palavra so. O nome COMPLETO
+ * continua no `aria-label` e volta a aparecer no desktop, entao nada muda pro
+ * leitor de tela nem pra arvore de acessibilidade.
+ */
+const NAV_ITEMS: {
+  to: string;
+  label: string;
+  labelCurto?: string;
+  icon: typeof LayoutGrid;
+  ocultoPara: UserRole[];
+  modulo?: ModuloId;
+}[] = [
   { to: "/", label: "Painel", icon: LayoutGrid, ocultoPara: [] },
   { to: "/mapa", label: "Mapa", icon: Map, ocultoPara: [] },
   {
@@ -76,6 +90,7 @@ const NAV_ITEMS: { to: string; label: string; icon: typeof LayoutGrid; ocultoPar
   {
     to: "/provisionamento",
     label: "Provisionar",
+    labelCurto: "ONU",
     icon: Router,
     ocultoPara: [UserRole.TECNICO],
   },
@@ -91,7 +106,10 @@ const NAV_ITEMS: { to: string; label: string; icon: typeof LayoutGrid; ocultoPar
  */
 function navItemClass(ativo: boolean): string {
   return cn(
-    "group relative flex flex-1 flex-col items-center justify-center gap-0.5 rounded-lg py-2 text-[0.65rem] font-medium transition-colors lg:flex-none lg:flex-row lg:gap-1.5 lg:rounded-full lg:px-3 lg:py-1.5 lg:text-sm",
+    // `lg:shrink-0` + `whitespace-nowrap`: agora que o nav rola (ver a nota no
+    // <nav>), a pilula nao pode ser comprimida nem quebrar o rotulo em duas
+    // linhas — ela sai de vista rolando, inteira, e volta do mesmo jeito.
+    "group relative flex flex-1 flex-col items-center justify-center gap-0.5 whitespace-nowrap rounded-lg px-1 py-2 text-[0.65rem] font-medium transition-colors lg:flex-none lg:shrink-0 lg:flex-row lg:gap-1.5 lg:rounded-full lg:px-3 lg:py-1.5 lg:text-sm pointer-coarse:min-h-11",
     ativo
       ? "text-primary"
       : "text-muted-foreground hover:text-foreground lg:hover:bg-secondary/60",
@@ -175,7 +193,7 @@ function UserMenu({
         <button
           type="button"
           title={`${nome} — ${USER_ROLE_LABEL[role]}`}
-          className="flex items-center gap-2 rounded-full py-1 pl-1 pr-1 outline-none transition-colors hover:bg-secondary/60 focus-visible:ring-2 focus-visible:ring-ring lg:pr-2.5"
+          className="flex items-center gap-2 rounded-full py-1 pl-1 pr-1 outline-none transition-colors hover:bg-secondary/60 focus-visible:ring-2 focus-visible:ring-ring lg:pr-2.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
         >
           <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-secondary font-display text-xs font-semibold text-foreground">
             {iniciais(nome)}
@@ -200,7 +218,7 @@ function UserMenu({
         <Link
           to="/perfil"
           onClick={() => setAberto(false)}
-          className="mt-1 flex items-center gap-2 rounded-md px-2.5 py-2 text-sm text-foreground outline-none transition-colors hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring"
+          className="mt-1 flex items-center gap-2 rounded-md px-2.5 py-2 text-sm text-foreground outline-none transition-colors hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11"
         >
           <UserCircle className="size-4 text-muted-foreground" />
           Meu perfil
@@ -208,7 +226,7 @@ function UserMenu({
         <button
           type="button"
           onClick={toggleTheme}
-          className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-foreground outline-none transition-colors hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-foreground outline-none transition-colors hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11"
         >
           {theme === "dark" ? (
             <Sun className="size-4 text-muted-foreground" />
@@ -223,7 +241,7 @@ function UserMenu({
             setAberto(false);
             onLogout();
           }}
-          className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-destructive outline-none transition-colors hover:bg-destructive/10 focus-visible:ring-2 focus-visible:ring-destructive"
+          className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-destructive outline-none transition-colors hover:bg-destructive/10 focus-visible:ring-2 focus-visible:ring-destructive pointer-coarse:min-h-11"
         >
           <LogOut className="size-4" />
           Sair
@@ -284,7 +302,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           className="h-[2px] w-full brand-gradient-bg opacity-70"
         />
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-3 sm:gap-3 sm:px-4 lg:gap-2">
-          <Link to="/" className="flex shrink-0 items-center gap-2">
+          <Link to="/" className="flex shrink-0 items-center gap-2 pointer-coarse:min-h-11">
             <span className="font-display text-lg font-bold tracking-tight">
               <span className="brand-gradient-text">ISP</span>
               <span className="text-foreground">hub</span>
@@ -306,18 +324,33 @@ export function AppShell({ children }: { children: ReactNode }) {
           */}
           {usuario && (
             <nav
-              className="fixed inset-x-0 bottom-0 z-30 flex items-stretch justify-around border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:static lg:inset-auto lg:z-auto lg:flex-1 lg:items-center lg:justify-start lg:gap-1 lg:border-t-0 lg:bg-transparent lg:pb-0 lg:backdrop-blur-none"
+              /*
+               * `lg:min-w-0` + `lg:overflow-x-auto` no desktop: com `flex-1`
+               * sozinho o nav nunca encolhia abaixo do seu min-content, e as
+               * pilulas (cujo numero varia — modulos ligam e desligam)
+               * empurravam o grupo da direita PARA FORA da tela. Medido a
+               * 1440px: busca, notificacoes e menu do usuario ficavam 111px
+               * alem da borda, com a pagina rolando na horizontal.
+               *
+               * Com `min-w-0` o nav cede espaco e, se ainda faltar, rola dentro
+               * de si — nada sai da tela e os controles da direita ficam
+               * sempre no lugar.
+               */
+              className="fixed inset-x-0 bottom-0 z-30 flex items-stretch justify-around border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:static lg:inset-auto lg:z-auto lg:min-w-0 lg:flex-1 lg:items-center lg:justify-start lg:gap-1 lg:overflow-x-auto lg:border-t-0 lg:bg-transparent lg:pb-0 lg:backdrop-blur-none lg:scrollbar-none"
               aria-label="Navegação principal"
             >
               {NAV_ITEMS.filter(
                 (item) => !item.ocultoPara.includes(usuario.role) && (!item.modulo || modulosHabilitados.has(item.modulo)),
-              ).map(({ to, label, icon: Icon }) => {
+              ).map(({ to, label, labelCurto, icon: Icon }) => {
                 const ativo = location.pathname === to;
                 return (
                   <Link
                     key={to}
                     to={to}
                     title={label}
+                    // Nome acessivel e sempre o completo, mesmo quando o rotulo
+                    // visivel esta abreviado no rodape.
+                    aria-label={labelCurto ? label : undefined}
                     className={navItemClass(ativo)}
                   >
                     {ativo && (
@@ -330,7 +363,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                       ativo={ativo}
                       badge={to === "/chat" ? naoLidasChat : undefined}
                     />
-                    <span className="relative">{label}</span>
+                    {/* Abreviado abaixo de `lg`, completo a partir dali. */}
+                    <span className="relative lg:hidden">{labelCurto ?? label}</span>
+                    <span className="relative hidden lg:inline">{label}</span>
                   </Link>
                 );
               })}
@@ -338,6 +373,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <Link
                   to="/admin"
                   title="Administração"
+                  aria-label="Administração"
                   className={navItemClass(
                     location.pathname.startsWith("/admin"),
                   )}
@@ -349,7 +385,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                     Icon={Settings}
                     ativo={location.pathname.startsWith("/admin")}
                   />
-                  <span className="relative">Administração</span>
+                  <span className="relative lg:hidden">Admin</span>
+                  <span className="relative hidden lg:inline">Administração</span>
                 </Link>
               )}
             </nav>

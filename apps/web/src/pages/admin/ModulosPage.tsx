@@ -120,7 +120,7 @@ export function ModulosPage() {
                       type="button"
                       onClick={() => mover(i, -1)}
                       disabled={i === 0}
-                      className="text-muted-foreground/60 transition-colors hover:text-foreground disabled:opacity-30"
+                      className="flex size-8 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-30 pointer-coarse:size-11"
                       aria-label="Mover para cima"
                     >
                       <ChevronUp className="size-4" />
@@ -129,7 +129,7 @@ export function ModulosPage() {
                       type="button"
                       onClick={() => mover(i, 1)}
                       disabled={i === modulos.length - 1}
-                      className="text-muted-foreground/60 transition-colors hover:text-foreground disabled:opacity-30"
+                      className="flex size-8 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-30 pointer-coarse:size-11"
                       aria-label="Mover para baixo"
                     >
                       <ChevronDown className="size-4" />

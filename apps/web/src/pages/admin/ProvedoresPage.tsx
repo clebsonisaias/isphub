@@ -51,8 +51,11 @@ export function ProvedoresPage() {
     <AppShell>
       <AnimatedPage>
       <AdminNav />
-      <div className="mb-6 flex items-center justify-between">
-        <div>
+      {/* `flex-wrap` + `min-w-0` no bloco de texto: sem os dois, o titulo e a
+          descricao empurravam o botao "Novo provedor" e a pagina rolava na
+          horizontal no celular. */}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold">Provedores</h1>
           <p className="text-sm text-muted-foreground">
             Cada provedor tem sua propria integracao com o ERP (SGP) e catalogo de tipos de OS.

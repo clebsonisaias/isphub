@@ -12,6 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select } from "@/components/ui/select";
 import { categoriasApi, erpConfigApi, provedoresApi, syncApi, tiposOsApi } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
@@ -350,14 +351,14 @@ function TiposOsManager({ provedorId }: { provedorId: string }) {
                   <TableCell className="font-mono text-xs text-muted-foreground">{tipo.sgpCodigo}</TableCell>
                   <TableCell>{tipo.descricao}</TableCell>
                   <TableCell>
-                    <select
+                    <Select
                       value={tipo.categoriaId ?? ""}
                       onChange={(e) => atualizarTipo(tipo, { categoriaId: e.target.value || null })}
-                      className={`rounded-md border px-2 py-1 text-sm ${
+                      className={
                         tipo.categoriaId
-                          ? "border-input bg-secondary/40"
-                          : "border-warning/40 bg-warning/10 text-warning"
-                      }`}
+                          ? "bg-secondary/40 px-2"
+                          : "border-warning/40 bg-warning/10 px-2 text-warning"
+                      }
                     >
                       <option value="">Não classificado</option>
                       {categorias.map((c) => (
@@ -365,7 +366,7 @@ function TiposOsManager({ provedorId }: { provedorId: string }) {
                           {c.nome}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                   </TableCell>
                   <TableCell>
                     <Input

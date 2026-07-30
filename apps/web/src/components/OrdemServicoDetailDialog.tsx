@@ -11,6 +11,7 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import { ProvedorBadge } from "@/components/ProvedorBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { SlaBadge } from "@/components/SlaBadge";
@@ -207,17 +208,17 @@ export function OrdemServicoDetailDialog({
                   {acaoEmCurso === "acaminho" ? "Enviando..." : "Marcar a caminho"}
                 </Button>
 
-                <select
+                <Select
                   value={novoStatus}
                   onChange={(e) => setNovoStatus(e.target.value as OsStatus)}
-                  className="h-9 rounded-md border border-input bg-secondary/40 px-2 text-sm"
+                  className="bg-secondary/40 px-2"
                 >
                   {Object.values(OsStatus).map((s) => (
                     <option key={s} value={s}>
                       {OS_STATUS_LABEL[s]}
                     </option>
                   ))}
-                </select>
+                </Select>
                 <Button
                   variant="brand"
                   size="sm"
@@ -232,10 +233,10 @@ export function OrdemServicoDetailDialog({
                 <div className="flex flex-col gap-2">
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Despacho</p>
                   <div className="flex flex-wrap items-center gap-2">
-                  <select
+                  <Select
                     value={tecnicoSelecionado}
                     onChange={(e) => setTecnicoSelecionado(e.target.value)}
-                    className="h-9 flex-1 rounded-md border border-input bg-secondary/40 px-2 text-sm"
+                    className="flex-1 bg-secondary/40 px-2"
                   >
                     <option value="">Atribuir técnico...</option>
                     {tecnicos.map((t) => (
@@ -243,7 +244,7 @@ export function OrdemServicoDetailDialog({
                         {t.nome}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                   <Button
                     variant="outline"
                     size="sm"

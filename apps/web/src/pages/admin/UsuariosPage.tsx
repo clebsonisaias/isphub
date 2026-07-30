@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -258,28 +259,28 @@ function UsuarioDialog({
           )}
           <div className="flex flex-col gap-2">
             <Label htmlFor="role">Papel</Label>
-            <select
+            <Select
               id="role"
               value={role}
               onChange={(e) => setRole(e.target.value as UserRole)}
-              className="h-9 rounded-md border border-input bg-secondary/40 px-2 text-sm"
+              className="bg-secondary/40 px-2"
             >
               {Object.values(UserRole).map((r) => (
                 <option key={r} value={r}>
                   {USER_ROLE_LABEL[r]}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           {role === UserRole.PROVEDOR && (
             <div className="flex flex-col gap-2">
               <Label htmlFor="provedor">Provedor</Label>
-              <select
+              <Select
                 id="provedor"
                 required
                 value={provedorId}
                 onChange={(e) => setProvedorId(e.target.value)}
-                className="h-9 rounded-md border border-input bg-secondary/40 px-2 text-sm"
+                className="bg-secondary/40 px-2"
               >
                 <option value="">Selecione...</option>
                 {provedores.map((p) => (
@@ -287,7 +288,7 @@ function UsuarioDialog({
                     {p.nome}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
           )}
           {editando && (

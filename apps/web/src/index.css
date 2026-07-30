@@ -226,3 +226,17 @@ h1, h2, h3 {
 [data-theme="dark"] .shadow-soft-lg {
   box-shadow: 0 16px 36px -14px rgba(139, 92, 246, 0.35);
 }
+
+/*
+ * Barra de rolagem sumida onde a rolagem e um gesto, nao um controle: abas e
+ * navegacoes que rolam na horizontal. Esconde a BARRA, nunca o conteudo — o
+ * elemento continua rolavel por toque, trackpad, roda e teclado. Nao usar em
+ * regiao onde a barra e a unica pista de que ha mais conteudo.
+ */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

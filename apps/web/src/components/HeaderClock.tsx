@@ -71,7 +71,14 @@ export function HeaderClock() {
   return (
     <div
       ref={rootRef}
-      className="hidden items-center gap-1.5 rounded-full border border-border bg-secondary/40 px-3 py-1 text-xs text-muted-foreground opacity-0 xl:flex"
+      /*
+       * `2xl` e nao `xl`: em `xl` (1280px) o relogio cabia na conta so no
+       * papel — somado as pilulas de navegacao ele empurrava busca,
+       * notificacoes e menu do usuario fora da tela. Ele e o item de MENOR
+       * valor do cabecalho (hora e data o sistema operacional ja mostra),
+       * entao e ele que espera por espaco de verdade, nao os controles.
+       */
+      className="hidden items-center gap-1.5 rounded-full border border-border bg-secondary/40 px-3 py-1 text-xs text-muted-foreground opacity-0 2xl:flex"
       title={`Hora de rede — ${cidade}`}
     >
       <span className="size-1.5 shrink-0 rounded-full bg-success motion-safe:animate-pulse" aria-hidden />

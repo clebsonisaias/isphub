@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import { ApiError } from "@/lib/apiClient";
 import { clientesChatApi } from "@/lib/clientesChatApi";
 import { useToast } from "@/context/ToastContext";
@@ -105,7 +106,7 @@ export function NovaConversaClienteDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90svh] max-w-lg overflow-y-auto">
+      <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Nova conversa</DialogTitle>
           <DialogDescription>
@@ -146,14 +147,14 @@ export function NovaConversaClienteDialog({
                 Nenhum template aprovado nesta conta WhatsApp Business. Crie e aprove um template no Business Manager da Meta.
               </p>
             ) : (
-              <select
+              <Select
                 id="template"
                 value={templateNome}
                 onChange={(e) => {
                   setTemplateNome(e.target.value);
                   setVars({});
                 }}
-                className="h-10 rounded-md border border-input bg-secondary/40 px-3 text-sm"
+                className="bg-secondary/40"
               >
                 <option value="">Escolha um template…</option>
                 {templates.map((t) => (
@@ -161,7 +162,7 @@ export function NovaConversaClienteDialog({
                     {t.nome} ({t.idioma}) — {t.categoria}
                   </option>
                 ))}
-              </select>
+              </Select>
             )}
           </div>
 

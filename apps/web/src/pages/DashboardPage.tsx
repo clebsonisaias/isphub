@@ -195,7 +195,7 @@ export function DashboardPage() {
               </CardTitle>
               <CardDescription>Executadas por equipes de fora — não entram nos números acima.</CardDescription>
             </div>
-            <Link to="/retiradas" className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">
+            <Link to="/retiradas" className="inline-flex items-center gap-1 text-sm font-medium text-primary pointer-coarse:min-h-11 hover:underline">
               Ver fila de retiradas
               <ArrowRight className="size-3.5" />
             </Link>

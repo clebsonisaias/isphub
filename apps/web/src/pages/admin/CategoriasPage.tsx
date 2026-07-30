@@ -125,7 +125,10 @@ export function CategoriasPage() {
                   >
                     <Icone className="size-5" />
                   </span>
-                  <div className="flex-1">
+                  {/* `min-w-0`: quem cede espaco e o TEXTO. Sem isso um nome de
+                      categoria longo empurrava o switch e os botoes de acao
+                      fora da tela no celular. */}
+                  <div className="min-w-0 flex-1">
                     <CardTitle className="flex items-center gap-2 text-base">
                       {c.nome}
                       {c.equipeExterna && (
@@ -352,7 +355,10 @@ function CategoriaDialog({
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          {/* Duas colunas so a partir de `sm`: dentro do dialog o espaco util
+              num celular e ~310px, e dois campos com rotulo ("SLA padrao
+              (horas)") quebravam em tres linhas cada. */}
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-2">
               <Label htmlFor="sla">SLA padrão (horas)</Label>
               <Input

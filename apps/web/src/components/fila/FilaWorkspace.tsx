@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Select } from "@/components/ui/select";
 import { EmptyState } from "@/components/EmptyState";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
@@ -337,7 +338,7 @@ export function FilaWorkspace({
           <button
             type="button"
             onClick={() => setSidebarMobile((v) => !v)}
-            className="flex w-full items-center justify-between rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium lg:hidden"
+            className="flex min-h-11 w-full items-center justify-between rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium lg:hidden"
           >
             <span className="flex items-center gap-2">
               <SlidersHorizontal className="size-4" />
@@ -378,21 +379,21 @@ export function FilaWorkspace({
             </div>
 
             <div className="flex gap-2">
-              <select
+              <Select
                 value={ordenacao}
                 onChange={(e) => setOrdenacao(e.target.value as OrdenacaoFila)}
-                className="h-10 flex-1 rounded-md border border-input bg-card px-3 text-sm sm:flex-initial"
+                className="flex-1 sm:flex-initial"
                 aria-label="Ordenar por"
               >
                 <option value="urgencia">Mais urgentes primeiro</option>
                 <option value="recentes">Mais recentes primeiro</option>
                 <option value="antigas">Mais antigas primeiro</option>
-              </select>
+              </Select>
 
-              <select
+              <Select
                 value={pageSize}
                 onChange={(e) => setPageSize(Number(e.target.value))}
-                className="h-10 flex-1 rounded-md border border-input bg-card px-3 text-sm sm:flex-initial"
+                className="flex-1 sm:flex-initial"
                 aria-label="Itens por página"
               >
                 {TAMANHOS_PAGINA.map((n) => (
@@ -400,7 +401,7 @@ export function FilaWorkspace({
                     {n} por página
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
           </div>
 

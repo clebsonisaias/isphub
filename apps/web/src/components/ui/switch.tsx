@@ -6,7 +6,16 @@ function Switch({ className, ...props }: React.ComponentProps<typeof SwitchPrimi
   return (
     <SwitchPrimitive.Root
       className={cn(
-        "peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=unchecked]:bg-secondary",
+        "peer relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=unchecked]:bg-secondary",
+        /*
+         * O trilho tem 20x36px por desenho — um switch gordo ficaria desajeitado
+         * ao lado do rotulo. Em vez de inflar o visual, um `::before`
+         * transparente estende a AREA DE TOQUE pros 44px do minimo: 20+24=44 de
+         * altura, 36+8=44 de largura. O pseudo-elemento pertence ao botao,
+         * entao o toque nele conta como toque no switch, e como e `absolute`
+         * nao empurra nada no layout.
+         */
+        "pointer-coarse:before:absolute pointer-coarse:before:-inset-x-1 pointer-coarse:before:-inset-y-3 pointer-coarse:before:content-['']",
         className,
       )}
       {...props}

@@ -68,7 +68,7 @@ function abertaHa(iso: string | null, agora: number): string | null {
  * compacto, so a padding natural do icone).
  */
 const acaoClasse =
-  "inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-secondary hover:text-foreground sm:min-h-0 sm:min-w-0 sm:p-0.5";
+  "inline-flex min-h-10 min-w-10 shrink-0 items-center pointer-coarse:min-h-11 pointer-coarse:min-w-11 justify-center rounded text-muted-foreground/60 transition-colors hover:bg-secondary hover:text-foreground sm:min-h-0 sm:min-w-0 sm:p-0.5";
 
 /** Botão de copiar com feedback rápido (vira ✓ por ~1s). Para a propagação pra
  *  não abrir o detalhe da OS ao clicar. Usa fallback de clipboard (produção http). */

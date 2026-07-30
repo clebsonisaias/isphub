@@ -364,7 +364,7 @@ function AutorizarOnuDialog({
         if (!v) onClose();
       }}
     >
-      <DialogContent className="max-h-[85vh] overflow-y-auto">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Autorizar ONU</DialogTitle>
           <DialogDescription>Provisiona a ONU no SGP do provedor — muda o serviço do cliente na OLT.</DialogDescription>
@@ -399,7 +399,11 @@ function AutorizarOnuDialog({
           </div>
 
           {mode === 2 && (
-            <div className="grid grid-cols-2 gap-3">
+            /* Empilhado no celular: ao contrario de Slot/Porta e VLAN/Contrato
+               (numeros curtos), login e senha de PPPoE sao textos longos —
+               em ~160px de largura o valor rola dentro do campo e o tecnico
+               digita sem ver o que digitou. */
+            <div className="grid gap-3 sm:grid-cols-2">
               <Campo label="Login PPPoE">
                 <Input value={pppoeLogin} onChange={(e) => setPppoeLogin(e.target.value)} autoComplete="off" />
               </Campo>

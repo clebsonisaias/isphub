@@ -6,6 +6,7 @@ import type { FilaItem, Provedor } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
 import { AnimatedPage } from "@/components/AnimatedPage";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Select } from "@/components/ui/select";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ProvedorBadge } from "@/components/ProvedorBadge";
 import { ContratoStatusBadge } from "@/components/ContratoStatusBadge";
@@ -26,15 +27,38 @@ function mensagem(err: unknown): string {
  * HTML) para nao depender so da validacao do backend contra a cor conter markup.
  */
 function pinIcon(cor: string) {
-  const span = document.createElement("span");
-  span.style.display = "block";
-  span.style.width = "16px";
-  span.style.height = "16px";
-  span.style.borderRadius = "9999px";
-  span.style.backgroundColor = cor;
-  span.style.border = "2px solid white";
-  span.style.boxShadow = "0 1px 4px rgba(0,0,0,.5)";
-  return L.divIcon({ className: "", html: span, iconSize: [16, 16], iconAnchor: [8, 8] });
+  const ponto = document.createElement("span");
+  ponto.style.display = "block";
+  ponto.style.width = "16px";
+  ponto.style.height = "16px";
+  ponto.style.borderRadius = "9999px";
+  ponto.style.backgroundColor = cor;
+  ponto.style.border = "2px solid white";
+  ponto.style.boxShadow = "0 1px 4px rgba(0,0,0,.5)";
+
+  /*
+   * No Leaflet o `iconSize` E a area clicavel. Um pino de 16px e impossivel de
+   * acertar com o dedo, mas engordar o PONTO deixaria o mapa ilegivel com
+   * dezenas de OS. Entao no toque o icone vira uma caixa de 44px com o mesmo
+   * ponto de 16px centrado: alvo do tamanho certo, visual intacto.
+   *
+   * Em aglomerado os alvos se sobrepoem e o toque pega o pino de cima — e o
+   * comportamento normal de mapa, resolvido dando zoom. Melhor do que a
+   * alternativa anterior, que era nao acertar pino nenhum.
+   */
+  const toque = window.matchMedia("(pointer: coarse)").matches;
+  if (!toque) {
+    return L.divIcon({ className: "", html: ponto, iconSize: [16, 16], iconAnchor: [8, 8] });
+  }
+
+  const caixa = document.createElement("span");
+  caixa.style.display = "flex";
+  caixa.style.width = "44px";
+  caixa.style.height = "44px";
+  caixa.style.alignItems = "center";
+  caixa.style.justifyContent = "center";
+  caixa.appendChild(ponto);
+  return L.divIcon({ className: "", html: caixa, iconSize: [44, 44], iconAnchor: [22, 22] });
 }
 
 const BRASIL_CENTER: [number, number] = [-15.78, -47.93];
@@ -103,10 +127,10 @@ export function MapaPage() {
           </p>
         </div>
         {usuario?.role !== UserRole.PROVEDOR && usuario?.role !== UserRole.TECNICO && (
-          <select
+          <Select
             value={provedorId}
             onChange={(e) => setProvedorId(e.target.value)}
-            className="h-10 rounded-md border border-input bg-secondary/40 px-3 text-sm"
+            className="bg-secondary/40"
           >
             <option value="">Todos os provedores</option>
             {provedores.map((p) => (
@@ -114,7 +138,7 @@ export function MapaPage() {
                 {p.nome}
               </option>
             ))}
-          </select>
+          </Select>
         )}
       </div>
 

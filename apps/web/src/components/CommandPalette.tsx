@@ -161,7 +161,7 @@ export function CommandPalette() {
         onClick={() => setAberto(true)}
         title="Buscar (Ctrl+K)"
         aria-label="Abrir busca rápida"
-        className="flex size-9 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-secondary hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex size-9 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-secondary hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:size-11"
       >
         <Search className="size-4" />
       </button>

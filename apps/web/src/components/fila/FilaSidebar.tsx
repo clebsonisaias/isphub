@@ -44,7 +44,7 @@ function LinhaFiltro({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors",
+        "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors pointer-coarse:min-h-11",
         ativo ? "bg-primary/10 font-semibold text-primary" : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
       )}
     >
