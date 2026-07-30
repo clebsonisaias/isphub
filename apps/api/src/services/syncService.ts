@@ -1,5 +1,6 @@
 import { mapSgpOsStatus, sgpStatusReconhecido, OS_STATUS_ABERTOS, OsStatus, SgpOsStatus, type RawOs } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
+import { OS_EXTERNA_WHERE, OS_INTERNA_WHERE } from "./equipeService.js";
 import { buildConnector } from "./erpConnectorService.js";
 import { emitParaTodos, emitParaUsuario } from "./realtimeHub.js";
 import { sugerirCategoriaId } from "./categoriaMatch.js";
@@ -347,6 +348,69 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
     } catch (err) {
       console.warn(`[sync] cadastro backfill falhou no provedor ${provedorId}:`, err instanceof Error ? err.message : err);
     }
+
+    /*
+     * --- CONFERENCIA DE FUNIL ---
+     *
+     * A pergunta "por que a tela mostra menos OS que o SGP?" so se responde
+     * comparando os MESMOS numeros em cada etapa. Ate aqui havia so as pontas
+     * (o SGP na origem, a tela no fim) e o meio era opaco.
+     *
+     * Recebido = o que o SGP devolveu em status aberto neste ciclo.
+     * Espelho  = o que ficou gravado como aberto pra este provedor.
+     * Interna  = o recorte que o Painel mostra; Externa = o que vai pra
+     *            Retiradas. Se Recebido == Espelho == Interna + Externa, nao
+     *            ha perda: a diferenca que a pessoa ve na tela e recorte, nao
+     *            registro faltando. Se Recebido > Espelho, ha perda de fato e
+     *            ela esta na gravacao.
+     */
+    const recebidasAbertas = ordens.filter((o) => OS_STATUS_ABERTOS.includes(mapSgpOsStatus(o.statusCode))).length;
+    const [espelhoAbertas, espelhoInternas, espelhoExternas] = await Promise.all([
+      prisma.ordemServico.count({ where: { provedorId, status: { in: OS_STATUS_ABERTOS } } }),
+      prisma.ordemServico.count({
+        where: { provedorId, status: { in: OS_STATUS_ABERTOS }, AND: [OS_INTERNA_WHERE] },
+      }),
+      prisma.ordemServico.count({
+        where: { provedorId, status: { in: OS_STATUS_ABERTOS }, AND: [OS_EXTERNA_WHERE] },
+      }),
+    ]);
+    console.log(
+      `[funil] provedor ${provedorId}: SGP devolveu ${recebidasAbertas} aberta(s) | espelho tem ${espelhoAbertas} ` +
+        `(${espelhoInternas} interna(s) no Painel + ${espelhoExternas} externa(s) em Retiradas)` +
+        `${recebidasAbertas !== espelhoAbertas ? " — DIVERGENCIA na gravacao" : ""}`,
+    );
+
+    /*
+     * Quebra por TIPO do SGP -> CATEGORIA do ISPhub.
+     *
+     * "Instalação" nao existe no SGP: e categoria do ISPhub, montada por
+     * palavra-chave sobre a descricao do tipo. Quando alguem conta 29 no SGP e
+     * ve 18 aqui, a diferenca quase sempre esta neste mapa — um tipo que a
+     * pessoa considera instalacao caiu noutra categoria, em nenhuma, ou numa
+     * marcada como equipe externa (que sai do Painel e vai pra Retiradas).
+     *
+     * Sem esta linha o mapa era invisivel: dava pra ver o total e o total por
+     * categoria, nunca QUAL tipo alimentou qual categoria.
+     */
+    const porTipo = await prisma.ordemServico.groupBy({
+      by: ["tipoOsId"],
+      where: { provedorId, status: { in: OS_STATUS_ABERTOS } },
+      _count: { _all: true },
+    });
+    const tipos = await prisma.tipoOs.findMany({
+      where: { id: { in: porTipo.map((g) => g.tipoOsId).filter((v): v is string => !!v) } },
+      select: { id: true, sgpCodigo: true, descricao: true, categoria: { select: { nome: true, equipeExterna: true } } },
+    });
+    const porId = new Map(tipos.map((x) => [x.id, x]));
+    const linhas = porTipo
+      .sort((a, b) => b._count._all - a._count._all)
+      .map((g) => {
+        const tipo = g.tipoOsId ? porId.get(g.tipoOsId) : undefined;
+        const cat = tipo?.categoria;
+        const destino = !cat ? "NAO CLASSIFICADO (fora das facetas)" : cat.equipeExterna ? `${cat.nome} [Retiradas]` : cat.nome;
+        return `    ${String(g._count._all).padStart(4)}  ${tipo?.descricao ?? "(sem tipo)"} (cod ${tipo?.sgpCodigo ?? "-"})  ->  ${destino}`;
+      });
+    console.log(`[funil] provedor ${provedorId} — abertas por tipo do SGP:\n${linhas.join("\n")}`);
 
     // --- OS que SUMIU do SGP ---
     // O espelho tem que refletir o SGP nos dois sentidos. Faltava este: uma OS
