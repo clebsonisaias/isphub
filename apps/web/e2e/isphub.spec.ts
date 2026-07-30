@@ -3,6 +3,7 @@ import { test, expect, type Page } from "@playwright/test";
 const ADMIN = { email: "e2e-admin@isphub.test", senha: "e2e-senha-123" };
 const GESTOR = { email: "e2e-gestor@isphub.test", senha: "e2e-senha-123" };
 const MOCK_SGP = "http://localhost:4569";
+const API = "http://localhost:4000";
 
 async function login(page: Page, creds: { email: string; senha: string }) {
   await page.goto("/login");
@@ -135,4 +136,47 @@ test("OS sem tipo mapeado continua na fila principal (regressao do recorte inter
   // esse caso, senão ela some do Painel sem nenhum aviso.
   await login(page, ADMIN);
   await expect(page.getByText("Cliente Sem Tipo")).toBeVisible();
+});
+
+/**
+ * ATUALIZACAO AO VIVO — o Painel tem que refletir o ERP sem recarregar.
+ *
+ * Prova de ponta a ponta do que antes era so promessa: a tela era carregada
+ * uma vez e so recarregava se alguem agisse numa OS. Aqui a OS nasce no ERP
+ * (fixture), o sync roda, e o teste exige que ela apareca na tela SEM nenhum
+ * page.reload() — se o SSE nao chegar ou o Painel nao reagir, isto falha.
+ */
+test("OS criada no ERP aparece no Painel sem recarregar a pagina", async ({ page, request }) => {
+  await request.post(`${MOCK_SGP}/_test/reset`);
+  await login(page, ADMIN);
+
+  const cliente = `CLIENTE AO VIVO ${Date.now()}`;
+  await expect(page.getByText(cliente)).toHaveCount(0);
+
+  // 1) A OS nasce no ERP.
+  await request.post(`${MOCK_SGP}/_test/os`, {
+    data: {
+      os_id: `ao-vivo-${Date.now()}`,
+      os_status: 0,
+      motivo: "1",
+      os_conteudo: "Aberta durante o teste",
+      cliente_nome: cliente,
+      contrato_id: "1",
+      endereco_logradouro: "Rua do Tempo Real",
+      endereco_numero: "1",
+      endereco_bairro: "Centro",
+      endereco_cidade: "Natal",
+      endereco_ll: "-5.79,-35.21",
+      os_data_agendamento: "2026-12-31 09:00:00",
+    },
+  });
+
+  // 2) O sync a traz e emite `os-alterada` pra quem esta com a tela aberta.
+  const token = await page.evaluate(() => localStorage.getItem("isphub_token"));
+  const provedores = await request.get(`${API}/provedores`, { headers: { Authorization: `Bearer ${token}` } });
+  const provedor = (await provedores.json()).find((p: { nome: string }) => p.nome === "E2E Provider");
+  await request.post(`${API}/provedores/${provedor.id}/sync`, { headers: { Authorization: `Bearer ${token}` } });
+
+  // 3) Sem reload: a tela tem que se virar sozinha.
+  await expect(page.getByText(cliente)).toBeVisible({ timeout: 20_000 });
 });

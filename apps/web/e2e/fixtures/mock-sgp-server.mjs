@@ -47,6 +47,7 @@ app.get("/", (_req, res) => res.json({ ok: true, service: "mock-sgp-e2e" }));
 app.get("/_test/log", (_req, res) => res.json(log));
 app.post("/_test/reset", (_req, res) => {
   log = [];
+  osExtras = [];
   res.json({ ok: true });
 });
 
@@ -60,11 +61,23 @@ app.post("/api/ura/tecnicos/", (req, res) => {
   res.json({ tecnicos: [{ id: "1", nome: "Tecnico E2E" }] });
 });
 
+/*
+ * OS extras injetadas pelo teste via POST /_test/os — e como o e2e simula
+ * "abriram uma OS nova no ERP" sem depender de um SGP de verdade.
+ */
+let osExtras = [];
+
+app.post("/_test/os", (req, res) => {
+  osExtras.push(req.body);
+  res.json({ ok: true, total: osExtras.length });
+});
+
 app.post("/api/ura/ordemservico/list/", (req, res) => {
   if (exigirAuth(req, res)) return;
   res.json({
-    paginacao: { total: 1 },
+    paginacao: { total: 1 + osExtras.length },
     ordens_servicos: [
+      ...osExtras,
       {
         os_id: "e2e-os-1",
         os_status: 0,
