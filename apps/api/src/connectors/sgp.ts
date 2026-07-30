@@ -22,12 +22,16 @@ import type {
  * Cada provedor tem suas proprias credenciais (url/app/token), entao o
  * conector e instanciado por provedor — nunca ha estado global compartilhado.
  *
- * Auth SGP: `app` + `token` sao reenviados em toda chamada (sem sessao):
+ * Auth SGP: `app` + `token` sao reenviados em toda chamada (sem sessao), no
+ * formato que a doc pede — `token+app` — E tambem no header
+ * (`Authorization: Token <t>` + `X-SGP-Token`), porque instancias diferentes
+ * leem de lugares diferentes e header que o SGP nao usa ele ignora:
+ *  - GET: token+app na query.
  *  - POST form-urlencoded: app+token no corpo.
  *  - POST JSON: app+token no corpo (obrigatorio quando ha parametros em array,
  *    pois form-urlencoded gera CSV e o SGP rejeita silenciosamente).
- *  - GET: app na query; token no header (Authorization: Token <t> e
- *    X-SGP-Token), com fallback para token na query se vier 401/403.
+ *  - multipart: app+token no FormData (sem fixar Content-Type — o boundary e
+ *    do proprio FormData).
  */
 
 const TIMEOUT_MS = 15_000;
@@ -498,28 +502,6 @@ function normalizeOs(raw: Record<string, any>): RawOs {
   };
 }
 
-/**
- * Formata uma data ISO no padrao que o SGP espera em campos de escrita:
- * "AAAA-MM-DD HH:mm:ss", sempre em horario de Brasilia — o container roda
- * em UTC (sem TZ configurada), e o SGP e um sistema brasileiro, entao usar
- * o timezone do processo (`Date#getHours` etc) mandaria a hora errada.
- */
-function formatarDataSgp(iso: string): string {
-  const d = new Date(iso);
-  const partes = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Sao_Paulo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  })
-    .formatToParts(d)
-    .reduce<Record<string, string>>((acc, p) => ({ ...acc, [p.type]: p.value }), {});
-  return `${partes.year}-${partes.month}-${partes.day} ${partes.hour}:${partes.minute}:${partes.second}`;
-}
 
 function asArray(payload: any, ...possibleKeys: string[]): any[] {
   if (Array.isArray(payload)) return payload;
@@ -612,19 +594,25 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
       }
     },
 
-    async updateOsStatus(sgpOsId: string, statusCode: number, dataFinalizacao?: string): Promise<void> {
+    async updateOsStatus(sgpOsId: string, statusCode: number): Promise<void> {
       const path = `/api/os/update/id/${encodeURIComponent(sgpOsId)}/`;
       try {
-        // JSON, nao form-urlencoded: a doc oficial de "Alterar Ordem de
-        // Servico" e explicita (`Content-Type: application/json`). Enviado
-        // como form, o SGP responde 200 e ignora o corpo inteiro — o status
-        // simplesmente nao mudava, sem erro nenhum pra denunciar.
-        const data = await sgpPostJson(creds, path, {
-          os_status: statusCode,
-          os_data_finalizacao: dataFinalizacao ? formatarDataSgp(dataFinalizacao) : undefined,
-          // Registra quando a alteracao partiu do ISPhub.
-          os_data_alteracao: formatarDataSgp(new Date().toISOString()),
-        });
+        // SO `os_status`. A doc de "Alterar Ordem de Servico" lista todo o
+        // resto (servico prestado, observacao, checkin, assinaturas,
+        // classificacoes, datas) como OPCIONAL — e mudar status no ISPhub e
+        // exatamente isso: mudar o status, sem pedir nada a quem clica.
+        //
+        // Antes iam mais dois campos que ninguem pediu:
+        //  - `os_data_alteracao`: puro ruido. O SGP estampa o proprio horario
+        //    de alteracao; estavamos informando a hora em que a chamada saiu.
+        //  - `os_data_finalizacao`: o SGP registra a finalizacao ao encerrar.
+        //    Mandar a nossa data por cima nao acrescenta nada e faz a chamada
+        //    parecer um "encerramento completo" em vez de uma troca de status.
+        //
+        // JSON, nao form-urlencoded: a doc e explicita (`Content-Type:
+        // application/json`). Como form, o SGP responde 200 e ignora o corpo
+        // inteiro — o status nao mudava, sem erro nenhum pra denunciar.
+        const data = await sgpPostJson(creds, path, { os_status: statusCode });
         assertSgpEscritaOk(data, path);
       } catch (err) {
         // O SGP recusa reencerrar uma OS que ja esta encerrada do lado dele

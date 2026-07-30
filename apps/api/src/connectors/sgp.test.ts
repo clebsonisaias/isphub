@@ -345,14 +345,31 @@ describe("createSgpConnector", () => {
     expect(body.token).toBe(creds.token);
   });
 
-  it("updateOsStatus manda os_data_finalizacao ao encerrar, no formato do SGP", async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse({ msg: "OS alterada com sucesso" }));
+  it("updateOsStatus manda SO os_status (+ credencial) — nada de data/checkin/assinatura", async () => {
+    // A doc de "Alterar Ordem de Servico" lista todo o resto como opcional, e
+    // mudar status no ISPhub nao pede nada a quem clica. Antes iam duas datas
+    // que ninguem pediu: o SGP estampa as dele.
+    fetchMock.mockResolvedValueOnce(jsonResponse({ msg: "OS alterada com sucesso", os_id: 555 }));
 
-    const conn = createSgpConnector(creds);
-    await conn.updateOsStatus("555", 1, "2026-07-26T12:00:00.000Z");
+    await createSgpConnector(creds).updateOsStatus("555", 1);
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-    expect(body.os_data_finalizacao).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+    expect(body).toEqual({ app: creds.app, token: creds.token, os_status: 1 });
+    expect(body.os_data_finalizacao).toBeUndefined();
+    expect(body.os_data_alteracao).toBeUndefined();
+    expect(body.checkin_data).toBeUndefined();
+    expect(body.assinatura_cliente).toBeUndefined();
+  });
+
+  it("updateOsStatus aceita os 4 status documentados", async () => {
+    // 0=Aberta, 1=Encerrada, 2=Em execucao, 3=Pendente.
+    for (const codigo of [0, 1, 2, 3]) {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ msg: "ok" }));
+      await createSgpConnector(creds).updateOsStatus("555", codigo);
+      const body = JSON.parse(fetchMock.mock.calls.at(-1)![1].body as string);
+      expect(body.os_status).toBe(codigo);
+      expect(typeof body.os_status).toBe("number");
+    }
   });
 
   it("addOsNote envia o texto da anotacao", async () => {

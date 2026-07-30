@@ -136,11 +136,10 @@ export async function mudarStatus(ordemServicoId: string, novoStatus: OsStatus, 
     if (codigo === undefined) {
       throw new HttpError(400, `Status "${novoStatus}" nao tem equivalente de escrita no SGP`);
     }
-    // Ao encerrar (concluida/cancelada mapeiam pro mesmo "Encerrada" no SGP),
-    // manda a data de finalizacao — sem isso o SGP fecha a OS sem registrar
-    // quando de fato terminou.
-    const dataFinalizacao = codigo === SgpOsStatus.ENCERRADA ? new Date().toISOString() : undefined;
-    await chamarSgp(() => connector.updateOsStatus(os.sgpOsId, codigo, dataFinalizacao));
+    // So o status. Concluida e cancelada mapeiam pro mesmo "Encerrada" (1) do
+    // SGP — a distincao entre as duas vive no espelho local, que e o unico
+    // lugar capaz de representa-la (ver reconciliarStatus no syncService).
+    await chamarSgp(() => connector.updateOsStatus(os.sgpOsId, codigo));
   }
 
   const descricao = `Status alterado: ${OS_STATUS_LABEL[os.status as OsStatus]} → ${OS_STATUS_LABEL[novoStatus]}`;

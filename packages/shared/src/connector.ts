@@ -205,11 +205,14 @@ export interface ErpConnector {
   setOnTheWay(sgpOsId: string): Promise<void>;
 
   /**
-   * Atualiza o status da OS no ERP (codigo numerico do ERP). `dataFinalizacao`
-   * (formato "AAAA-MM-DD HH:mm:ss") e enviada ao encerrar a OS (status
-   * ENCERRADA), pra o SGP registrar quando de fato foi concluida/cancelada.
+   * Atualiza o status da OS no ERP (codigo numerico do ERP) — e SO o status.
+   *
+   * Todo o resto que o endpoint aceita (servico prestado, observacao, checkin,
+   * assinaturas, classificacoes, datas) e opcional e nao entra aqui: mudar
+   * status no ISPhub nao pede nada a quem clica. O proprio ERP estampa as
+   * datas de alteracao/finalizacao.
    */
-  updateOsStatus(sgpOsId: string, statusCode: number, dataFinalizacao?: string): Promise<void>;
+  updateOsStatus(sgpOsId: string, statusCode: number): Promise<void>;
 
   /**
    * Adiciona uma anotacao/andamento na OS.
