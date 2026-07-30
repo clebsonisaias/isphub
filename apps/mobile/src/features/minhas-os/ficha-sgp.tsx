@@ -7,6 +7,7 @@ import type { OsFichaSgp } from "@isphub/shared";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Card, Muted, Pill, SectionLabel } from "@/components/ui";
+import { rotuloSinal, toneSinal } from "@/features/provisionamento/sinal";
 import { colors, font, radius, space } from "@/theme/tokens";
 
 /**
@@ -65,7 +66,10 @@ export function FichaSgp({ osId }: { osId: string }) {
     );
   }
 
+  const temCliente = f.clienteNome || f.clienteDocumento || f.clienteContato || f.clienteEmail || f.contratoStatus;
   const temPlano = f.plano || f.planoDownload || f.planoUpload;
+  const temConexao =
+    f.servicoOnline !== null || f.servicoIp || f.servicoMac || f.sinalRxDbm !== null || f.sinalTxDbm !== null || f.oltNome;
   const temPppoe = f.servicoLogin || f.servicoSenha;
   const temLocal = f.enderecoComplemento || f.enderecoPontoReferencia;
   const temEquipe = f.tecnicoResponsavel || f.tecnicosAuxiliares.length > 0 || f.setor;
@@ -79,18 +83,53 @@ export function FichaSgp({ osId }: { osId: string }) {
    * indistinguivel de feature quebrada ("cade o PPPoE?"). Dizer o motivo custa
    * uma linha e responde sozinho.
    */
-  if (!temPlano && !temPppoe && !temLocal && !temEquipe && !temRegistro) {
+  if (!temCliente && !temPlano && !temConexao && !temPppoe && !temLocal && !temEquipe && !temRegistro) {
     return (
       <Card>
         <SectionLabel>Ficha do SGP</SectionLabel>
-        <Muted>Sem plano nem acesso PPPoE no SGP para esta OS — normal quando o contrato está inativo.</Muted>
+        <Muted>Sem cadastro, plano ou acesso PPPoE no SGP para esta OS — normal quando o contrato está inativo.</Muted>
       </Card>
     );
   }
 
   return (
     <View style={{ gap: space.md }}>
-      {/* Plano primeiro: e a referencia pra saber se o que ele mediu esta certo. */}
+      {/* Quem e o assinante — o tecnico confere na porta se e a pessoa do
+          contrato antes de mexer em qualquer coisa. Documento e o desempate
+          quando quem atende nao e o titular. Nome copiavel nao faz sentido;
+          telefone sim, e onde o tecnico avisa que chegou. */}
+      {temCliente ? (
+        <Card style={{ gap: space.sm }}>
+          <SectionLabel>Cliente</SectionLabel>
+          {f.clienteNome ? <Text style={styles.destaque}>{f.clienteNome}</Text> : null}
+          {f.contratoStatus ? <Muted>Contrato {f.contratoStatus}</Muted> : null}
+          {f.clienteDocumento ? (
+            <View>
+              <Muted>CPF/CNPJ</Muted>
+              <Text style={styles.mono}>{f.clienteDocumento}</Text>
+            </View>
+          ) : null}
+          {f.clienteContato ? (
+            <Pressable
+              onPress={() => void copiar("contato", f.clienteContato!)}
+              accessibilityRole="button"
+              accessibilityLabel="Copiar telefone do cliente"
+              style={styles.campo}
+            >
+              <View style={{ flex: 1 }}>
+                <Muted>Telefone</Muted>
+                <Text style={styles.mono} numberOfLines={1}>
+                  {f.clienteContato}
+                </Text>
+              </View>
+              <Feather name={copiado === "contato" ? "check" : "copy"} size={18} color={colors.brand} />
+            </Pressable>
+          ) : null}
+          {f.clienteEmail ? <Muted>{f.clienteEmail}</Muted> : null}
+        </Card>
+      ) : null}
+
+      {/* Plano: e a referencia pra saber se o que ele mediu esta certo. */}
       {temPlano ? (
         <Card style={{ gap: space.sm }}>
           <SectionLabel>Plano contratado</SectionLabel>
@@ -101,15 +140,40 @@ export function FichaSgp({ osId }: { osId: string }) {
               {f.planoUpload ? <Pill label={`↑ ${f.planoUpload}`} tone="blue" /> : null}
             </View>
           ) : null}
-          {f.servicoOnline !== null || f.servicoIp ? (
-            <View style={styles.linha}>
-              {f.servicoOnline !== null ? (
-                <Pill label={f.servicoOnline ? "Online" : "Offline"} tone={f.servicoOnline ? "green" : "red"} />
-              ) : null}
-              {f.servicoIp ? <Muted>{f.servicoIp}</Muted> : null}
+        </Card>
+      ) : null}
+
+      {/* Conexao. O rotulo diz "ultimo lido" de proposito: o botao
+          "Verificar conexao e sinal" desta mesma tela faz uma sonda AO VIVO,
+          e dois numeros de dBm sem contexto viram duvida no campo ("qual vale?").
+          Aqui e o que o SGP tem registrado; la e agora. */}
+      {temConexao ? (
+        <Card style={{ gap: space.sm }}>
+          <SectionLabel>Conexão (último lido)</SectionLabel>
+          <View style={styles.linha}>
+            {f.servicoOnline !== null ? (
+              <Pill label={f.servicoOnline ? "Online" : "Offline"} tone={f.servicoOnline ? "green" : "red"} />
+            ) : null}
+            {/* Cor aqui e semantica de sinal optico — a mesma faixa do
+                provisionamento, nao uma cor decorativa. */}
+            {f.sinalRxDbm !== null ? (
+              <Pill label={`RX ${rotuloSinal(f.sinalRxDbm)}`} tone={toneSinal(f.sinalRxDbm)} />
+            ) : null}
+            {f.sinalTxDbm !== null ? <Muted>TX {rotuloSinal(f.sinalTxDbm)}</Muted> : null}
+          </View>
+          {f.servicoIp ? (
+            <View>
+              <Muted>IP</Muted>
+              <Text style={styles.mono}>{f.servicoIp}</Text>
             </View>
           ) : null}
-          {f.servicoMac ? <Muted>MAC {f.servicoMac}</Muted> : null}
+          {f.servicoMac ? (
+            <View>
+              <Muted>MAC</Muted>
+              <Text style={styles.mono}>{f.servicoMac}</Text>
+            </View>
+          ) : null}
+          {f.oltNome ? <Muted>OLT {f.oltNome}</Muted> : null}
         </Card>
       ) : null}
 

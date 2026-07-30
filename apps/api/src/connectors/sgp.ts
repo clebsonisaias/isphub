@@ -682,19 +682,53 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
      * POST com app+token no corpo, como a doc pede — nao e um GET, apesar do
      * nome "list".
      */
-    async obterFichaOs(sgpOsId: string): Promise<OsFichaSgp | null> {
+    async obterFichaOs(sgpOsId: string, contratoId?: string | null): Promise<OsFichaSgp | null> {
       const path = `/api/os/list/id/${encodeURIComponent(sgpOsId)}/`;
-      const data = await sgpPostForm(creds, path);
-      const [item] = asArray(data, "ordens_servicos", "resultados", "results");
+
+      // DUAS fontes, em paralelo:
+      //  - a OS (`/api/os/list/id/`): motivo, servico prestado, equipe, setor;
+      //  - o CADASTRO do contrato (`/api/ura/clientes/`): e de onde sai o PPPoE
+      //    de verdade. Descoberto comparando com o app da CITmax, que resolve o
+      //    login por `servico_login` do cadastro (com `contratoCentralLogin` de
+      //    reserva) — nao pelo endpoint da OS, que em varias instancias nao
+      //    devolve esses campos. Buscar so na OS era o motivo de a ficha vir
+      //    sem PPPoE.
+      const [dataOs, dataCliente] = await Promise.all([
+        sgpPostForm(creds, path),
+        contratoId
+          ? sgpPostForm(creds, "/api/ura/clientes/", { contrato: contratoId, limit: 1 }).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+
+      const [item] = asArray(dataOs, "ordens_servicos", "resultados", "results");
       if (!item) return null;
+
+      const cliente = Array.isArray(dataCliente?.clientes) ? dataCliente.clientes[0] : undefined;
+      const contrato = cliente?.contratos?.[0];
+      const servico = contrato?.servicos?.[0];
+      const onu = servico?.onu;
+      const rx = numeroOuNull(onu?.rx);
+      const tx = numeroOuNull(onu?.tx);
 
       const auxiliares = pick(item, "os_tecnicos_auxiliares");
       return {
-        plano: pickString(item, "plano"),
-        planoDownload: pickString(item, "plano_download"),
-        planoUpload: pickString(item, "plano_upload"),
-        servicoLogin: pickString(item, "servico_login"),
-        servicoSenha: pickString(item, "servico_password"),
+        clienteNome: pickString(cliente ?? {}, "nome", "razaoSocial", "razao_social") ?? pickString(item, "cliente"),
+        clienteDocumento: pickString(cliente ?? {}, "cpfcnpj", "cpf_cnpj", "documento"),
+        clienteEmail: pickString(cliente ?? {}, "email") ?? pickString(item, "cliente_email"),
+        contratoStatus:
+          pickString(contrato ?? {}, "contratoStatusDisplay", "status", "contrato_status") ??
+          pickString(item, "contrato_status"),
+        // Plano: cadastro primeiro (e a fonte viva do contrato), OS como reserva.
+        plano: pickString(servico ?? {}, "servico_plano", "plano") ?? pickString(item, "plano"),
+        planoDownload: pickString(servico ?? {}, "plano_download", "download") ?? pickString(item, "plano_download"),
+        planoUpload: pickString(servico ?? {}, "plano_upload", "upload") ?? pickString(item, "plano_upload"),
+        // `servico_login` e o PPPoE real; `contratoCentralLogin` e o login da
+        // central do assinante — serve de reserva, mas nunca tem prioridade.
+        servicoLogin:
+          pickString(servico ?? {}, "servico_login", "login") ??
+          pickString(contrato ?? {}, "contratoCentralLogin") ??
+          pickString(item, "servico_login"),
+        servicoSenha: pickString(servico ?? {}, "servico_password", "senha") ?? pickString(item, "servico_password"),
         // O SGP manda booleano de verdade aqui; null quando nem informa.
         servicoOnline: typeof item.servico_online === "boolean" ? item.servico_online : null,
         // `servico_online_ip` e o IP da sessao ATIVA; `servico_ip` e o cadastrado.
@@ -708,7 +742,12 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
         tecnicoResponsavel: pickString(item, "os_tecnico_responsavel"),
         tecnicosAuxiliares: Array.isArray(auxiliares) ? auxiliares.map(String).filter(Boolean) : [],
         setor: pickString(item, "os_setor"),
-        clienteContato: pickString(item, "cliente_contato"),
+        // `cliente` e undefined quando a OS nao tem contrato ou o cadastro
+        // falhou — o `?? {}` evita quebrar a ficha inteira por causa disso.
+        clienteContato: pickString(item, "cliente_contato") ?? extrairTelefoneCliente(cliente ?? {}),
+        sinalRxDbm: rx,
+        sinalTxDbm: tx,
+        oltNome: pickString(onu ?? {}, "olt_nome"),
       };
     },
 

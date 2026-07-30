@@ -104,6 +104,16 @@ export interface DetalhesTecnicos {
  * mais pra ele varrer no sol.
  */
 export interface OsFichaSgp {
+  /**
+   * Dados do assinante, pra confirmar na porta que e a pessoa certa. `documento`
+   * e o desempate quando o nome do cadastro nao e quem atende.
+   */
+  clienteNome: string | null;
+  clienteDocumento: string | null;
+  clienteEmail: string | null;
+  /** Status do contrato como o SGP mostra (ex.: "Ativo", "Suspenso"). */
+  contratoStatus: string | null;
+
   /** Plano contratado — o tecnico precisa saber a velocidade que DEVERIA entregar. */
   plano: string | null;
   planoDownload: string | null;
@@ -138,6 +148,11 @@ export interface OsFichaSgp {
 
   /** Contato do cliente como o SGP tem (pode trazer mais de um numero). */
   clienteContato: string | null;
+
+  /** Sinal optico da ONU, quando o contrato tem FTTX. */
+  sinalRxDbm: number | null;
+  sinalTxDbm: number | null;
+  oltNome: string | null;
 }
 
 /**
@@ -270,7 +285,7 @@ export interface ErpConnector {
    * credenciais PPPoE, ponto de referencia. `null` quando o ERP nao devolve a
    * OS (removida por la, id divergente).
    */
-  obterFichaOs(sgpOsId: string): Promise<OsFichaSgp | null>;
+  obterFichaOs(sgpOsId: string, contratoId?: string | null): Promise<OsFichaSgp | null>;
 
   /**
    * Adiciona uma anotacao/andamento na OS.

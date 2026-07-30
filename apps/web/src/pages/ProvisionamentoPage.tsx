@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { provedoresApi } from "@/lib/adminApi";
+import { corSinal, rotuloSinal } from "@/lib/sinal";
 import { fttxApi } from "@/lib/fttxApi";
 import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
@@ -14,17 +15,6 @@ import { Router, Search } from "lucide-react";
 
 function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
-}
-
-/** Cor do sinal rx (dBm): normal -8..-27; abaixo disso, fraco. Única cor forte da tela. */
-function corSinal(rx: number | null): string {
-  if (rx == null) return "text-muted-foreground";
-  if (rx >= -25 && rx <= -8) return "text-emerald-600 dark:text-emerald-400";
-  if (rx >= -28) return "text-amber-600 dark:text-amber-400";
-  return "text-destructive";
-}
-function rotuloSinal(rx: number | null): string {
-  return rx == null ? "sinal —" : `${rx.toFixed(1)} dBm`;
 }
 
 function Pill({ ativo, children, onClick }: { ativo: boolean; children: ReactNode; onClick: () => void }) {

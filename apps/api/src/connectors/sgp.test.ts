@@ -1159,6 +1159,14 @@ describe("obterFichaOs", () => {
     const ficha = await createSgpConnector(creds).obterFichaOs("6755");
 
     expect(ficha).toEqual({
+      // Sem contratoId nao ha consulta ao cadastro, entao o que vier e o da OS.
+      clienteNome: null,
+      clienteDocumento: null,
+      clienteEmail: null,
+      contratoStatus: null,
+      sinalRxDbm: null,
+      sinalTxDbm: null,
+      oltNome: null,
       plano: "PLANO",
       planoDownload: "99999kbps",
       planoUpload: "88888kbps",
@@ -1286,5 +1294,114 @@ describe("listServiceOrders — paginacao", () => {
     fetchMock.mockResolvedValueOnce(pagina(200, 200, 0));
     await createSgpConnector(creds).listServiceOrders();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("obterFichaOs — PPPoE vem do CADASTRO do contrato", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /**
+   * Descoberto comparando com o app da CITmax: o login PPPoE real e o
+   * `servico_login` do cadastro, nao o do endpoint da OS — que em varias
+   * instancias vem vazio. Buscar so na OS era o motivo de a ficha vir sem
+   * PPPoE.
+   */
+  const OS_SEM_PPPOE = [{ os_id: 1, os_observacao: "obs" }];
+
+  const CADASTRO = {
+    clientes: [
+      {
+        nome: "SERGIMARA FLORENCO DO NASCIMENTO",
+        cpfcnpj: "12345678900",
+        email: "cliente@exemplo.com",
+        telefone: "84999998888",
+        contratos: [
+          {
+            contratoStatusDisplay: "Ativo",
+            contratoCentralLogin: "central-fallback",
+            servicos: [
+              {
+                servico_login: "pppoe-real",
+                servico_password: "senha-real",
+                servico_plano: "FIBRA 500MB",
+                onu: { rx: "-21.5", tx: "2.1", olt_nome: "OLT-HW-RN" },
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  it("com contrato: le PPPoE, plano, sinal e dados do assinante do cadastro", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(OS_SEM_PPPOE))
+      .mockResolvedValueOnce(jsonResponse(CADASTRO));
+
+    const ficha = await createSgpConnector(creds).obterFichaOs("6755", "1672");
+
+    expect(ficha?.servicoLogin).toBe("pppoe-real");
+    expect(ficha?.servicoSenha).toBe("senha-real");
+    expect(ficha?.plano).toBe("FIBRA 500MB");
+    expect(ficha?.clienteNome).toBe("SERGIMARA FLORENCO DO NASCIMENTO");
+    expect(ficha?.clienteDocumento).toBe("12345678900");
+    expect(ficha?.clienteEmail).toBe("cliente@exemplo.com");
+    expect(ficha?.contratoStatus).toBe("Ativo");
+    expect(ficha?.sinalRxDbm).toBeCloseTo(-21.5);
+    expect(ficha?.sinalTxDbm).toBeCloseTo(2.1);
+    expect(ficha?.oltNome).toBe("OLT-HW-RN");
+    expect(ficha?.clienteContato).toBe("84999998888");
+  });
+
+  it("servico_login tem PRIORIDADE sobre contratoCentralLogin (login da central nao e PPPoE)", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(OS_SEM_PPPOE)).mockResolvedValueOnce(jsonResponse(CADASTRO));
+    const ficha = await createSgpConnector(creds).obterFichaOs("6755", "1672");
+    expect(ficha?.servicoLogin).toBe("pppoe-real");
+    expect(ficha?.servicoLogin).not.toBe("central-fallback");
+  });
+
+  it("sem servico_login, cai pro contratoCentralLogin", async () => {
+    const semServicoLogin = {
+      clientes: [{ contratos: [{ contratoCentralLogin: "central-fallback", servicos: [{}] }] }],
+    };
+    fetchMock.mockResolvedValueOnce(jsonResponse(OS_SEM_PPPOE)).mockResolvedValueOnce(jsonResponse(semServicoLogin));
+    const ficha = await createSgpConnector(creds).obterFichaOs("6755", "1672");
+    expect(ficha?.servicoLogin).toBe("central-fallback");
+  });
+
+  it("cadastro fora do ar NAO derruba a ficha — a parte da OS continua vindo", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(OS_SEM_PPPOE))
+      .mockResolvedValueOnce(new Response("", { status: 500 }));
+
+    const ficha = await createSgpConnector(creds).obterFichaOs("6755", "1672");
+
+    expect(ficha).not.toBeNull();
+    expect(ficha?.observacao).toBe("obs");
+    expect(ficha?.servicoLogin).toBeNull();
+  });
+
+  it("sem contrato: nao consulta o cadastro (1 chamada so)", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(OS_SEM_PPPOE));
+    await createSgpConnector(creds).obterFichaOs("6755", null);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("as duas consultas usam a URL e o token do MESMO provedor", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(OS_SEM_PPPOE)).mockResolvedValueOnce(jsonResponse(CADASTRO));
+
+    await createSgpConnector(creds).obterFichaOs("6755", "1672");
+
+    for (const [url, options] of fetchMock.mock.calls) {
+      expect(String(url)).toContain("https://sgp.exemplo.com.br/");
+      expect(new URLSearchParams(options.body as string).get("token")).toBe(creds.token);
+    }
   });
 });

@@ -180,7 +180,9 @@ export async function obterFichaSgp(ordemServicoId: string): Promise<OsFichaSgp 
   let valor: OsFichaSgp | null = null;
   try {
     valor = await comConcorrenciaLimitada(os.provedorId, FICHA_MAX_CONCORRENTE_POR_PROVEDOR, () =>
-      connector.obterFichaOs(os.sgpOsId),
+      // O contrato vem do espelho: e o que destrava o cadastro do assinante no
+      // SGP, de onde sai o PPPoE real (ver obterFichaOs no connector).
+      connector.obterFichaOs(os.sgpOsId, os.contratoId),
     );
   } catch (err) {
     // Best-effort de proposito: a ficha ENRIQUECE a tela, nao a sustenta.

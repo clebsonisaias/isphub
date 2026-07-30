@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { OsFichaSgp } from "@isphub/shared";
 import { ordensServicoApi } from "@/lib/filaApi";
+import { corSinal, rotuloSinal } from "@/lib/sinal";
 import { Eye, EyeOff, Copy, Check, MapPin } from "lucide-react";
 
 /**
@@ -66,7 +67,16 @@ export function FichaSgpOs({ ordemServicoId }: { ordemServicoId: string }) {
     );
   }
 
-  const temPlano = ficha.plano || ficha.planoDownload || ficha.planoUpload || ficha.servicoOnline !== null;
+  const temCliente =
+    ficha.clienteNome || ficha.clienteDocumento || ficha.clienteContato || ficha.clienteEmail || ficha.contratoStatus;
+  const temPlano = ficha.plano || ficha.planoDownload || ficha.planoUpload;
+  const temConexao =
+    ficha.servicoOnline !== null ||
+    ficha.servicoIp ||
+    ficha.servicoMac ||
+    ficha.sinalRxDbm !== null ||
+    ficha.sinalTxDbm !== null ||
+    ficha.oltNome;
   const temPppoe = ficha.servicoLogin || ficha.servicoSenha;
   const temLocal = ficha.enderecoComplemento || ficha.enderecoPontoReferencia;
   const temEquipe = ficha.tecnicoResponsavel || ficha.tecnicosAuxiliares.length > 0 || ficha.setor;
@@ -80,11 +90,12 @@ export function FichaSgpOs({ ordemServicoId }: { ordemServicoId: string }) {
    * indistinguivel de feature quebrada, e a pergunta virava "cade o PPPoE?".
    * Dizer o motivo custa uma linha e responde sozinho.
    */
-  if (!temPlano && !temPppoe && !temLocal && !temEquipe && !temRegistro) {
+  if (!temCliente && !temPlano && !temConexao && !temPppoe && !temLocal && !temEquipe && !temRegistro) {
     return (
       <Bloco titulo="Ficha do SGP">
         <p className="text-sm text-muted-foreground">
-          O SGP não retornou plano nem acesso PPPoE para esta OS — normal quando o contrato está inativo ou cancelado.
+          O SGP não retornou cadastro, plano nem acesso PPPoE para esta OS — normal quando o contrato está inativo ou
+          cancelado.
         </p>
       </Bloco>
     );
@@ -92,12 +103,43 @@ export function FichaSgpOs({ ordemServicoId }: { ordemServicoId: string }) {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Quem e o assinante. No escritorio isto e o que o atendente usa pra
+          confirmar com quem esta falando antes de passar qualquer informacao. */}
+      {temCliente && (
+        <Bloco titulo="Cliente">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            {ficha.clienteNome && <span className="font-semibold text-foreground">{ficha.clienteNome}</span>}
+            {ficha.contratoStatus && <Chip>{ficha.contratoStatus}</Chip>}
+          </div>
+          {ficha.clienteDocumento && <Linha rotulo="CPF/CNPJ" valor={ficha.clienteDocumento} mono />}
+          {ficha.clienteContato && (
+            <Credencial
+              rotulo="Telefone"
+              valor={ficha.clienteContato}
+              copiado={copiado === "contato"}
+              onCopiar={() => void copiar("contato", ficha.clienteContato!)}
+            />
+          )}
+          {ficha.clienteEmail && <Linha rotulo="E-mail" valor={ficha.clienteEmail} />}
+        </Bloco>
+      )}
+
       {temPlano && (
         <Bloco titulo="Plano contratado">
           <div className="flex flex-wrap items-center gap-2">
             {ficha.plano && <span className="font-semibold text-foreground">{ficha.plano}</span>}
             {ficha.planoDownload && <Chip>↓ {ficha.planoDownload}</Chip>}
             {ficha.planoUpload && <Chip>↑ {ficha.planoUpload}</Chip>}
+          </div>
+        </Bloco>
+      )}
+
+      {/* Conexao. "ultimo lido" de proposito: o botao "Verificar conexao e
+          sinal" logo acima faz uma sonda AO VIVO, e dois valores de dBm sem
+          contexto viram duvida ("qual vale?"). Aqui e o registrado; la e agora. */}
+      {temConexao && (
+        <Bloco titulo="Conexão (último lido)">
+          <div className="flex flex-wrap items-center gap-2">
             {/* Verde/vermelho aqui e semantico de verdade: e o servico do cliente. */}
             {ficha.servicoOnline !== null && (
               <span
@@ -110,12 +152,21 @@ export function FichaSgpOs({ ordemServicoId }: { ordemServicoId: string }) {
                 {ficha.servicoOnline ? "Online" : "Offline"}
               </span>
             )}
+            {ficha.sinalRxDbm !== null && (
+              <span className={`text-sm font-semibold ${corSinal(ficha.sinalRxDbm)}`}>
+                RX {rotuloSinal(ficha.sinalRxDbm)}
+              </span>
+            )}
+            {ficha.sinalTxDbm !== null && (
+              <span className="text-sm text-muted-foreground">TX {rotuloSinal(ficha.sinalTxDbm)}</span>
+            )}
           </div>
           {(ficha.servicoIp || ficha.servicoMac) && (
             <p className="font-mono text-xs text-muted-foreground">
               {[ficha.servicoIp, ficha.servicoMac].filter(Boolean).join(" · ")}
             </p>
           )}
+          {ficha.oltNome && <Linha rotulo="OLT" valor={ficha.oltNome} />}
         </Bloco>
       )}
 
@@ -187,11 +238,12 @@ function Chip({ children }: { children: React.ReactNode }) {
   return <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">{children}</span>;
 }
 
-function Linha({ rotulo, valor }: { rotulo: string; valor: string }) {
+/** `mono` pra valores que sao lidos digito por digito (documento, MAC, OLT). */
+function Linha({ rotulo, valor, mono }: { rotulo: string; valor: string; mono?: boolean }) {
   return (
     <div>
       <p className="text-xs uppercase tracking-wide text-muted-foreground">{rotulo}</p>
-      <p className="text-sm text-foreground">{valor}</p>
+      <p className={mono ? "font-mono text-sm text-foreground" : "text-sm text-foreground"}>{valor}</p>
     </div>
   );
 }
