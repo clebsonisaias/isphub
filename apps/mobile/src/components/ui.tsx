@@ -1,10 +1,13 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
+  LayoutAnimation,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
+  UIManager,
   View,
   type StyleProp,
   type TextProps,
@@ -40,6 +43,65 @@ export function Muted({ children, style, ...rest }: TextProps) {
 /** Rotulo de secao — caixa-alta, curto, acima de grupos de campos/listas. */
 export function SectionLabel({ children }: { children: ReactNode }) {
   return <Text style={styles.sectionLabel}>{children}</Text>;
+}
+
+// LayoutAnimation no Android ainda precisa de opt-in explicito; sem isto a
+// Dobravel abre num salto seco so nesse sistema.
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+/**
+ * Secao que abre e fecha com um toque.
+ *
+ * Existe pra resolver um conflito real da tela de detalhe da OS: a ficha do SGP
+ * (plano, PPPoE, sinal, cadastro) e volumosa e so importa em UM momento — na
+ * porta do cliente, com a ONU na mao. Deixada aberta, empurrava o motivo da
+ * visita e os botoes de contato uns 900px pra baixo.
+ *
+ * Dobrar, e nao esconder atras de aba: o cabecalho fica SEMPRE visivel dizendo
+ * o que ha dentro, com um resumo do que importa (ex.: "RX -21.5 dBm"). O
+ * tecnico ve que existe sem precisar procurar, e paga um toque so quando
+ * precisa. Aba, alem de esconder ate o rotulo do conteudo, brigaria com a barra
+ * de abas que o app ja tem no rodape.
+ */
+export function Dobravel({
+  titulo,
+  resumo,
+  inicialAberta = false,
+  children,
+}: {
+  titulo: string;
+  /** Uma linha do que ha dentro — evita abrir so pra descobrir. */
+  resumo?: ReactNode;
+  inicialAberta?: boolean;
+  children: ReactNode;
+}) {
+  const [aberta, setAberta] = useState(inicialAberta);
+
+  return (
+    <View style={styles.dobravel}>
+      <Pressable
+        onPress={() => {
+          // `easeInEaseOut` curto: a altura muda, entao o movimento AVISA que o
+          // conteudo cresceu ali. Sem isso o resto da tela salta sem explicacao.
+          LayoutAnimation.configureNext(LayoutAnimation.create(180, "easeInEaseOut", "opacity"));
+          setAberta((v) => !v);
+        }}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: aberta }}
+        accessibilityLabel={titulo}
+        style={({ pressed }) => [styles.dobravelCabeca, pressed && { backgroundColor: colors.cardAlt }]}
+      >
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={styles.sectionLabel}>{titulo}</Text>
+          {resumo ? <View style={styles.dobravelResumo}>{resumo}</View> : null}
+        </View>
+        <Text style={styles.dobravelSeta}>{aberta ? "▲" : "▼"}</Text>
+      </Pressable>
+      {aberta ? <View style={styles.dobravelCorpo}>{children}</View> : null}
+    </View>
+  );
 }
 
 export function Card({ children, style, ...rest }: ViewProps) {
@@ -260,6 +322,27 @@ export function Button({
 }
 
 const styles = StyleSheet.create({
+  dobravel: {
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.line,
+    overflow: "hidden",
+    ...shadow.sm,
+  },
+  // minHeight 56: alvo de toque generoso — e um cabecalho que se toca de luva.
+  dobravelCabeca: {
+    minHeight: 56,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.md,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.md,
+  },
+  dobravelResumo: { flexDirection: "row", alignItems: "center", gap: space.sm, flexWrap: "wrap" },
+  dobravelSeta: { fontSize: 12, color: colors.muted },
+  dobravelCorpo: { paddingHorizontal: space.lg, paddingBottom: space.lg, gap: space.md },
+
   screen: { flex: 1, backgroundColor: colors.ground },
   screenInner: { flex: 1, paddingHorizontal: space.lg },
   title: { fontSize: font.size.xxxl, fontWeight: font.weight.black as "800", color: colors.ink, letterSpacing: -0.6 },

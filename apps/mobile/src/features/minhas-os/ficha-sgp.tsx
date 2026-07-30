@@ -6,25 +6,24 @@ import { Feather } from "@expo/vector-icons";
 import type { OsFichaSgp } from "@isphub/shared";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { Card, Muted, Pill, SectionLabel } from "@/components/ui";
+import { Card, Dobravel, Muted, Pill, SectionLabel } from "@/components/ui";
 import { rotuloSinal, toneSinal } from "@/features/provisionamento/sinal";
 import { colors, font, radius, space } from "@/theme/tokens";
 
 /**
  * Ficha da OS lida ao vivo do SGP — o que o espelho local nao tem.
  *
- * Carrega DEPOIS da tela, sem travar nada: o detalhe da OS vem do espelho e
- * abre na hora. Se o SGP nao responder, este bloco simplesmente nao aparece e
- * o tecnico trabalha com o que ja tinha.
+ * Uma consulta por tela, consumida por tres pedacos que moram em lugares
+ * diferentes do detalhe da OS: o ponto de referencia entra no card de endereco
+ * (la em cima, junto do "Abrir no mapa"), e conexao e cadastro viram secoes
+ * dobraveis mais abaixo. Um componente com fetch proprio pra cada pedaco faria
+ * tres consultas ao ERP do provedor pela mesma coisa.
  *
  * `staleTime` espelha o TTL de 90s do cache do servidor — o mesmo contrato nao
  * e re-consultado antes disso de qualquer forma.
  */
-export function FichaSgp({ osId }: { osId: string }) {
+export function useFichaSgp(osId: string) {
   const { token } = useAuth();
-  const [senhaVisivel, setSenhaVisivel] = useState(false);
-  const [copiado, setCopiado] = useState<string | null>(null);
-
   const query = useQuery({
     queryKey: ["os-ficha", osId],
     enabled: !!token && !!osId,
@@ -33,28 +32,20 @@ export function FichaSgp({ osId }: { osId: string }) {
     retry: false,
     queryFn: () => apiFetch<OsFichaSgp | null>(`/ordens-servico/${osId}/ficha-sgp`, { token }),
   });
+  return { ficha: query.data ?? null, carregando: query.isPending, erro: query.isError };
+}
 
-  const f = query.data;
+type Props = { ficha: OsFichaSgp | null; carregando: boolean; erro: boolean };
 
-  async function copiar(rotulo: string, valor: string) {
-    await Clipboard.setStringAsync(valor);
-    setCopiado(rotulo);
-    setTimeout(() => setCopiado(null), 1500);
-  }
-
-  // Enquanto carrega, nada: a tela ja tem conteudo e um esqueleto aqui so
-  // piscaria. Mas depois de resolver, SEMPRE diz algo (ver abaixo).
-  if (query.isPending) return null;
-
-  if (query.isError) {
-    return (
-      <Card>
-        <SectionLabel>Ficha do SGP</SectionLabel>
-        <Muted>Não foi possível ler a ficha no SGP do provedor.</Muted>
-      </Card>
-    );
-  }
-
+/**
+ * Mensagem quando nao ha o que renderizar; `null` quando ha ficha.
+ *
+ * Enquanto carrega devolve `null` de proposito: a tela ja tem conteudo e um
+ * esqueleto aqui so piscaria. Depois de resolver, SEMPRE diz algo.
+ */
+function textoDoVazio({ ficha, carregando, erro }: Props): string | null {
+  if (carregando) return null;
+  if (erro) return "Não foi possível ler a ficha no SGP do provedor.";
   /*
    * O SGP nao devolveu NENHUMA das duas fontes (a OS e o cadastro do contrato).
    *
@@ -62,84 +53,98 @@ export function FichaSgp({ osId }: { osId: string }) {
    * dado nao sustenta. Vazio aqui pode ser OS encerrada, endpoint de OS nao
    * liberado na integracao do provedor, ou envelope diferente. Quem PROVA
    * ausencia e a deteccao de removidas do sync, que marca a OS como cancelada
-   * e escreve isso no historico — e por isso que a mensagem aponta pra la em
-   * vez de concluir por conta propria.
+   * e escreve isso no historico.
    */
-  if (!f) {
+  if (!ficha) return "O SGP não devolveu dados desta OS. Se ela foi removida por lá, o histórico registra.";
+  return null;
+}
+
+/**
+ * Complemento e ponto de referencia, pra entrar DENTRO do card de endereco.
+ *
+ * Morava numa secao "Como chegar" separada, no fim da ficha — a ~700px do
+ * endereco, que fica no topo da tela. Dois pedacos da mesma pergunta ("onde
+ * fica a casa?") em pontas opostas do scroll: quem estava lendo o endereco nao
+ * tinha como saber que havia um ponto de referencia la embaixo.
+ */
+export function FichaSgpComoChegar({ ficha }: { ficha: OsFichaSgp | null }) {
+  if (!ficha?.enderecoComplemento && !ficha?.enderecoPontoReferencia) return null;
+  return (
+    <View style={{ gap: 4 }}>
+      {ficha.enderecoComplemento ? <Text style={styles.texto}>{ficha.enderecoComplemento}</Text> : null}
+      {ficha.enderecoPontoReferencia ? (
+        <View style={styles.refRow}>
+          <Feather name="map-pin" size={14} color={colors.ink2} style={{ marginTop: 3 }} />
+          <Text style={[styles.texto, { flex: 1 }]}>{ficha.enderecoPontoReferencia}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * Conexao do contrato: plano, estado, sinal optico e o acesso PPPoE.
+ *
+ * Dobrada por padrao. E consulta de referencia — importa na porta do cliente,
+ * com a ONU na mao, nao no caminho ate la. Aberta o tempo todo, empurrava o
+ * motivo da visita e os botoes de contato uns 900px pra baixo.
+ *
+ * O sinal aparece no CABECALHO mesmo fechada: e o numero que decide se vale a
+ * pena abrir, e obrigar a abrir pra descobrir seria esconder de novo.
+ */
+export function FichaSgpConexao({ ficha, carregando, erro }: Props) {
+  const [senhaVisivel, setSenhaVisivel] = useState(false);
+  const [copiado, setCopiado] = useState<string | null>(null);
+
+  async function copiar(rotulo: string, valor: string) {
+    await Clipboard.setStringAsync(valor);
+    setCopiado(rotulo);
+    setTimeout(() => setCopiado(null), 1500);
+  }
+
+  const vazio = textoDoVazio({ ficha, carregando, erro });
+  if (carregando) return null;
+  if (vazio) {
     return (
       <Card>
-        <SectionLabel>Ficha do SGP</SectionLabel>
-        <Muted>O SGP não devolveu dados desta OS. Se ela foi removida por lá, o histórico registra.</Muted>
+        <SectionLabel>Conexão</SectionLabel>
+        <Muted>{vazio}</Muted>
       </Card>
     );
   }
 
-  const temCliente = f.clienteNome || f.clienteDocumento || f.clienteContato || f.clienteEmail || f.contratoStatus;
+  const f = ficha!;
   const temPlano = f.plano || f.planoDownload || f.planoUpload;
   const temConexao =
     f.servicoOnline !== null || f.servicoIp || f.servicoMac || f.sinalRxDbm !== null || f.sinalTxDbm !== null || f.oltNome;
   const temPppoe = f.servicoLogin || f.servicoSenha;
-  const temLocal = f.enderecoComplemento || f.enderecoPontoReferencia;
-  const temEquipe = f.tecnicoResponsavel || f.tecnicosAuxiliares.length > 0 || f.setor;
-  const temRegistro = f.servicoPrestado || f.observacao;
 
-  /**
-   * SGP respondeu, mas sem nada que interesse — acontece de verdade: contrato
-   * inativo/cancelado nao tem servico ativo, logo nao tem plano nem PPPoE.
-   *
-   * Antes isto renderizava uma View vazia, e ausencia silenciosa ficava
-   * indistinguivel de feature quebrada ("cade o PPPoE?"). Dizer o motivo custa
-   * uma linha e responde sozinho.
-   */
-  if (!temCliente && !temPlano && !temConexao && !temPppoe && !temLocal && !temEquipe && !temRegistro) {
+  if (!temPlano && !temConexao && !temPppoe) {
     return (
       <Card>
-        <SectionLabel>Ficha do SGP</SectionLabel>
-        <Muted>Sem cadastro, plano ou acesso PPPoE no SGP para esta OS — normal quando o contrato está inativo.</Muted>
+        <SectionLabel>Conexão</SectionLabel>
+        <Muted>Sem plano nem acesso PPPoE no SGP — normal quando o contrato está inativo.</Muted>
       </Card>
     );
   }
 
   return (
-    <View style={{ gap: space.md }}>
-      {/* Quem e o assinante — o tecnico confere na porta se e a pessoa do
-          contrato antes de mexer em qualquer coisa. Documento e o desempate
-          quando quem atende nao e o titular. Nome copiavel nao faz sentido;
-          telefone sim, e onde o tecnico avisa que chegou. */}
-      {temCliente ? (
-        <Card style={{ gap: space.sm }}>
-          <SectionLabel>Cliente</SectionLabel>
-          {f.clienteNome ? <Text style={styles.destaque}>{f.clienteNome}</Text> : null}
-          {f.contratoStatus ? <Muted>Contrato {f.contratoStatus}</Muted> : null}
-          {f.clienteDocumento ? (
-            <View>
-              <Muted>CPF/CNPJ</Muted>
-              <Text style={styles.mono}>{f.clienteDocumento}</Text>
-            </View>
+    <Dobravel
+      titulo="Conexão e PPPoE"
+      resumo={
+        <>
+          {f.servicoOnline !== null ? (
+            <Pill label={f.servicoOnline ? "Online" : "Offline"} tone={f.servicoOnline ? "green" : "red"} />
           ) : null}
-          {f.clienteContato ? (
-            <Pressable
-              onPress={() => void copiar("contato", f.clienteContato!)}
-              accessibilityRole="button"
-              accessibilityLabel="Copiar telefone do cliente"
-              style={styles.campo}
-            >
-              <View style={{ flex: 1 }}>
-                <Muted>Telefone</Muted>
-                <Text style={styles.mono} numberOfLines={1}>
-                  {f.clienteContato}
-                </Text>
-              </View>
-              <Feather name={copiado === "contato" ? "check" : "copy"} size={18} color={colors.brand} />
-            </Pressable>
-          ) : null}
-          {f.clienteEmail ? <Muted>{f.clienteEmail}</Muted> : null}
-        </Card>
-      ) : null}
-
-      {/* Plano: e a referencia pra saber se o que ele mediu esta certo. */}
+          {/* Cor aqui e semantica de sinal optico — a mesma faixa do
+              provisionamento, nao uma cor decorativa. */}
+          {f.sinalRxDbm !== null ? <Pill label={rotuloSinal(f.sinalRxDbm)} tone={toneSinal(f.sinalRxDbm)} /> : null}
+          {f.plano ? <Muted>{f.plano}</Muted> : null}
+        </>
+      }
+    >
       {temPlano ? (
-        <Card style={{ gap: space.sm }}>
+        <View style={{ gap: space.sm }}>
           <SectionLabel>Plano contratado</SectionLabel>
           {f.plano ? <Text style={styles.destaque}>{f.plano}</Text> : null}
           {f.planoDownload || f.planoUpload ? (
@@ -148,22 +153,16 @@ export function FichaSgp({ osId }: { osId: string }) {
               {f.planoUpload ? <Pill label={`↑ ${f.planoUpload}`} tone="blue" /> : null}
             </View>
           ) : null}
-        </Card>
+        </View>
       ) : null}
 
-      {/* Conexao. O rotulo diz "ultimo lido" de proposito: o botao
-          "Verificar conexao e sinal" desta mesma tela faz uma sonda AO VIVO,
-          e dois numeros de dBm sem contexto viram duvida no campo ("qual vale?").
-          Aqui e o que o SGP tem registrado; la e agora. */}
+      {/* "ultimo lido" de proposito: o botao "Verificar conexao e sinal" desta
+          mesma tela faz uma sonda AO VIVO, e dois numeros de dBm sem contexto
+          viram duvida no campo ("qual vale?"). Aqui e o registrado; la e agora. */}
       {temConexao ? (
-        <Card style={{ gap: space.sm }}>
-          <SectionLabel>Conexão (último lido)</SectionLabel>
+        <View style={{ gap: space.sm }}>
+          <SectionLabel>Estado da conexão (último lido)</SectionLabel>
           <View style={styles.linha}>
-            {f.servicoOnline !== null ? (
-              <Pill label={f.servicoOnline ? "Online" : "Offline"} tone={f.servicoOnline ? "green" : "red"} />
-            ) : null}
-            {/* Cor aqui e semantica de sinal optico — a mesma faixa do
-                provisionamento, nao uma cor decorativa. */}
             {f.sinalRxDbm !== null ? (
               <Pill label={`RX ${rotuloSinal(f.sinalRxDbm)}`} tone={toneSinal(f.sinalRxDbm)} />
             ) : null}
@@ -182,13 +181,13 @@ export function FichaSgp({ osId }: { osId: string }) {
             </View>
           ) : null}
           {f.oltNome ? <Muted>OLT {f.oltNome}</Muted> : null}
-        </Card>
+        </View>
       ) : null}
 
       {/* PPPoE: o dado que mais economiza ligacao pro escritorio. Toque copia —
           digitar login e senha de PPPoE na mao, no sol, e onde nascem os erros. */}
       {temPppoe ? (
-        <Card style={{ gap: space.sm }}>
+        <View style={{ gap: space.sm }}>
           <SectionLabel>Acesso PPPoE</SectionLabel>
           {f.servicoLogin ? (
             <Pressable
@@ -216,7 +215,7 @@ export function FichaSgp({ osId }: { osId: string }) {
               </View>
               <Pressable
                 onPress={() => setSenhaVisivel((v) => !v)}
-                hitSlop={8}
+                hitSlop={12}
                 accessibilityRole="button"
                 accessibilityLabel={senhaVisivel ? "Ocultar senha" : "Mostrar senha"}
               >
@@ -224,7 +223,7 @@ export function FichaSgp({ osId }: { osId: string }) {
               </Pressable>
               <Pressable
                 onPress={() => void copiar("senha", f.servicoSenha!)}
-                hitSlop={8}
+                hitSlop={12}
                 accessibilityRole="button"
                 accessibilityLabel="Copiar senha PPPoE"
               >
@@ -232,25 +231,73 @@ export function FichaSgp({ osId }: { osId: string }) {
               </Pressable>
             </View>
           ) : null}
-        </Card>
+        </View>
       ) : null}
+    </Dobravel>
+  );
+}
 
-      {/* Como achar a casa. Nenhum dos dois existe no espelho local. */}
-      {temLocal ? (
-        <Card style={{ gap: 4 }}>
-          <SectionLabel>Como chegar</SectionLabel>
-          {f.enderecoComplemento ? <Text style={styles.texto}>{f.enderecoComplemento}</Text> : null}
-          {f.enderecoPontoReferencia ? (
-            <View style={styles.refRow}>
-              <Feather name="map-pin" size={14} color={colors.ink2} style={{ marginTop: 3 }} />
-              <Text style={[styles.texto, { flex: 1 }]}>{f.enderecoPontoReferencia}</Text>
+/**
+ * Cadastro do assinante, o que ja foi registrado na OS e a equipe.
+ *
+ * Dobrada tambem, e por baixo da conexao: e conferencia de identidade ("e a
+ * pessoa do contrato?") e contexto de quem passou antes — consulta pontual,
+ * nao leitura de fluxo.
+ */
+export function FichaSgpContrato({ ficha, carregando, erro }: Props) {
+  const [copiado, setCopiado] = useState<string | null>(null);
+
+  async function copiar(rotulo: string, valor: string) {
+    await Clipboard.setStringAsync(valor);
+    setCopiado(rotulo);
+    setTimeout(() => setCopiado(null), 1500);
+  }
+
+  // Erro/vazio ja foram ditos pela secao de Conexão logo acima — repetir a
+  // mesma frase duas vezes seguidas so faria a tela parecer quebrada em dobro.
+  if (carregando || erro || !ficha) return null;
+
+  const f = ficha;
+  const temCliente = f.clienteNome || f.clienteDocumento || f.clienteContato || f.clienteEmail || f.contratoStatus;
+  const temEquipe = f.tecnicoResponsavel || f.tecnicosAuxiliares.length > 0 || f.setor;
+  const temRegistro = f.servicoPrestado || f.observacao;
+  if (!temCliente && !temEquipe && !temRegistro) return null;
+
+  return (
+    <Dobravel titulo="Cadastro do contrato" resumo={f.clienteNome ? <Muted>{f.clienteNome}</Muted> : undefined}>
+      {temCliente ? (
+        <View style={{ gap: space.sm }}>
+          <SectionLabel>Cliente</SectionLabel>
+          {f.clienteNome ? <Text style={styles.destaque}>{f.clienteNome}</Text> : null}
+          {f.contratoStatus ? <Muted>Contrato {f.contratoStatus}</Muted> : null}
+          {f.clienteDocumento ? (
+            <View>
+              <Muted>CPF/CNPJ</Muted>
+              <Text style={styles.mono}>{f.clienteDocumento}</Text>
             </View>
           ) : null}
-        </Card>
+          {f.clienteContato ? (
+            <Pressable
+              onPress={() => void copiar("contato", f.clienteContato!)}
+              accessibilityRole="button"
+              accessibilityLabel="Copiar telefone do cliente"
+              style={styles.campo}
+            >
+              <View style={{ flex: 1 }}>
+                <Muted>Telefone</Muted>
+                <Text style={styles.mono} numberOfLines={1}>
+                  {f.clienteContato}
+                </Text>
+              </View>
+              <Feather name={copiado === "contato" ? "check" : "copy"} size={18} color={colors.brand} />
+            </Pressable>
+          ) : null}
+          {f.clienteEmail ? <Muted>{f.clienteEmail}</Muted> : null}
+        </View>
       ) : null}
 
       {temRegistro ? (
-        <Card style={{ gap: space.sm }}>
+        <View style={{ gap: space.sm }}>
           <SectionLabel>Registrado na OS</SectionLabel>
           {f.servicoPrestado ? (
             <View>
@@ -264,18 +311,18 @@ export function FichaSgp({ osId }: { osId: string }) {
               <Text style={styles.texto}>{f.observacao}</Text>
             </View>
           ) : null}
-        </Card>
+        </View>
       ) : null}
 
       {temEquipe ? (
-        <Card style={{ gap: 4 }}>
+        <View style={{ gap: 4 }}>
           <SectionLabel>Equipe e setor</SectionLabel>
           {f.tecnicoResponsavel ? <Text style={styles.texto}>Responsável: {f.tecnicoResponsavel}</Text> : null}
           {f.tecnicosAuxiliares.length > 0 ? <Muted>Apoio: {f.tecnicosAuxiliares.join(", ")}</Muted> : null}
           {f.setor ? <Muted>Setor: {f.setor}</Muted> : null}
-        </Card>
+        </View>
       ) : null}
-    </View>
+    </Dobravel>
   );
 }
 

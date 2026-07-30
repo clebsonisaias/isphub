@@ -11,7 +11,7 @@ import { Button, Card, Field, Muted, Pill, Screen, SectionLabel, Title, type Pil
 import { colors, font, space } from "@/theme/tokens";
 import { useAcoesOs } from "@/features/minhas-os/acoes";
 import { ConexaoStatus } from "@/features/minhas-os/conexao-status";
-import { FichaSgp } from "@/features/minhas-os/ficha-sgp";
+import { FichaSgpComoChegar, FichaSgpConexao, FichaSgpContrato, useFichaSgp } from "@/features/minhas-os/ficha-sgp";
 import { useCriarConversa } from "@/features/chat/hooks";
 
 function soDigitos(tel: string): string {
@@ -68,6 +68,11 @@ export default function DetalheOs() {
   });
   const os = query.data;
 
+  // Uma consulta por tela, consumida por TRES pedacos em pontos diferentes do
+  // scroll (ponto de referencia no card de endereco, conexao e cadastro mais
+  // abaixo). Ver a nota em useFichaSgp.
+  const { ficha, carregando: carregandoFicha, erro: erroFicha } = useFichaSgp(id ?? "");
+
   const acao = os ? proximaAcao(os.status) : null;
   const executando = marcarACaminho.isPending || mudarStatus.isPending;
 
@@ -116,13 +121,35 @@ export default function DetalheOs() {
               <Title>{os.clienteNome ?? "Cliente não identificado"}</Title>
             </View>
 
-            {/* Endereco + mapa */}
+            {/*
+              Ordem da tela = ordem do trabalho em campo: por que estou indo →
+              onde é → avisar que estou indo → (na porta) a ficha técnica →
+              registrar.
+
+              O que estava errado antes: a ficha do SGP ficava logo abaixo do
+              endereço e, depois de ganhar cadastro e sinal, passou a ocupar uns
+              900px — empurrando pra baixo justamente a DESCRIÇÃO do problema e
+              os botões de contato. O técnico rolava dois telefones de dados de
+              referência pra descobrir por que tinha sido chamado.
+            */}
+
+            {/* Descricao da OS: o motivo da visita, antes de qualquer outra coisa. */}
+            {os.conteudo ? (
+              <Card>
+                <Text style={styles.conteudo}>{os.conteudo}</Text>
+              </Card>
+            ) : null}
+
+            {/* Endereco + como chegar + mapa, tudo junto: complemento e ponto de
+                referência vinham numa seção separada no fim da ficha, a ~700px
+                daqui — quem lia o endereço não sabia que existiam. */}
             <Card style={{ gap: space.sm }}>
               <View style={{ flexDirection: "row", gap: space.sm }}>
                 <Feather name="map-pin" size={18} color={colors.brand} style={{ marginTop: 2 }} />
-                <View style={{ flex: 1 }}>
+                <View style={{ flex: 1, gap: space.xs }}>
                   <Text style={styles.addr}>{endereco}</Text>
                   {os.endereco?.cidade ? <Muted>{os.endereco.cidade}</Muted> : null}
+                  <FichaSgpComoChegar ficha={ficha} />
                 </View>
               </View>
               <Button
@@ -134,13 +161,8 @@ export default function DetalheOs() {
               />
             </Card>
 
-            <ConexaoStatus provedorId={os.provedorId} contratoId={os.contratoId} />
-
-            {/* Ficha do SGP: plano, PPPoE, ponto de referencia. Carrega depois
-                e some sozinha se o SGP nao responder — a tela nao depende dela. */}
-            <FichaSgp osId={os.id} />
-
-            {/* Contato */}
+            {/* Contato: avisar que está a caminho vem ANTES da ficha técnica —
+                é o que se faz saindo, não na porta. */}
             {os.telefone ? (
               <View style={{ flexDirection: "row", gap: space.sm }}>
                 <View style={{ flex: 1 }}>
@@ -162,12 +184,14 @@ export default function DetalheOs() {
               </View>
             ) : null}
 
-            {/* Descricao da OS */}
-            {os.conteudo ? (
-              <Card>
-                <Text style={styles.conteudo}>{os.conteudo}</Text>
-              </Card>
-            ) : null}
+            {/* Sonda AO VIVO, logo acima do "último lido" da ficha: os dois
+                valores de dBm ficam vizinhos, cada um rotulado. */}
+            <ConexaoStatus provedorId={os.provedorId} contratoId={os.contratoId} />
+
+            {/* Referência técnica, dobrada: importa na porta do cliente, com a
+                ONU na mão. O cabeçalho mostra sinal e plano sem precisar abrir. */}
+            <FichaSgpConexao ficha={ficha} carregando={carregandoFicha} erro={erroFicha} />
+            <FichaSgpContrato ficha={ficha} carregando={carregandoFicha} erro={erroFicha} />
 
             {/* Anotacao */}
             <View style={{ gap: space.sm }}>
