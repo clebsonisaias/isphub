@@ -15,6 +15,7 @@ import { ProvedorBadge } from "@/components/ProvedorBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { SlaBadge } from "@/components/SlaBadge";
 import { ContratoStatusBadge } from "@/components/ContratoStatusBadge";
+import { FichaSgpOs } from "@/components/FichaSgpOs";
 import { ConexaoStatus } from "@/components/ConexaoStatus";
 import { OsTimeline } from "@/components/OsTimeline";
 import { EvidenciaGallery } from "@/components/EvidenciaGallery";
@@ -254,6 +255,10 @@ export function OrdemServicoDetailDialog({
                   </div>
                 </div>
               )}
+
+              {/* Ficha do SGP: plano, PPPoE, ponto de referencia. Carrega depois
+                  e some sozinha se o SGP nao responder — o dialog nao depende dela. */}
+              <FichaSgpOs ordemServicoId={os.id} />
 
               <div className="flex flex-col gap-2">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Anotação</p>

@@ -1,4 +1,4 @@
-import type { EvidenciaResumo, FilaFiltros, FilaItem, OrdemServico, OsEvento, OsStatus } from "@isphub/shared";
+import type { EvidenciaResumo, FilaFiltros, FilaItem, OrdemServico, OsEvento, OsFichaSgp, OsStatus } from "@isphub/shared";
 import { api } from "@/lib/apiClient";
 import type { ImagemComprimida } from "@/lib/imagem";
 
@@ -51,6 +51,8 @@ export const ordensServicoApi = {
   anotar: (id: string, texto: string) => api.post<OrdemServico>(`/ordens-servico/${id}/anotacoes`, { texto }),
   atribuir: (id: string, tecnicoId: string) => api.post<OrdemServico>(`/ordens-servico/${id}/atribuir`, { tecnicoId }),
   eventos: (id: string) => api.get<OsEvento[]>(`/ordens-servico/${id}/eventos`),
+  /** Ficha lida ao vivo do SGP (plano, PPPoE, ponto de referencia). `null` se o SGP nao devolver. */
+  fichaSgp: (id: string) => api.get<OsFichaSgp | null>(`/ordens-servico/${id}/ficha-sgp`),
   evidencias: {
     listar: (id: string) => api.get<EvidenciaResumo[]>(`/ordens-servico/${id}/evidencias`),
     /** Devolve a lista completa e atualizada de fotos (o SGP e a fonte da verdade, nao ha "a nova" isolada). */
