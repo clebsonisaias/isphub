@@ -439,9 +439,39 @@ function pick(obj: Record<string, any>, ...keys: string[]): any {
  * errado falha silenciosamente (tipoCodigo/tecnicoSgpId comparados contra
  * mapas sempre populados com chaves string).
  */
+/**
+ * Primeiro valor ESCALAR entre as chaves dadas.
+ *
+ * Objeto e array voltam null de proposito: o `String(value)` anterior aceitava
+ * qualquer coisa e virava "[object Object]" na tela — foi assim que "Plano
+ * contratado: [object Object]" chegou ao usuario. Uma funcao chamada
+ * `pickString` que devolve o texto de um objeto nao esta pegando string, esta
+ * escondendo que o formato mudou. Null faz o campo sumir; "[object Object]"
+ * mente com aparencia de dado.
+ */
 function pickString(obj: Record<string, any>, ...keys: string[]): string | null {
   const value = pick(obj, ...keys);
-  return value === null || value === undefined ? null : String(value);
+  if (value === null || value === undefined) return null;
+  if (typeof value === "object") return null;
+  const s = String(value).trim();
+  return s === "" ? null : s;
+}
+
+/**
+ * Nome do plano quando o SGP manda um OBJETO em vez de texto.
+ *
+ * Visto em producao na NetGo: `servico_plano` chega como objeto, nao string.
+ * O SGP varia de instancia pra instancia aqui, entao tenta as chaves de nome
+ * mais comuns em vez de fixar uma — e devolve null se nenhuma servir, que e
+ * melhor que exibir lixo.
+ */
+function nomeDoPlano(valor: unknown): string | null {
+  if (valor == null) return null;
+  if (typeof valor !== "object") {
+    const s = String(valor).trim();
+    return s === "" ? null : s;
+  }
+  return pickString(valor as Record<string, any>, "nome", "descricao", "plano", "titulo", "name", "display");
 }
 
 /**
@@ -736,9 +766,18 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
           pickString(contrato ?? {}, "contratoStatusDisplay", "status", "contrato_status") ??
           pickString(item, "contrato_status"),
         // Plano: cadastro primeiro (e a fonte viva do contrato), OS como reserva.
-        plano: pickString(servico ?? {}, "servico_plano", "plano") ?? pickString(item, "plano"),
-        planoDownload: pickString(servico ?? {}, "plano_download", "download") ?? pickString(item, "plano_download"),
-        planoUpload: pickString(servico ?? {}, "plano_upload", "upload") ?? pickString(item, "plano_upload"),
+        // `servico_plano` chega como OBJETO em alguma instancias (visto na
+        // NetGo) — `nomeDoPlano` resolve os dois formatos. Velocidades podem
+        // estar soltas no servico OU dentro desse mesmo objeto.
+        plano: nomeDoPlano(pick(servico ?? {}, "servico_plano", "plano")) ?? pickString(item, "plano"),
+        planoDownload:
+          pickString(servico ?? {}, "plano_download", "download") ??
+          pickString((pick(servico ?? {}, "servico_plano", "plano") ?? {}) as Record<string, any>, "download", "velocidade_download") ??
+          pickString(item, "plano_download"),
+        planoUpload:
+          pickString(servico ?? {}, "plano_upload", "upload") ??
+          pickString((pick(servico ?? {}, "servico_plano", "plano") ?? {}) as Record<string, any>, "upload", "velocidade_upload") ??
+          pickString(item, "plano_upload"),
         // `servico_login` e o PPPoE real; `contratoCentralLogin` e o login da
         // central do assinante — serve de reserva, mas nunca tem prioridade.
         servicoLogin:

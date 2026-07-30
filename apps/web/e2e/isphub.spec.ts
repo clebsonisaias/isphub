@@ -64,13 +64,19 @@ test("ficha do SGP mostra cliente, PPPoE e conexao no detalhe da OS", async ({ p
   await card.click();
 
   const dialog = page.getByRole("dialog");
-  await expect(dialog.getByText("Acesso PPPoE")).toBeVisible({ timeout: 15_000 });
+
+  // Aba Detalhes: quem e o cliente. Nome vindo do CADASTRO — diferente do
+  // `cliente_nome` da OS de proposito, pra provar de qual fonte veio.
+  await expect(dialog.getByText("ASSINANTE CADASTRO E2E")).toBeVisible({ timeout: 15_000 });
+  await expect(dialog.getByText("12345678900")).toBeVisible();
+  // Dados de conexao NAO ficam mais aqui — moraram na aba Conexão.
+  await expect(dialog.getByText("Acesso PPPoE")).toHaveCount(0);
+
+  // Aba Conexão: plano, sinal, OLT e PPPoE.
+  await dialog.getByRole("tab", { name: "Conexão" }).click();
+  await expect(dialog.getByText("Acesso PPPoE")).toBeVisible();
   await expect(dialog.getByText("pppoe-e2e")).toBeVisible();
   await expect(dialog.getByText("FIBRA 500MB")).toBeVisible();
-  await expect(dialog.getByText("12345678900")).toBeVisible();
-  // Nome vindo do CADASTRO (diferente do `cliente_nome` da OS de proposito).
-  await expect(dialog.getByText("ASSINANTE CADASTRO E2E")).toBeVisible();
-  // Sinal optico: RX -21.5 dBm vem do cadastro, com a cor semantica de sinal.
   await expect(dialog.getByText(/RX -21[.,]5 dBm/)).toBeVisible();
   await expect(dialog.getByText("OLT-E2E")).toBeVisible();
   // A senha nasce mascarada.

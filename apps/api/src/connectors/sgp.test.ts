@@ -1507,3 +1507,55 @@ describe("obterFichaOs — a pergunta TOLERANTE: uma fonte nao derruba a outra",
     expect(ficha?.observacao).toBe("obs da OS");
   });
 });
+
+describe("plano como OBJETO — o bug do \"[object Object]\" na tela", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const comPlano = (servicoPlano: unknown) => ({
+    clientes: [{ contratos: [{ servicos: [{ servico_plano: servicoPlano }] }] }],
+  });
+
+  async function ficha(servicoPlano: unknown) {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ ordens_servicos: [] }))
+      .mockResolvedValueOnce(jsonResponse(comPlano(servicoPlano)));
+    return createSgpConnector(creds).obterFichaOs("1", "30105");
+  }
+
+  it("objeto: usa o nome de dentro, nunca \"[object Object]\"", async () => {
+    const f = await ficha({ id: 7, nome: "FIBRA 300MB", download: "300 Mbps", upload: "150 Mbps" });
+    expect(f?.plano).toBe("FIBRA 300MB");
+    expect(f?.planoDownload).toBe("300 Mbps");
+    expect(f?.planoUpload).toBe("150 Mbps");
+  });
+
+  it("string: continua funcionando", async () => {
+    expect((await ficha("FIBRA 500MB"))?.plano).toBe("FIBRA 500MB");
+  });
+
+  it("objeto sem chave de nome reconhecida => null, nao lixo na tela", async () => {
+    const f = await ficha({ id: 7, codigo_interno: 99 });
+    expect(f?.plano).toBeNull();
+  });
+
+  it("nenhum campo do SGP vira \"[object Object]\" — a guarda e no pickString", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse([{ os_id: 1, os_observacao: { texto: "objeto onde devia ser texto" }, plano: { a: 1 } }]),
+      )
+      .mockResolvedValueOnce(jsonResponse({ clientes: [] }));
+
+    const f = (await createSgpConnector(creds).obterFichaOs("1", "30105")) as unknown as Record<string, unknown>;
+
+    for (const [campo, valor] of Object.entries(f)) {
+      expect(String(valor), `campo ${campo}`).not.toContain("[object Object]");
+    }
+  });
+});

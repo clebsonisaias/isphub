@@ -16,7 +16,7 @@ import { ProvedorBadge } from "@/components/ProvedorBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { SlaBadge } from "@/components/SlaBadge";
 import { ContratoStatusBadge } from "@/components/ContratoStatusBadge";
-import { FichaSgpOs } from "@/components/FichaSgpOs";
+import { FichaSgpConexao, FichaSgpIdentificacao, useFichaSgp } from "@/components/FichaSgpOs";
 import { ConexaoStatus } from "@/components/ConexaoStatus";
 import { OsTimeline } from "@/components/OsTimeline";
 import { EvidenciaGallery } from "@/components/EvidenciaGallery";
@@ -50,6 +50,11 @@ export function OrdemServicoDetailDialog({
   const [acaoEmCurso, setAcaoEmCurso] = useState<string | null>(null);
   const [houveMudanca, setHouveMudanca] = useState(false);
   const [detalhesLive, setDetalhesLive] = useState<DetalhesTecnicos | null>(null);
+
+  // Uma consulta por dialog, consumida por DUAS abas (Detalhes e Conexão).
+  // Ver a nota em useFichaSgp: um componente por aba faria o Radix desmontar e
+  // remontar o fetch a cada troca.
+  const { ficha, estado: estadoFicha } = useFichaSgp(os.id);
 
   useEffect(() => {
     if (!podeDespachar) return;
@@ -141,7 +146,6 @@ export function OrdemServicoDetailDialog({
             <ProvedorBadge provedor={os.provedor} />
             <StatusBadge status={os.status} />
             <ContratoStatusBadge status={os.contratoStatus} />
-            <ConexaoStatus provedorId={os.provedorId} contratoId={os.contratoId} onDetalhes={setDetalhesLive} />
           </div>
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
             <DialogTitle>{os.clienteNome ?? "Cliente não identificado"}</DialogTitle>
@@ -156,6 +160,7 @@ export function OrdemServicoDetailDialog({
         <Tabs defaultValue="detalhes">
           <TabsList>
             <TabsTrigger value="detalhes">Detalhes</TabsTrigger>
+            <TabsTrigger value="conexao">Conexão</TabsTrigger>
             <TabsTrigger value="historico">Histórico</TabsTrigger>
             <TabsTrigger value="fotos">Fotos</TabsTrigger>
           </TabsList>
@@ -257,9 +262,9 @@ export function OrdemServicoDetailDialog({
                 </div>
               )}
 
-              {/* Ficha do SGP: plano, PPPoE, ponto de referencia. Carrega depois
-                  e some sozinha se o SGP nao responder — o dialog nao depende dela. */}
-              <FichaSgpOs ordemServicoId={os.id} />
+              {/* Cadastro do assinante, ponto de referencia e o que ja foi
+                  registrado na OS. Plano/sinal/PPPoE ficam na aba Conexão. */}
+              <FichaSgpIdentificacao ficha={ficha} estado={estadoFicha} />
 
               <div className="flex flex-col gap-2">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Anotação</p>
@@ -281,6 +286,18 @@ export function OrdemServicoDetailDialog({
                 </Button>
               </div>
             </div>
+          </TabsContent>
+
+          <TabsContent value="conexao" className="flex flex-col gap-4">
+            {/*
+              A sonda AO VIVO saiu do cabecalho e veio pra ca. Manter o botao
+              la em cima enquanto existe uma aba "Conexão" espalharia a mesma
+              preocupacao em dois lugares — e era justamente o que criava a
+              duvida "qual dBm vale?": agora o valor de agora e o ultimo
+              registrado aparecem um ao lado do outro, cada um rotulado.
+            */}
+            <ConexaoStatus provedorId={os.provedorId} contratoId={os.contratoId} onDetalhes={setDetalhesLive} />
+            <FichaSgpConexao ficha={ficha} estado={estadoFicha} />
           </TabsContent>
 
           <TabsContent value="historico">
