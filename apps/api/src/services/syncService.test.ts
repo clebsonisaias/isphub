@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { OsStatus } from "@isphub/shared";
-import { camposEnderecoDoListado, contratosParaBackfillGeo, reconciliarStatus } from "./syncService.js";
+import { camposEnderecoDoListado, contratosParaBackfillGeo, deveAvisarMudanca, reconciliarStatus } from "./syncService.js";
 
 describe("reconciliarStatus", () => {
   it("mantem Cancelada quando o SGP diz Concluida (SGP so tem 'Encerrada', sem distinguir cancelado)", () => {
@@ -71,5 +71,28 @@ describe("contratosParaBackfillGeo", () => {
 
   it("retorna vazio quando nao ha candidatas", () => {
     expect(contratosParaBackfillGeo([], 30)).toEqual([]);
+  });
+});
+
+describe("deveAvisarMudanca", () => {
+  it("OS nova: avisa", () => {
+    expect(deveAvisarMudanca(undefined, OsStatus.ABERTA, false)).toBe(true);
+  });
+
+  it("status mudou no SGP: avisa", () => {
+    expect(deveAvisarMudanca({ status: OsStatus.ABERTA }, OsStatus.CONCLUIDA, false)).toBe(true);
+  });
+
+  it("NADA mudou: NAO avisa — senao a fila piscaria a cada ciclo de polling", () => {
+    expect(deveAvisarMudanca({ status: OsStatus.ABERTA }, OsStatus.ABERTA, false)).toBe(false);
+  });
+
+  it("status protegido (acao humana recente): NAO avisa, porque o espelho nao mudou", () => {
+    // O valor do SGP esta sendo ignorado de proposito nesse caso.
+    expect(deveAvisarMudanca({ status: OsStatus.EM_DESLOCAMENTO }, OsStatus.ABERTA, true)).toBe(false);
+  });
+
+  it("OS nova avisa mesmo com a flag de protegido (nao ha o que proteger)", () => {
+    expect(deveAvisarMudanca(undefined, OsStatus.ABERTA, true)).toBe(true);
   });
 });

@@ -1,6 +1,7 @@
 import { mapSgpOsStatus, sgpStatusReconhecido, OsStatus, SgpOsStatus, type RawOs } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { buildConnector } from "./erpConnectorService.js";
+import { emitParaTodos, emitParaUsuario } from "./realtimeHub.js";
 import { sugerirCategoriaId } from "./categoriaMatch.js";
 
 /**
@@ -110,6 +111,28 @@ export function reconciliarStatus(statusSgp: OsStatus, statusLocalAtual: OsStatu
   return statusSgp;
 }
 
+/**
+ * Esta OS merece um aviso em tempo real neste ciclo?
+ *
+ * So OS NOVA ou com STATUS diferente do espelho. A regra critica e a negativa:
+ * um re-sync que reconfirma os mesmos dados nao avisa nada — o polling roda a
+ * cada ciclo, e avisar sempre faria a fila do tecnico piscar de 3 em 3 minutos
+ * sem nada ter acontecido, treinando ele a ignorar a tela.
+ *
+ * Status protegido tambem nao avisa: ali o valor do SGP esta sendo ignorado de
+ * proposito (acao humana recente, ver CAMPO_PROTEGIDO_MS), entao nao houve
+ * mudanca de verdade no espelho.
+ */
+export function deveAvisarMudanca(
+  conhecida: { status: OsStatus } | undefined,
+  statusSgp: OsStatus,
+  statusProtegido: boolean,
+): boolean {
+  if (!conhecida) return true; // OS nova
+  if (statusProtegido) return false;
+  return conhecida.status !== statusSgp;
+}
+
 export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; message?: string }> {
   const config = await prisma.erpConfig.findFirst({
     where: { provedorId, tipo: "SGP", ativo: true },
@@ -184,7 +207,9 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
     // nao so das recem-alteradas.
     const osConhecidas = await prisma.ordemServico.findMany({
       where: { provedorId },
-      select: { sgpOsId: true, status: true, statusAlteradoEm: true, observacaoAlteradaEm: true },
+      // `id` e `tecnicoId` entram pro aviso em tempo real no fim do sync (ver
+      // "avisa quem precisa saber" abaixo) — mesma query, custo zero.
+      select: { id: true, sgpOsId: true, status: true, tecnicoId: true, statusAlteradoEm: true, observacaoAlteradaEm: true },
     });
     const limiteProtecao = Date.now() - CAMPO_PROTEGIDO_MS;
     const statusProtegido = new Set(
@@ -196,6 +221,11 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
         .map((o) => o.sgpOsId),
     );
     const statusLocalPorSgpId = new Map(osConhecidas.map((o) => [o.sgpOsId, o.status as OsStatus]));
+    // Quem ja existia, pra distinguir "OS nova" de "OS que mudou" e saber a
+    // quem avisar (o tecnico dono dela).
+    const conhecidaPorSgpId = new Map(osConhecidas.map((o) => [o.sgpOsId, o]));
+    /** OS novas ou com status alterado neste ciclo — base do aviso em tempo real. */
+    const mexidas: { id: string | null; tecnicoId: string | null }[] = [];
 
     // O SGP nao documenta o comportamento do filtro "status" quando ausente —
     // na pratica, uma OS que foi encerrada direto no SGP (fora do ISPhub)
@@ -245,6 +275,13 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
         create: { provedorId, sgpOsId: raw.sgpOsId, status: statusSgp, ...campos },
         update: { ...campos, sincronizadoEm: new Date() },
       });
+
+      const conhecida = conhecidaPorSgpId.get(raw.sgpOsId);
+      if (deveAvisarMudanca(conhecida as { status: OsStatus } | undefined, statusSgp, statusProtegido.has(raw.sgpOsId))) {
+        // OS nova nao tem id/tecnico aqui (acabou de nascer): entra so pra
+        // disparar o aviso geral da fila de quem despacha.
+        mexidas.push({ id: conhecida?.id ?? null, tecnicoId: conhecida?.tecnicoId ?? null });
+      }
     }
     if (statusNaoReconhecidos.size > 0) {
       console.warn(
@@ -302,6 +339,24 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
       }
     } catch (err) {
       console.warn(`[sync] cadastro backfill falhou no provedor ${provedorId}:`, err instanceof Error ? err.message : err);
+    }
+
+    // --- Avisa quem precisa saber (tempo real) ---
+    // Antes o sync gravava e ficava calado: uma OS criada ou encerrada no SGP
+    // entrava no banco e o app so descobria quando o tecnico resolvia abrir ou
+    // arrastar a tela. Best-effort e DEPOIS da escrita, como todo uso de SSE
+    // aqui — falha de aviso nunca derruba o sync.
+    if (mexidas.length > 0) {
+      const em = new Date().toISOString();
+      // Ao tecnico dono da OS: refaz a fila DELE e o detalhe, se estiver aberto.
+      for (const m of mexidas) {
+        if (m.tecnicoId && m.id) emitParaUsuario(m.tecnicoId, { tipo: "os-alterada", osId: m.id, em });
+      }
+      // E um aviso geral pra fila de quem despacha (gestor/admin no web) — OS
+      // nova chega sem tecnico, entao nao ha a quem enderecar. Sem osId de
+      // proposito: o cliente so invalida a fila, que e escopada no servidor.
+      emitParaTodos({ tipo: "os-alterada", em });
+      console.log(`[sync] provedor ${provedorId}: ${mexidas.length} OS nova(s)/alterada(s) — avisado em tempo real`);
     }
 
     const msgTipos =
