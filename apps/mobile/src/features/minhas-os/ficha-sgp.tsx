@@ -34,7 +34,6 @@ export function FichaSgp({ osId }: { osId: string }) {
   });
 
   const f = query.data;
-  if (!f) return null; // carregando, sem dados ou SGP fora — silencioso de proposito
 
   async function copiar(rotulo: string, valor: string) {
     await Clipboard.setStringAsync(valor);
@@ -42,11 +41,52 @@ export function FichaSgp({ osId }: { osId: string }) {
     setTimeout(() => setCopiado(null), 1500);
   }
 
+  // Enquanto carrega, nada: a tela ja tem conteudo e um esqueleto aqui so
+  // piscaria. Mas depois de resolver, SEMPRE diz algo (ver abaixo).
+  if (query.isPending) return null;
+
+  if (query.isError) {
+    return (
+      <Card>
+        <SectionLabel>Ficha do SGP</SectionLabel>
+        <Muted>Não foi possível ler a ficha no SGP do provedor.</Muted>
+      </Card>
+    );
+  }
+
+  // SGP nao conhece esta OS (removida por la) — o sync tira da fila no proximo
+  // ciclo; dizer isso evita insistir numa OS fantasma.
+  if (!f) {
+    return (
+      <Card>
+        <SectionLabel>Ficha do SGP</SectionLabel>
+        <Muted>Esta OS não existe mais no SGP do provedor.</Muted>
+      </Card>
+    );
+  }
+
   const temPlano = f.plano || f.planoDownload || f.planoUpload;
   const temPppoe = f.servicoLogin || f.servicoSenha;
   const temLocal = f.enderecoComplemento || f.enderecoPontoReferencia;
   const temEquipe = f.tecnicoResponsavel || f.tecnicosAuxiliares.length > 0 || f.setor;
   const temRegistro = f.servicoPrestado || f.observacao;
+
+  /**
+   * SGP respondeu, mas sem nada que interesse — acontece de verdade: contrato
+   * inativo/cancelado nao tem servico ativo, logo nao tem plano nem PPPoE.
+   *
+   * Antes isto renderizava uma View vazia, e ausencia silenciosa ficava
+   * indistinguivel de feature quebrada ("cade o PPPoE?"). Dizer o motivo custa
+   * uma linha e responde sozinho.
+   */
+  if (!temPlano && !temPppoe && !temLocal && !temEquipe && !temRegistro) {
+    return (
+      <Card>
+        <SectionLabel>Ficha do SGP</SectionLabel>
+        <Muted>Sem plano nem acesso PPPoE no SGP para esta OS — normal quando o contrato está inativo.</Muted>
+      </Card>
+    );
+  }
 
   return (
     <View style={{ gap: space.md }}>

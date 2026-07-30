@@ -15,26 +15,40 @@ import { Eye, EyeOff, Copy, Check, MapPin } from "lucide-react";
  */
 export function FichaSgpOs({ ordemServicoId }: { ordemServicoId: string }) {
   const [ficha, setFicha] = useState<OsFichaSgp | null>(null);
+  const [estado, setEstado] = useState<"carregando" | "ok" | "erro">("carregando");
   const [senhaVisivel, setSenhaVisivel] = useState(false);
   const [copiado, setCopiado] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelado = false;
     setFicha(null);
+    setEstado("carregando");
     setSenhaVisivel(false);
     ordensServicoApi
       .fichaSgp(ordemServicoId)
       .then((f) => {
-        if (!cancelado) setFicha(f);
+        if (cancelado) return;
+        setFicha(f);
+        setEstado("ok");
       })
-      // Silencioso de proposito: a ficha ENRIQUECE a tela, nao a sustenta.
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelado) setEstado("erro");
+      });
     return () => {
       cancelado = true;
     };
   }, [ordemServicoId]);
 
-  if (!ficha) return null;
+  if (estado === "carregando") {
+    return <Bloco titulo="Ficha do SGP">{<p className="text-sm text-muted-foreground">Consultando o SGP…</p>}</Bloco>;
+  }
+  if (estado === "erro") {
+    return (
+      <Bloco titulo="Ficha do SGP">
+        <p className="text-sm text-muted-foreground">Não foi possível ler a ficha no SGP do provedor.</p>
+      </Bloco>
+    );
+  }
 
   async function copiar(rotulo: string, valor: string) {
     await navigator.clipboard.writeText(valor);
@@ -42,11 +56,39 @@ export function FichaSgpOs({ ordemServicoId }: { ordemServicoId: string }) {
     setTimeout(() => setCopiado(null), 1500);
   }
 
+  // SGP nao conhece esta OS (removida por la). O sync detecta e tira da fila
+  // no proximo ciclo; dizer isso aqui evita alguem insistir numa OS fantasma.
+  if (!ficha) {
+    return (
+      <Bloco titulo="Ficha do SGP">
+        <p className="text-sm text-muted-foreground">Esta OS não existe mais no SGP do provedor.</p>
+      </Bloco>
+    );
+  }
+
   const temPlano = ficha.plano || ficha.planoDownload || ficha.planoUpload || ficha.servicoOnline !== null;
   const temPppoe = ficha.servicoLogin || ficha.servicoSenha;
   const temLocal = ficha.enderecoComplemento || ficha.enderecoPontoReferencia;
   const temEquipe = ficha.tecnicoResponsavel || ficha.tecnicosAuxiliares.length > 0 || ficha.setor;
   const temRegistro = ficha.servicoPrestado || ficha.observacao;
+
+  /**
+   * SGP respondeu, mas sem nada que interesse. Acontece de verdade — contrato
+   * inativo/cancelado nao tem servico ativo, entao nao tem plano nem PPPoE.
+   *
+   * Antes isto renderizava um `div` vazio: ausencia silenciosa ficava
+   * indistinguivel de feature quebrada, e a pergunta virava "cade o PPPoE?".
+   * Dizer o motivo custa uma linha e responde sozinho.
+   */
+  if (!temPlano && !temPppoe && !temLocal && !temEquipe && !temRegistro) {
+    return (
+      <Bloco titulo="Ficha do SGP">
+        <p className="text-sm text-muted-foreground">
+          O SGP não retornou plano nem acesso PPPoE para esta OS — normal quando o contrato está inativo ou cancelado.
+        </p>
+      </Bloco>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4">
