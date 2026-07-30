@@ -694,16 +694,33 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
       //    devolve esses campos. Buscar so na OS era o motivo de a ficha vir
       //    sem PPPoE.
       const [dataOs, dataCliente] = await Promise.all([
-        sgpPostForm(creds, path),
+        // `.catch` nas DUAS: sao fontes independentes, e `/api/os/` e outra
+        // familia de API que a do sync (`/api/ura/`) — pode nao estar liberada
+        // na instancia do provedor, ou nao devolver OS ja encerrada. Deixar uma
+        // derrubar a outra era o motivo de a ficha inteira sumir quando o
+        // PPPoE e o cadastro tinham chegado sem problema.
+        sgpPostForm(creds, path).catch(() => null),
         contratoId
           ? sgpPostForm(creds, "/api/ura/clientes/", { contrato: contratoId, limit: 1 }).catch(() => null)
           : Promise.resolve(null),
       ]);
 
-      const [item] = asArray(dataOs, "ordens_servicos", "resultados", "results");
-      if (!item) return null;
-
+      const [itemOs] = asArray(dataOs, "ordens_servicos", "resultados", "results");
       const cliente = Array.isArray(dataCliente?.clientes) ? dataCliente.clientes[0] : undefined;
+
+      /*
+       * Null so quando NENHUMA das duas fontes trouxe nada. Antes bastava a OS
+       * vir vazia pra devolver null, e o cliente exibia "esta OS nao existe
+       * mais no SGP" — uma afirmacao que o dado nao sustenta: pode ser OS
+       * encerrada, endpoint indisponivel ou envelope diferente. Quem prova
+       * ausencia de verdade e a deteccao de removidas do sync, que marca
+       * CANCELADA e registra o evento.
+       */
+      if (!itemOs && !cliente) return null;
+
+      // `item` como objeto vazio quando a OS nao veio: os `pickString(item, ...)`
+      // abaixo continuam validos e a parte do cadastro e entregue igual.
+      const item = itemOs ?? {};
       const contrato = cliente?.contratos?.[0];
       const servico = contrato?.servicos?.[0];
       const onu = servico?.onu;
@@ -749,6 +766,15 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
         sinalTxDbm: tx,
         oltNome: pickString(onu ?? {}, "olt_nome"),
       };
+    },
+
+    /**
+     * Sem `try`/`catch` de proposito: ver a nota do metodo na interface. `false`
+     * so quando o SGP respondeu e nao havia OS com esse id.
+     */
+    async osExisteNoSgp(sgpOsId: string): Promise<boolean> {
+      const data = await sgpPostForm(creds, `/api/os/list/id/${encodeURIComponent(sgpOsId)}/`);
+      return asArray(data, "ordens_servicos", "resultados", "results").length > 0;
     },
 
     async addOsNote(sgpOsId: string, texto: string): Promise<void> {

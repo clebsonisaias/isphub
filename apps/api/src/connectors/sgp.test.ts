@@ -1405,3 +1405,105 @@ describe("obterFichaOs — PPPoE vem do CADASTRO do contrato", () => {
     }
   });
 });
+
+describe("osExisteNoSgp — a pergunta ESTRITA (usada pra cancelar OS)", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /**
+   * O contrato de erro deste metodo e a unica coisa entre uma instabilidade do
+   * SGP e a fila do provedor sendo cancelada em massa: a deteccao de removidas
+   * do sync marca OS como CANCELADA quando ele responde `false`. Por isso erro
+   * de transporte PRECISA propagar — quem chama trata como "sem evidencia".
+   */
+  it("resposta vazia e bem-sucedida => false (a OS realmente nao esta la)", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ordens_servicos: [] }));
+    expect(await createSgpConnector(creds).osExisteNoSgp("999")).toBe(false);
+  });
+
+  it("OS encontrada => true", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([{ os_id: 6755 }]));
+    expect(await createSgpConnector(creds).osExisteNoSgp("6755")).toBe(true);
+  });
+
+  it("erro 500 PROPAGA — nunca vira `false`, senao o sync cancelaria OS viva", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("erro interno", { status: 500 }));
+    await expect(createSgpConnector(creds).osExisteNoSgp("6755")).rejects.toThrow();
+  });
+
+  it("timeout/rede fora PROPAGA — mesma razao", async () => {
+    fetchMock.mockRejectedValueOnce(new Error("network down"));
+    await expect(createSgpConnector(creds).osExisteNoSgp("6755")).rejects.toThrow();
+  });
+});
+
+describe("obterFichaOs — a pergunta TOLERANTE: uma fonte nao derruba a outra", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const CADASTRO = {
+    clientes: [
+      {
+        nome: "CLIENTE COM CADASTRO",
+        contratos: [{ servicos: [{ servico_login: "pppoe-real", servico_plano: "FIBRA 500MB" }] }],
+      },
+    ],
+  };
+
+  /**
+   * O defeito que gerou a pergunta "porque ta aparecendo: Esta OS nao existe
+   * mais no SGP?". `/api/os/` e outra familia de API que a do sync
+   * (`/api/ura/`): pode nao estar liberada na instancia, ou nao devolver OS
+   * encerrada. Um `if (!item) return null` jogava fora o cadastro que tinha
+   * chegado inteiro — PPPoE, cliente, sinal — e o cliente afirmava que a OS
+   * havia sido apagada.
+   */
+  it("endpoint da OS fora do ar, cadastro OK => ficha vem com o que deu", async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response("nao habilitado", { status: 404 }))
+      .mockResolvedValueOnce(jsonResponse(CADASTRO));
+
+    const ficha = await createSgpConnector(creds).obterFichaOs("6755", "1672");
+
+    expect(ficha).not.toBeNull();
+    expect(ficha?.servicoLogin).toBe("pppoe-real");
+    expect(ficha?.plano).toBe("FIBRA 500MB");
+    expect(ficha?.clienteNome).toBe("CLIENTE COM CADASTRO");
+    // Campos que so existem no endpoint da OS ficam null, nao quebram nada.
+    expect(ficha?.observacao).toBeNull();
+    expect(ficha?.servicoOnline).toBeNull();
+  });
+
+  it("OS responde vazio (ex.: encerrada), cadastro OK => ficha vem", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ordens_servicos: [] })).mockResolvedValueOnce(jsonResponse(CADASTRO));
+    const ficha = await createSgpConnector(creds).obterFichaOs("6755", "1672");
+    expect(ficha?.servicoLogin).toBe("pppoe-real");
+  });
+
+  it("as DUAS fontes vazias => null (e so aqui o cliente diz que nao veio nada)", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ ordens_servicos: [] }))
+      .mockResolvedValueOnce(jsonResponse({ clientes: [] }));
+    expect(await createSgpConnector(creds).obterFichaOs("6755", "1672")).toBeNull();
+  });
+
+  it("cadastro fora do ar, OS OK => ficha vem pela OS", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([{ os_id: 1, os_observacao: "obs da OS" }]))
+      .mockResolvedValueOnce(new Response("", { status: 500 }));
+    const ficha = await createSgpConnector(creds).obterFichaOs("1", "1672");
+    expect(ficha?.observacao).toBe("obs da OS");
+  });
+});

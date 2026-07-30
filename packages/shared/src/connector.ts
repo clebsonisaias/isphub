@@ -288,6 +288,20 @@ export interface ErpConnector {
   obterFichaOs(sgpOsId: string, contratoId?: string | null): Promise<OsFichaSgp | null>;
 
   /**
+   * A OS ainda existe no SGP? Pergunta ESTRITA, separada de `obterFichaOs` de
+   * proposito — as duas respondem coisas diferentes e nao podem compartilhar
+   * politica de erro:
+   *
+   *  - `obterFichaOs` responde "o que consigo mostrar?" e e TOLERANTE: engole
+   *    falha de uma fonte pra entregar a outra.
+   *  - esta responde "posso concluir que sumiu?" e NAO engole nada: erro de
+   *    transporte PROPAGA, porque o unico `false` aceitavel e o de uma resposta
+   *    bem-sucedida e vazia. Tratar timeout como ausencia cancelaria OS viva em
+   *    massa numa instabilidade do ERP (ver a deteccao de removidas no sync).
+   */
+  osExisteNoSgp(sgpOsId: string): Promise<boolean>;
+
+  /**
    * Adiciona uma anotacao/andamento na OS.
    *
    * Nao existe contraparte de EDICAO da descricao (`conteudo`) da OS: a API do

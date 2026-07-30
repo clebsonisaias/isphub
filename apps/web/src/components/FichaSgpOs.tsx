@@ -57,12 +57,21 @@ export function FichaSgpOs({ ordemServicoId }: { ordemServicoId: string }) {
     setTimeout(() => setCopiado(null), 1500);
   }
 
-  // SGP nao conhece esta OS (removida por la). O sync detecta e tira da fila
-  // no proximo ciclo; dizer isso aqui evita alguem insistir numa OS fantasma.
+  /*
+   * O SGP nao devolveu NENHUMA das duas fontes (a OS e o cadastro do contrato).
+   *
+   * Antes isto afirmava "esta OS nao existe mais no SGP" — o dado nao sustenta
+   * essa conclusao. Vazio aqui pode ser OS encerrada, endpoint de OS nao
+   * liberado na integracao do provedor, ou envelope diferente. Ausencia de
+   * verdade quem prova e a deteccao de removidas do sync, que marca a OS como
+   * cancelada e registra no historico.
+   */
   if (!ficha) {
     return (
       <Bloco titulo="Ficha do SGP">
-        <p className="text-sm text-muted-foreground">Esta OS não existe mais no SGP do provedor.</p>
+        <p className="text-sm text-muted-foreground">
+          O SGP não devolveu dados desta OS. Se ela foi removida por lá, o histórico registra.
+        </p>
       </Bloco>
     );
   }

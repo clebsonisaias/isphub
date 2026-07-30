@@ -45,6 +45,41 @@ test("cadastro de provedor", async ({ page }) => {
   await expect(page.getByRole("heading", { name: nomeUnico })).toBeVisible();
 });
 
+/**
+ * Ficha do SGP na tela.
+ *
+ * Roda ANTES do teste de despacho de proposito: aquele CONCLUI a OS fixture, e
+ * OS concluida sai do grupo "abertos" da fila — o card deixa de existir. Nao existia teste ponta a ponta disto, e foi por isso
+ * que "O SGP nao devolveu dados desta OS" chegou ao usuario sem ninguem notar:
+ * o mock nao implementava as rotas da ficha, entao o ambiente local mostrava a
+ * mensagem de vazio em toda OS e isso parecia normal.
+ */
+test("ficha do SGP mostra cliente, PPPoE e conexao no detalhe da OS", async ({ page }) => {
+  await login(page, ADMIN);
+  // Mesmo caminho do teste de despacho: escopa ao provedor semeado e abre o
+  // card (que e um <div role="button">, ver a nota la).
+  await page.locator("aside").getByRole("button", { name: /E2E Provider/ }).click();
+  const card = page.getByText("Cliente E2E").locator("xpath=ancestor::*[@role='button'][1]");
+  await expect(card).toBeVisible();
+  await card.click();
+
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("Acesso PPPoE")).toBeVisible({ timeout: 15_000 });
+  await expect(dialog.getByText("pppoe-e2e")).toBeVisible();
+  await expect(dialog.getByText("FIBRA 500MB")).toBeVisible();
+  await expect(dialog.getByText("12345678900")).toBeVisible();
+  // Nome vindo do CADASTRO (diferente do `cliente_nome` da OS de proposito).
+  await expect(dialog.getByText("ASSINANTE CADASTRO E2E")).toBeVisible();
+  // Sinal optico: RX -21.5 dBm vem do cadastro, com a cor semantica de sinal.
+  await expect(dialog.getByText(/RX -21[.,]5 dBm/)).toBeVisible();
+  await expect(dialog.getByText("OLT-E2E")).toBeVisible();
+  // A senha nasce mascarada.
+  await expect(dialog.getByText("senha-e2e")).toHaveCount(0);
+
+  // E a mensagem de "nao devolveu dados" NAO pode aparecer quando ha dados.
+  await expect(dialog.getByText(/não devolveu dados desta OS/)).toHaveCount(0);
+});
+
 test("fluxo despacho -> status: marcar a caminho e concluir uma OS, refletindo no SGP", async ({
   page,
   request,

@@ -366,7 +366,11 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
     for (const os of desaparecidas) {
       let confirmadoAusente = false;
       try {
-        confirmadoAusente = (await connector.obterFichaOs(os.sgpOsId)) === null;
+        // `osExisteNoSgp` e nao `obterFichaOs`: a ficha e tolerante a falha de
+        // fonte (devolve o que conseguir, ou null), e usar null dela como prova
+        // de ausencia transformaria uma instabilidade do SGP em cancelamento em
+        // massa. Este metodo PROPAGA erro de transporte — cai no catch abaixo.
+        confirmadoAusente = !(await connector.osExisteNoSgp(os.sgpOsId));
       } catch {
         // Falha na confirmacao = nenhuma evidencia. NAO mexe: marcar OS em
         // massa por causa de uma instabilidade do SGP seria muito pior que

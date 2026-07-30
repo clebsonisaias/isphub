@@ -55,13 +55,21 @@ export function FichaSgp({ osId }: { osId: string }) {
     );
   }
 
-  // SGP nao conhece esta OS (removida por la) — o sync tira da fila no proximo
-  // ciclo; dizer isso evita insistir numa OS fantasma.
+  /*
+   * O SGP nao devolveu NENHUMA das duas fontes (a OS e o cadastro do contrato).
+   *
+   * Antes isto dizia "esta OS nao existe mais no SGP" — uma afirmacao que o
+   * dado nao sustenta. Vazio aqui pode ser OS encerrada, endpoint de OS nao
+   * liberado na integracao do provedor, ou envelope diferente. Quem PROVA
+   * ausencia e a deteccao de removidas do sync, que marca a OS como cancelada
+   * e escreve isso no historico — e por isso que a mensagem aponta pra la em
+   * vez de concluir por conta propria.
+   */
   if (!f) {
     return (
       <Card>
         <SectionLabel>Ficha do SGP</SectionLabel>
-        <Muted>Esta OS não existe mais no SGP do provedor.</Muted>
+        <Muted>O SGP não devolveu dados desta OS. Se ela foi removida por lá, o histórico registra.</Muted>
       </Card>
     );
   }

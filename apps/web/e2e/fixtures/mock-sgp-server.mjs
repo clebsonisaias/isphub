@@ -83,6 +83,68 @@ app.post("/api/ura/ordemservico/list/", (req, res) => {
   });
 });
 
+/*
+ * Ficha da OS por id. Faltava aqui, e a ausencia MENTIA: o ambiente local
+ * mostrava "o SGP nao devolveu dados desta OS" em toda OS, indistinguivel de
+ * um defeito de producao. Um fixture que nao implementa a rota nao e neutro —
+ * ele fabrica um sintoma.
+ */
+app.post("/api/os/list/id/:id/", (req, res) => {
+  if (exigirAuth(req, res)) return;
+  if (req.params.id === "inexistente") return res.json({ ordens_servicos: [] });
+  res.json({
+    ordens_servicos: [
+      {
+        os_id: req.params.id,
+        os_status: 0,
+        os_observacao: "Observacao vinda do SGP (fixture e2e)",
+        os_servicoprestado: "Troca de ONU",
+        os_tecnico_responsavel: "Tecnico E2E",
+        os_setor: "Suporte",
+        endereco_complemento: "Bloco B, ap 302",
+        endereco_pontoreferencia: "Portao azul, ao lado da padaria",
+        servico_online: true,
+        servico_online_ip: "100.64.0.10",
+        servico_online_mac: "AA:BB:CC:DD:EE:FF",
+      },
+    ],
+  });
+});
+
+/*
+ * Cadastro do contrato — de onde sai o PPPoE de verdade (`servico_login`), o
+ * sinal optico da ONU e os dados do assinante.
+ */
+app.post("/api/ura/clientes/", (req, res) => {
+  if (exigirAuth(req, res)) return;
+  res.json({
+    clientes: [
+      {
+        // Nome de proposito DIFERENTE do `cliente_nome` da OS: e assim que o
+        // teste prova que o bloco "Cliente" da ficha vem do CADASTRO do
+        // contrato, e nao do payload da OS.
+        nome: "ASSINANTE CADASTRO E2E",
+        cpfcnpj: "12345678900",
+        email: "cliente-e2e@exemplo.com",
+        telefone: "84999990000",
+        contratos: [
+          {
+            contratoStatusDisplay: "Ativo",
+            servicos: [
+              {
+                servico_login: "pppoe-e2e",
+                servico_password: "senha-e2e",
+                servico_plano: "FIBRA 500MB",
+                onu: { rx: "-21.5", tx: "2.1", olt_nome: "OLT-E2E" },
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+});
+
 app.post("/api/os/acaminho/id/:id/", (req, res) => {
   if (exigirAuth(req, res)) return;
   registrar({ acao: "acaminho", osId: req.params.id });
