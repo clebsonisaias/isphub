@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { OS_STATUS_ABERTOS, UserRole, type Categoria, type EquipeFiltro, type FilaItem, type Provedor } from "@isphub/shared";
@@ -14,6 +14,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { cn } from "@/lib/utils";
 import { filaApi } from "@/lib/filaApi";
+import { useRealtime } from "@/lib/realtime";
 import { categoriasApi, provedoresApi } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
 import { OrdemServicoDetailDialog } from "@/components/OrdemServicoDetailDialog";
@@ -39,7 +40,19 @@ import {
   AlertTriangle,
   Loader2,
   Info,
+  RefreshCw,
 } from "lucide-react";
+
+/**
+ * "há 12s" / "há 3min". Relativo e nao relogio: o que importa e a IDADE do
+ * dado, e ler "14:22" obriga a fazer a conta de cabeca pra saber se esta velho.
+ */
+function segundosDesde(quando: number, agoraMs: number): string {
+  const seg = Math.max(0, Math.round((agoraMs - quando) / 1000));
+  if (seg < 60) return `há ${seg}s`;
+  const min = Math.round(seg / 60);
+  return min < 60 ? `há ${min}min` : `há ${Math.round(min / 60)}h`;
+}
 
 function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
@@ -126,6 +139,7 @@ export function FilaWorkspace({
 
   const [selecionado, setSelecionado] = useState<FilaItem | null>(null);
   const [refetch, setRefetch] = useState(0);
+  const [atualizadoEm, setAtualizadoEm] = useState<number | null>(null);
   // "Aberta há" recalcula a cada minuto sem re-fetch.
   const [agora, setAgora] = useState(() => Date.now());
 
@@ -183,6 +197,7 @@ export function FilaWorkspace({
           setTotais(resp.totais);
           setTruncado(resp.truncado);
           setTotalServidor(resp.total);
+          setAtualizadoEm(Date.now());
         }
       })
       .catch((err) => {
@@ -196,6 +211,49 @@ export function FilaWorkspace({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visao, buscaDebounced, refetch, equipe]);
+
+  /*
+   * ATUALIZACAO AUTOMATICA — a tela era carregada uma vez e so recarregava
+   * quando alguem agia numa OS e fechava o dialog. OS criada ou encerrada no
+   * SGP nao aparecia/sumia sozinha: era preciso recarregar a pagina.
+   *
+   * Dois gatilhos, e nao um polling fixo:
+   *
+   *  - SSE (`os-alterada`): o servidor ja avisa quando o sync muda alguma
+   *    coisa. E push — chega em menos de um segundo, contra ate 15s de atraso
+   *    de um polling de 15s, e sem uma requisicao a cada 15s por aba aberta.
+   *    O canal ja existia e era usado pelo chat; o Painel so nao assinava.
+   *  - Voltar o foco pra aba: cobre justamente o caso em que o SSE caiu (rede,
+   *    suspensao do notebook) e o evento se perdeu. E o momento em que a pessoa
+   *    volta a olhar, entao e quando o dado precisa estar certo.
+   *
+   * O intervalo de 2s existe pra um ciclo de sync que mexeu em varias OS
+   * disparar UMA recarga, nao uma por evento.
+   */
+  const ultimaRecargaRef = useRef(0);
+  function recarregar(forcado = false) {
+    const agoraMs = Date.now();
+    if (!forcado && agoraMs - ultimaRecargaRef.current < 2000) return;
+    ultimaRecargaRef.current = agoraMs;
+    setRefetch((n) => n + 1);
+  }
+
+  useRealtime((evento) => {
+    if (evento.tipo === "os-alterada") recarregar();
+  });
+
+  useEffect(() => {
+    function aoVoltar() {
+      if (document.visibilityState === "visible") recarregar();
+    }
+    document.addEventListener("visibilitychange", aoVoltar);
+    window.addEventListener("focus", aoVoltar);
+    return () => {
+      document.removeEventListener("visibilitychange", aoVoltar);
+      window.removeEventListener("focus", aoVoltar);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Concluídas ficam numa aba separada da fila operacional — evita misturar
   // trabalho já encerrado com o que ainda precisa de ação, tanto na lista
@@ -292,9 +350,31 @@ export function FilaWorkspace({
   return (
     <AppShell>
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight">{titulo}</h1>
           <p className="text-sm text-muted-foreground">{subtitulo}</p>
+          {/*
+            Quando os dados foram lidos, e um jeito de forcar a releitura.
+            A tela se atualiza sozinha (SSE + volta do foco), mas dizer QUANDO
+            foi a ultima vez e o que separa "esta atualizado" de "parece
+            atualizado" — sem isso nao ha como saber se o canal caiu.
+          */}
+          <div className="mt-1 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => recarregar(true)}
+              disabled={carregando}
+              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11"
+            >
+              <RefreshCw className={`size-3.5 ${carregando ? "motion-safe:animate-spin" : ""}`} />
+              {carregando ? "Atualizando…" : "Atualizar agora"}
+            </button>
+            {atualizadoEm && !carregando && (
+              <span className="text-xs text-muted-foreground" title={new Date(atualizadoEm).toLocaleString("pt-BR")}>
+                {segundosDesde(atualizadoEm, agora)}
+              </span>
+            )}
+          </div>
         </div>
         {/* Abertas e SLA em destaque (o trabalho do dia); concluídas em tom
             neutro, só como controle. */}
