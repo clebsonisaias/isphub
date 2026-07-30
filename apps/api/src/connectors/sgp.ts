@@ -32,7 +32,33 @@ import type {
 
 const TIMEOUT_MS = 15_000;
 
-class SgpError extends Error {}
+/**
+ * Falha vinda do SGP. Guarda `status` e `mensagemNegocio` em CAMPOS, nao so
+ * embutidos no texto: quando o SGP recusa por regra de negocio (ex.: "É
+ * necessário haver ao menos 2 foto(s) para encerrar o chamado"), essa frase e
+ * a unica coisa que interessa a quem esta em campo. Extrair de volta do texto
+ * com regex seria fragil — a mensagem contem URL, com `:` e `//`.
+ */
+export class SgpError extends Error {
+  status?: number;
+  /** Frase que o SGP escreveu no corpo (msg/erro/detail), quando houver. */
+  mensagemNegocio?: string;
+}
+
+/** Le a frase de negocio do corpo de erro do SGP, se ele mandou uma. */
+function mensagemDeNegocio(corpo: string): string | undefined {
+  try {
+    const j = JSON.parse(corpo);
+    if (!j || typeof j !== "object") return undefined;
+    for (const k of ["msg", "mensagem", "erro", "error", "detail", "detalhe"]) {
+      const v = (j as Record<string, unknown>)[k];
+      if (typeof v === "string" && v.trim()) return v.trim();
+    }
+  } catch {
+    // corpo nao-JSON (HTML de erro, texto solto) — nao ha frase confiavel
+  }
+  return undefined;
+}
 
 function baseUrl(creds: ErpCredentials): string {
   return creds.url.replace(/\/+$/, "");
@@ -68,7 +94,10 @@ async function parseJsonOrThrow(res: Response, path: string): Promise<any> {
     // Sem o host, "SGP 403 em /api/os/acaminho/" nao diz de qual provedor veio
     // a recusa — e com varios SGPs atendidos, essa era a primeira pergunta
     // que o log nao respondia.
-    throw new SgpError(`SGP ${res.status} em ${origemSegura(res.url)}${path}: ${text.slice(0, 500)}`);
+    const erro = new SgpError(`SGP ${res.status} em ${origemSegura(res.url)}${path}: ${text.slice(0, 500)}`);
+    erro.status = res.status;
+    erro.mensagemNegocio = mensagemDeNegocio(text);
+    throw erro;
   }
   try {
     return text ? JSON.parse(text) : null;

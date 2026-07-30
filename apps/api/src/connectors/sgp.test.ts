@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mapSgpOsStatus, OsStatus } from "@isphub/shared";
-import { createSgpConnector, redigirSegredosFttx } from "./sgp.js";
+import { createSgpConnector, redigirSegredosFttx, SgpError } from "./sgp.js";
 
 const creds = { url: "https://sgp.exemplo.com.br", app: "isphub", token: "tok-abc123" };
 
@@ -1033,5 +1033,66 @@ describe("createSgpConnector", () => {
       expect(red.id).toBe("SN123");
       expect(red.slot).toBe("1");
     });
+  });
+});
+
+describe("mensagem de negocio do SGP", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const casos: [string, string, string][] = [
+    ["msg (formato real do 422 de encerrar)", '{"msg":"É necessário haver ao menos 2 foto(s) para encerrar o chamado"}', "É necessário haver ao menos 2 foto(s) para encerrar o chamado"],
+    ["erro", '{"erro":"Contrato bloqueado"}', "Contrato bloqueado"],
+    ["detail (DRF)", '{"detail":"Não encontrado."}', "Não encontrado."],
+  ];
+
+  for (const [nome, corpo, esperado] of casos) {
+    it(`extrai a frase de ${nome}`, async () => {
+      fetchMock.mockResolvedValueOnce(new Response(corpo, { status: 422 }));
+
+      // A frase de negocio e o que interessa a quem esta em campo — ela ja diz
+      // o que fazer. Fica em CAMPO no erro, nao so embutida no texto (a
+      // mensagem tem URL, com `:` e `//`, e regex ali seria fragil).
+      const erro = await createSgpConnector(creds)
+        .updateOsStatus("6755", 1)
+        .then(() => null)
+        .catch((e) => e);
+
+      expect(erro).toBeInstanceOf(SgpError);
+      expect(erro.status).toBe(422);
+      expect(erro.mensagemNegocio).toBe(esperado);
+    });
+  }
+
+  it("corpo nao-JSON: sem frase de negocio (nao inventa)", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("<html>502 Bad Gateway</html>", { status: 502 }));
+
+    const erro = await createSgpConnector(creds)
+      .updateOsStatus("1", 1)
+      .then(() => null)
+      .catch((e) => e);
+
+    expect(erro.mensagemNegocio).toBeUndefined();
+    expect(erro.status).toBe(502);
+  });
+
+  it("403 de corpo vazio (o caso do /acaminho/) nao gera frase falsa", async () => {
+    // Response NOVA por chamada: setOnTheWay tenta JSON e cai pro form, e
+    // corpo de Response so pode ser lido uma vez.
+    fetchMock.mockImplementation(async () => new Response("", { status: 403 }));
+
+    const erro = await createSgpConnector(creds)
+      .setOnTheWay("5326")
+      .then(() => null)
+      .catch((e) => e);
+
+    expect(erro.mensagemNegocio).toBeUndefined();
+    expect(erro.status).toBe(403);
   });
 });

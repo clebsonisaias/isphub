@@ -10,6 +10,7 @@ import {
 import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../middleware/errorHandler.js";
 import { buildConnector } from "./erpConnectorService.js";
+import { SgpError } from "../connectors/sgp.js";
 import { emitParaUsuario } from "./realtimeHub.js";
 import { dispararPush } from "./pushService.js";
 
@@ -77,6 +78,18 @@ async function chamarSgp<T>(fn: () => Promise<T>): Promise<T> {
     // Recusa do SGP nao deixava rastro nenhum: virava 502 e sumia. Sem log, a
     // unica evidencia era o print do celular do tecnico.
     console.error("[sgp-writeback] recusa do SGP:", bruta);
+
+    // Quando o SGP explica a recusa (ex.: "É necessário haver ao menos 2
+    // foto(s) para encerrar o chamado"), essa frase E a mensagem — ela ja diz
+    // ao tecnico o que fazer. Enterra-la dentro de "SGP 422 em https://.../:
+    // {...}" era transformar uma instrucao clara em ruido tecnico.
+    //
+    // 422 vira 409 (conflito de regra de negocio), nao 502: nada falhou na
+    // comunicacao — o SGP entendeu e recusou por uma condicao que o tecnico
+    // pode resolver.
+    if (err instanceof SgpError && err.mensagemNegocio) {
+      throw new HttpError(err.status === 422 ? 409 : 502, err.mensagemNegocio);
+    }
     throw new HttpError(502, mensagemAmigavelSgp(bruta));
   }
 }
