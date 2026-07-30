@@ -642,7 +642,32 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
         if (lote.length < limite) break;
         if (total !== null && itens.length >= total) break;
         offset += limite;
+
+        /*
+         * Teto de paginas alcancado com MAIS coisa pra vir. Grita, porque o
+         * sintoma disso e "a quantidade nao bate com o SGP" — e sem este aviso
+         * era indistinguivel de qualquer outra causa. `PAGINACAO_MAX_PAGINAS *
+         * PAGINA_OS` = 10.000 por status: o historico de encerradas de um
+         * provedor grande passa disso com folga.
+         */
+        if (pagina === PAGINACAO_MAX_PAGINAS - 1) {
+          console.warn(
+            `[sgp] ${path} status=${params.status ?? "todos"}: PAROU NO TETO DE ${PAGINACAO_MAX_PAGINAS} paginas ` +
+              `com ${itens.length} de ${total ?? "?"} — o SGP tem MAIS OS do que o sync trouxe`,
+          );
+        }
       }
+
+      /*
+       * Quantas OS o SGP devolveu, por status. Faltava exatamente isto: quando
+       * alguem diz "a contagem esta diferente do SGP", nao havia como saber se
+       * o ISPhub recebeu menos, recebeu tudo e classificou diferente, ou se o
+       * numero comparado era outra coisa. Uma linha por status por ciclo.
+       */
+      console.log(
+        `[sgp] ${path} status=${params.status ?? "todos"}: ${itens.length} OS` +
+          `${total !== null ? ` (paginacao.total=${total})` : " (sem paginacao.total no payload)"}`,
+      );
 
       return itens.map(normalizeOs);
     },
