@@ -437,8 +437,12 @@ function extrairTelefoneCliente(cliente: any): string | null {
 
     // Ou uma colecao de contatos — array, ou objeto indexado ({"0": {...}}).
     for (const item of Array.isArray(container) ? container : Object.values(container)) {
-      if (typeof item === "string") {
-        if (pareceTelefone(item)) return item.trim();
+      // Primitivo: o proprio valor e o telefone. Aceita numero tambem — o SGP
+      // nao promete tipo aqui, e `8499998888` sem aspas continua sendo um
+      // telefone. `pareceTelefone` e quem impede um e-mail ou um id de passar.
+      if (typeof item === "string" || typeof item === "number") {
+        const texto = String(item).trim();
+        if (pareceTelefone(texto)) return texto;
         continue;
       }
       const v = pickString(item ?? {}, ...ALIASES_TELEFONE);
@@ -480,21 +484,20 @@ const camposSemTelefoneLogados = new Set<string>();
 function logarCadastroSemTelefone(origem: string, cliente: any): void {
   if (camposSemTelefoneLogados.has(origem)) return;
   camposSemTelefoneLogados.add(origem);
-  const contrato = cliente?.contratos?.[0];
-  const servico = contrato?.servicos?.[0];
-  // `contatos` existe no payload (confirmado em producao) mas nenhum item dele
-  // casou — entao o formato de DENTRO da lista importa tanto quanto o de fora.
+  /*
+   * Uma linha CURTA, so sobre `contatos`. A versao anterior despejava cliente +
+   * contrato + servico + contatos numa linha unica e o coletor de log do
+   * Coolify truncou exatamente no fim — cortando a parte de `contatos`, que era
+   * justamente a que interessava. Log de diagnostico que nao chega inteiro nao
+   * diagnostica nada.
+   */
   const contatos = cliente?.contatos;
-  const formaDosContatos = Array.isArray(contatos)
+  const forma = Array.isArray(contatos)
     ? `array[${contatos.length}] item0=${JSON.stringify(Object.keys(contatos[0] ?? {}).sort())}`
-    : `nao-array (${typeof contatos})`;
-  console.warn(
-    `[sgp] cadastro sem telefone reconhecido (${origem}) — campos disponiveis: ` +
-      `cliente=${JSON.stringify(Object.keys(cliente ?? {}).sort())} ` +
-      `contrato=${JSON.stringify(Object.keys(contrato ?? {}).sort())} ` +
-      `servico=${JSON.stringify(Object.keys(servico ?? {}).sort())} ` +
-      `contatos=${formaDosContatos}`,
-  );
+    : contatos && typeof contatos === "object"
+      ? `objeto chaves=${JSON.stringify(Object.keys(contatos).sort())}`
+      : String(typeof contatos);
+  console.warn(`[sgp] contatos sem telefone (${origem}): ${forma}`);
 }
 
 /**

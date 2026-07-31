@@ -774,6 +774,20 @@ describe("createSgpConnector", () => {
         fetchMock.mockResolvedValueOnce(comContatos([{ contato: "(84) 96666-5555" }]));
         expect((await createSgpConnector(creds).getContratoCadastro("1"))?.telefone).toBe("(84) 96666-5555");
       });
+
+      // O SGP nao promete tipo aqui: um telefone sem mascara pode chegar como
+      // number, e ai `typeof item === "string"` deixava passar batido.
+      it("valor NUMERICO solto e reconhecido como telefone", async () => {
+        fetchMock.mockResolvedValueOnce(comContatos({ principal: 84999991234 }));
+        expect((await createSgpConnector(creds).getContratoCadastro("1"))?.telefone).toBe("84999991234");
+      });
+
+      it("numero que NAO parece telefone (id, cep) nao vira contato", async () => {
+        fetchMock
+          .mockResolvedValueOnce(comContatos({ id: 4271, cep: 59000000 }))
+          .mockResolvedValueOnce(jsonResponse({ clientes: [] }));
+        expect((await createSgpConnector(creds).getContratoCadastro("1"))?.telefone).toBeNull();
+      });
     });
 
     it("cai pro endereco do cliente quando o servico nao tem endereco proprio", async () => {
