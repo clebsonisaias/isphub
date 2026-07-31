@@ -782,6 +782,40 @@ describe("createSgpConnector", () => {
         expect((await createSgpConnector(creds).getContratoCadastro("1"))?.telefone).toBe("84999991234");
       });
 
+      /*
+       * A FORMA REAL, medida em producao (31/07) no SGP da CITmax:
+       *   contatos = { celulares: [], emails: [], outros: [], telefones: [] }
+       * Objeto cujos valores sao ARRAYS — o telefone fica DOIS niveis abaixo de
+       * `contatos`. Confirmada duas vezes de forma independente: pelo log de
+       * chaves do container e pelo Maxxi, que consome o mesmo endpoint em
+       * producao (maxxi/src/services/clientes.js:50).
+       */
+      it("forma real da CITmax: {celulares,emails,outros,telefones} com arrays", async () => {
+        fetchMock.mockResolvedValueOnce(
+          comContatos({ celulares: [], emails: ["x@y.com"], outros: [], telefones: ["(84) 3222-1010"] }),
+        );
+        expect((await createSgpConnector(creds).getContratoCadastro("1"))?.telefone).toBe("(84) 3222-1010");
+      });
+
+      it("pega o celular quando so ele esta preenchido", async () => {
+        fetchMock.mockResolvedValueOnce(
+          comContatos({ celulares: ["84 98888-7777"], emails: [], outros: [], telefones: [] }),
+        );
+        expect((await createSgpConnector(creds).getContratoCadastro("1"))?.telefone).toBe("84 98888-7777");
+      });
+
+      it("so e-mail preenchido nao vira telefone", async () => {
+        fetchMock
+          .mockResolvedValueOnce(comContatos({ celulares: [], emails: ["cliente@exemplo.com"], outros: [], telefones: [] }))
+          .mockResolvedValueOnce(jsonResponse({ contratos: [] }));
+        expect((await createSgpConnector(creds).getContratoCadastro("1"))?.telefone).toBeNull();
+      });
+
+      it("lista de objetos dentro do array (outra instancia do SGP)", async () => {
+        fetchMock.mockResolvedValueOnce(comContatos({ telefones: [{ numero: "(84) 3111-2020", tipo: "fixo" }] }));
+        expect((await createSgpConnector(creds).getContratoCadastro("1"))?.telefone).toBe("(84) 3111-2020");
+      });
+
       it("numero que NAO parece telefone (id, cep) nao vira contato", async () => {
         fetchMock
           .mockResolvedValueOnce(comContatos({ id: 4271, cep: 59000000 }))
@@ -847,16 +881,31 @@ describe("createSgpConnector", () => {
      * que alcanca o cadastro nesse caso.
      */
     describe("fallback pra contrato inativo/cancelado (consultacliente)", () => {
+      /*
+       * O envelope do consultacliente e `{ contratos: [...], msg }` — NAO tem
+       * chave "clientes", e os campos vem PLANOS no contrato, em camelCase.
+       * Medido em producao ("chaves: [contratos, msg]") e confirmado no Maxxi,
+       * que consome esse endpoint (maxxi/src/services/erp.js:_normalizarCliente).
+       * Estes testes ja existiam com o envelope errado — passavam contra a
+       * minha suposicao, nao contra o SGP.
+       */
       it("clientes/ vazio + consultacliente traz o cadastro => usa o do fallback", async () => {
         fetchMock
           .mockResolvedValueOnce(jsonResponse({ clientes: [] }))
           .mockResolvedValueOnce(
             jsonResponse({
-              clientes: [
+              msg: "ok",
+              contratos: [
                 {
-                  nome: "MARIA DE FATIMA",
-                  telefone: "(84) 98888-7777",
-                  contratos: [{ contrato: 1864, servicos: [{ id: 1, endereco: { logradouro: "Rua X", latitude: "-5.8", longitude: "-35.2" } }] }],
+                  contratoId: 1864,
+                  razaoSocial: "MARIA DE FATIMA",
+                  cpfCnpj: "123.456.789-00",
+                  telefones: ["(84) 98888-7777"],
+                  emails: [],
+                  endereco_logradouro: "Rua X",
+                  endereco_numero: "123",
+                  endereco_bairro: "Centro",
+                  endereco_cidade: "Natal",
                 },
               ],
             }),
@@ -867,6 +916,8 @@ describe("createSgpConnector", () => {
 
         expect(cadastro?.telefone).toBe("(84) 98888-7777");
         expect(cadastro?.logradouro).toBe("Rua X");
+        expect(cadastro?.bairro).toBe("Centro");
+        expect(cadastro?.cidade).toBe("Natal");
 
         // O fallback pede TODOS os status — senao nao alcanca inativo/cancelado.
         const [url, options] = fetchMock.mock.calls[1];
@@ -882,11 +933,55 @@ describe("createSgpConnector", () => {
             jsonResponse({ clientes: [{ nome: "SEM FONE", contratos: [{ contrato: 9, servicos: [{ id: 1 }] }] }] }),
           )
           .mockResolvedValueOnce(
-            jsonResponse({ clientes: [{ nome: "SEM FONE", telefone: "(84) 91111-2222", contratos: [{ contrato: 9, servicos: [{ id: 1 }] }] }] }),
+            jsonResponse({ contratos: [{ contratoId: 9, razaoSocial: "SEM FONE", telefones: ["(84) 91111-2222"] }] }),
           );
 
         const conn = createSgpConnector(creds);
         expect((await conn.getContratoCadastro("9"))?.telefone).toBe("(84) 91111-2222");
+      });
+
+      /*
+       * O consultacliente nao traz lat/lng. Se o fallback SUBSTITUISSE o cliente
+       * em vez de complementar, pegar o telefone la custaria a coordenada que a
+       * consulta primaria ja tinha — trocaria o card sem contato por um pino a
+       * menos no mapa.
+       */
+      it("pega o telefone do fallback SEM perder a coordenada do primario", async () => {
+        fetchMock
+          .mockResolvedValueOnce(
+            jsonResponse({
+              clientes: [
+                {
+                  nome: "COM GEO SEM FONE",
+                  contratos: [
+                    { contrato: 7, servicos: [{ id: 1, endereco: { logradouro: "Rua Z", latitude: "-5.79", longitude: "-35.21" } }] },
+                  ],
+                },
+              ],
+            }),
+          )
+          .mockResolvedValueOnce(
+            jsonResponse({ contratos: [{ contratoId: 7, telefones: ["(84) 95555-4444"] }] }),
+          );
+
+        const cadastro = await createSgpConnector(creds).getContratoCadastro("7");
+
+        expect(cadastro?.telefone).toBe("(84) 95555-4444");
+        expect(cadastro?.lat).toBeCloseTo(-5.79);
+        expect(cadastro?.lng).toBeCloseTo(-35.21);
+        expect(cadastro?.logradouro).toBe("Rua Z");
+      });
+
+      it("escolhe entre varios contratos o que TEM telefone", async () => {
+        fetchMock.mockResolvedValueOnce(jsonResponse({ clientes: [] })).mockResolvedValueOnce(
+          jsonResponse({
+            contratos: [
+              { contratoId: 1, razaoSocial: "CLIENTE", telefones: [] },
+              { contratoId: 2, razaoSocial: "CLIENTE", telefones: ["(84) 3333-4444"] },
+            ],
+          }),
+        );
+        expect((await createSgpConnector(creds).getContratoCadastro("1"))?.telefone).toBe("(84) 3333-4444");
       });
 
       it("contrato ATIVO com telefone NAO dispara o fallback — uma chamada so", async () => {

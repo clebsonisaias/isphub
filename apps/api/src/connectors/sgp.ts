@@ -406,25 +406,54 @@ function pareceTelefone(valor: string): boolean {
 }
 
 /**
+ * Um valor SOLTO (sem chave que o identifique) so vira telefone se parecer um.
+ * Aceita number: o SGP nao promete tipo, e `8499998888` sem aspas continua
+ * sendo um telefone.
+ */
+function telefoneDeValorSolto(valor: unknown): string | null {
+  if (typeof valor !== "string" && typeof valor !== "number") return null;
+  const texto = String(valor).trim();
+  return pareceTelefone(texto) ? texto : null;
+}
+
+/** Um item de uma colecao de contatos: ou e o telefone, ou o carrega numa chave. */
+function telefoneDeItem(item: unknown): string | null {
+  const solto = telefoneDeValorSolto(item);
+  if (solto) return solto;
+  if (!item || typeof item !== "object") return null;
+  return pickString(item as Record<string, any>, ...ALIASES_TELEFONE);
+}
+
+/**
  * Telefone/contato do cliente no payload de /api/ura/clientes/.
  *
- * O SGP nao e consistente nem no NOME nem na FORMA desse campo entre
- * instancias. Confirmado em producao (31/07) no SGP da CITmax: `contatos` vem
- * como OBJETO, nao array — e a versao anterior fazia
- * `if (!Array.isArray(lista)) continue`, pulando o container inteiro. O campo
- * estava no payload o tempo todo; o extrator e que nao entrava nele. Resultado:
- * CONTATO vazio no card de TODA OS, com "0 com telefone" no backfill.
+ * FORMA CONFIRMADA do SGP da CITmax — nao inferida, lida do Maxxi, que consome
+ * esse mesmo endpoint em producao (`maxxi/src/services/clientes.js:50`):
  *
- * Agora aceita as duas formas (array ou objeto) em qualquer dos containers, e
- * em tres niveis: valor direto no cliente, chave-alias dentro do container, e
- * item a item. Valor solto (sem chave que identifique) so passa se
- * `pareceTelefone` — senao um e-mail no mesmo objeto viraria "telefone".
+ *     cliente.contatos = { telefones: [...], celulares: [...], emails: [...] }
+ *
+ * Ou seja: um OBJETO cujos valores sao ARRAYS. O telefone esta DOIS niveis
+ * abaixo de `contatos`, e as duas tentativas anteriores pararam no primeiro
+ * ("e array?" -> nao, pula tudo) e no segundo ("iterar os valores" -> cada
+ * valor e um array, nenhum e string nem tem chave-alias). Dai o "0 com
+ * telefone" no backfill de 30 contratos que traziam coordenada do MESMO
+ * payload.
+ *
+ * O SGP varia de instancia pra instancia aqui, entao o percurso segue tolerante
+ * as outras formas ja vistas (array direto, objeto indexado, chave-alias solta)
+ * em vez de assumir so a forma da CITmax. `emails` nao atrapalha: e-mail nao
+ * passa em `pareceTelefone` e nao esta nos aliases.
  */
 function extrairTelefoneCliente(cliente: any): string | null {
   const direto = pickString(cliente, ...ALIASES_TELEFONE);
   if (direto) return direto;
 
-  for (const container of [cliente?.telefones_cargos, cliente?.telefones, cliente?.contatos]) {
+  for (const container of [
+    cliente?.contatos,
+    cliente?.telefones_cargos,
+    cliente?.telefones,
+    cliente?.celulares,
+  ]) {
     if (!container || typeof container !== "object") continue;
 
     // O proprio container pode ser o registro de contato
@@ -435,17 +464,17 @@ function extrairTelefoneCliente(cliente: any): string | null {
       if (doContainer) return doContainer;
     }
 
-    // Ou uma colecao de contatos — array, ou objeto indexado ({"0": {...}}).
     for (const item of Array.isArray(container) ? container : Object.values(container)) {
-      // Primitivo: o proprio valor e o telefone. Aceita numero tambem — o SGP
-      // nao promete tipo aqui, e `8499998888` sem aspas continua sendo um
-      // telefone. `pareceTelefone` e quem impede um e-mail ou um id de passar.
-      if (typeof item === "string" || typeof item === "number") {
-        const texto = String(item).trim();
-        if (pareceTelefone(texto)) return texto;
+      // Valor que e ele proprio uma lista: a forma da CITmax
+      // ({telefones: [...], celulares: [...]}). Desce um nivel.
+      if (Array.isArray(item)) {
+        for (const sub of item) {
+          const v = telefoneDeItem(sub);
+          if (v) return v;
+        }
         continue;
       }
-      const v = pickString(item ?? {}, ...ALIASES_TELEFONE);
+      const v = telefoneDeItem(item);
       if (v) return v;
     }
   }
@@ -501,13 +530,48 @@ function logarCadastroSemTelefone(origem: string, cliente: any): void {
 }
 
 /**
+ * Adapta um item de `contratos[]` do `/api/ura/consultacliente/` pro mesmo
+ * formato que o resto do modulo espera do `/api/ura/clientes/`.
+ *
+ * Os dois endpoints falam do MESMO cliente em formatos diferentes: o
+ * consultacliente devolve os campos PLANOS no contrato, em camelCase
+ * (`razaoSocial`, `telefones[]`, `endereco_logradouro`), enquanto o clientes
+ * devolve aninhado (`contatos.telefones[]`, `contratos[].servicos[].endereco`).
+ * Formato confirmado no Maxxi, que consome esse endpoint em producao
+ * (`maxxi/src/services/erp.js:_normalizarCliente`).
+ */
+function clienteDoContratoConsultaCliente(contrato: any): any {
+  return {
+    nome: pickString(contrato, "razaoSocial", "nome"),
+    cpfcnpj: pickString(contrato, "cpfCnpj", "cpfcnpj"),
+    // Plano, nao aninhado em `contatos` — e o proprio contrato que carrega.
+    telefones: Array.isArray(contrato?.telefones) ? contrato.telefones : [],
+    endereco: {
+      logradouro: pick(contrato, "endereco_logradouro"),
+      numero: pick(contrato, "endereco_numero"),
+      bairro: pick(contrato, "endereco_bairro"),
+      cidade: pick(contrato, "endereco_cidade"),
+      // Nao confirmados nesse endpoint; se nao vierem, `parseGeoCliente`
+      // devolve null e a geo continua vindo da consulta primaria.
+      latitude: pick(contrato, "endereco_latitude", "latitude"),
+      longitude: pick(contrato, "endereco_longitude", "longitude"),
+    },
+  };
+}
+
+/**
  * Mesma consulta, mas por `/api/ura/consultacliente/` pedindo TODOS os status
  * de contrato — o unico caminho que alcanca contrato inativo/cancelado.
  *
+ * O envelope e `{ contratos: [...], msg }` — NAO tem chave "clientes". A versao
+ * anterior procurava por `clientes`/`resultados`/`results`, nao achava nada e
+ * logava "sem cliente no envelope": o dado estava la o tempo todo, sob um nome
+ * e num formato diferentes. Por isso o fallback nunca resolveu um contrato
+ * inativo, que era exatamente o caso pro qual ele foi escrito.
+ *
  * Best-effort de proposito: e um complemento, nao a fonte primaria. Se o
- * endpoint nao existir nesta instancia do SGP, responder 4xx/5xx, ou devolver
- * um envelope que `asArray` nao reconhece, devolve null e quem chama segue com
- * o que ja tinha. Nunca deixa o backfill inteiro cair por causa disso.
+ * endpoint nao existir nesta instancia do SGP ou responder 4xx/5xx, devolve
+ * null e quem chama segue com o que ja tinha.
  */
 async function buscarClientePorContratoQualquerStatus(
   creds: ErpCredentials,
@@ -520,9 +584,15 @@ async function buscarClientePorContratoQualquerStatus(
       // 6=Novo, 7=Ativo V. Reduzida — os sete, pra nao excluir nenhum caso.
       status: "1,2,3,4,5,6,7",
     });
-    const [cliente] = asArray(data, "clientes", "resultados", "results");
-    if (!cliente) logarEnvelopeInesperado(data);
-    return cliente ?? null;
+    const contratos = asArray(data, "contratos", "clientes", "resultados", "results");
+    if (!contratos.length) {
+      logarEnvelopeInesperado(data);
+      return null;
+    }
+    // Prefere o contrato que traz telefone; na duvida, o primeiro. Um cliente
+    // pode ter varios contratos e nem todos carregam contato.
+    const escolhido = contratos.find((c: any) => Array.isArray(c?.telefones) && c.telefones.length) ?? contratos[0];
+    return clienteDoContratoConsultaCliente(escolhido);
   } catch (err) {
     // Antes engolia em silencio: nao dava pra distinguir "endpoint nao existe
     // nesta instancia" de "existe e respondeu sem cliente". Sao causas
@@ -1155,28 +1225,41 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
          * formato diferente do esperado, os extratores devolvem null e o
          * resultado e o mesmo de hoje, nunca pior.
          */
+        let doFallback: any = null;
         if (!cliente || !extrairTelefoneCliente(cliente)) {
-          const doFallback = await buscarClientePorContratoQualquerStatus(creds, contratoId);
-          // Fica com o que tiver telefone; na duvida, o primeiro (mais completo
-          // pro contrato ativo).
-          if (doFallback && (!cliente || extrairTelefoneCliente(doFallback))) cliente = doFallback;
+          doFallback = await buscarClientePorContratoQualquerStatus(creds, contratoId);
         }
 
-        if (!cliente) return null;
+        if (!cliente && !doFallback) return null;
 
-        const telefone = extrairTelefoneCliente(cliente);
+        /*
+         * COMBINA por campo em vez de trocar o objeto inteiro.
+         *
+         * O consultacliente nao promete lat/lng (o Maxxi nao le geo dele), entao
+         * "trocar o cliente pelo do fallback" custaria a coordenada de quem tem
+         * geo mas nao tem telefone — trocaria um buraco por outro. Cada campo
+         * fica com a primeira fonte que o tiver, o que so pode melhorar o
+         * resultado em relacao a consulta primaria sozinha.
+         */
+        const telefone = extrairTelefoneCliente(cliente ?? {}) ?? extrairTelefoneCliente(doFallback ?? {});
         // Cadastro veio, mas nenhum alias de telefone casou: mostra que campos
         // EXISTEM (so os nomes, nunca valores) pra distinguir "o SGP nao manda"
         // de "manda com outro nome". Ver logarCadastroSemTelefone.
-        if (!telefone) logarCadastroSemTelefone("/api/ura/clientes/", cliente);
+        if (!telefone && cliente) logarCadastroSemTelefone("/api/ura/clientes/", cliente);
 
-        const enderecoRaw = enderecoDoCliente(cliente);
+        const primario = enderecoDoCliente(cliente);
+        const secundario = doFallback ? enderecoDoCliente(doFallback) : null;
+        const geo = parseGeoCliente(primario);
+        const geoFinal = geo.lat != null && geo.lng != null ? geo : parseGeoCliente(secundario);
+        const campoEndereco = (chave: string) =>
+          pickString(primario ?? {}, chave) ?? pickString(secundario ?? {}, chave);
+
         return {
-          ...parseGeoCliente(enderecoRaw),
-          logradouro: pickString(enderecoRaw ?? {}, "logradouro"),
-          numero: pickString(enderecoRaw ?? {}, "numero"),
-          bairro: pickString(enderecoRaw ?? {}, "bairro"),
-          cidade: pickString(enderecoRaw ?? {}, "cidade"),
+          ...geoFinal,
+          logradouro: campoEndereco("logradouro"),
+          numero: campoEndereco("numero"),
+          bairro: campoEndereco("bairro"),
+          cidade: campoEndereco("cidade"),
           telefone,
         };
       } catch {
