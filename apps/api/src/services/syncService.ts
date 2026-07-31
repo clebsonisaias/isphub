@@ -336,6 +336,11 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
       const contratos = contratosParaBackfillGeo(candidatas, GEO_BACKFILL_MAX_POR_SYNC);
       if (contratos.length > 0) {
         let comCoordenada = 0;
+        // Contato e o campo que a operacao mais sente falta (e o que o card
+        // mostra como "—"), mas o log so contava coordenada — nao dava pra
+        // saber se o telefone estava vindo ou nao sem abrir o banco.
+        let comTelefone = 0;
+        let semCadastro = 0;
         for (const contratoId of contratos) {
           const cadastro = await connector.getContratoCadastro(contratoId);
           // Marca a tentativa sempre (mesmo sem dado ou com falha), pra o TTL
@@ -352,14 +357,20 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
             if (cadastro.numero != null) dados.numero = cadastro.numero;
             if (cadastro.bairro != null) dados.bairro = cadastro.bairro;
             if (cadastro.cidade != null) dados.cidade = cadastro.cidade;
-            if (cadastro.telefone != null) dados.telefone = cadastro.telefone;
+            if (cadastro.telefone != null) {
+              dados.telefone = cadastro.telefone;
+              comTelefone++;
+            }
+          } else {
+            semCadastro++;
           }
           await prisma.ordemServico.updateMany({ where: { provedorId, contratoId }, data: dados });
         }
         const contratosPendentes = new Set(candidatas.map((c) => c.contratoId)).size - contratos.length;
         console.log(
-          `[sync] cadastro backfill provedor ${provedorId}: ${comCoordenada}/${contratos.length} contrato(s) com coordenada` +
-            (contratosPendentes > 0 ? `; ${contratosPendentes} contrato(s) pendente(s) pros proximos ciclos` : ""),
+          `[sync] cadastro backfill provedor ${provedorId}: ${contratos.length} contrato(s) — ` +
+            `${comCoordenada} com coordenada, ${comTelefone} com telefone, ${semCadastro} sem cadastro no SGP` +
+            (contratosPendentes > 0 ? `; ${contratosPendentes} pendente(s) pros proximos ciclos` : ""),
         );
       }
     } catch (err) {

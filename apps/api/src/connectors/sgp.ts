@@ -409,6 +409,43 @@ function extrairTelefoneCliente(cliente: any): string | null {
   return null;
 }
 
+/**
+ * Cadastro do cliente pelo contrato, via `/api/ura/clientes/` — o caminho
+ * normal, que atende contrato ativo.
+ */
+async function buscarClientePorContrato(creds: ErpCredentials, contratoId: string): Promise<any | null> {
+  const data = await sgpPostForm(creds, "/api/ura/clientes/", { contrato: contratoId, limit: 1 });
+  const [cliente] = asArray(data, "clientes", "resultados", "results");
+  return cliente ?? null;
+}
+
+/**
+ * Mesma consulta, mas por `/api/ura/consultacliente/` pedindo TODOS os status
+ * de contrato — o unico caminho que alcanca contrato inativo/cancelado.
+ *
+ * Best-effort de proposito: e um complemento, nao a fonte primaria. Se o
+ * endpoint nao existir nesta instancia do SGP, responder 4xx/5xx, ou devolver
+ * um envelope que `asArray` nao reconhece, devolve null e quem chama segue com
+ * o que ja tinha. Nunca deixa o backfill inteiro cair por causa disso.
+ */
+async function buscarClientePorContratoQualquerStatus(
+  creds: ErpCredentials,
+  contratoId: string,
+): Promise<any | null> {
+  try {
+    const data = await sgpPostForm(creds, "/api/ura/consultacliente/", {
+      contrato: contratoId,
+      // 1=Ativo, 2=Inativo, 3=Cancelado, 4=Suspenso, 5=Inviabilidade Tecnica,
+      // 6=Novo, 7=Ativo V. Reduzida — os sete, pra nao excluir nenhum caso.
+      status: "1,2,3,4,5,6,7",
+    });
+    const [cliente] = asArray(data, "clientes", "resultados", "results");
+    return cliente ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Extrai "lat,lng" de campos de endereco do SGP (ex.: "endereco_ll"). */
 function parseLatLng(value: unknown): { lat: number | null; lng: number | null } {
   if (typeof value !== "string" || !value.includes(",")) return { lat: null, lng: null };
@@ -991,8 +1028,34 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
       // "cliente consultado" (objeto, campos possivelmente null -> marca a
       // tentativa e nao insiste).
       try {
-        const data = await sgpPostForm(creds, "/api/ura/clientes/", { contrato: contratoId, limit: 1 });
-        const cliente = Array.isArray(data?.clientes) ? data.clientes[0] : undefined;
+        let cliente = await buscarClientePorContrato(creds, contratoId);
+
+        /*
+         * FALLBACK pra contrato INATIVO/CANCELADO.
+         *
+         * `/api/ura/clientes/` nao aceita filtro de status e, na pratica, nao
+         * devolve contrato fora de "ativo" — e por isso que uma OS de contrato
+         * inativo aparecia sem CONTATO no card (visto na OS #6720, "Contrato
+         * Inativo", contato vazio). O cadastro existe; e a consulta que nao
+         * alcanca.
+         *
+         * `/api/ura/consultacliente/` aceita `status` (1=Ativo, 2=Inativo,
+         * 3=Cancelado, 4=Suspenso, 5=Inviabilidade, 6=Novo, 7=Ativo V.
+         * Reduzida), entao pedindo os sete cobre qualquer situacao.
+         *
+         * So roda quando a primeira consulta nao resolveu (sem cliente, ou
+         * cliente sem telefone) — o caso comum (contrato ativo) segue com UMA
+         * chamada. E estritamente ADITIVO: se este endpoint responder num
+         * formato diferente do esperado, os extratores devolvem null e o
+         * resultado e o mesmo de hoje, nunca pior.
+         */
+        if (!cliente || !extrairTelefoneCliente(cliente)) {
+          const doFallback = await buscarClientePorContratoQualquerStatus(creds, contratoId);
+          // Fica com o que tiver telefone; na duvida, o primeiro (mais completo
+          // pro contrato ativo).
+          if (doFallback && (!cliente || extrairTelefoneCliente(doFallback))) cliente = doFallback;
+        }
+
         if (!cliente) return null;
         const enderecoRaw = enderecoDoCliente(cliente);
         return {

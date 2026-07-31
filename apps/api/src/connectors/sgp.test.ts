@@ -734,16 +734,20 @@ describe("createSgpConnector", () => {
     });
 
     it("cai pro endereco do cliente quando o servico nao tem endereco proprio", async () => {
-      fetchMock.mockResolvedValueOnce(
-        jsonResponse({
-          clientes: [
-            {
-              contratos: [{ contrato: 1, servicos: [{ id: 1 }] }],
-              endereco: { logradouro: "Av. Central", latitude: "-5.7", longitude: "-35.2" },
-            },
-          ],
-        }),
-      );
+      fetchMock
+        .mockResolvedValueOnce(
+          jsonResponse({
+            clientes: [
+              {
+                contratos: [{ contrato: 1, servicos: [{ id: 1 }] }],
+                endereco: { logradouro: "Av. Central", latitude: "-5.7", longitude: "-35.2" },
+              },
+            ],
+          }),
+        )
+        // Sem telefone na 1a resposta, entao o fallback de contrato inativo
+        // roda — e tambem nao acha nada. O endereco da 1a resposta e mantido.
+        .mockResolvedValueOnce(jsonResponse({ clientes: [] }));
 
       const conn = createSgpConnector(creds);
       const cadastro = await conn.getContratoCadastro("1");
@@ -754,9 +758,11 @@ describe("createSgpConnector", () => {
     });
 
     it("retorna campos null quando o cliente existe mas nao tem coordenada/telefone (0/vazio -> null)", async () => {
-      fetchMock.mockResolvedValueOnce(
-        jsonResponse({ clientes: [{ contratos: [{ contrato: 1, servicos: [{ id: 1, endereco: { latitude: "0", longitude: "" } }] }] }] }),
-      );
+      fetchMock
+        .mockResolvedValueOnce(
+          jsonResponse({ clientes: [{ contratos: [{ contrato: 1, servicos: [{ id: 1, endereco: { latitude: "0", longitude: "" } }] }] }] }),
+        )
+        .mockResolvedValueOnce(jsonResponse({ clientes: [] }));
 
       const conn = createSgpConnector(creds);
       const cadastro = await conn.getContratoCadastro("1");
@@ -768,11 +774,91 @@ describe("createSgpConnector", () => {
       expect(cadastro?.telefone).toBeNull();
     });
 
-    it("retorna null quando o contrato nao existe (nao da pra consultar -> reconsulta depois)", async () => {
-      fetchMock.mockResolvedValueOnce(jsonResponse({ clientes: [] }));
+    it("retorna null quando o contrato nao existe em NENHUM dos dois endpoints", async () => {
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse({ clientes: [] }))
+        .mockResolvedValueOnce(jsonResponse({ clientes: [] }));
 
       const conn = createSgpConnector(creds);
       expect(await conn.getContratoCadastro("999999")).toBeNull();
+    });
+
+    /*
+     * CONTRATO INATIVO — o card mostrava CONTATO vazio (visto na OS #6720).
+     * `/api/ura/clientes/` nao aceita filtro de status e nao devolve contrato
+     * fora de "ativo"; `/api/ura/consultacliente/` aceita, e e o unico caminho
+     * que alcanca o cadastro nesse caso.
+     */
+    describe("fallback pra contrato inativo/cancelado (consultacliente)", () => {
+      it("clientes/ vazio + consultacliente traz o cadastro => usa o do fallback", async () => {
+        fetchMock
+          .mockResolvedValueOnce(jsonResponse({ clientes: [] }))
+          .mockResolvedValueOnce(
+            jsonResponse({
+              clientes: [
+                {
+                  nome: "MARIA DE FATIMA",
+                  telefone: "(84) 98888-7777",
+                  contratos: [{ contrato: 1864, servicos: [{ id: 1, endereco: { logradouro: "Rua X", latitude: "-5.8", longitude: "-35.2" } }] }],
+                },
+              ],
+            }),
+          );
+
+        const conn = createSgpConnector(creds);
+        const cadastro = await conn.getContratoCadastro("1864");
+
+        expect(cadastro?.telefone).toBe("(84) 98888-7777");
+        expect(cadastro?.logradouro).toBe("Rua X");
+
+        // O fallback pede TODOS os status — senao nao alcanca inativo/cancelado.
+        const [url, options] = fetchMock.mock.calls[1];
+        expect(String(url)).toContain("/api/ura/consultacliente/");
+        const corpo = new URLSearchParams(options.body as string);
+        expect(corpo.get("contrato")).toBe("1864");
+        expect(corpo.get("status")).toBe("1,2,3,4,5,6,7");
+      });
+
+      it("cliente veio SEM telefone no clientes/, mas o fallback tem => aproveita o telefone", async () => {
+        fetchMock
+          .mockResolvedValueOnce(
+            jsonResponse({ clientes: [{ nome: "SEM FONE", contratos: [{ contrato: 9, servicos: [{ id: 1 }] }] }] }),
+          )
+          .mockResolvedValueOnce(
+            jsonResponse({ clientes: [{ nome: "SEM FONE", telefone: "(84) 91111-2222", contratos: [{ contrato: 9, servicos: [{ id: 1 }] }] }] }),
+          );
+
+        const conn = createSgpConnector(creds);
+        expect((await conn.getContratoCadastro("9"))?.telefone).toBe("(84) 91111-2222");
+      });
+
+      it("contrato ATIVO com telefone NAO dispara o fallback — uma chamada so", async () => {
+        fetchMock.mockResolvedValueOnce(
+          jsonResponse({ clientes: [{ telefone: "(84) 99999-8888", contratos: [{ contrato: 75, servicos: [{ id: 1 }] }] }] }),
+        );
+
+        const conn = createSgpConnector(creds);
+        await conn.getContratoCadastro("75");
+
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      });
+
+      it("consultacliente inexistente/quebrado (404) NAO derruba o backfill — mantem o que ja tinha", async () => {
+        // Instancia de SGP que nao expoe esse endpoint: o resultado tem que ser
+        // o mesmo de antes desta mudanca, nunca pior.
+        fetchMock
+          .mockResolvedValueOnce(
+            jsonResponse({ clientes: [{ contratos: [{ contrato: 5, servicos: [{ id: 1, endereco: { logradouro: "Rua Y", latitude: "-5.5", longitude: "-35.5" } }] }] }] }),
+          )
+          .mockResolvedValueOnce(new Response("not found", { status: 404 }));
+
+        const conn = createSgpConnector(creds);
+        const cadastro = await conn.getContratoCadastro("5");
+
+        expect(cadastro).not.toBeNull();
+        expect(cadastro?.logradouro).toBe("Rua Y");
+        expect(cadastro?.telefone).toBeNull();
+      });
     });
 
     it("retorna null (sem lancar) quando o SGP falha", async () => {
