@@ -1,0 +1,16 @@
+-- Destrava o backfill de cadastro pros contratos que ficaram SEM telefone.
+--
+-- O backfill so consulta contrato com `geoConsultadoEm` nulo ou mais velho que
+-- o TTL de 7 dias (GEO_RECONSULTA_MS) — o teto existe pra nao bater no SGP
+-- toda vez por um contrato que ele simplesmente nao detalha.
+--
+-- Efeito colateral: a correcao que passou a alcancar contrato inativo (via
+-- /api/ura/consultacliente/) NAO chegaria nas OS que ja estao no espelho, porque
+-- todas ja foram marcadas como consultadas. Ficariam 7 dias com o CONTATO
+-- vazio na tela mesmo com o codigo novo no ar.
+--
+-- Zera a marca APENAS onde o telefone ficou nulo: sao exatamente os casos que
+-- o caminho novo pode resolver. Contrato que ja tem telefone nao e reconsultado
+-- (nada a ganhar), e depois desta passagem o TTL volta a valer normalmente —
+-- nao vira reconsulta perpetua.
+UPDATE "ordens_servico" SET "geoConsultadoEm" = NULL WHERE "telefone" IS NULL;
