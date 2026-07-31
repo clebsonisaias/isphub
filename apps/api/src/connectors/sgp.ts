@@ -443,11 +443,18 @@ function logarCadastroSemTelefone(origem: string, cliente: any): void {
   camposSemTelefoneLogados.add(origem);
   const contrato = cliente?.contratos?.[0];
   const servico = contrato?.servicos?.[0];
+  // `contatos` existe no payload (confirmado em producao) mas nenhum item dele
+  // casou — entao o formato de DENTRO da lista importa tanto quanto o de fora.
+  const contatos = cliente?.contatos;
+  const formaDosContatos = Array.isArray(contatos)
+    ? `array[${contatos.length}] item0=${JSON.stringify(Object.keys(contatos[0] ?? {}).sort())}`
+    : `nao-array (${typeof contatos})`;
   console.warn(
     `[sgp] cadastro sem telefone reconhecido (${origem}) — campos disponiveis: ` +
       `cliente=${JSON.stringify(Object.keys(cliente ?? {}).sort())} ` +
       `contrato=${JSON.stringify(Object.keys(contrato ?? {}).sort())} ` +
-      `servico=${JSON.stringify(Object.keys(servico ?? {}).sort())}`,
+      `servico=${JSON.stringify(Object.keys(servico ?? {}).sort())} ` +
+      `contatos=${formaDosContatos}`,
   );
 }
 
