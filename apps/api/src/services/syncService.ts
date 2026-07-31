@@ -41,8 +41,13 @@ const GEO_BACKFILL_MAX_POR_SYNC = 30;
  * Teto de OS "desaparecidas" confirmadas por ciclo. Cada confirmacao e uma ida
  * ao SGP; sem teto, um provedor com muita OS antiga viraria uma rajada. O
  * resto vai nos proximos ciclos.
+ *
+ * 50 e escolha do usuario pra drenar o acumulo que existia antes da correcao
+ * (OS fechada no SGP que ficava presa na fila). Com o ciclo em 60s, sao ate 50
+ * consultas/min por provedor no pior caso — e so enquanto o acumulo existe;
+ * em regime normal a lista de candidatas por ciclo e de poucas unidades.
  */
-const DESAPARECIDAS_MAX_POR_SYNC = 20;
+const DESAPARECIDAS_MAX_POR_SYNC = 50;
 
 /**
  * Apos consultar a geo de um contrato (com ou sem coordenada), so
