@@ -481,6 +481,11 @@ function nomeDoPlano(valor: unknown): string | null {
  * nas listagens de OS; sem a hora, "data de abertura" sempre cairia em
  * meia-noite, perdendo o horario real do evento. Se so a data vier
  * preenchida, retorna so a data (parseable por new Date() mesmo assim).
+ *
+ * Devolve a string NAIVA, sem fuso — quem marca o fuso e `comFusoSgp`, chamado
+ * depois em cima do resultado (e tambem do fallback `os_data_agendamento`,
+ * que nao passa por aqui). Separado de proposito: esta funcao so junta duas
+ * strings, a semantica de fuso mora num unico lugar.
  */
 function combineDateHora(obj: Record<string, any>, dataKey: string, horaKey: string): string | null {
   const data = pickString(obj, dataKey);
@@ -488,6 +493,33 @@ function combineDateHora(obj: Record<string, any>, dataKey: string, horaKey: str
   const hora = pickString(obj, horaKey);
   return hora ? `${data}T${hora}` : data;
 }
+
+/**
+ * Marca uma data/hora NAIVA do SGP com o fuso do Brasil (America/Fortaleza,
+ * -03:00 fixo — o pais aboliu horario de verao em 2019; mesma decisao ja
+ * documentada em routes/hora.ts).
+ *
+ * BUG que isto corrige: o SGP manda data/hora sem indicacao de fuso
+ * ("2026-07-24T10:57:51"). Sem marcar isso explicitamente, `new Date(...)`
+ * interpreta a string como hora LOCAL DO PROCESSO — e o container roda sem
+ * `TZ` configurada, ou seja, em UTC. Toda `dataCadastro`/`dataAgendamento`
+ * sincronizada ficava gravada 3h ADIANTADA: uma OS aberta as 10:57 BRT virava
+ * 10:57 UTC, que e 07:57 BRT — "aberta ha" inflava em +3h (o card mostrava
+ * horas de atraso numa OS aberta ha 15 minutos), e o mesmo campo alimenta o
+ * alerta de SLA (slaAlertService.ts), que passava a disparar 3h cedo demais.
+ *
+ * So AFIXA o fuso, nunca reinterpreta um valor que ja tem um (`Z` ou
+ * `+hh:mm`/`-hh:mm`) — protege contra double-offset se algum dia uma
+ * instancia do SGP passar a mandar ISO completo.
+ */
+function comFusoSgp(dataHora: string | null): string | null {
+  if (!dataHora) return null;
+  if (/[zZ]$|[+-]\d{2}:\d{2}$/.test(dataHora)) return dataHora;
+  const comT = dataHora.includes(" ") && !dataHora.includes("T") ? dataHora.replace(" ", "T") : dataHora;
+  return comT.includes("T") ? `${comT}${FUSO_SGP}` : `${comT}T00:00:00${FUSO_SGP}`;
+}
+
+const FUSO_SGP = "-03:00";
 
 /**
  * Normaliza uma OS do SGP para o formato neutro do conector.
@@ -549,8 +581,10 @@ function normalizeOs(raw: Record<string, any>): RawOs {
     // ex.: "Macaíba") e o dado de localizacao mais fino disponivel.
     pop: pickString(raw, "pop"),
     usuario: pickString(raw, "usuario"),
-    dataCadastro: combineDateHora(raw, "data_cadastro", "hora_cadastro"),
-    dataAgendamento: combineDateHora(raw, "data_agendamento", "hora_agendamento") ?? pickString(raw, "os_data_agendamento"),
+    dataCadastro: comFusoSgp(combineDateHora(raw, "data_cadastro", "hora_cadastro")),
+    dataAgendamento: comFusoSgp(
+      combineDateHora(raw, "data_agendamento", "hora_agendamento") ?? pickString(raw, "os_data_agendamento"),
+    ),
     // Tecnico designado no SGP (pessoal do provedor) — so informativo; o
     // despacho de verdade e feito na ISPhub, com tecnicos proprios.
     tecnicoSgpNome: pickString(raw, "os_tecnico_responsavel", "tecnico"),

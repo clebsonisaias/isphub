@@ -203,8 +203,63 @@ describe("createSgpConnector", () => {
     expect(os.contratoStatus).toBe("Cancelado");
     expect(os.pop).toBe("Macaíba");
     expect(os.usuario).toBe("joelma");
-    expect(os.dataCadastro).toBe("2026-07-24T10:57:51");
+    // -03:00 explicito: o SGP manda hora do Brasil sem indicacao de fuso, e
+    // sem isso `new Date(...)` interpretava como hora LOCAL DO CONTAINER
+    // (UTC, por nao ter TZ configurada) — toda OS ficava com "aberta ha"
+    // inflado em +3h. Ver a nota em comFusoSgp.
+    expect(os.dataCadastro).toBe("2026-07-24T10:57:51-03:00");
     expect(os.dataAgendamento).toBeNull();
+  });
+
+  /*
+   * BUG DE FUSO — "aberta ha" inflado em +3h numa OS aberta ha 15 minutos.
+   *
+   * O SGP manda data/hora do Brasil SEM marcar o fuso. `new Date(string sem
+   * offset)` interpreta como hora LOCAL DO PROCESSO — e o container roda sem
+   * `TZ` configurada (node:22-alpine, default UTC). Toda dataCadastro ficava
+   * gravada 3h adiantada: 10:57 BRT virava 10:57 UTC = 07:57 BRT.
+   *
+   * O teste prova o INSTANTE final (via `new Date(...).toISOString()`), nao
+   * so a string — e o que importa de verdade e o instante que "aberta ha" e
+   * o alerta de SLA usam pra calcular o decorrido.
+   */
+  describe("fuso das datas do SGP — America/Fortaleza (-03:00) explicito", () => {
+    it("data+hora combinadas: 10:57:51 BRT vira o instante certo em UTC (13:57:51)", async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({ ordens_servicos: [{ os_id: "1", os_status: 0, data_cadastro: "2026-07-24", hora_cadastro: "10:57:51" }] }),
+      );
+      const { itens: [os] } = await createSgpConnector(creds).listServiceOrders();
+      expect(new Date(os.dataCadastro!).toISOString()).toBe("2026-07-24T13:57:51.000Z");
+    });
+
+    it("so a data (sem hora): meia-noite EM BRASILIA, nao meia-noite UTC", async () => {
+      // Antes: "2026-07-24" sozinho virava meia-noite UTC = 21h do dia
+      // ANTERIOR em Brasilia — uma OS podia aparecer com a data errada.
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({ ordens_servicos: [{ os_id: "1", os_status: 0, data_cadastro: "2026-07-24" }] }),
+      );
+      const { itens: [os] } = await createSgpConnector(creds).listServiceOrders();
+      expect(new Date(os.dataCadastro!).toISOString()).toBe("2026-07-24T03:00:00.000Z");
+    });
+
+    it("fallback os_data_agendamento (formato com ESPACO, nao 'T') tambem ganha o fuso", async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({ ordens_servicos: [{ os_id: "1", os_status: 0, os_data_agendamento: "2026-12-31 09:00:00" }] }),
+      );
+      const { itens: [os] } = await createSgpConnector(creds).listServiceOrders();
+      expect(new Date(os.dataAgendamento!).toISOString()).toBe("2026-12-31T12:00:00.000Z");
+    });
+
+    it("os_data_agendamento ja com fuso explicito (Z) NAO e reinterpretado — protege contra double-offset", async () => {
+      // Nenhuma instancia do SGP manda isto hoje (todas mandam naive), mas se
+      // alguma um dia passar a mandar ISO completo, nao pode virar
+      // "...12:00:00.000Z-03:00" (invalido) nem ter o instante deslocado de novo.
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({ ordens_servicos: [{ os_id: "1", os_status: 0, os_data_agendamento: "2026-12-31T12:00:00.000Z" }] }),
+      );
+      const { itens: [os] } = await createSgpConnector(creds).listServiceOrders();
+      expect(os.dataAgendamento).toBe("2026-12-31T12:00:00.000Z");
+    });
   });
 
   it("listServiceOrders le o status de status_id, nao do rotulo textual (regressao: tudo virava 'aberta')", async () => {
