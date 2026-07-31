@@ -50,6 +50,21 @@ export interface ListOsParams {
   limit?: number;
 }
 
+/**
+ * Resultado de uma varredura de listagem. `completo` e o que separa "o
+ * espelho pode confiar nesta lista pra saber o que SUMIU" de "so sei o que
+ * veio, nao o que faltou" — sem isso, uma falha de rede no meio da paginacao
+ * pareceria "a OS sumiu" e a reconciliacao de status cancelaria OS viva em
+ * massa (ver a trava em syncService.ts).
+ */
+export interface ListagemOs {
+  itens: RawOs[];
+  /** `paginacao.total` que o SGP anunciou, quando informado. */
+  total: number | null;
+  /** `false` se bateu no teto de paginas ou algo interrompeu a coleta. */
+  completo: boolean;
+}
+
 /** Status de conexao consultado ao vivo no ERP (nao faz parte do sync em massa). */
 export interface ConnectionStatus {
   /** null = indeterminado (ERP nao respondeu com um sinal claro de online/offline). */
@@ -261,8 +276,8 @@ export interface ErpConnector {
   /** Catalogo de tipos de OS do provedor. */
   listOsTypes(): Promise<RawOsType[]>;
 
-  /** Lista OS para o espelho (polling). */
-  listServiceOrders(params?: ListOsParams): Promise<RawOs[]>;
+  /** Lista OS para o espelho (polling). Ver `ListagemOs` sobre `completo`. */
+  listServiceOrders(params?: ListOsParams): Promise<ListagemOs>;
 
   // ---- write-back ----
 
@@ -288,18 +303,26 @@ export interface ErpConnector {
   obterFichaOs(sgpOsId: string, contratoId?: string | null): Promise<OsFichaSgp | null>;
 
   /**
-   * A OS ainda existe no SGP? Pergunta ESTRITA, separada de `obterFichaOs` de
-   * proposito — as duas respondem coisas diferentes e nao podem compartilhar
-   * politica de erro:
+   * Qual o status da OS AGORA no SGP? Pergunta ESTRITA, separada de
+   * `obterFichaOs` de proposito — as duas respondem coisas diferentes e nao
+   * podem compartilhar politica de erro:
    *
    *  - `obterFichaOs` responde "o que consigo mostrar?" e e TOLERANTE: engole
    *    falha de uma fonte pra entregar a outra.
-   *  - esta responde "posso concluir que sumiu?" e NAO engole nada: erro de
-   *    transporte PROPAGA, porque o unico `false` aceitavel e o de uma resposta
-   *    bem-sucedida e vazia. Tratar timeout como ausencia cancelaria OS viva em
-   *    massa numa instabilidade do ERP (ver a deteccao de removidas no sync).
+   *  - esta responde "o espelho ainda pode confiar no status que tem?" e NAO
+   *    engole nada: erro de transporte PROPAGA, porque o unico `null` aceitavel
+   *    e o de uma resposta bem-sucedida e vazia (a OS nao existe mais). Tratar
+   *    timeout como ausencia cancelaria OS viva em massa numa instabilidade do
+   *    ERP (ver a reconciliacao de status no sync).
+   *
+   * Era `osExisteNoSgp(): boolean` — respondia "existe?" quando a pergunta
+   * certa e "ainda esta aberta?". Uma OS fechada EXISTE (o SGP a devolve),
+   * entao o booleano dizia "sim" e a OS fechada nunca saia da fila de abertas
+   * do ISPhub. O status cru resolve os dois casos que importam: `null` (nao
+   * existe mais → cancelada aqui) e um codigo (usa `mapSgpOsStatus` pra saber
+   * se ainda esta aberta ou se fechou).
    */
-  osExisteNoSgp(sgpOsId: string): Promise<boolean>;
+  obterStatusOs(sgpOsId: string): Promise<number | string | null>;
 
   /**
    * Adiciona uma anotacao/andamento na OS.

@@ -42,12 +42,35 @@ function exigirAuth(req, res) {
   return false;
 }
 
+/*
+ * "OS do ERP", num unico array mutavel — e o que permite os specs simularem
+ * abrir/fechar OS no SGP de verdade, em vez de so injetar OS novas. A seed
+ * (e2e-os-1, aberta) e a mesma que a suite ja depende ha tempo; OS extras
+ * injetadas por /_test/os entram aqui dentro tambem, pra tudo compartilhar o
+ * mesmo mecanismo de status.
+ */
+const SEED = {
+  os_id: "e2e-os-1",
+  os_status: 0,
+  motivo: "1",
+  os_conteudo: "Cliente sem sinal (fixture e2e)",
+  cliente_nome: "Cliente E2E",
+  contrato_id: "1",
+  endereco_logradouro: "Rua de Teste",
+  endereco_numero: "1",
+  endereco_bairro: "Centro",
+  endereco_cidade: "Natal",
+  endereco_ll: "-5.79,-35.21",
+  os_data_agendamento: "2026-12-31 09:00:00",
+};
+let ordens = [{ ...SEED }];
+
 app.get("/", (_req, res) => res.json({ ok: true, service: "mock-sgp-e2e" }));
 
 app.get("/_test/log", (_req, res) => res.json(log));
 app.post("/_test/reset", (_req, res) => {
   log = [];
-  osExtras = [];
+  ordens = [{ ...SEED }];
   res.json({ ok: true });
 });
 
@@ -65,35 +88,33 @@ app.post("/api/ura/tecnicos/", (req, res) => {
  * OS extras injetadas pelo teste via POST /_test/os — e como o e2e simula
  * "abriram uma OS nova no ERP" sem depender de um SGP de verdade.
  */
-let osExtras = [];
-
 app.post("/_test/os", (req, res) => {
-  osExtras.push(req.body);
-  res.json({ ok: true, total: osExtras.length });
+  ordens.push(req.body);
+  res.json({ ok: true, total: ordens.length });
+});
+
+/*
+ * Muda o status de uma OS ja existente no "ERP" — e como o e2e simula
+ * "fecharam a OS no SGP" sem depender de um SGP real. Precisa mexer nos DOIS
+ * lugares que o sync consulta: a listagem (pra ela sumir das varreduras de
+ * aberta) e a consulta por id (pra `obterStatusOs` enxergar o status novo).
+ */
+app.post("/_test/os/:id/status", (req, res) => {
+  const os = ordens.find((o) => String(o.os_id) === req.params.id);
+  if (!os) return res.status(404).json({ error: "OS nao encontrada no fixture" });
+  os.os_status = req.body.os_status;
+  res.json({ ok: true });
 });
 
 app.post("/api/ura/ordemservico/list/", (req, res) => {
   if (exigirAuth(req, res)) return;
-  res.json({
-    paginacao: { total: 1 + osExtras.length },
-    ordens_servicos: [
-      ...osExtras,
-      {
-        os_id: "e2e-os-1",
-        os_status: 0,
-        motivo: "1",
-        os_conteudo: "Cliente sem sinal (fixture e2e)",
-        cliente_nome: "Cliente E2E",
-        contrato_id: "1",
-        endereco_logradouro: "Rua de Teste",
-        endereco_numero: "1",
-        endereco_bairro: "Centro",
-        endereco_cidade: "Natal",
-        endereco_ll: "-5.79,-35.21",
-        os_data_agendamento: "2026-12-31 09:00:00",
-      },
-    ],
-  });
+  // O sync real sempre passa `status` explicito (uma chamada por status
+  // aberto). Filtrar de verdade aqui e o que torna possivel testar "a OS
+  // fechou no SGP" — sem isso ela nunca sumiria das varreduras de aberta,
+  // que e justamente o mecanismo que expos o bug original.
+  const filtro = req.body.status;
+  const filtradas = filtro === undefined ? ordens : ordens.filter((o) => Number(o.os_status) === Number(filtro));
+  res.json({ paginacao: { total: filtradas.length }, ordens_servicos: filtradas });
 });
 
 /*
@@ -101,15 +122,21 @@ app.post("/api/ura/ordemservico/list/", (req, res) => {
  * mostrava "o SGP nao devolveu dados desta OS" em toda OS, indistinguivel de
  * um defeito de producao. Um fixture que nao implementa a rota nao e neutro —
  * ele fabrica um sintoma.
+ *
+ * Tambem e o endpoint que `obterStatusOs` usa pra reconciliar OS que saiu da
+ * fila de abertas — por isso o status devolvido aqui reflete o array `ordens`
+ * mutavel, e nao um valor fixo.
  */
 app.post("/api/os/list/id/:id/", (req, res) => {
   if (exigirAuth(req, res)) return;
   if (req.params.id === "inexistente") return res.json({ ordens_servicos: [] });
+  const conhecida = ordens.find((o) => String(o.os_id) === req.params.id);
+  if (!conhecida) return res.json({ ordens_servicos: [] });
   res.json({
     ordens_servicos: [
       {
         os_id: req.params.id,
-        os_status: 0,
+        os_status: conhecida.os_status,
         os_observacao: "Observacao vinda do SGP (fixture e2e)",
         os_servicoprestado: "Troca de ONU",
         os_tecnico_responsavel: "Tecnico E2E",

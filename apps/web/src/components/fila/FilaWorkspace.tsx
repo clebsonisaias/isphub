@@ -227,15 +227,27 @@ export function FilaWorkspace({
    *    suspensao do notebook) e o evento se perdeu. E o momento em que a pessoa
    *    volta a olhar, entao e quando o dado precisa estar certo.
    *
-   * O intervalo de 2s existe pra um ciclo de sync que mexeu em varias OS
-   * disparar UMA recarga, nao uma por evento.
+   * Debounce de COAUDA (trailing), nao um cooldown desde a ultima recarga
+   * aplicada: junta uma rajada de eventos numa unica recarga 800ms depois do
+   * ULTIMO deles, sem nunca DESCARTAR um evento — so atrasa. A diferenca
+   * importa porque o servidor emite UM `os-alterada` por CICLO de sync, nao
+   * um por OS — entao dois eventos proximos no tempo quase sempre sao dois
+   * CICLOS distintos (dois provedores sincronizando perto um do outro, ou
+   * duas sincronizacoes manuais em sequencia), cada um com informacao nova.
+   * Um cooldown "ignora evento se recarreguei ha menos de 2s" jogava fora
+   * exatamente esse segundo ciclo — a tela ficava com o dado velho ate o
+   * proximo evento, o foco na aba, ou um clique manual. Foi como uma OS
+   * fechada no SGP ficou visivel na Fila mesmo com o espelho ja certo.
    */
-  const ultimaRecargaRef = useRef(0);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   function recarregar(forcado = false) {
-    const agoraMs = Date.now();
-    if (!forcado && agoraMs - ultimaRecargaRef.current < 2000) return;
-    ultimaRecargaRef.current = agoraMs;
-    setRefetch((n) => n + 1);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (forcado) {
+      debounceRef.current = null;
+      setRefetch((n) => n + 1);
+      return;
+    }
+    debounceRef.current = setTimeout(() => setRefetch((n) => n + 1), 800);
   }
 
   useRealtime((evento) => {
@@ -251,6 +263,7 @@ export function FilaWorkspace({
     return () => {
       document.removeEventListener("visibilitychange", aoVoltar);
       window.removeEventListener("focus", aoVoltar);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

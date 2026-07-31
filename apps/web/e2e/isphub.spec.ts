@@ -180,3 +180,64 @@ test("OS criada no ERP aparece no Painel sem recarregar a pagina", async ({ page
   // 3) Sem reload: a tela tem que se virar sozinha.
   await expect(page.getByText(cliente)).toBeVisible({ timeout: 20_000 });
 });
+
+/**
+ * O SENTIDO INVERSO — o bug relatado de verdade: "fechei a OS no SGP e ela
+ * continua aberta aqui, muito alem do ciclo de sync". Causa raiz: a OS sumia
+ * das varreduras de aberta, e o codigo antigo perguntava ao SGP "esta OS
+ * ainda existe?" — pra uma OS fechada a resposta e "sim, existe" (so nao esta
+ * mais aberta), entao nada acontecia, em todo ciclo, pra sempre.
+ *
+ * Espelha o teste "aparece": nasce uma OS, entra na fila, o SGP fixture marca
+ * ela como fechada (`_test/os/:id/status`), o sync roda, e a OS tem que sumir
+ * do Painel SEM reload — se a reconciliacao nao rodar, ou a UI nao reagir ao
+ * `os-alterada`, isto falha.
+ */
+test("OS fechada no SGP some do Painel sem recarregar a pagina", async ({ page, request }) => {
+  await request.post(`${MOCK_SGP}/_test/reset`);
+  await login(page, ADMIN);
+
+  const cliente = `CLIENTE FECHOU ${Date.now()}`;
+  const osId = `fecha-${Date.now()}`;
+  const token = await page.evaluate(() => localStorage.getItem("isphub_token"));
+  const provedores = await request.get(`${API}/provedores`, { headers: { Authorization: `Bearer ${token}` } });
+  const provedor = (await provedores.json()).find((p: { nome: string }) => p.nome === "E2E Provider");
+
+  // 1) A OS nasce ABERTA no ERP e o sync a traz pro Painel.
+  await request.post(`${MOCK_SGP}/_test/os`, {
+    data: {
+      os_id: osId,
+      os_status: 0,
+      motivo: "1",
+      os_conteudo: "Sera fechada durante o teste",
+      cliente_nome: cliente,
+      contrato_id: "1",
+      endereco_logradouro: "Rua que Fecha",
+      endereco_numero: "1",
+      endereco_bairro: "Centro",
+      endereco_cidade: "Natal",
+      endereco_ll: "-5.79,-35.21",
+      os_data_agendamento: "2026-12-31 09:00:00",
+    },
+  });
+  await request.post(`${API}/provedores/${provedor.id}/sync`, { headers: { Authorization: `Bearer ${token}` } });
+  await expect(page.getByText(cliente)).toBeVisible({ timeout: 20_000 });
+
+  // 2) Fecha a OS diretamente no "SGP" — nao pelo ISPhub. Simula o tecnico
+  // (ou o proprio SGP) encerrando por fora do sistema.
+  await request.post(`${MOCK_SGP}/_test/os/${osId}/status`, { data: { os_status: 1 } }); // 1 = Encerrada
+
+  // 3) Novo ciclo de sync: a OS sumiu da varredura de aberta, o sync confirma
+  // via obterStatusOs e reconcilia.
+  await request.post(`${API}/provedores/${provedor.id}/sync`, { headers: { Authorization: `Bearer ${token}` } });
+
+  // 4) Sem reload: a OS tem que sumir da Fila sozinha.
+  await expect(page.getByText(cliente)).toHaveCount(0, { timeout: 20_000 });
+
+  // E reaparece na aba Concluidas, com o status certo — nao cancelada por
+  // engano (o SGP disse "Encerrada", nao "removida").
+  await page.getByRole("tab", { name: /Concluídas/ }).click();
+  const card = page.getByText(cliente).locator("xpath=ancestor::*[@role='button'][1]");
+  await expect(card).toBeVisible();
+  await expect(card.getByText("Concluida", { exact: false })).toBeVisible();
+});

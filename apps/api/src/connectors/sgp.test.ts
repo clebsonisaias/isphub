@@ -112,7 +112,7 @@ describe("createSgpConnector", () => {
     );
 
     const conn = createSgpConnector(creds);
-    const [os] = await conn.listServiceOrders();
+    const { itens: [os] } = await conn.listServiceOrders();
 
     expect(os.sgpOsId).toBe("555");
     expect(os.statusCode).toBe(0);
@@ -150,7 +150,7 @@ describe("createSgpConnector", () => {
     );
 
     const conn = createSgpConnector(creds);
-    const [os] = await conn.listServiceOrders();
+    const { itens: [os] } = await conn.listServiceOrders();
 
     expect(os.contratoId).toBe("1268");
     expect(typeof os.contratoId).toBe("string");
@@ -197,7 +197,7 @@ describe("createSgpConnector", () => {
     );
 
     const conn = createSgpConnector(creds);
-    const [os] = await conn.listServiceOrders();
+    const { itens: [os] } = await conn.listServiceOrders();
 
     expect(os.tipoCodigo).toBe("🚨 Retirada 🚨");
     expect(os.contratoStatus).toBe("Cancelado");
@@ -221,7 +221,7 @@ describe("createSgpConnector", () => {
     );
 
     const conn = createSgpConnector(creds);
-    const [encerrada, aberta] = await conn.listServiceOrders();
+    const { itens: [encerrada, aberta] } = await conn.listServiceOrders();
 
     expect(mapSgpOsStatus(encerrada.statusCode)).toBe(OsStatus.CONCLUIDA);
     expect(mapSgpOsStatus(aberta.statusCode)).toBe(OsStatus.ABERTA);
@@ -233,7 +233,7 @@ describe("createSgpConnector", () => {
     );
 
     const conn = createSgpConnector(creds);
-    const [os] = await conn.listServiceOrders();
+    const { itens: [os] } = await conn.listServiceOrders();
 
     expect(mapSgpOsStatus(os.statusCode)).toBe(OsStatus.CONCLUIDA);
   });
@@ -244,7 +244,7 @@ describe("createSgpConnector", () => {
     );
 
     const conn = createSgpConnector(creds);
-    const [os] = await conn.listServiceOrders();
+    const { itens: [os] } = await conn.listServiceOrders();
 
     expect(os.endereco.lat).toBeNull();
     expect(os.endereco.lng).toBeNull();
@@ -1260,7 +1260,7 @@ describe("listServiceOrders — paginacao", () => {
       .mockResolvedValueOnce(pagina(200, 450, 200))
       .mockResolvedValueOnce(pagina(50, 450, 400));
 
-    const ordens = await createSgpConnector(creds).listServiceOrders({ status: 0 });
+    const { itens: ordens } = await createSgpConnector(creds).listServiceOrders({ status: 0 });
 
     expect(ordens).toHaveLength(450);
     expect(fetchMock).toHaveBeenCalledTimes(3);
@@ -1278,14 +1278,14 @@ describe("listServiceOrders — paginacao", () => {
 
   it("pagina incompleta encerra (instancia que nao anuncia paginacao)", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ ordens_servicos: [{ os_id: "1", os_status: 0 }] }));
-    const ordens = await createSgpConnector(creds).listServiceOrders();
+    const { itens: ordens } = await createSgpConnector(creds).listServiceOrders();
     expect(ordens).toHaveLength(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("`offset` explicito respeita a janela pedida e NAO pagina", async () => {
     fetchMock.mockResolvedValueOnce(pagina(200, 999, 0));
-    const ordens = await createSgpConnector(creds).listServiceOrders({ offset: 0, limit: 200 });
+    const { itens: ordens } = await createSgpConnector(creds).listServiceOrders({ offset: 0, limit: 200 });
     expect(ordens).toHaveLength(200);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
@@ -1294,6 +1294,53 @@ describe("listServiceOrders — paginacao", () => {
     fetchMock.mockResolvedValueOnce(pagina(200, 200, 0));
     await createSgpConnector(creds).listServiceOrders();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  /*
+   * `completo` e o campo que a reconciliacao de status usa pra decidir se
+   * pode confiar na AUSENCIA de uma OS numa varredura — uma varredura
+   * incompleta jamais pode virar "essa OS sumiu, cancela". Ver syncService.ts.
+   */
+  it("completo=true quando a varredura termina normalmente", async () => {
+    fetchMock.mockResolvedValueOnce(pagina(200, 200, 0));
+    const { completo, total } = await createSgpConnector(creds).listServiceOrders();
+    expect(completo).toBe(true);
+    expect(total).toBe(200);
+  });
+
+  it("completo=false ao bater no teto de paginas com mais coisa por vir", async () => {
+    // PAGINACAO_MAX_PAGINAS=50 * PAGINA_OS(default)=200: simula um total bem
+    // maior que 50 paginas cheias, entao o laco bate o teto sem terminar.
+    for (let i = 0; i < 50; i++) fetchMock.mockResolvedValueOnce(pagina(200, 999_999, i * 200));
+
+    const { itens, completo, total } = await createSgpConnector(creds).listServiceOrders();
+
+    expect(completo).toBe(false);
+    expect(total).toBe(999_999);
+    expect(itens).toHaveLength(50 * 200);
+    expect(fetchMock).toHaveBeenCalledTimes(50);
+  });
+
+  it("offset explicito (janela pontual) sempre reporta completo=true", async () => {
+    fetchMock.mockResolvedValueOnce(pagina(200, 999, 0));
+    const { completo } = await createSgpConnector(creds).listServiceOrders({ offset: 0, limit: 200 });
+    expect(completo).toBe(true);
+  });
+
+  /*
+   * Registro sem os_id/id: a chave do upsert e provedorId+sgpOsId, e
+   * `String(undefined)` viraria a string literal "null" — varias OS
+   * distintas colapsando na mesma linha do banco. Tem que ser descartado,
+   * nao gravado com um id fabricado.
+   */
+  it("descarta registro sem os_id nem id, sem derrubar os demais", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        ordens_servicos: [{ os_id: "1", os_status: 0 }, { os_status: 2 }, { os_id: "3", os_status: 0 }],
+      }),
+    );
+    const { itens } = await createSgpConnector(creds).listServiceOrders();
+    expect(itens.map((o) => o.sgpOsId)).toEqual(["1", "3"]);
   });
 });
 
@@ -1406,7 +1453,7 @@ describe("obterFichaOs — PPPoE vem do CADASTRO do contrato", () => {
   });
 });
 
-describe("osExisteNoSgp — a pergunta ESTRITA (usada pra cancelar OS)", () => {
+describe("obterStatusOs — a pergunta ESTRITA (usada pra reconciliar OS fora da fila de abertas)", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
   beforeEach(() => {
     fetchMock = vi.fn();
@@ -1418,28 +1465,37 @@ describe("osExisteNoSgp — a pergunta ESTRITA (usada pra cancelar OS)", () => {
 
   /**
    * O contrato de erro deste metodo e a unica coisa entre uma instabilidade do
-   * SGP e a fila do provedor sendo cancelada em massa: a deteccao de removidas
-   * do sync marca OS como CANCELADA quando ele responde `false`. Por isso erro
+   * SGP e a fila do provedor sendo cancelada em massa: a reconciliacao de
+   * status marca OS como CANCELADA quando ele responde `null`. Por isso erro
    * de transporte PRECISA propagar — quem chama trata como "sem evidencia".
+   *
+   * Era `osExisteNoSgp(): boolean` — respondia "sim, existe" pra OS fechada
+   * (que existe, so nao esta mais aberta), e o chamador antigo tratava "existe"
+   * como "nao mexe". Por isso OS fechada no SGP nunca saia da fila do ISPhub.
    */
-  it("resposta vazia e bem-sucedida => false (a OS realmente nao esta la)", async () => {
+  it("resposta vazia e bem-sucedida => null (a OS realmente nao esta la)", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ ordens_servicos: [] }));
-    expect(await createSgpConnector(creds).osExisteNoSgp("999")).toBe(false);
+    expect(await createSgpConnector(creds).obterStatusOs("999")).toBeNull();
   });
 
-  it("OS encontrada => true", async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse([{ os_id: 6755 }]));
-    expect(await createSgpConnector(creds).osExisteNoSgp("6755")).toBe(true);
+  it("OS encontrada => devolve o status bruto (nao um booleano)", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([{ os_id: 6755, os_status: 1 }]));
+    expect(await createSgpConnector(creds).obterStatusOs("6755")).toBe(1);
   });
 
-  it("erro 500 PROPAGA — nunca vira `false`, senao o sync cancelaria OS viva", async () => {
+  it("OS encontrada so com rotulo textual => devolve o texto", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([{ os_id: 6755, status: "Encerrada" }]));
+    expect(await createSgpConnector(creds).obterStatusOs("6755")).toBe("Encerrada");
+  });
+
+  it("erro 500 PROPAGA — nunca vira `null`, senao o sync cancelaria OS viva", async () => {
     fetchMock.mockResolvedValueOnce(new Response("erro interno", { status: 500 }));
-    await expect(createSgpConnector(creds).osExisteNoSgp("6755")).rejects.toThrow();
+    await expect(createSgpConnector(creds).obterStatusOs("6755")).rejects.toThrow();
   });
 
   it("timeout/rede fora PROPAGA — mesma razao", async () => {
     fetchMock.mockRejectedValueOnce(new Error("network down"));
-    await expect(createSgpConnector(creds).osExisteNoSgp("6755")).rejects.toThrow();
+    await expect(createSgpConnector(creds).obterStatusOs("6755")).rejects.toThrow();
   });
 });
 

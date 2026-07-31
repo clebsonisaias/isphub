@@ -69,7 +69,7 @@ model ErpConfig {
   app                      String
   /// Token criptografado (iv:authTag:ciphertext em base64).
   tokenCifrado             String
-  intervaloPollingSegundos Int       @default(180)
+  intervaloPollingSegundos Int       @default(60)
   ativo                    Boolean   @default(true)
   ultimaSyncEm             DateTime?
   ultimaSyncOk             Boolean?

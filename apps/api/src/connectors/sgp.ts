@@ -3,6 +3,7 @@ import { env } from "../config/env.js";
 import type {
   ErpConnector,
   ErpCredentials,
+  ListagemOs,
   ListOsParams,
   Olt,
   OnuAutorizada,
@@ -494,6 +495,16 @@ function combineDateHora(obj: Record<string, any>, dataKey: string, horaKey: str
  * "URA" e a familia "central/chamado" (ex.: os_id vs id, os_conteudo vs
  * conteudo), entao aceitamos os aliases mais comuns documentados.
  */
+function statusCodeDe(raw: Record<string, any>): number | string {
+  const bruto = pick(raw, "os_status", "status_id", "status");
+  if (bruto !== null && bruto !== undefined) return bruto;
+  console.warn(
+    `[sgp] OS ${pick(raw, "os_id", "id") ?? "?"} sem os_status/status_id/status — assumindo Aberta. ` +
+      "Formato do SGP pode ter mudado.",
+  );
+  return 0;
+}
+
 function normalizeOs(raw: Record<string, any>): RawOs {
   const llCampo = pick(raw, "endereco_ll", "contrato_endereco_ll");
   const { lat, lng } = parseLatLng(llCampo);
@@ -511,7 +522,13 @@ function normalizeOs(raw: Record<string, any>): RawOs {
     // pegar o texto fazia Number() virar NaN e o mapeamento cair no default
     // "Aberta", marcando TODA OS como aberta pra sempre. mapSgpOsStatus
     // tambem entende o texto, entao os dois formatos funcionam.
-    statusCode: pick(raw, "os_status", "status_id", "status") ?? 0,
+    //
+    // O `?? 0` (Aberta) e um fallback SILENCIOSO por padrao — `sgpStatusReconhecido(0)`
+    // e `true`, entao esse caso nao aparecia no aviso de "status nao reconhecido"
+    // do sync. Se o registro nao trouxe nenhuma das tres chaves, e o formato do
+    // SGP que mudou, nao um "esta aberta" de verdade — grita alto pra nao passar
+    // despercebido de novo.
+    statusCode: statusCodeDe(raw),
     prioridade: raw.os_prioridade ? Number(raw.os_prioridade) : null,
     clienteNome: pickString(raw, "cliente_nome", "cliente", "razaosocial"),
     clienteDocumento: pickString(raw, "cliente_cpfcnpj", "cpfcnpj"),
@@ -604,7 +621,7 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
      * Quando o `offset` explicito e passado (uso pontual), respeita e nao
      * pagina: quem pediu uma janela especifica quer aquela janela.
      */
-    async listServiceOrders(params: ListOsParams = {}): Promise<RawOs[]> {
+    async listServiceOrders(params: ListOsParams = {}): Promise<ListagemOs> {
       const path = "/api/ura/ordemservico/list/";
       const limite = params.limit ?? PAGINA_OS;
       const paginaUnica = params.offset !== undefined;
@@ -612,6 +629,10 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
       const itens: any[] = [];
       let offset = params.offset ?? 0;
       let total: number | null = null;
+      // `false` quando a coleta para sem ter certeza de ter tudo — hoje so o
+      // teto de paginas. E o que a reconciliacao de status usa pra decidir se
+      // pode confiar na AUSENCIA de uma OS (ver a trava em syncService.ts).
+      let completo = true;
 
       for (let pagina = 0; pagina < PAGINACAO_MAX_PAGINAS; pagina++) {
         const data = await sgpPostJson(creds, path, {
@@ -651,6 +672,7 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
          * provedor grande passa disso com folga.
          */
         if (pagina === PAGINACAO_MAX_PAGINAS - 1) {
+          completo = false;
           console.warn(
             `[sgp] ${path} status=${params.status ?? "todos"}: PAROU NO TETO DE ${PAGINACAO_MAX_PAGINAS} paginas ` +
               `com ${itens.length} de ${total ?? "?"} — o SGP tem MAIS OS do que o sync trouxe`,
@@ -681,7 +703,19 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
           `${itens.length > 1 ? ` — 1o: id=${idDe(itens[0])} ${dataDe(itens[0]) ?? "?"} | ultimo: id=${idDe(itens[itens.length - 1])} ${dataDe(itens[itens.length - 1]) ?? "?"}` : ""}`,
       );
 
-      return itens.map(normalizeOs);
+      /*
+       * Registro sem `os_id` NEM `id` — `String(pick(...))` viraria a string
+       * literal "null", e OS distintas colapsariam na mesma linha do banco
+       * (a chave do upsert e provedorId+sgpOsId). Descarta com log alto em vez
+       * de gravar lixo; melhor faltar uma OS suspeita que fundir varias.
+       */
+      const validos = itens.filter((o) => {
+        if (idDe(o) !== null && idDe(o) !== undefined) return true;
+        console.error(`[sgp] ${path}: registro sem os_id/id descartado — ${JSON.stringify(Object.keys(o ?? {}))}`);
+        return false;
+      });
+
+      return { itens: validos.map(normalizeOs), total, completo: paginaUnica ? true : completo };
     },
 
     /**
@@ -845,12 +879,14 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
     },
 
     /**
-     * Sem `try`/`catch` de proposito: ver a nota do metodo na interface. `false`
+     * Sem `try`/`catch` de proposito: ver a nota do metodo na interface. `null`
      * so quando o SGP respondeu e nao havia OS com esse id.
      */
-    async osExisteNoSgp(sgpOsId: string): Promise<boolean> {
+    async obterStatusOs(sgpOsId: string): Promise<number | string | null> {
       const data = await sgpPostForm(creds, `/api/os/list/id/${encodeURIComponent(sgpOsId)}/`);
-      return asArray(data, "ordens_servicos", "resultados", "results").length > 0;
+      const [item] = asArray(data, "ordens_servicos", "resultados", "results");
+      if (!item) return null;
+      return statusCodeDe(item);
     },
 
     async addOsNote(sgpOsId: string, texto: string): Promise<void> {
