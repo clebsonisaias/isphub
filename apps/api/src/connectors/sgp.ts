@@ -389,20 +389,59 @@ function parseGeoCliente(enderecoRaw: any): { lat: number | null; lng: number | 
   };
 }
 
+/** Chaves que carregam um telefone, tanto num objeto de contato quanto solto. */
+const ALIASES_TELEFONE = ["contato", "telefone", "numero", "fone", "celular", "whatsapp", "telefone1", "telefone2"];
+
 /**
- * Telefone/contato do cliente no payload de /api/ura/clientes/. O SGP nao e
- * consistente no nome nem na forma desse campo entre instancias — tenta os
- * aliases diretos e tambem as formas em lista (telefones[], telefones_cargos[]
- * — este ultimo confirmado na doc de "Cliente - Consultar"). Se nada bater,
- * retorna null (o card so nao mostra o contato).
+ * Parece um telefone brasileiro? 10 ou 11 digitos apos tirar mascara (DDD +
+ * numero), com DDD valido (11-99). Usado so pra decidir entre valores SOLTOS
+ * dentro de um container de contatos — evita pegar e-mail, nome ou id que
+ * estejam no mesmo objeto.
+ */
+function pareceTelefone(valor: string): boolean {
+  const digitos = valor.replace(/\D/g, "");
+  if (digitos.length < 10 || digitos.length > 11) return false;
+  const ddd = Number(digitos.slice(0, 2));
+  return ddd >= 11 && ddd <= 99;
+}
+
+/**
+ * Telefone/contato do cliente no payload de /api/ura/clientes/.
+ *
+ * O SGP nao e consistente nem no NOME nem na FORMA desse campo entre
+ * instancias. Confirmado em producao (31/07) no SGP da CITmax: `contatos` vem
+ * como OBJETO, nao array — e a versao anterior fazia
+ * `if (!Array.isArray(lista)) continue`, pulando o container inteiro. O campo
+ * estava no payload o tempo todo; o extrator e que nao entrava nele. Resultado:
+ * CONTATO vazio no card de TODA OS, com "0 com telefone" no backfill.
+ *
+ * Agora aceita as duas formas (array ou objeto) em qualquer dos containers, e
+ * em tres niveis: valor direto no cliente, chave-alias dentro do container, e
+ * item a item. Valor solto (sem chave que identifique) so passa se
+ * `pareceTelefone` — senao um e-mail no mesmo objeto viraria "telefone".
  */
 function extrairTelefoneCliente(cliente: any): string | null {
-  const direto = pickString(cliente, "telefone", "celular", "fone", "whatsapp", "contato", "telefone1");
+  const direto = pickString(cliente, ...ALIASES_TELEFONE);
   if (direto) return direto;
-  for (const lista of [cliente?.telefones_cargos, cliente?.telefones, cliente?.contatos]) {
-    if (!Array.isArray(lista)) continue;
-    for (const t of lista) {
-      const v = typeof t === "string" ? t.trim() || null : pickString(t ?? {}, "contato", "telefone", "numero", "fone", "celular");
+
+  for (const container of [cliente?.telefones_cargos, cliente?.telefones, cliente?.contatos]) {
+    if (!container || typeof container !== "object") continue;
+
+    // O proprio container pode ser o registro de contato
+    // (ex.: { celular: "84 9...", email: "..." }) — pega pela chave, nunca por
+    // posicao, pra nao confundir com o e-mail ao lado.
+    if (!Array.isArray(container)) {
+      const doContainer = pickString(container, ...ALIASES_TELEFONE);
+      if (doContainer) return doContainer;
+    }
+
+    // Ou uma colecao de contatos — array, ou objeto indexado ({"0": {...}}).
+    for (const item of Array.isArray(container) ? container : Object.values(container)) {
+      if (typeof item === "string") {
+        if (pareceTelefone(item)) return item.trim();
+        continue;
+      }
+      const v = pickString(item ?? {}, ...ALIASES_TELEFONE);
       if (v) return v;
     }
   }

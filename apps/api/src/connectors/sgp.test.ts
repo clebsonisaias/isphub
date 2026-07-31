@@ -733,6 +733,49 @@ describe("createSgpConnector", () => {
       expect(cadastro?.telefone).toBe("(99) 9999-9999");
     });
 
+    /*
+     * `contatos` como OBJETO, nao array — forma real do SGP da CITmax,
+     * confirmada em producao (31/07) pelo log de campos do cadastro.
+     *
+     * A versao anterior fazia `if (!Array.isArray(lista)) continue` e pulava o
+     * container inteiro: o telefone estava no payload o tempo todo e o card
+     * mostrava CONTATO vazio em TODA OS ("0 com telefone" no backfill de 30
+     * contratos, sendo que 23 traziam coordenada do MESMO payload).
+     */
+    describe("contatos em forma de OBJETO (regressao de producao)", () => {
+      const comContatos = (contatos: unknown) =>
+        jsonResponse({ clientes: [{ nome: "CLIENTE", contatos, contratos: [{ contrato: 1, servicos: [{ id: 1 }] }] }] });
+
+      it("objeto com chave de telefone direto", async () => {
+        fetchMock.mockResolvedValueOnce(comContatos({ celular: "(84) 98888-7777", email: "x@y.com" }));
+        expect((await createSgpConnector(creds).getContratoCadastro("1"))?.telefone).toBe("(84) 98888-7777");
+      });
+
+      it("objeto indexado ({'0': {...}}) — colecao que nao virou array no JSON", async () => {
+        fetchMock.mockResolvedValueOnce(comContatos({ "0": { contato: "(84) 97777-6666", cargo: null } }));
+        expect((await createSgpConnector(creds).getContratoCadastro("1"))?.telefone).toBe("(84) 97777-6666");
+      });
+
+      it("NAO confunde e-mail com telefone quando o valor esta solto no objeto", async () => {
+        // `email` nao esta nos aliases e nao parece telefone — tem que ser
+        // ignorado, senao o card mostraria um e-mail no lugar do contato.
+        fetchMock
+          .mockResolvedValueOnce(comContatos({ email: "cliente@exemplo.com", observacao: "ligar a tarde" }))
+          .mockResolvedValueOnce(jsonResponse({ clientes: [] }));
+        expect((await createSgpConnector(creds).getContratoCadastro("1"))?.telefone).toBeNull();
+      });
+
+      it("valor solto que PARECE telefone (DDD + 10-11 digitos) e aceito", async () => {
+        fetchMock.mockResolvedValueOnce(comContatos({ principal: "84 99999-1234" }));
+        expect((await createSgpConnector(creds).getContratoCadastro("1"))?.telefone).toBe("84 99999-1234");
+      });
+
+      it("array continua funcionando (nao regride a forma ja suportada)", async () => {
+        fetchMock.mockResolvedValueOnce(comContatos([{ contato: "(84) 96666-5555" }]));
+        expect((await createSgpConnector(creds).getContratoCadastro("1"))?.telefone).toBe("(84) 96666-5555");
+      });
+    });
+
     it("cai pro endereco do cliente quando o servico nao tem endereco proprio", async () => {
       fetchMock
         .mockResolvedValueOnce(
