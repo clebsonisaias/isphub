@@ -420,6 +420,38 @@ async function buscarClientePorContrato(creds: ErpCredentials, contratoId: strin
 }
 
 /**
+ * Loga os NOMES DOS CAMPOS do cadastro — nunca os valores — quando o telefone
+ * NAO foi encontrado.
+ *
+ * Nao e debug temporario: e o unico jeito de distinguir "o SGP nao manda
+ * telefone nesse cadastro" de "manda com um nome que `extrairTelefoneCliente`
+ * ainda nao conhece". Sem isso o sintoma e sempre o mesmo — CONTATO vazio no
+ * card — com duas causas que pedem correcoes opostas.
+ *
+ * Medido em producao (31/07): 30 contratos, 23 com coordenada, 0 sem cadastro,
+ * 0 com telefone. Ou seja, o cliente VEM completo, mas nenhum dos 6 aliases nem
+ * das 3 formas de lista casa.
+ *
+ * Politica de log identica a do `[sgp-debug] campos da os`: so `Object.keys`,
+ * porque o payload carrega nome, CPF/CNPJ, endereco e telefone do assinante, e
+ * nada disso pode ir pro log do container. Uma vez por origem por processo — se
+ * o formato mudar num deploy futuro, aparece de novo sozinho.
+ */
+const camposSemTelefoneLogados = new Set<string>();
+function logarCadastroSemTelefone(origem: string, cliente: any): void {
+  if (camposSemTelefoneLogados.has(origem)) return;
+  camposSemTelefoneLogados.add(origem);
+  const contrato = cliente?.contratos?.[0];
+  const servico = contrato?.servicos?.[0];
+  console.warn(
+    `[sgp] cadastro sem telefone reconhecido (${origem}) — campos disponiveis: ` +
+      `cliente=${JSON.stringify(Object.keys(cliente ?? {}).sort())} ` +
+      `contrato=${JSON.stringify(Object.keys(contrato ?? {}).sort())} ` +
+      `servico=${JSON.stringify(Object.keys(servico ?? {}).sort())}`,
+  );
+}
+
+/**
  * Mesma consulta, mas por `/api/ura/consultacliente/` pedindo TODOS os status
  * de contrato — o unico caminho que alcanca contrato inativo/cancelado.
  *
@@ -440,10 +472,35 @@ async function buscarClientePorContratoQualquerStatus(
       status: "1,2,3,4,5,6,7",
     });
     const [cliente] = asArray(data, "clientes", "resultados", "results");
+    if (!cliente) logarEnvelopeInesperado(data);
     return cliente ?? null;
-  } catch {
+  } catch (err) {
+    // Antes engolia em silencio: nao dava pra distinguir "endpoint nao existe
+    // nesta instancia" de "existe e respondeu sem cliente". Sao causas
+    // diferentes com correcoes diferentes, e o sintoma na tela e o mesmo.
+    logarFalhaConsultaCliente(err);
     return null;
   }
+}
+
+/**
+ * O `consultacliente` respondeu, mas `asArray` nao achou cliente nenhum no
+ * envelope. Loga so as CHAVES do envelope (nunca o conteudo) pra saber se e
+ * "nao ha cliente" ou "ha, sob uma chave que nao conhecemos".
+ */
+let envelopeInesperadoLogado = false;
+function logarEnvelopeInesperado(data: any): void {
+  if (envelopeInesperadoLogado) return;
+  envelopeInesperadoLogado = true;
+  console.warn(`[sgp] consultacliente sem cliente no envelope — chaves: ${JSON.stringify(Object.keys(data ?? {}).sort())}`);
+}
+
+/** Uma vez por processo: se o endpoint nao existe, repetir por contrato so polui. */
+let falhaConsultaClienteLogada = false;
+function logarFalhaConsultaCliente(err: unknown): void {
+  if (falhaConsultaClienteLogada) return;
+  falhaConsultaClienteLogada = true;
+  console.warn(`[sgp] consultacliente indisponivel: ${err instanceof Error ? err.message : String(err)}`);
 }
 
 /** Extrai "lat,lng" de campos de endereco do SGP (ex.: "endereco_ll"). */
@@ -1057,6 +1114,13 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
         }
 
         if (!cliente) return null;
+
+        const telefone = extrairTelefoneCliente(cliente);
+        // Cadastro veio, mas nenhum alias de telefone casou: mostra que campos
+        // EXISTEM (so os nomes, nunca valores) pra distinguir "o SGP nao manda"
+        // de "manda com outro nome". Ver logarCadastroSemTelefone.
+        if (!telefone) logarCadastroSemTelefone("/api/ura/clientes/", cliente);
+
         const enderecoRaw = enderecoDoCliente(cliente);
         return {
           ...parseGeoCliente(enderecoRaw),
@@ -1064,7 +1128,7 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
           numero: pickString(enderecoRaw ?? {}, "numero"),
           bairro: pickString(enderecoRaw ?? {}, "bairro"),
           cidade: pickString(enderecoRaw ?? {}, "cidade"),
-          telefone: extrairTelefoneCliente(cliente),
+          telefone,
         };
       } catch {
         return null;
