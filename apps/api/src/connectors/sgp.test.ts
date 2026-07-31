@@ -337,6 +337,41 @@ describe("createSgpConnector", () => {
     expect(new URLSearchParams(segunda.body as string).get("token")).toBe(creds.token);
   });
 
+  /*
+   * 3a tentativa: form SEM header de autenticacao — a forma exata que o Maxxi
+   * usa contra este endpoint em producao (POST form, app+token no corpo, zero
+   * headers). `Authorization: Token <x>` faz o DRF rodar TokenAuthentication
+   * com um valor que nao e token de DRF e recusar com 403 antes de olhar
+   * permissao; era a unica diferenca que restava entre as duas chamadas.
+   */
+  it("setOnTheWay: 403 tambem em form => 3a tentativa em form SEM auth header", async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response("", { status: 415 }))
+      .mockResolvedValueOnce(new Response("", { status: 403 }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+
+    await createSgpConnector(creds).setOnTheWay("555");
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const [, terceira] = fetchMock.mock.calls[2];
+    const headers = terceira.headers as Record<string, string>;
+    expect(headers["Content-Type"]).toBe("application/x-www-form-urlencoded");
+    expect(headers.Authorization).toBeUndefined();
+    expect(headers["X-SGP-Token"]).toBeUndefined();
+    // A credencial continua indo no CORPO — e assim que este endpoint autentica.
+    expect(new URLSearchParams(terceira.body as string).get("token")).toBe(creds.token);
+    expect(new URLSearchParams(terceira.body as string).get("app")).toBe(creds.app);
+  });
+
+  it("setOnTheWay: 5xx na 2a tentativa NAO vira 3a — pode ter escrito", async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response("", { status: 415 }))
+      .mockResolvedValueOnce(new Response("", { status: 500 }));
+
+    await expect(createSgpConnector(creds).setOnTheWay("555")).rejects.toThrow(/SGP 500/);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("setOnTheWay: 5xx NAO repete — a escrita pode ter acontecido e repetir duplicaria", async () => {
     fetchMock.mockResolvedValueOnce(new Response("", { status: 500 }));
 

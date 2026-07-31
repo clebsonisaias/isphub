@@ -146,14 +146,22 @@ function authHeaders(creds: ErpCredentials): Record<string, string> {
   return { Authorization: `Token ${creds.token}`, "X-SGP-Token": creds.token };
 }
 
-async function sgpPostForm(creds: ErpCredentials, path: string, params: Record<string, unknown> = {}) {
+async function sgpPostForm(
+  creds: ErpCredentials,
+  path: string,
+  params: Record<string, unknown> = {},
+  opcoes: { semAuthHeader?: boolean } = {},
+) {
   const body = new URLSearchParams({ app: creds.app, token: creds.token });
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== null) body.set(k, String(v));
   }
   const res = await fetch(`${baseUrl(creds)}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded", ...authHeaders(creds) },
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      ...(opcoes.semAuthHeader ? {} : authHeaders(creds)),
+    },
     body: body.toString(),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
@@ -975,6 +983,23 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
      * garante que nada foi escrito, entao repetir e seguro — e a alternativa
      * seria quebrar o "a caminho" pra quem roda a versao antiga.
      */
+    /*
+     * Tres formas, cada uma so depois de uma RECUSA 4xx explicita da anterior.
+     *
+     * A terceira — form SEM header de autenticacao — e a forma que o Maxxi usa
+     * em producao contra este mesmo endpoint (`maxxi/src/services/erp.js:2320`:
+     * POST form com app+token no corpo, nenhum header). Path, metodo, corpo e
+     * content-type das nossas tentativas ja sao identicos aos dele; o header e
+     * a UNICA diferenca que restava.
+     *
+     * Isso contradiz a hipotese que motivou o header (que o 403 de corpo vazio
+     * do /api/os/acaminho/ vinha de escrita SEM credencial reconhecivel).
+     * `Authorization: Token <x>` faz o DRF rodar TokenAuthentication com um
+     * valor que nao e token de DRF — e falhar com 403 antes de olhar permissao.
+     * Nao removo o header das outras escritas porque elas funcionam hoje e nao
+     * tenho medicao que justifique mexer; aqui e aditivo e so dispara depois de
+     * duas recusas.
+     */
     async setOnTheWay(sgpOsId: string): Promise<void> {
       const path = `/api/os/acaminho/id/${encodeURIComponent(sgpOsId)}/`;
       try {
@@ -982,8 +1007,14 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
         assertSgpEscritaOk(data, path);
       } catch (err) {
         if (!ehRecusa4xx(err)) throw err;
-        const data = await sgpPostForm(creds, path);
-        assertSgpEscritaOk(data, path);
+        try {
+          const data = await sgpPostForm(creds, path);
+          assertSgpEscritaOk(data, path);
+        } catch (err2) {
+          if (!ehRecusa4xx(err2)) throw err2;
+          const data = await sgpPostForm(creds, path, {}, { semAuthHeader: true });
+          assertSgpEscritaOk(data, path);
+        }
       }
     },
 
