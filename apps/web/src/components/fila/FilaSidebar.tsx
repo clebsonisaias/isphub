@@ -10,7 +10,7 @@ import {
 } from "@/lib/filaFacets";
 import { iconeCategoria } from "@/lib/categoriaIcons";
 import { CountUp } from "@/components/CountUp";
-import { LayoutList, HelpCircle } from "lucide-react";
+import { LayoutList, HelpCircle, UserCheck, UserPlus } from "lucide-react";
 
 interface Props {
   filtros: FilaFacetState;
@@ -89,11 +89,59 @@ export function FilaSidebar({ filtros, facetas, provedores, categorias, mostrarP
             filtros.status === "todos" &&
             filtros.prioridade === "todas" &&
             filtros.categoriaId === "todas" &&
-            filtros.provedorId === "todos"
+            filtros.provedorId === "todos" &&
+            filtros.tecnicoId === "todos"
           }
-          onClick={() => onChange({ status: "todos", prioridade: "todas", categoriaId: "todas", provedorId: "todos" })}
+          onClick={() =>
+            onChange({
+              status: "todos",
+              prioridade: "todas",
+              categoriaId: "todas",
+              provedorId: "todos",
+              tecnicoId: "todos",
+            })
+          }
           icon={<LayoutList className="size-4 shrink-0" />}
         />
+      </Secao>
+
+      {/*
+        DESPACHO vem logo depois de "Todas as OS", antes de Categoria: a
+        primeira pergunta de quem abre esta tela e "o que falta despachar", nao
+        "que tipo de servico e". Antes isso exigia varrer a lista procurando
+        cards sem tecnico.
+      */}
+      <Secao titulo="Despacho">
+        <LinhaFiltro
+          label="Todas"
+          ativo={filtros.tecnicoId === "todos"}
+          onClick={() => onChange({ tecnicoId: "todos" })}
+        />
+        {/*
+          "A despachar" aparece mesmo com zero — e a unica linha cuja AUSENCIA
+          e informacao: some da tela justamente quando a fila esta em dia, e ai
+          quem olha nao sabe se acabou ou se o filtro sumiu.
+        */}
+        <LinhaFiltro
+          label="A despachar"
+          icon={<UserPlus className="size-3.5 shrink-0 text-warning" />}
+          count={facetas.porTecnico.get("a_despachar") ?? 0}
+          ativo={filtros.tecnicoId === "a_despachar"}
+          onClick={() => onChange({ tecnicoId: "a_despachar" })}
+        />
+        {facetas.tecnicos.map((t) => (
+          <LinhaFiltro
+            key={t.id}
+            label={t.nome}
+            icon={<UserCheck className="size-3.5 shrink-0 text-muted-foreground" />}
+            count={t.total}
+            ativo={filtros.tecnicoId === t.id}
+            onClick={() => onChange({ tecnicoId: t.id })}
+          />
+        ))}
+        {facetas.tecnicos.length === 0 && (facetas.porTecnico.get("a_despachar") ?? 0) === 0 && (
+          <p className="px-3 py-1.5 text-xs text-muted-foreground">Nenhuma OS neste recorte.</p>
+        )}
       </Secao>
 
       <Secao titulo="Categoria">

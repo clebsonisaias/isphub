@@ -332,7 +332,9 @@ export function FilaWorkspace({
     setBusca("");
   }
 
-  function removerFiltro(dim: "status" | "prioridade" | "categoriaId" | "provedorId" | "busca") {
+  function removerFiltro(
+    dim: "status" | "prioridade" | "categoriaId" | "provedorId" | "tecnicoId" | "busca",
+  ) {
     if (dim === "busca") {
       setBusca("");
       return;
@@ -505,6 +507,7 @@ export function FilaWorkspace({
             busca={busca}
             categorias={categoriasDaTela}
             provedores={provedores}
+            nomeTecnico={facetas.tecnicos.find((t) => t.id === filtros.tecnicoId)?.nome}
             onRemover={removerFiltro}
             onLimpar={limparFiltros}
           />

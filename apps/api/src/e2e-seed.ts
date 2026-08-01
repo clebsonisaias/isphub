@@ -15,6 +15,9 @@ export const E2E_ADMIN_EMAIL = "e2e-admin@isphub.test";
 export const E2E_ADMIN_SENHA = "e2e-senha-123";
 export const E2E_GESTOR_EMAIL = "e2e-gestor@isphub.test";
 export const E2E_GESTOR_SENHA = "e2e-senha-123";
+export const E2E_TECNICO_EMAIL = "e2e-tecnico@isphub.test";
+/** Nome exibido na secao "Despacho" da fila — usado pelo spec do filtro. */
+export const E2E_TECNICO_NOME = "E2E Tecnico";
 export const E2E_PROVEDOR_NOME = "E2E Provider";
 export const E2E_SGP_PORT = 4569;
 
@@ -31,6 +34,17 @@ async function main() {
     where: { email: E2E_GESTOR_EMAIL },
     create: { nome: "E2E Gestor", email: E2E_GESTOR_EMAIL, senhaHash: senhaGestorHash, role: UserRole.GESTOR },
     update: { senhaHash: senhaGestorHash, role: UserRole.GESTOR, ativo: true },
+  });
+
+  // Tecnico com UMA OS despachada: e o que permite o spec do filtro de
+  // despacho exercitar os dois lados (o que falta despachar e o que ja tem
+  // dono). Sem ele, todas as OS ficariam em "A despachar" e metade da
+  // funcionalidade nao teria como ser testada.
+  const senhaTecnicoHash = await hashPassword(E2E_ADMIN_SENHA);
+  const tecnico = await prisma.usuario.upsert({
+    where: { email: E2E_TECNICO_EMAIL },
+    create: { nome: E2E_TECNICO_NOME, email: E2E_TECNICO_EMAIL, senhaHash: senhaTecnicoHash, role: UserRole.TECNICO },
+    update: { nome: E2E_TECNICO_NOME, senhaHash: senhaTecnicoHash, role: UserRole.TECNICO, ativo: true },
   });
 
   let provedor = await prisma.provedor.findFirst({ where: { nome: E2E_PROVEDOR_NOME } });
@@ -90,6 +104,13 @@ async function main() {
     },
   });
 
+  // Despacha a e2e-os-1 pro tecnico (fora do upsert acima pra nao depender de
+  // ela ter sido criada agora ou ja existir de uma execucao anterior).
+  await prisma.ordemServico.update({
+    where: { provedorId_sgpOsId: { provedorId: provedor.id, sgpOsId: "e2e-os-1" } },
+    data: { tecnicoId: tecnico.id },
+  });
+
   // Sem tipoOsId (regressao do recorte interna/externa): uma OS sem tipo
   // mapeado nao tem como saber se e de equipe externa, entao deve SEMPRE
   // ficar na fila interna (Painel) — nunca sumir por causa da nova clausula
@@ -109,6 +130,14 @@ async function main() {
       status: "aberta",
       clienteNome: "Cliente Sem Tipo",
       tipoOsId: null,
+      /*
+       * `tecnicoId: null` EXPLICITO. Sem isto o seed nao entrega o estado que
+       * promete: esta OS herdava o tecnico deixado por um teste anterior (o
+       * fluxo de despacho pega um card da lista), e o spec do filtro de
+       * despacho via "A despachar 0" numa rodada e 1 na seguinte, conforme a
+       * ordem em que a suite tivesse rodado antes.
+       */
+      tecnicoId: null,
     },
   });
 

@@ -4,7 +4,7 @@ import { X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 
 /** Dimensões de filtro que viram chip (a busca entra separada). */
-type Dimensao = "status" | "prioridade" | "categoriaId" | "provedorId";
+type Dimensao = "status" | "prioridade" | "categoriaId" | "provedorId" | "tecnicoId";
 
 interface ChipInfo {
   dim: Dimensao | "busca";
@@ -17,6 +17,8 @@ interface Props {
   busca: string;
   categorias: Categoria[];
   provedores: Provedor[];
+  /** Nome do tecnico filtrado, resolvido pelas facetas (o cadastro nao e consultado aqui). */
+  nomeTecnico?: string | null;
   /** Remove uma dimensão (volta ao valor "todos/todas"); "busca" limpa o texto. */
   onRemover: (dim: Dimensao | "busca") => void;
   onLimpar: () => void;
@@ -27,7 +29,15 @@ interface Props {
  * lista está curta (antes o usuário via poucos itens sem pista do filtro) e dá
  * um "×" por dimensão + um "Limpar filtros" geral.
  */
-export function FilaChipsAtivos({ filtros, busca, categorias, provedores, onRemover, onLimpar }: Props) {
+export function FilaChipsAtivos({
+  filtros,
+  busca,
+  categorias,
+  provedores,
+  nomeTecnico,
+  onRemover,
+  onLimpar,
+}: Props) {
   const shouldReduceMotion = useReducedMotion();
   const chips: ChipInfo[] = [];
 
@@ -47,6 +57,12 @@ export function FilaChipsAtivos({ filtros, busca, categorias, provedores, onRemo
   if (filtros.provedorId !== "todos") {
     const nome = provedores.find((p) => p.id === filtros.provedorId)?.nome ?? "Provedor";
     chips.push({ dim: "provedorId", rotulo: `Provedor: ${nome}` });
+  }
+  if (filtros.tecnicoId !== "todos") {
+    // O nome do tecnico vem das proprias OS (facetas), nao do cadastro — por
+    // isso chega pronto por prop em vez de ser resolvido aqui.
+    const rotulo = filtros.tecnicoId === "a_despachar" ? "A despachar" : (nomeTecnico ?? "Técnico");
+    chips.push({ dim: "tecnicoId", rotulo: `Despacho: ${rotulo}` });
   }
   if (busca.trim()) {
     chips.push({ dim: "busca", rotulo: `Busca: "${busca.trim()}"` });
