@@ -63,14 +63,36 @@ const SEED = {
   endereco_ll: "-5.79,-35.21",
   os_data_agendamento: "2026-12-31 09:00:00",
 };
-let ordens = [{ ...SEED }];
+
+/*
+ * A OS "sem tipo mapeado" tambem precisa EXISTIR no ERP.
+ *
+ * Ela nascia so no seed do banco do ISPhub. Depois que a reconciliacao passou
+ * a cancelar OS que sumiu da varredura de abertas (comportamento correto: "nao
+ * esta mais no SGP"), esta OS virava `cancelada` no primeiro ciclo de sync e
+ * sumia do Painel. O teste que a procura so passava quando corria ANTES desse
+ * ciclo — uma corrida que ele vinha ganhando por sorte.
+ *
+ * Sem `motivo`, entao o ISPhub nao acha TipoOs e ela segue com tipoOsId null,
+ * que e exatamente a condicao que o teste quer exercitar.
+ */
+const SEED_SEM_TIPO = {
+  os_id: "e2e-os-sem-tipo",
+  os_status: 0,
+  os_conteudo: "OS sem tipo mapeado (fixture e2e)",
+  cliente_nome: "Cliente Sem Tipo",
+  contrato_id: "2",
+  os_data_agendamento: "2026-12-31 12:00:00",
+};
+
+let ordens = [{ ...SEED }, { ...SEED_SEM_TIPO }];
 
 app.get("/", (_req, res) => res.json({ ok: true, service: "mock-sgp-e2e" }));
 
 app.get("/_test/log", (_req, res) => res.json(log));
 app.post("/_test/reset", (_req, res) => {
   log = [];
-  ordens = [{ ...SEED }];
+  ordens = [{ ...SEED }, { ...SEED_SEM_TIPO }];
   res.json({ ok: true });
 });
 

@@ -1,5 +1,6 @@
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 const TOKEN_STORAGE_KEY = "isphub_token";
+const REFRESH_STORAGE_KEY = "isphub_refresh";
 
 export class ApiError extends Error {
   status: number;
@@ -10,6 +11,7 @@ export class ApiError extends Error {
 }
 
 let token: string | null = localStorage.getItem(TOKEN_STORAGE_KEY);
+let refreshToken: string | null = localStorage.getItem(REFRESH_STORAGE_KEY);
 
 /** Chamado pelo AuthContext ao logar/deslogar; persiste entre recarregamentos. */
 export function setAuthToken(newToken: string | null) {
@@ -18,19 +20,108 @@ export function setAuthToken(newToken: string | null) {
   else localStorage.removeItem(TOKEN_STORAGE_KEY);
 }
 
+export function setRefreshToken(novo: string | null) {
+  refreshToken = novo;
+  if (novo) localStorage.setItem(REFRESH_STORAGE_KEY, novo);
+  else localStorage.removeItem(REFRESH_STORAGE_KEY);
+}
+
 export function getAuthToken(): string | null {
   return token;
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+export function getRefreshToken(): string | null {
+  return refreshToken;
+}
+
+/**
+ * Avisa a aplicacao que a sessao acabou de verdade (renovacao recusada).
+ * O AuthContext assina isto pra limpar o usuario e mandar pro login — o
+ * apiClient nao conhece React nem rotas, e nao deveria.
+ */
+type AoPerderSessao = () => void;
+let aoPerderSessao: AoPerderSessao | null = null;
+export function registrarPerdaDeSessao(cb: AoPerderSessao | null) {
+  aoPerderSessao = cb;
+}
+
+/**
+ * RENOVACAO SILENCIOSA.
+ *
+ * Uma renovacao por vez, compartilhada: quando a tela dispara varias chamadas
+ * juntas (o Painel faz isso no boot) e o access token acabou de vencer, TODAS
+ * tomam 401 ao mesmo tempo. Sem esta promessa unica, cada uma dispararia sua
+ * propria rotacao — e como o refresh e rotativo, a segunda apresentaria um
+ * token que a primeira acabou de queimar. O servidor tem uma janela de graca
+ * pra isso, mas gastar a janela por descuido do cliente seria pedir problema.
+ */
+let renovacaoEmCurso: Promise<boolean> | null = null;
+
+async function renovarSessao(): Promise<boolean> {
+  if (renovacaoEmCurso) return renovacaoEmCurso;
+
+  renovacaoEmCurso = (async () => {
+    const atual = refreshToken;
+    if (!atual) return false;
+    try {
+      // fetch direto, NAO `request()`: passar por ele criaria recursao —
+      // um 401 aqui tentaria renovar de novo, indefinidamente.
+      const res = await fetch(`${API_URL}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken: atual }),
+      });
+      if (!res.ok) return false;
+
+      const data = (await res.json()) as { token: string; refreshToken: string };
+      setAuthToken(data.token);
+      setRefreshToken(data.refreshToken);
+      return true;
+    } catch {
+      // Falha de REDE nao e sessao invalida. Devolver false aqui so faz a
+      // chamada original propagar o 401 original — nao apaga a sessao.
+      return false;
+    }
+  })();
+
+  try {
+    return await renovacaoEmCurso;
+  } finally {
+    renovacaoEmCurso = null;
+  }
+}
+
+function encerrarSessao() {
+  setAuthToken(null);
+  setRefreshToken(null);
+  aoPerderSessao?.();
+}
+
+async function enviar(method: string, path: string, body?: unknown): Promise<Response> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
-
-  const res = await fetch(`${API_URL}${path}`, {
+  return fetch(`${API_URL}${path}`, {
     method,
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
+}
+
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  let res = await enviar(method, path, body);
+
+  /*
+   * 401 com refresh disponivel: renova UMA vez e repete. Se a renovacao falhar,
+   * a sessao acabou mesmo — limpa e avisa a aplicacao.
+   *
+   * A rota de refresh nunca entra aqui (ela usa fetch direto), e as rotas
+   * publicas de recuperacao de senha tambem nao teriam o que renovar.
+   */
+  if (res.status === 401 && refreshToken) {
+    const renovou = await renovarSessao();
+    if (renovou) res = await enviar(method, path, body);
+    else encerrarSessao();
+  }
 
   const isJson = res.headers.get("content-type")?.includes("application/json");
   const data = isJson ? await res.json().catch(() => null) : null;
@@ -45,9 +136,17 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 /** Busca um recurso binario (ex.: foto de evidencia) autenticado — <img src> nao manda Authorization. */
 async function getBlob(path: string): Promise<Blob> {
-  const headers: Record<string, string> = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(`${API_URL}${path}`, { headers });
+  const buscar = async () => {
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return fetch(`${API_URL}${path}`, { headers });
+  };
+
+  let res = await buscar();
+  if (res.status === 401 && refreshToken) {
+    if (await renovarSessao()) res = await buscar();
+    else encerrarSessao();
+  }
   if (!res.ok) throw new ApiError(res.status, `Erro ${res.status}`);
   return res.blob();
 }
@@ -59,4 +158,6 @@ export const api = {
   patch: <T>(path: string, body?: unknown) => request<T>("PATCH", path, body),
   delete: <T>(path: string) => request<T>("DELETE", path),
   getBlob,
+  /** Exposto pro SSE, que abre a conexao por fora do `request()`. */
+  renovarSessao,
 };

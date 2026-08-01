@@ -7,7 +7,7 @@ import {
 } from "react";
 import type { RealtimeEvento } from "@isphub/shared";
 import { useAuth } from "@/context/AuthContext";
-import { getAuthToken } from "./apiClient";
+import { api, getAuthToken } from "./apiClient";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 const BACKOFF_INICIAL_MS = 1000;
@@ -37,8 +37,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!usuario) return;
-    const token = getAuthToken();
-    if (!token) return;
+    if (!getAuthToken()) return;
 
     const controller = new AbortController();
     let parado = false;
@@ -47,10 +46,33 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
 
     async function conectar() {
       try {
+        /*
+         * Le o token A CADA tentativa. Antes ele era capturado uma vez na
+         * abertura do efeito: quando a sessao renovava, o SSE seguia usando o
+         * token velho e reconectava contra 401 em backoff pra sempre — um
+         * stream morto que nunca voltava sozinho.
+         */
+        const token = getAuthToken();
+        if (!token) throw new Error("sem token");
+
         const res = await fetch(`${API_URL}/eventos`, {
           headers: { Authorization: `Bearer ${token}` },
           signal: controller.signal,
         });
+
+        // 401 aqui e access token vencido, nao queda de conexao: renovar e
+        // reconectar na hora resolve, enquanto esperar o backoff so atrasa.
+        if (res.status === 401) {
+          const renovou = await api.renovarSessao();
+          if (renovou && !parado) {
+            void conectar();
+            return;
+          }
+          // Renovacao recusada: quem desmonta isto e o AuthContext, ao ver a
+          // sessao cair. Sai sem reagendar pra nao martelar o servidor.
+          return;
+        }
+
         if (!res.ok || !res.body)
           throw new Error(`SSE respondeu ${res.status}`);
 

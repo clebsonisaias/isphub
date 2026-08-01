@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { AlertCircle, Eye, EyeOff, Loader2, MapPin, Radio, Smartphone } from "lucide-react";
 import { gsap, useGSAP } from "@/lib/gsapSetup";
 import { useAuth } from "@/context/AuthContext";
@@ -267,8 +267,18 @@ export function LoginPage() {
             </Button>
           </form>
 
-          <p className="mt-8 text-center text-xs text-muted-foreground">
-            Esqueceu a senha? Fale com o administrador do seu provedor.
+          {/*
+            Era um texto morto ("fale com o administrador") — instrucao que
+            dependia de outra pessoa estar disponivel. Agora leva a um fluxo
+            que a propria pessoa resolve.
+          */}
+          <p className="mt-8 text-center text-sm">
+            <Link
+              to="/recuperar-senha"
+              className="inline-block rounded px-2 py-2 text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Esqueci minha senha
+            </Link>
           </p>
         </div>
       </main>

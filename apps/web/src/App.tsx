@@ -6,6 +6,8 @@ import { ThemeProvider } from "@/context/ThemeContext";
 import { RealtimeProvider } from "@/lib/realtime";
 import { RequireAuth } from "@/routes/RequireAuth";
 import { LoginPage } from "@/pages/LoginPage";
+import { RecuperarSenhaPage } from "@/pages/RecuperarSenhaPage";
+import { RedefinirSenhaPage } from "@/pages/RedefinirSenhaPage";
 import { PainelPage } from "@/pages/PainelPage";
 import { RetiradasPage } from "@/pages/RetiradasPage";
 import { MapaPage } from "@/pages/MapaPage";
@@ -29,7 +31,10 @@ function App() {
           <AuthProvider>
             <RealtimeProvider>
               <Routes>
+                {/* Publicas: quem chega nelas nao tem (ou perdeu) a sessao. */}
                 <Route path="/login" element={<LoginPage />} />
+                <Route path="/recuperar-senha" element={<RecuperarSenhaPage />} />
+                <Route path="/redefinir-senha" element={<RedefinirSenhaPage />} />
                 <Route
                   path="/"
                   element={

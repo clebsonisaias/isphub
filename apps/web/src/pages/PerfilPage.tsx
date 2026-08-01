@@ -12,7 +12,7 @@ import { useAuth } from "@/context/AuthContext";
 import { authApi } from "@/lib/authApi";
 import { api, ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
-import { Camera, KeyRound, X } from "lucide-react";
+import { Camera, KeyRound, LogOut, X } from "lucide-react";
 
 function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
@@ -46,8 +46,9 @@ function comprimirAvatar(arquivo: File): Promise<{ base64: string; mime: string 
 }
 
 export function PerfilPage() {
-  const { usuario, refetchMe } = useAuth();
+  const { usuario, refetchMe, sairDeTodos } = useAuth();
   const { toast } = useToast();
+  const [saindoDeTodos, setSaindoDeTodos] = useState(false);
   const [senhaAtual, setSenhaAtual] = useState("");
   const [novaSenha, setNovaSenha] = useState("");
   const [confirmarSenha, setConfirmarSenha] = useState("");
@@ -109,6 +110,18 @@ export function PerfilPage() {
       toast({ titulo: "Erro ao trocar senha", descricao: mensagem(err), variante: "erro" });
     } finally {
       setEnviandoSenha(false);
+    }
+  }
+
+  async function handleSairDeTodos() {
+    setSaindoDeTodos(true);
+    try {
+      // Nao redireciono na mao: `sairDeTodos` limpa o usuario do contexto e o
+      // RequireAuth leva pro login sozinho — mesmo caminho do logout normal.
+      await sairDeTodos();
+    } catch (err) {
+      toast({ titulo: "Não foi possível encerrar as sessões", descricao: mensagem(err), variante: "erro" });
+      setSaindoDeTodos(false);
     }
   }
 
@@ -366,6 +379,29 @@ export function PerfilPage() {
                 {enviandoSenha ? "Salvando..." : "Trocar senha"}
               </Button>
             </form>
+
+            {/*
+              Separado da troca de senha de proposito: sao respostas a
+              perguntas diferentes ("quero mudar minha senha" x "acho que
+              deixei uma sessao aberta em algum lugar").
+            */}
+            <div className="mt-8 border-t border-border pt-6">
+              <h3 className="text-sm font-medium">Sessões</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Encerra o acesso em todos os aparelhos — inclusive neste. Útil se você entrou num
+                computador emprestado e não lembra se saiu.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                className="mt-3 w-fit"
+                disabled={saindoDeTodos}
+                onClick={handleSairDeTodos}
+              >
+                <LogOut className="size-3.5" />
+                {saindoDeTodos ? "Encerrando..." : "Sair de todos os dispositivos"}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>

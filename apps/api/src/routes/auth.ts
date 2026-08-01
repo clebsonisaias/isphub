@@ -259,7 +259,9 @@ authRouter.post(
     // Mensagem unica pros tres casos (inexistente, expirado, ja usado): dizer
     // qual deles foi so ajudaria quem esta testando links no escuro.
     if (resultado.tipo === "invalido") {
-      throw new HttpError(400, "Este link expirou ou ja foi usado. Peca um novo.");
+      // "Solicite" em vez de "Peca": as mensagens desta API sao todas sem
+      // acento (53 delas), e sem cedilha "peca" vira outra palavra.
+      throw new HttpError(400, "Este link expirou ou ja foi usado. Solicite um novo.");
     }
     res.status(204).end();
   }),
