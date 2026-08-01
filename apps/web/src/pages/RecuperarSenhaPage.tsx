@@ -40,9 +40,18 @@ export function RecuperarSenhaPage() {
   return (
     <main className="flex min-h-dvh items-center justify-center bg-background px-4 py-10">
       <div className="w-full max-w-sm">
-        <div className="mb-8 flex flex-col items-center gap-3 text-center">
-          <BrandMark className="size-12" />
-          <h1 className="text-2xl font-semibold tracking-tight">Recuperar acesso</h1>
+        {/*
+          BrandMark e o logotipo COMPLETO (glifo + wordmark + slogan), feito
+          pra container largo. Passar `size-12` fixava 3rem de largura e altura
+          no flex externo: o slogan quebrava e transbordava por cima do titulo.
+          Mesmo uso do login — sem restricao de tamanho, titulo ABAIXO.
+        */}
+        <div className="mb-10 flex justify-center">
+          <BrandMark />
+        </div>
+
+        <div className="mb-8">
+          <h1 className="font-display text-2xl font-bold tracking-tight">Recuperar acesso</h1>
         </div>
 
         {enviado ? (

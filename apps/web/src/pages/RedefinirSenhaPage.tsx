@@ -57,9 +57,14 @@ export function RedefinirSenhaPage() {
   return (
     <main className="flex min-h-dvh items-center justify-center bg-background px-4 py-10">
       <div className="w-full max-w-sm">
-        <div className="mb-8 flex flex-col items-center gap-3 text-center">
-          <BrandMark className="size-12" />
-          <h1 className="text-2xl font-semibold tracking-tight">Nova senha</h1>
+        {/* Mesmo uso do login: BrandMark sem restricao de tamanho (ele e o
+            logotipo completo, com slogan), titulo abaixo. Ver RecuperarSenhaPage. */}
+        <div className="mb-10 flex justify-center">
+          <BrandMark />
+        </div>
+
+        <div className="mb-8">
+          <h1 className="font-display text-2xl font-bold tracking-tight">Nova senha</h1>
         </div>
 
         {!token ? (
