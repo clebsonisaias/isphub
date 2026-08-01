@@ -286,7 +286,63 @@ model Usuario {
 
   pushTokens PushToken[]
 
+  sessoesRefresh    SessaoRefresh[]
+  tokensRecuperacao TokenRecuperacaoSenha[]
+
   @@map("usuarios")
+}
+
+/// Sessao longa do navegador (refresh token rotativo).
+///
+/// O access token (JWT, 8h) continua sendo a credencial de toda chamada; este
+/// model e o que permite RENOVA-LO sem pedir a senha de novo. Separar os dois e
+/// o que torna possivel "sessao que dura enquanto a pessoa usa" sem deixar um
+/// token de 30 dias circulando em cada request.
+///
+/// O token cru NUNCA e gravado — so o SHA-256 dele. Um dump do banco nao
+/// entrega sessao de ninguem, mesma logica de `senhaHash`.
+model SessaoRefresh {
+  id         String    @id @default(uuid())
+  usuarioId  String
+  usuario    Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  /// SHA-256 (hex) do token cru. Unico: e por ele que a validacao busca.
+  tokenHash  String    @unique
+  criadoEm   DateTime  @default(now())
+  expiraEm   DateTime
+  /// Ultima vez que este refresh foi trocado por um novo — e o que define
+  /// "inatividade": ninguem renova, ninguem usa, a sessao morre em `expiraEm`.
+  usadoEm    DateTime?
+  /// Marca a rotacao. Tambem e o relogio da JANELA DE GRACA: um refresh
+  /// apresentado logo apos ser queimado e a outra aba do mesmo usuario, nao
+  /// um token roubado (ver refreshService.ts).
+  revogadoEm DateTime?
+
+  /// Contexto so pra exibir "de onde" numa futura tela de sessoes ativas.
+  userAgent String? @db.VarChar(300)
+  ip        String? @db.VarChar(64)
+
+  @@index([usuarioId])
+  @@index([expiraEm])
+  @@map("sessoes_refresh")
+}
+
+/// Token de uso unico pra redefinir senha sem estar logado.
+///
+/// Mesma regra do refresh: grava so o SHA-256. Quem tem acesso ao banco nao
+/// consegue forjar o link que chega no e-mail.
+model TokenRecuperacaoSenha {
+  id        String    @id @default(uuid())
+  usuarioId String
+  usuario   Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  criadoEm  DateTime  @default(now())
+  expiraEm  DateTime
+  /// Preenchido no primeiro uso — e o que impede reuso do mesmo link.
+  usadoEm   DateTime?
+
+  @@index([usuarioId])
+  @@index([expiraEm])
+  @@map("tokens_recuperacao_senha")
 }
 
 enum PushPlataforma {

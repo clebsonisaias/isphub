@@ -7,6 +7,13 @@ import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth } from "../middleware/auth.js";
 import { hashPassword, signToken, validarFotoPerfil, verifyPassword } from "../services/authService.js";
 import { invalidarCacheSessao } from "../services/sessaoService.js";
+import {
+  emitirRefresh,
+  revogarRefresh,
+  revogarTudoDoUsuario,
+  rotacionarRefresh,
+  type ContextoSessao,
+} from "../services/refreshService.js";
 
 export const authRouter = Router();
 
@@ -35,6 +42,28 @@ const loginLimiter = rateLimit({
   },
   message: { error: "Muitas tentativas de login. Tente novamente em alguns minutos." },
 });
+
+/**
+ * Renovacao e rota publica (o access token vencido e justamente o motivo de
+ * chamar), entao o teto e por IP e generoso: um navegador com varias abas
+ * renova legitimamente algumas vezes seguidas. Serve so pra impedir alguem de
+ * chutar refresh tokens em volume.
+ */
+const refreshLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => ipKeyGenerator(req.ip ?? ""),
+  message: { error: "Muitas tentativas. Tente novamente em alguns minutos." },
+});
+
+/** User-agent e IP so pra uma futura tela de "sessoes ativas" — nunca pra autenticar. */
+function contextoDaRequisicao(req: { headers: Record<string, any>; ip?: string }): ContextoSessao {
+  const ua = req.headers["user-agent"];
+  return { userAgent: typeof ua === "string" ? ua : null, ip: req.ip ?? null };
+}
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -103,7 +132,85 @@ authRouter.post(
       tv: usuario.tokenVersion,
     });
 
-    res.json({ token, usuario: toPublic(usuario) });
+    /*
+     * `refreshToken` e ADITIVO: o app mobile ignora um campo JSON que nao
+     * conhece e continua com a sessao de 8h + biometria dele, sem alteracao.
+     * Por isso o access token nao encurtou — encurtar quebraria o mobile, que
+     * nao sabe renovar.
+     */
+    const refreshToken = await emitirRefresh(usuario.id, contextoDaRequisicao(req));
+
+    res.json({ token, refreshToken, usuario: toPublic(usuario) });
+  }),
+);
+
+const refreshSchema = z.object({ refreshToken: z.string().min(1).max(500) });
+
+/**
+ * Renova a sessao sem pedir senha. Publica de proposito: quem chega aqui esta
+ * justamente com o access token vencido, entao exigir `requireAuth` tornaria a
+ * rota inalcancavel exatamente quando ela e necessaria.
+ *
+ * `refreshLimiter` cobre o unico abuso possivel — chutar tokens no escuro.
+ */
+authRouter.post(
+  "/refresh",
+  refreshLimiter,
+  asyncHandler(async (req, res) => {
+    const { refreshToken } = refreshSchema.parse(req.body);
+    const resultado = await rotacionarRefresh(refreshToken, contextoDaRequisicao(req));
+
+    if (resultado.tipo === "reuso") {
+      /*
+       * Um refresh ja queimado voltou fora da janela de graca. Isso nao
+       * acontece num cliente honesto: ou o token vazou, ou foi clonado. Derruba
+       * TUDO do usuario — as sessoes longas e os access tokens ja emitidos.
+       * Custa um novo login a quem for legitimo; o contrario custaria a conta.
+       */
+      await revogarTudoDoUsuario(resultado.usuarioId);
+      console.warn(`[auth] refresh reutilizado — todas as sessoes do usuario ${resultado.usuarioId} foram revogadas`);
+      throw new HttpError(401, "Sessao encerrada. Entre novamente.");
+    }
+    if (resultado.tipo === "invalido") throw new HttpError(401, "Sessao expirada. Entre novamente.");
+
+    const usuario = await prisma.usuario.findUnique({ where: { id: resultado.usuarioId } });
+    if (!usuario || !usuario.ativo) throw new HttpError(401, "Sessao encerrada. Entre novamente.");
+
+    const token = signToken({
+      sub: usuario.id,
+      email: usuario.email,
+      role: usuario.role as UsuarioPublic["role"],
+      provedorId: usuario.provedorId,
+      tv: usuario.tokenVersion,
+    });
+
+    res.json({ token, refreshToken: resultado.refreshToken, usuario: toPublic(usuario) });
+  }),
+);
+
+/**
+ * Logout de VERDADE: encerra a sessao longa no servidor. Ate aqui o logout era
+ * so client-side (descartar o token), e o refresh continuaria valendo.
+ *
+ * Sem `requireAuth` de proposito: deslogar tem que funcionar mesmo com o access
+ * token ja vencido, que e justamente quando a pessoa costuma sair.
+ */
+authRouter.post(
+  "/logout",
+  asyncHandler(async (req, res) => {
+    const { refreshToken } = refreshSchema.parse(req.body);
+    await revogarRefresh(refreshToken);
+    res.status(204).end();
+  }),
+);
+
+/** "Sair de todos os dispositivos": mata sessoes longas E access tokens vivos. */
+authRouter.post(
+  "/sair-de-todos",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    await revogarTudoDoUsuario(req.user!.sub);
+    res.status(204).end();
   }),
 );
 
@@ -133,7 +240,15 @@ authRouter.post(
     if (!usuario || !usuario.ativo) throw new HttpError(401, "Usuario nao encontrado ou inativo");
 
     const ok = await verifyPassword(senhaAtual, usuario.senhaHash);
-    if (!ok) throw new HttpError(401, "Senha atual incorreta");
+    /*
+     * 400, NAO 401 — e falha de validacao de um campo do formulario, nao de
+     * autenticacao: quem chega aqui ja passou pelo requireAuth e ESTA logado.
+     *
+     * Nao e purismo de status code. O cliente vai passar a deslogar em 401
+     * (renovacao de sessao), e com 401 aqui errar a senha atual expulsaria a
+     * pessoa do sistema em vez de dizer "senha atual incorreta".
+     */
+    if (!ok) throw new HttpError(400, "Senha atual incorreta");
 
     const senhaHash = await hashPassword(novaSenha);
     // Trocar a senha DERRUBA as outras sessoes (tokenVersion++). Se a troca foi

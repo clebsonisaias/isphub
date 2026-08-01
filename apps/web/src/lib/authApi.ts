@@ -1,5 +1,5 @@
 import type { StatusPreset, UsuarioPublic } from "@isphub/shared";
-import { api } from "@/lib/apiClient";
+import { api, setAuthToken } from "@/lib/apiClient";
 
 export interface AtualizarPerfilInput {
   nomeExibicao?: string | null;
@@ -10,7 +10,17 @@ export interface AtualizarPerfilInput {
 }
 
 export const authApi = {
-  trocarSenha: (senhaAtual: string, novaSenha: string) => api.post<void>("/auth/senha", { senhaAtual, novaSenha }),
+  /*
+   * Trocar a senha DERRUBA as outras sessoes (tokenVersion++ no servidor), e o
+   * token guardado aqui fica defasado no mesmo instante. A API devolve um token
+   * novo justamente pra este aparelho nao cair junto — e ele estava sendo
+   * DESCARTADO (`post<void>`): quem trocava a senha se auto-deslogava, e o
+   * sintoma so aparecia na chamada seguinte, como um 401 sem explicacao.
+   */
+  trocarSenha: async (senhaAtual: string, novaSenha: string) => {
+    const { token } = await api.post<{ token: string }>("/auth/senha", { senhaAtual, novaSenha });
+    setAuthToken(token);
+  },
   enviarFoto: (fotoBase64: string, fotoMime: string) => api.patch<UsuarioPublic>("/auth/foto", { fotoBase64, fotoMime }),
   removerFoto: () => api.delete<UsuarioPublic>("/auth/foto"),
   atualizarStatus: (status: StatusPreset | null, statusTexto: string | null) =>
