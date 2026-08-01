@@ -326,6 +326,33 @@ model SessaoRefresh {
   @@map("sessoes_refresh")
 }
 
+/// Servidor de e-mail do ISPhub, editavel pelo admin.
+///
+/// Existia so como variavel de ambiente, o que obrigava um redeploy (e acesso
+/// ao Coolify) pra trocar uma senha de SMTP. Mesmo desenho do
+/// [[CanalWhatsappConfig]]: blob unico cifrado, `ativo`, e o resultado da
+/// ultima verificacao — a senha nunca toca o disco em claro.
+model SmtpConfig {
+  id                        String    @id @default(uuid())
+  /// Singleton: sempre "global". Existe pra dar um alvo estavel ao upsert.
+  /// O SMTP e do ISPhub (quem manda o e-mail de recuperacao), nao de cada
+  /// provedor — por isso um registro so, e nao um por provedorId.
+  escopo                    String    @unique @default("global")
+  /// JSON {host,port,secure,usuario,senha,remetente} cifrado como UM blob
+  /// via encrypt() — mesmo formato de ErpConfig.tokenCifrado.
+  configCifrado             String
+  ativo                     Boolean   @default(true)
+  /// Preenchidos pelo "enviar e-mail de teste": e a unica forma de saber que
+  /// a configuracao funciona ANTES de alguem depender dela pra recuperar senha.
+  ultimaVerificacaoEm       DateTime?
+  ultimaVerificacaoOk       Boolean?
+  ultimaVerificacaoMensagem String?
+  criadoEm                  DateTime  @default(now())
+  atualizadoEm              DateTime  @updatedAt
+
+  @@map("smtp_config")
+}
+
 /// Token de uso unico pra redefinir senha sem estar logado.
 ///
 /// Mesma regra do refresh: grava so o SHA-256. Quem tem acesso ao banco nao

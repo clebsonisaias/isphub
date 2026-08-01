@@ -7,6 +7,7 @@ import { RealtimeProvider } from "@/lib/realtime";
 import { RequireAuth } from "@/routes/RequireAuth";
 import { LoginPage } from "@/pages/LoginPage";
 import { RecuperarSenhaPage } from "@/pages/RecuperarSenhaPage";
+import { SmtpPage } from "@/pages/admin/SmtpPage";
 import { RedefinirSenhaPage } from "@/pages/RedefinirSenhaPage";
 import { PainelPage } from "@/pages/PainelPage";
 import { RetiradasPage } from "@/pages/RetiradasPage";
@@ -174,6 +175,14 @@ function App() {
                   element={
                     <RequireAuth roles={[UserRole.ADMIN]}>
                       <CanaisWhatsappPage />
+                    </RequireAuth>
+                  }
+                />
+                <Route
+                  path="/admin/smtp"
+                  element={
+                    <RequireAuth roles={[UserRole.ADMIN]}>
+                      <SmtpPage />
                     </RequireAuth>
                   }
                 />

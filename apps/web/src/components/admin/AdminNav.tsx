@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { Building2, Tags, Users, Blocks, MessageSquareText } from "lucide-react";
+import { Building2, Tags, Users, Blocks, MessageSquareText, Mail } from "lucide-react";
 
 const ITEMS = [
   { to: "/admin", label: "Provedores", icon: Building2, match: (p: string) => p === "/admin" || p.startsWith("/admin/provedores") },
@@ -9,14 +9,15 @@ const ITEMS = [
   { to: "/admin/usuarios", label: "Usuários", icon: Users, match: (p: string) => p.startsWith("/admin/usuarios") },
   { to: "/admin/modulos", label: "Módulos", icon: Blocks, match: (p: string) => p.startsWith("/admin/modulos") },
   { to: "/admin/canais-whatsapp", label: "Canais WhatsApp", icon: MessageSquareText, match: (p: string) => p.startsWith("/admin/canais-whatsapp") },
+  { to: "/admin/smtp", label: "E-mail", icon: Mail, match: (p: string) => p.startsWith("/admin/smtp") },
 ];
 
 /**
  * Sub-navegação da área Administração.
  *
- * Rola na horizontal por necessidade, não por estilo: os cinco itens somam
- * ~600px de texto e num celular de 375px os dois últimos ("Módulos" e "Canais
- * WhatsApp") ficavam FORA da tela — duas páginas de admin simplesmente
+ * Rola na horizontal por necessidade, não por estilo: os itens somam bem mais
+ * que a largura de um celular de 375px, e os últimos ("Módulos", "Canais
+ * WhatsApp", "E-mail") ficavam FORA da tela — páginas de admin simplesmente
  * inacessíveis pelo celular, sem nem uma pista de que existiam.
  *
  * Rolar em vez de quebrar em duas linhas porque a linha do `border-b` é o que

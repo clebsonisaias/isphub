@@ -24,6 +24,7 @@ import { eventosRouter } from "./routes/eventos.js";
 import { syncMinhasRouter } from "./routes/syncMinhas.js";
 import { chatRouter } from "./routes/chat.js";
 import { canaisWhatsappRouter } from "./routes/canaisWhatsapp.js";
+import { smtpRouter } from "./routes/smtp.js";
 import { webhooksWhatsappRouter } from "./routes/webhooksWhatsapp.js";
 import { clienteChatRouter } from "./routes/clienteChat.js";
 
@@ -88,6 +89,7 @@ export function createApp() {
   app.use("/sync", syncMinhasRouter);
   app.use("/chat", chatRouter);
   app.use("/admin/canais-whatsapp", canaisWhatsappRouter);
+  app.use("/admin/smtp", smtpRouter);
   app.use("/chat-clientes", clienteChatRouter);
   app.use("/provedores/:provedorId/erp-config", erpConfigRouter);
   app.use("/provedores/:provedorId/tipos-os", tiposOsRouter);
