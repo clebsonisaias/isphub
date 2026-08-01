@@ -59,7 +59,7 @@ type Achado = {
 async function login(page: Page) {
   await page.goto("/login");
   await page.getByPlaceholder("voce@provedor.com.br").fill(ADMIN.email);
-  await page.getByPlaceholder("••••••••").fill(ADMIN.senha);
+  await page.getByLabel("Senha", { exact: true }).fill(ADMIN.senha);
   await page.getByRole("button", { name: /entrar/i }).click();
   await page.waitForURL("**/");
 }

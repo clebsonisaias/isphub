@@ -8,7 +8,7 @@ const API = "http://localhost:4000";
 async function login(page: Page, creds: { email: string; senha: string }) {
   await page.goto("/login");
   await page.getByPlaceholder("voce@provedor.com.br").fill(creds.email);
-  await page.getByPlaceholder("••••••••").fill(creds.senha);
+  await page.getByLabel("Senha", { exact: true }).fill(creds.senha);
   await page.getByRole("button", { name: "Entrar" }).click();
   await expect(page).toHaveURL("/");
 }
