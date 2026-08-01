@@ -14,6 +14,7 @@ import {
   rotacionarRefresh,
   type ContextoSessao,
 } from "../services/refreshService.js";
+import { redefinirSenha, solicitarRecuperacao } from "../services/recuperacaoSenhaService.js";
 
 export const authRouter = Router();
 
@@ -57,6 +58,24 @@ const refreshLimiter = rateLimit({
   skipSuccessfulRequests: true,
   keyGenerator: (req) => ipKeyGenerator(req.ip ?? ""),
   message: { error: "Muitas tentativas. Tente novamente em alguns minutos." },
+});
+
+/**
+ * Recuperacao de senha: apertado de proposito. Cada pedido dispara um e-mail
+ * pra caixa de outra pessoa, entao o abuso aqui nao e so carga — e usar o
+ * sistema pra incomodar alguem. Chave ip+email, igual ao login.
+ */
+const recuperarLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const ip = ipKeyGenerator(req.ip ?? "");
+    const email = typeof req.body?.email === "string" ? req.body.email.toLowerCase().trim() : "";
+    return `${ip}:${email}`;
+  },
+  message: { error: "Muitas tentativas. Tente novamente mais tarde." },
 });
 
 /** User-agent e IP so pra uma futura tela de "sessoes ativas" — nunca pra autenticar. */
@@ -200,6 +219,48 @@ authRouter.post(
   asyncHandler(async (req, res) => {
     const { refreshToken } = refreshSchema.parse(req.body);
     await revogarRefresh(refreshToken);
+    res.status(204).end();
+  }),
+);
+
+const recuperarSchema = z.object({ email: z.string().email() });
+const redefinirSchema = z.object({
+  token: z.string().min(1).max(500),
+  novaSenha: z.string().min(8, "A nova senha deve ter pelo menos 8 caracteres"),
+});
+
+/**
+ * Pede o link de redefinicao.
+ *
+ * Responde 200 SEMPRE — e-mail cadastrado ou nao, SMTP no ar ou fora. Qualquer
+ * diferenca de resposta transformaria esta tela num oraculo de quem tem conta
+ * no sistema, que e exatamente o que um atacante quer antes de tentar senhas.
+ */
+authRouter.post(
+  "/recuperar-senha",
+  recuperarLimiter,
+  asyncHandler(async (req, res) => {
+    const { email } = recuperarSchema.parse(req.body);
+    await solicitarRecuperacao(email);
+    res.json({
+      mensagem: "Se houver uma conta com esse e-mail, o link de redefinicao ja esta a caminho.",
+    });
+  }),
+);
+
+/** Consome o link e troca a senha. Publica: quem chega aqui nao tem sessao. */
+authRouter.post(
+  "/redefinir-senha",
+  recuperarLimiter,
+  asyncHandler(async (req, res) => {
+    const { token, novaSenha } = redefinirSchema.parse(req.body);
+    const resultado = await redefinirSenha(token, novaSenha);
+
+    // Mensagem unica pros tres casos (inexistente, expirado, ja usado): dizer
+    // qual deles foi so ajudaria quem esta testando links no escuro.
+    if (resultado.tipo === "invalido") {
+      throw new HttpError(400, "Este link expirou ou ja foi usado. Peca um novo.");
+    }
     res.status(204).end();
   }),
 );

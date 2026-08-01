@@ -28,6 +28,24 @@ const envSchema = z.object({
    * de uma investigacao pontual.
    */
   SGP_DEBUG_RAW: flagBooleana,
+
+  /*
+   * SMTP — TODOS opcionais, de proposito.
+   *
+   * Este schema derruba o processo inteiro quando falta variavel obrigatoria
+   * (ver abaixo), e dev, testes e e2e nao tem servidor de e-mail. Marcar SMTP
+   * como obrigatorio impediria a API de subir em qualquer ambiente que nao
+   * producao — pra entregar um recurso que degrada bem sem ele.
+   *
+   * Sem SMTP configurado, `emailService` loga o link em vez de enviar. A rota
+   * de recuperacao responde igual nos dois casos.
+   */
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  /** Remetente ("ISPhub <nao-responda@dominio>"). Cai pro SMTP_USER se faltar. */
+  SMTP_FROM: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);
