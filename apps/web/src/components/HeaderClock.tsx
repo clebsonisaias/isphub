@@ -72,21 +72,27 @@ export function HeaderClock() {
     <div
       ref={rootRef}
       /*
-       * `2xl` e nao `xl`: em `xl` (1280px) o relogio cabia na conta so no
-       * papel — somado as pilulas de navegacao ele empurrava busca,
-       * notificacoes e menu do usuario fora da tela. Ele e o item de MENOR
-       * valor do cabecalho (hora e data o sistema operacional ja mostra),
-       * entao e ele que espera por espaco de verdade, nao os controles.
+       * SAIU DA LINHA DO CABECALHO (era `2xl:flex` ali) e vive agora dentro do
+       * menu do usuario.
+       *
+       * Na linha, ele tinha uma inversao embutida: o breakpoint olhava a
+       * JANELA, mas o espaco disponivel e o CONTAINER, travado em `max-w-7xl`.
+       * Aumentar a tela nunca dava mais espaco a barra — so disparava o
+       * relogio em 1536px, que tomava 291px e empurrava 275px de itens de
+       * navegacao pra fora, com a barra de rolagem escondida (`scrollbar-none`)
+       * mascarando a perda. Resultado medido: quanto MAIOR a tela, menos menu.
+       *
+       * Aqui ele fica sempre visivel (nao so acima de 1536px), cabe inteiro
+       * com a cidade, e nao disputa espaco com a navegacao — que era o proprio
+       * principio que o comentario antigo dizia seguir.
        */
-      className="hidden items-center gap-1.5 rounded-full border border-border bg-secondary/40 px-3 py-1 text-xs text-muted-foreground opacity-0 2xl:flex"
+      className="flex items-center gap-1.5 text-xs text-muted-foreground opacity-0"
       title={`Hora de rede — ${cidade}`}
     >
       <span className="size-1.5 shrink-0 rounded-full bg-success motion-safe:animate-pulse" aria-hidden />
-      <Clock3 className="size-3.5 shrink-0" />
+      <Clock3 className="size-4 shrink-0 text-muted-foreground" />
       <span className="font-mono font-semibold tabular-nums text-foreground">{fmtHora.format(agora)}</span>
-      <span className="text-muted-foreground/70">·</span>
-      <span className="capitalize">{fmtData.format(agora)}</span>
-      <span className="hidden text-muted-foreground/70 2xl:inline">· {cidade}</span>
+      <span className="truncate capitalize">{fmtData.format(agora)}</span>
     </div>
   );
 }

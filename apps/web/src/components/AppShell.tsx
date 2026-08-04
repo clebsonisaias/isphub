@@ -193,6 +193,13 @@ function UserMenu({
         <button
           type="button"
           title={`${nome} — ${USER_ROLE_LABEL[role]}`}
+          /*
+           * Rotulo explicito: abaixo de `xl` o nome fica escondido e sobram so
+           * as INICIAIS, entao o leitor de tela anunciava "EA, botao". Quem usa
+           * o app no celular — a maior parte dos tecnicos — nao tinha como
+           * saber o que esse botao abre.
+           */
+          aria-label={`Menu do usuário — ${nome}`}
           className="flex items-center gap-2 rounded-full py-1 pl-1 pr-1 outline-none transition-colors hover:bg-secondary/60 focus-visible:ring-2 focus-visible:ring-ring lg:pr-2.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
         >
           <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-secondary font-display text-xs font-semibold text-foreground">
@@ -214,6 +221,16 @@ function UserMenu({
           <p className="text-xs text-muted-foreground">
             {USER_ROLE_LABEL[role]}
           </p>
+        </div>
+        {/*
+          Hora de REDE (do servidor, nao do aparelho) — importa pra discussao
+          de SLA, onde o relogio do computador de cada um nao serve de prova.
+          Vive aqui porque na linha do cabecalho ele competia com a navegacao e
+          ganhava; aqui cabe inteiro e aparece em qualquer largura, inclusive
+          no celular, onde antes nunca era exibido.
+        */}
+        <div className="border-b border-border px-2.5 pb-2 pt-1.5">
+          <HeaderClock />
         </div>
         <Link
           to="/perfil"
@@ -392,8 +409,14 @@ export function AppShell({ children }: { children: ReactNode }) {
             </nav>
           )}
 
+          {/*
+            O relogio de rede SAIU daqui (foi pro menu do usuario). Ele
+            aparecia em 1536px e consumia 291px de uma barra travada em 1280px,
+            empurrando 275px de navegacao pra fora — com a barra de rolagem
+            escondida, sem nenhuma pista de que os itens existiam. Medido: a
+            partir de 1536px o nav caia de 780px pra 490px.
+          */}
           <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
-            {usuario && <HeaderClock />}
             {usuario && <CommandPalette />}
             {usuario && <NotificationBell />}
             {usuario && (
