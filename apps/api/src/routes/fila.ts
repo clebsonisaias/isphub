@@ -139,6 +139,9 @@ filaRouter.get(
             cor: os.tipoOs.categoria.cor,
             icone: os.tipoOs.categoria.icone,
             slaHorasPadrao: os.tipoOs.categoria.slaHorasPadrao,
+            // O mapa desenha interna e externa juntas e precisa distinguir
+            // retirada de servico da casa sem uma segunda consulta.
+            equipeExterna: os.tipoOs.categoria.equipeExterna,
           }
         : null,
       status: os.status as OsStatus,

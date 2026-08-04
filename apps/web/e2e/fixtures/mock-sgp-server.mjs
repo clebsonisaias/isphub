@@ -85,14 +85,41 @@ const SEED_SEM_TIPO = {
   os_data_agendamento: "2026-12-31 12:00:00",
 };
 
-let ordens = [{ ...SEED }, { ...SEED_SEM_TIPO }];
+/*
+ * Retirada (equipe externa). Precisa existir AQUI, nao so no seed do banco:
+ * a reconciliacao cancela toda OS aberta que nao aparece na varredura do SGP,
+ * entao uma OS so-no-banco vira "cancelada" no primeiro ciclo de sync e some
+ * do mapa — foi assim que a `e2e-os-sem-tipo` passava por sorte.
+ *
+ * `motivo` casa com o TipoOs de codigo 99, mapeado numa categoria com
+ * equipeExterna=true: e o que faz o mapa desenhar losango em vez de circulo.
+ */
+const SEED_RETIRADA = {
+  os_id: "e2e-os-retirada",
+  os_status: 0,
+  os_conteudo: "Retirada de equipamento (fixture e2e)",
+  cliente_nome: "Cliente Retirada",
+  contrato_id: "3",
+  motivo: "99",
+  endereco_ll: "-5.8,-35.22",
+  os_data_agendamento: "2026-12-31 12:00:00",
+};
+
+let ordens = [{ ...SEED }, { ...SEED_SEM_TIPO }, { ...SEED_RETIRADA }];
 
 app.get("/", (_req, res) => res.json({ ok: true, service: "mock-sgp-e2e" }));
 
 app.get("/_test/log", (_req, res) => res.json(log));
 app.post("/_test/reset", (_req, res) => {
   log = [];
-  ordens = [{ ...SEED }, { ...SEED_SEM_TIPO }];
+  /*
+   * Tem que restaurar TODAS as OS de base — a lista aqui e a linha de base do
+   * SGP, e o que ela esquecer some do ERP simulado. Uma OS de base ausente e
+   * cancelada pela reconciliacao ("saiu da fila de abertas") no ciclo
+   * seguinte, e o spec que dependia dela falha so quando a suite roda inteira,
+   * nunca sozinho. Foi o que aconteceu com a retirada do mapa.
+   */
+  ordens = [{ ...SEED }, { ...SEED_SEM_TIPO }, { ...SEED_RETIRADA }];
   res.json({ ok: true });
 });
 

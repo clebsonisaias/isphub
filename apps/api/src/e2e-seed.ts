@@ -111,6 +111,46 @@ async function main() {
     data: { tecnicoId: tecnico.id },
   });
 
+  /*
+   * OS de EQUIPE EXTERNA (retirada), com coordenada: e o unico caso que
+   * exercita o marcador em losango do mapa. Sem ela o mapa so teria circulos e
+   * a distincao passaria despercebida ate alguem reclamar em producao.
+   */
+  const categoriaRetirada = await prisma.categoria.upsert({
+    where: { nome: "E2E Retirada" },
+    create: { nome: "E2E Retirada", cor: "#f59e0b", equipeExterna: true },
+    update: { equipeExterna: true },
+  });
+  const tipoRetirada = await prisma.tipoOs.upsert({
+    where: { provedorId_sgpCodigo: { provedorId: provedor.id, sgpCodigo: "99" } },
+    create: {
+      provedorId: provedor.id,
+      sgpCodigo: "99",
+      descricao: "Retirada de equipamento",
+      categoriaId: categoriaRetirada.id,
+      visivel: true,
+    },
+    update: { categoriaId: categoriaRetirada.id, visivel: true },
+  });
+  await prisma.ordemServico.upsert({
+    where: { provedorId_sgpOsId: { provedorId: provedor.id, sgpOsId: "e2e-os-retirada" } },
+    create: {
+      provedorId: provedor.id,
+      sgpOsId: "e2e-os-retirada",
+      tipoOsId: tipoRetirada.id,
+      status: "aberta",
+      clienteNome: "Cliente Retirada",
+      contratoId: "3",
+      logradouro: "Rua da Retirada",
+      numero: "9",
+      cidade: "Natal",
+      lat: -5.8,
+      lng: -35.22,
+      dataAgendamento: new Date("2026-12-31T12:00:00.000Z"),
+    },
+    update: { status: "aberta", tipoOsId: tipoRetirada.id, clienteNome: "Cliente Retirada", tecnicoId: null },
+  });
+
   // Sem tipoOsId (regressao do recorte interna/externa): uma OS sem tipo
   // mapeado nao tem como saber se e de equipe externa, entao deve SEMPRE
   // ficar na fila interna (Painel) — nunca sumir por causa da nova clausula

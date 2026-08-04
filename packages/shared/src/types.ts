@@ -65,8 +65,17 @@ export interface Categoria {
  */
 export type EquipeFiltro = "interna" | "externa" | "todas";
 
-/** Vista resumida da categoria, embutida em TipoOs/FilaItem (sem palavrasChave/ativo). */
-export type CategoriaResumo = Pick<Categoria, "id" | "nome" | "cor" | "icone" | "slaHorasPadrao">;
+/**
+ * Vista resumida da categoria, embutida em TipoOs/FilaItem (sem palavrasChave/ativo).
+ *
+ * `equipeExterna` entra aqui porque o cliente precisa DISTINGUIR retirada de
+ * serviço da casa sem uma segunda consulta — o mapa desenha as duas juntas e
+ * com marcador diferente.
+ */
+export type CategoriaResumo = Pick<
+  Categoria,
+  "id" | "nome" | "cor" | "icone" | "slaHorasPadrao" | "equipeExterna"
+>;
 
 /** Tipo de OS importado do SGP e exibido no ISPhub. */
 export interface TipoOs {

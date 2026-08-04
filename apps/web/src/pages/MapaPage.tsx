@@ -26,12 +26,26 @@ function mensagem(err: unknown): string {
  * Leaflet). Monta o elemento via DOM API (nao interpolando `cor` numa string
  * HTML) para nao depender so da validacao do backend contra a cor conter markup.
  */
-function pinIcon(cor: string) {
+function pinIcon(cor: string, retirada = false) {
   const ponto = document.createElement("span");
   ponto.style.display = "block";
   ponto.style.width = "16px";
   ponto.style.height = "16px";
-  ponto.style.borderRadius = "9999px";
+  /*
+   * FORMA distingue retirada de serviço da casa: losango (quadrado girado)
+   * contra círculo.
+   *
+   * Não é cor porque a cor do pino já é a identidade do provedor — usá-la
+   * também pra tipo de serviço faria os dois significados competirem no mesmo
+   * canal, e um mapa com vários provedores viraria adivinhação. Forma é um
+   * canal livre, e sobrevive a daltonismo e a sol na tela.
+   */
+  if (retirada) {
+    ponto.style.borderRadius = "2px";
+    ponto.style.transform = "rotate(45deg)";
+  } else {
+    ponto.style.borderRadius = "9999px";
+  }
   ponto.style.backgroundColor = cor;
   ponto.style.border = "2px solid white";
   ponto.style.boxShadow = "0 1px 4px rgba(0,0,0,.5)";
@@ -91,7 +105,25 @@ export function MapaPage() {
   useEffect(() => {
     setCarregando(true);
     filaApi
-      .listar({ provedorId: provedorId || undefined })
+      .listar({
+        provedorId: provedorId || undefined,
+        /*
+         * SÓ AS ABERTAS. O mapa é ferramenta de deslocamento — serve pra
+         * decidir aonde ir agora. OS encerrada não tem para onde ir, e antes
+         * elas entravam junto: além de sujar a leitura, eram a maior parte do
+         * volume (a operação fecha muito mais do que tem aberto), o que
+         * estourava o teto do servidor e disparava o aviso de "Mapa parcial"
+         * mesmo com poucas OS realmente em campo.
+         */
+        grupo: "abertos",
+        /*
+         * "todas" traz também as de equipe externa (retiradas), que ficavam de
+         * fora do mapa por herdar o padrão "interna" do Painel. Elas ocupam
+         * rua e agenda como qualquer outra — só são executadas por outra
+         * equipe, e é isso que o marcador em losango comunica.
+         */
+        equipe: "todas",
+      })
       .then((resp) => {
         const comCoordenadas = resp.itens.filter(
           (i) => i.endereco.lat != null && i.endereco.lng != null,
@@ -122,8 +154,27 @@ export function MapaPage() {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Mapa</h1>
+          {/* "aberta" explicito: sem isso, o numero parece "todas as OS" e
+              quem conhece o volume da operacao acha que sumiu dado. */}
           <p className="text-sm text-muted-foreground">
-            {itens.length} {itens.length === 1 ? "OS geolocalizada" : "OS geolocalizadas"}
+            {itens.length} {itens.length === 1 ? "OS aberta geolocalizada" : "OS abertas geolocalizadas"}
+          </p>
+          {/*
+            Legenda. Marcador com significado e enigma sem ela — quem olha ve
+            um losango e nao tem como deduzir que aquilo e retirada.
+          */}
+          <p className="mt-1.5 flex items-center gap-3 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <span aria-hidden className="size-2.5 rounded-full border border-white bg-muted-foreground" />
+              Serviço
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span
+                aria-hidden
+                className="size-2.5 rotate-45 rounded-[2px] border border-white bg-muted-foreground"
+              />
+              Retirada
+            </span>
           </p>
         </div>
         {usuario?.role !== UserRole.PROVEDOR && usuario?.role !== UserRole.TECNICO && (
@@ -156,7 +207,7 @@ export function MapaPage() {
               <Marker
                 key={item.id}
                 position={[item.endereco.lat as number, item.endereco.lng as number]}
-                icon={pinIcon(item.provedor.cor)}
+                icon={pinIcon(item.provedor.cor, item.categoria?.equipeExterna === true)}
               >
                 <Popup>
                   <div className="flex flex-col gap-1.5 text-sm">

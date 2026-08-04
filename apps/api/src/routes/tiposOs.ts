@@ -11,7 +11,7 @@ export const tiposOsRouter = Router({ mergeParams: true });
 
 tiposOsRouter.use(requireAuth, requireRole(UserRole.ADMIN, UserRole.GESTOR));
 
-const CATEGORIA_RESUMO_SELECT = { id: true, nome: true, cor: true, icone: true, slaHorasPadrao: true } as const;
+const CATEGORIA_RESUMO_SELECT = { id: true, nome: true, cor: true, icone: true, slaHorasPadrao: true, equipeExterna: true } as const;
 
 tiposOsRouter.get(
   "/",
