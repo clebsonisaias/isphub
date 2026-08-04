@@ -52,12 +52,20 @@ for (const largura of LARGURAS) {
     await login(page);
     await expect(page.getByRole("navigation", { name: "Navegação principal" })).toBeVisible();
 
-    const m = await medirTopo(page);
+    /*
+     * `expect.poll`: o calculo de quantos itens cabem roda DEPOIS do primeiro
+     * quadro (mede as larguras reais, e remede quando a fonte de display
+     * carrega). Medir na hora le a tela antes do colapso — foi assim que este
+     * teste acusou falha num comportamento que estava correto.
+     */
+    await expect
+      .poll(async () => (await medirTopo(page))?.escondeItens, {
+        message: "navegação escondida atrás de barra de rolagem invisível",
+      })
+      .toBe(false);
 
+    const m = await medirTopo(page);
     expect(m).not.toBeNull();
-    // Esconder item de navegação atrás de uma barra de rolagem invisível é o
-    // defeito que este arquivo existe pra impedir.
-    expect(m!.escondeItens, `${m!.escondido}px de navegação escondidos`).toBe(false);
     // A outra ponta: nada pode ser empurrado pra fora da tela.
     expect(m!.controlesForaDaTela).toBe(false);
     expect(m!.scrollHorizontalNaPagina).toBe(false);

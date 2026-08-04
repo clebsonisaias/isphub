@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, useReducedMotion } from "framer-motion";
 import { USER_ROLE_LABEL, UserRole, type ModuloId } from "@isphub/shared";
@@ -30,6 +30,7 @@ import {
   Moon,
   MessageCircle,
   MessageSquareText,
+  MoreHorizontal,
 } from "lucide-react";
 
 const INTERVALO_POLLING_NAO_LIDAS_MS = 45_000;
@@ -95,6 +96,112 @@ const NAV_ITEMS: {
     ocultoPara: [UserRole.TECNICO],
   },
 ];
+
+/** Largura reservada pro botao "Mais" quando ha excesso (medida do proprio botao). */
+const LARGURA_BOTAO_MAIS = 86;
+/** `lg:gap-1` do nav. */
+const GAP_NAV = 4;
+
+/**
+ * Quantos itens de navegacao cabem na linha do cabecalho.
+ *
+ * A quantidade de itens VARIA — modulos ligam e desligam, e o papel do usuario
+ * esconde alguns. Calibrar o cabecalho pra um numero fixo e o que fez a
+ * navegacao quebrar de novo: com 7 itens cabia, com 8 (modulo de chat de
+ * clientes ligado) "Administração" virava "Ad". Aqui a conta e feita com a
+ * largura real, entao vale pra qualquer quantidade.
+ *
+ * As larguras sao medidas UMA vez, com todos os itens visiveis, e guardadas —
+ * depois de esconder um item nao da mais pra medi-lo. Os rotulos sao estaticos,
+ * entao a medida continua valendo; se a lista mudar, o cache e descartado.
+ */
+function useQuantosCabem(qtdItens: number, navRef: React.RefObject<HTMLElement | null>) {
+  const [cabem, setCabem] = useState(qtdItens);
+  const largurasRef = useRef<number[] | null>(null);
+
+  const recalcular = useCallback(() => {
+    const el = navRef.current;
+    if (!el) return;
+
+    // Abaixo de `lg` o nav e a barra fixa do rodape, com layout proprio —
+    // nada de esconder item ali.
+    if (!window.matchMedia("(min-width: 1024px)").matches) {
+      setCabem(qtdItens);
+      return;
+    }
+
+    if (!largurasRef.current) {
+      const itens = [...el.querySelectorAll<HTMLElement>("[data-nav-item]")];
+      const medidas = itens.map((i) => i.offsetWidth);
+      /*
+       * So aceita a medida quando TODOS os itens tem largura real.
+       *
+       * Um item escondido mede ZERO, e zero na conta faz o total encolher — o
+       * calculo conclui "cabe tudo", expande, mede certo, colapsa de novo, e
+       * fica oscilando. Contar os elementos nao bastava: eles EXISTEM no DOM
+       * mesmo colapsados (o colapso e `display:none` via CSS), so nao tem
+       * largura. Medida invalida: sai sem gravar e tenta no proximo quadro.
+       */
+      if (medidas.length < qtdItens || medidas.some((w) => w === 0)) return;
+      largurasRef.current = medidas;
+    }
+
+    const larguras = largurasRef.current;
+    const disponivel = el.clientWidth;
+    const total = larguras.reduce((a, b) => a + b, 0) + GAP_NAV * (larguras.length - 1);
+    if (total <= disponivel) {
+      setCabem(qtdItens);
+      return;
+    }
+
+    let usado = LARGURA_BOTAO_MAIS + GAP_NAV;
+    let n = 0;
+    for (const w of larguras) {
+      if (usado + w > disponivel) break;
+      usado += w + GAP_NAV;
+      n++;
+    }
+    // Pelo menos um item na linha — um cabecalho so com "Mais" nao ajuda.
+    setCabem(Math.max(1, n));
+  }, [qtdItens, navRef]);
+
+  // Lista mudou (modulo ligado/desligado, troca de papel): remede do zero.
+  useLayoutEffect(() => {
+    largurasRef.current = null;
+    setCabem(qtdItens);
+  }, [qtdItens]);
+
+  /*
+   * `useLayoutEffect` roda depois do DOM e ANTES da pintura: mede com tudo na
+   * tela e ja aplica o colapso no MESMO quadro. Em `useEffect` (depois da
+   * pintura) os itens excedentes apareciam por um instante e sumiam — um pisca
+   * visivel pra quem usa, e uma corrida que fazia o teste ler a linha antes de
+   * ela assentar.
+   */
+  useLayoutEffect(recalcular);
+
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const ro = new ResizeObserver(recalcular);
+    ro.observe(nav);
+    // A fonte de display carrega depois do primeiro quadro e muda a largura
+    // dos rotulos; sem isto a medida inicial fica errada por pouco.
+    /*
+     * Fonte carregada: descarta a medida e EXPANDE. Expandir e obrigatorio —
+     * com itens escondidos a remedicao seria invalida (largura zero) e o cache
+     * ficaria vazio pra sempre. Com todos visiveis, o `useLayoutEffect` do
+     * proximo render mede certo e recolapsa antes da pintura.
+     */
+    void document.fonts?.ready.then(() => {
+      largurasRef.current = null;
+      setCabem(qtdItens);
+    });
+    return () => ro.disconnect();
+  }, [recalcular, navRef]);
+
+  return cabem;
+}
 
 /**
  * Classe de um item de navegacao — um unico elemento serve dois papeis pelo
@@ -268,6 +375,79 @@ function UserMenu({
   );
 }
 
+/**
+ * "Mais" — os itens de navegacao que nao couberam na linha.
+ *
+ * So existe no desktop (`hidden lg:flex`): abaixo de `lg` a navegacao e a
+ * barra fixa do rodape e TODOS os itens aparecem la. Nao ha duplicacao de link
+ * na arvore de acessibilidade — o Popover do Radix so monta o conteudo quando
+ * aberto, e um item que esta aqui esta escondido da linha (`lg:hidden`).
+ */
+function NavExcesso({
+  itens,
+  caminhoAtual,
+  naoLidasChat,
+}: {
+  itens: { to: string; label: string; icon: typeof LayoutGrid }[];
+  caminhoAtual: string;
+  naoLidasChat: number;
+}) {
+  const [aberto, setAberto] = useState(false);
+  // Se a pagina ATUAL esta escondida aqui dentro, o botao precisa dizer isso —
+  // senao a navegacao nao mostra onde a pessoa esta.
+  const contemAtual = itens.some((i) =>
+    i.to === "/admin" ? caminhoAtual.startsWith("/admin") : caminhoAtual === i.to,
+  );
+
+  return (
+    <Popover open={aberto} onOpenChange={setAberto}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={`Mais seções (${itens.length})`}
+          className={cn(
+            // `pointer-coarse:min-h-11` como os demais itens: em tablet
+            // paisagem (1024px COM toque) o botao ficava 76x32px, abaixo do
+            // minimo de 44px.
+            "hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition-colors lg:flex pointer-coarse:min-h-11",
+            contemAtual
+              ? "bg-primary/12 text-foreground"
+              : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
+          )}
+        >
+          <MoreHorizontal className="size-4 shrink-0" />
+          Mais
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-52 p-1.5">
+        {itens.map(({ to, label, icon: Icon }) => {
+          const ativo = to === "/admin" ? caminhoAtual.startsWith("/admin") : caminhoAtual === to;
+          return (
+            <Link
+              key={to}
+              to={to}
+              onClick={() => setAberto(false)}
+              aria-current={ativo ? "page" : undefined}
+              className={cn(
+                "flex items-center gap-2 rounded-md px-2.5 py-2 text-sm outline-none transition-colors hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11",
+                ativo ? "bg-primary/12 font-medium text-foreground" : "text-foreground",
+              )}
+            >
+              <Icon className="size-4 shrink-0 text-muted-foreground" />
+              {label}
+              {to === "/chat" && naoLidasChat > 0 && (
+                <span className="ml-auto rounded-full bg-accent-yellow px-1.5 text-[0.65rem] font-bold text-accent-yellow-foreground">
+                  {naoLidasChat > 9 ? "9+" : naoLidasChat}
+                </span>
+              )}
+            </Link>
+          );
+        })}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 /** Casca comum das telas autenticadas: cabecalho com marca, navegação, usuario e logout. */
 export function AppShell({ children }: { children: ReactNode }) {
   const { usuario, logout } = useAuth();
@@ -275,6 +455,35 @@ export function AppShell({ children }: { children: ReactNode }) {
   const shouldReduceMotion = useReducedMotion();
   const [naoLidasChat, setNaoLidasChat] = useState(0);
   const { ids: modulosHabilitados } = useModulosHabilitados();
+  const navRef = useRef<HTMLElement | null>(null);
+
+  /*
+   * UMA lista com tudo, inclusive Administração — que antes era renderizada
+   * solta depois do map. Unificar e o que permite a conta de excesso tratar
+   * todos os itens igual; solto, ele seria sempre o que sobra pra fora (foi
+   * exatamente ele que apareceu cortado como "Ad").
+   */
+  const itensNav = useMemo(() => {
+    const base = NAV_ITEMS.filter(
+      (item) =>
+        !!usuario &&
+        !item.ocultoPara.includes(usuario.role) &&
+        (!item.modulo || modulosHabilitados.has(item.modulo)),
+    );
+    if (usuario?.role === UserRole.ADMIN) {
+      base.push({
+        to: "/admin",
+        label: "Administração",
+        labelCurto: "Admin",
+        icon: Settings,
+        ocultoPara: [],
+      });
+    }
+    return base;
+  }, [usuario, modulosHabilitados]);
+
+  const cabem = useQuantosCabem(itensNav.length, navRef);
+  const noExcesso = itensNav.slice(cabem);
 
   useEffect(() => {
     if (!usuario || usuario.role === UserRole.PROVEDOR) return;
@@ -341,6 +550,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           */}
           {usuario && (
             <nav
+              ref={navRef}
               /*
                * `lg:min-w-0` + `lg:overflow-x-auto` no desktop: com `flex-1`
                * sozinho o nav nunca encolhia abaixo do seu min-content, e as
@@ -356,19 +566,24 @@ export function AppShell({ children }: { children: ReactNode }) {
               className="fixed inset-x-0 bottom-0 z-30 flex items-stretch justify-around border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:static lg:inset-auto lg:z-auto lg:min-w-0 lg:flex-1 lg:items-center lg:justify-start lg:gap-1 lg:overflow-x-auto lg:border-t-0 lg:bg-transparent lg:pb-0 lg:backdrop-blur-none lg:scrollbar-none"
               aria-label="Navegação principal"
             >
-              {NAV_ITEMS.filter(
-                (item) => !item.ocultoPara.includes(usuario.role) && (!item.modulo || modulosHabilitados.has(item.modulo)),
-              ).map(({ to, label, labelCurto, icon: Icon }) => {
-                const ativo = location.pathname === to;
+              {itensNav.map(({ to, label, labelCurto, icon: Icon }, i) => {
+                const ativo = to === "/admin" ? location.pathname.startsWith("/admin") : location.pathname === to;
+                const soNoExcesso = i >= cabem;
                 return (
                   <Link
                     key={to}
                     to={to}
                     title={label}
+                    data-nav-item
                     // Nome acessivel e sempre o completo, mesmo quando o rotulo
                     // visivel esta abreviado no rodape.
                     aria-label={labelCurto ? label : undefined}
-                    className={navItemClass(ativo)}
+                    /*
+                     * `lg:hidden` quando nao coube: some da LINHA e reaparece
+                     * dentro de "Mais". Abaixo de `lg` continua visivel — ali o
+                     * nav e a barra do rodape, com layout proprio.
+                     */
+                    className={cn(navItemClass(ativo), soNoExcesso && "lg:hidden")}
                   >
                     {ativo && (
                       <NavActivePill
@@ -386,25 +601,12 @@ export function AppShell({ children }: { children: ReactNode }) {
                   </Link>
                 );
               })}
-              {usuario.role === UserRole.ADMIN && (
-                <Link
-                  to="/admin"
-                  title="Administração"
-                  aria-label="Administração"
-                  className={navItemClass(
-                    location.pathname.startsWith("/admin"),
-                  )}
-                >
-                  {location.pathname.startsWith("/admin") && (
-                    <NavActivePill shouldReduceMotion={!!shouldReduceMotion} />
-                  )}
-                  <NavIcon
-                    Icon={Settings}
-                    ativo={location.pathname.startsWith("/admin")}
-                  />
-                  <span className="relative lg:hidden">Admin</span>
-                  <span className="relative hidden lg:inline">Administração</span>
-                </Link>
+              {noExcesso.length > 0 && (
+                <NavExcesso
+                  itens={noExcesso}
+                  caminhoAtual={location.pathname}
+                  naoLidasChat={naoLidasChat}
+                />
               )}
             </nav>
           )}

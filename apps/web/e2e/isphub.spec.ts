@@ -16,6 +16,15 @@ async function login(page: Page, creds: { email: string; senha: string }) {
 test.describe("login por papel", () => {
   test("admin ve o atalho de Administração e consegue acessar /admin", async ({ page }) => {
     await login(page, ADMIN);
+
+    /*
+     * O item pode estar na LINHA ou dentro de "Mais", conforme a largura e a
+     * quantidade de modulos ligados — o cabecalho colapsa o excesso num menu.
+     * O que importa aqui e ser ALCANCAVEL, nao em qual dos dois lugares esta.
+     */
+    await expect(page.getByRole("navigation", { name: "Navegação principal" })).toBeVisible();
+    const mais = page.getByRole("button", { name: /Mais seções/ });
+    if ((await mais.count()) > 0) await mais.click();
     await expect(page.getByRole("link", { name: "Administração" })).toBeVisible();
 
     await page.getByRole("link", { name: "Administração" }).click();

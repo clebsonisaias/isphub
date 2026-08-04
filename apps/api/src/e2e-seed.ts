@@ -1,4 +1,4 @@
-import { UserRole } from "@isphub/shared";
+import { MODULO_CATALOGO, UserRole } from "@isphub/shared";
 import { prisma } from "./lib/prisma.js";
 import { hashPassword } from "./services/authService.js";
 import { encrypt } from "./lib/crypto.js";
@@ -210,6 +210,20 @@ async function main() {
       tecnicoId: null,
     },
   });
+
+  /*
+   * Liga TODOS os modulos. O cabecalho tem que caber no PIOR caso — o numero
+   * de itens de navegacao VARIA com os modulos, e com o padrao (`chat-clientes`
+   * desligado) o seed tinha 7 itens enquanto producao tinha 8. Foi assim que
+   * "Administração" apareceu cortada como "Ad" em producao com a suite verde.
+   */
+  for (const meta of Object.values(MODULO_CATALOGO)) {
+    await prisma.moduloConfig.upsert({
+      where: { moduloId: meta.id },
+      create: { moduloId: meta.id, ativo: true, ordem: meta.ordemPadrao, rolesPermitidos: meta.rolesPadrao },
+      update: { ativo: true, rolesPermitidos: meta.rolesPadrao },
+    });
+  }
 
   console.log("Seed E2E concluido:");
   console.log(`  admin:  ${E2E_ADMIN_EMAIL} / ${E2E_ADMIN_SENHA}`);
