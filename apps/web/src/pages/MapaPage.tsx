@@ -15,6 +15,7 @@ import { useAuth } from "@/context/AuthContext";
 import { filaApi } from "@/lib/filaApi";
 import { provedoresApi } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
+import { contratoTemProblema } from "@/lib/contratoStatus";
 import { useToast } from "@/context/ToastContext";
 
 function mensagem(err: unknown): string {
@@ -35,11 +36,22 @@ const EQUIPE_OPCOES: { valor: EquipeFiltro; rotulo: string }[] = [
 ];
 
 /**
+ * Cor do halo de alerta, lida do token do tema (`--destructive`) em vez de um
+ * hex fixo — claro e escuro usam valores diferentes, e um vermelho cravado
+ * ficaria fora de tom num deles.
+ */
+function corDeAlerta(): string {
+  const valor = getComputedStyle(document.documentElement).getPropertyValue("--destructive").trim();
+  // Fallback pro caso do token nao existir (teste isolado, CSS ainda nao aplicado).
+  return valor || "#ef4444";
+}
+
+/**
  * Pin colorido com a cor do provedor (evita depender dos icones default do
  * Leaflet). Monta o elemento via DOM API (nao interpolando `cor` numa string
  * HTML) para nao depender so da validacao do backend contra a cor conter markup.
  */
-function pinIcon(cor: string, retirada = false) {
+function pinIcon(cor: string, retirada = false, contratoIrregular = false) {
   const ponto = document.createElement("span");
   ponto.style.display = "block";
   ponto.style.width = "16px";
@@ -61,7 +73,22 @@ function pinIcon(cor: string, retirada = false) {
   }
   ponto.style.backgroundColor = cor;
   ponto.style.border = "2px solid white";
-  ponto.style.boxShadow = "0 1px 4px rgba(0,0,0,.5)";
+
+  /*
+   * HALO = contrato irregular (não-ativo). Terceiro canal, cada um com UM
+   * significado: preenchimento = provedor, forma = serviço/retirada, halo =
+   * contrato.
+   *
+   * É halo e não o preenchimento porque, com a regra do projeto de só colorir
+   * o problema, pintar o preenchimento deixaria todo pino normal cinza — e a
+   * cor do provedor é o único canal panorâmico de identidade que existe (o
+   * nome do provedor só aparece dentro do popup). Apagá-la em ~90% dos pinos
+   * custaria mais do que o sinal ganharia.
+   *
+   * `box-shadow` empilhado: o anel primeiro, a sombra de profundidade depois.
+   */
+  const sombra = "0 1px 4px rgba(0,0,0,.5)";
+  ponto.style.boxShadow = contratoIrregular ? `0 0 0 3px ${corDeAlerta()}, ${sombra}` : sombra;
 
   /*
    * No Leaflet o `iconSize` E a area clicavel. Um pino de 16px e impossivel de
@@ -163,6 +190,17 @@ export function MapaPage() {
       .finally(() => setCarregando(false));
   }, [provedorId, equipe]);
 
+  /*
+   * Quantos contratos irregulares há no recorte. Serve pra dois fins: decidir
+   * se a legenda do halo aparece (explicar um sinal que não está na tela é
+   * ruído — mesmo critério já usado nas formas) e dar o número, que é a
+   * informação que o gestor quer antes de despachar.
+   */
+  const irregulares = useMemo(
+    () => itens.filter((i) => contratoTemProblema(i.contratoStatus)).length,
+    [itens],
+  );
+
   const pontos = useMemo<[number, number][]>(
     () => itens.map((i) => [i.endereco.lat as number, i.endereco.lng as number]),
     [itens],
@@ -190,6 +228,15 @@ export function MapaPage() {
               <span className="flex items-center gap-1.5">
                 <span aria-hidden className="size-2.5 rounded-full border border-white bg-muted-foreground" />
                 Serviço
+              </span>
+            )}
+            {irregulares > 0 && (
+              <span className="flex items-center gap-1.5">
+                <span
+                  aria-hidden
+                  className="size-2.5 rounded-full border border-white bg-muted-foreground ring-[3px] ring-destructive"
+                />
+                Contrato irregular ({irregulares})
               </span>
             )}
             {equipe !== "interna" && (
@@ -248,7 +295,11 @@ export function MapaPage() {
               <Marker
                 key={item.id}
                 position={[item.endereco.lat as number, item.endereco.lng as number]}
-                icon={pinIcon(item.provedor.cor, item.categoria?.equipeExterna === true)}
+                icon={pinIcon(
+                  item.provedor.cor,
+                  item.categoria?.equipeExterna === true,
+                  contratoTemProblema(item.contratoStatus),
+                )}
               >
                 <Popup>
                   <div className="flex flex-col gap-1.5 text-sm">

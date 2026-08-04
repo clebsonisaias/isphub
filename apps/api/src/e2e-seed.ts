@@ -151,6 +151,36 @@ async function main() {
     update: { status: "aberta", tipoOsId: tipoRetirada.id, clienteNome: "Cliente Retirada", tecnicoId: null },
   });
 
+  /*
+   * OS com CONTRATO CANCELADO, com coordenada: exercita o halo de alerta do
+   * mapa. As outras OS de base tem contrato ativo, entao sem esta o sinal nao
+   * teria como ser testado.
+   */
+  await prisma.ordemServico.upsert({
+    where: { provedorId_sgpOsId: { provedorId: provedor.id, sgpOsId: "e2e-os-cancelada" } },
+    create: {
+      provedorId: provedor.id,
+      sgpOsId: "e2e-os-cancelada",
+      tipoOsId: tipo.id,
+      status: "aberta",
+      clienteNome: "Cliente Contrato Cancelado",
+      contratoId: "4",
+      contratoStatus: "Cancelado",
+      logradouro: "Rua do Cancelado",
+      numero: "4",
+      cidade: "Natal",
+      lat: -5.81,
+      lng: -35.23,
+      dataAgendamento: new Date("2026-12-31T12:00:00.000Z"),
+    },
+    update: {
+      status: "aberta",
+      clienteNome: "Cliente Contrato Cancelado",
+      contratoStatus: "Cancelado",
+      tecnicoId: null,
+    },
+  });
+
   // Sem tipoOsId (regressao do recorte interna/externa): uma OS sem tipo
   // mapeado nao tem como saber se e de equipe externa, entao deve SEMPRE
   // ficar na fila interna (Painel) — nunca sumir por causa da nova clausula

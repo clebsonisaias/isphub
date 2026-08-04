@@ -105,7 +105,24 @@ const SEED_RETIRADA = {
   os_data_agendamento: "2026-12-31 12:00:00",
 };
 
-let ordens = [{ ...SEED }, { ...SEED_SEM_TIPO }, { ...SEED_RETIRADA }];
+/*
+ * Contrato CANCELADO — exercita o halo de alerta do mapa. `contrato_status` e
+ * o campo que o conector le (sgp.ts, normalizeOs); as demais OS de base tem
+ * contrato ativo.
+ */
+const SEED_CANCELADA = {
+  os_id: "e2e-os-cancelada",
+  os_status: 0,
+  os_conteudo: "OS de contrato cancelado (fixture e2e)",
+  cliente_nome: "Cliente Contrato Cancelado",
+  contrato_id: "4",
+  contrato_status: "Cancelado",
+  motivo: "1",
+  endereco_ll: "-5.81,-35.23",
+  os_data_agendamento: "2026-12-31 12:00:00",
+};
+
+let ordens = [{ ...SEED }, { ...SEED_SEM_TIPO }, { ...SEED_RETIRADA }, { ...SEED_CANCELADA }];
 
 app.get("/", (_req, res) => res.json({ ok: true, service: "mock-sgp-e2e" }));
 
@@ -119,7 +136,7 @@ app.post("/_test/reset", (_req, res) => {
    * seguinte, e o spec que dependia dela falha so quando a suite roda inteira,
    * nunca sozinho. Foi o que aconteceu com a retirada do mapa.
    */
-  ordens = [{ ...SEED }, { ...SEED_SEM_TIPO }, { ...SEED_RETIRADA }];
+  ordens = [{ ...SEED }, { ...SEED_SEM_TIPO }, { ...SEED_RETIRADA }, { ...SEED_CANCELADA }];
   res.json({ ok: true });
 });
 

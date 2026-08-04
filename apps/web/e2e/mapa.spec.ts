@@ -19,18 +19,22 @@ async function login(page: Page) {
   await page.waitForURL("**/");
 }
 
-/** Marcadores do Leaflet, separados pela FORMA do pino. */
+/** Marcadores do Leaflet, separados pela FORMA e pela presença do halo. */
 async function marcadores(page: Page) {
   return page.evaluate(() => {
     const els = [...document.querySelectorAll(".leaflet-marker-icon")];
-    const formas = els.map((el) => {
+    const estilos = els.map((el) => {
       const alvo = el.querySelector("span[style]") ?? el;
-      return (alvo.getAttribute("style") ?? "").includes("rotate(45deg)") ? "losango" : "circulo";
+      return alvo.getAttribute("style") ?? "";
     });
     return {
       total: els.length,
-      losangos: formas.filter((f) => f === "losango").length,
-      circulos: formas.filter((f) => f === "circulo").length,
+      losangos: estilos.filter((s) => s.includes("rotate(45deg)")).length,
+      circulos: estilos.filter((s) => !s.includes("rotate(45deg)")).length,
+      // O halo é o anel `0 0 0 3px` empilhado ANTES da sombra de profundidade.
+      comHalo: estilos.filter((s) => s.includes("0px 0px 0px 3px")).length,
+      // O preenchimento tem que continuar sendo a cor do provedor.
+      comPreenchimento: estilos.filter((s) => s.includes("background-color")).length,
     };
   });
 }
@@ -71,9 +75,15 @@ test("dá pra ver só as retiradas", async ({ page }) => {
 
   await page.getByLabel("Tipo de OS no mapa").selectOption("externa");
 
-  // `expect.poll` porque a troca dispara um refetch: medir os pinos na hora
-  // leria a tela ANTES da resposta chegar.
-  await expect.poll(async () => (await marcadores(page)).circulos).toBe(0);
+  /*
+   * Espera o estado ASSENTADO, nao so "zero circulos": durante o refetch o
+   * mapa troca por esqueleto e fica com ZERO marcadores — o que satisfaria uma
+   * espera ingenua por "circulos === 0" e mediria a tela vazia.
+   */
+  await expect.poll(async () => {
+    const m = await marcadores(page);
+    return m.total > 0 && m.circulos === 0;
+  }).toBe(true);
   expect((await marcadores(page)).losangos).toBeGreaterThan(0);
 });
 
@@ -84,7 +94,10 @@ test("dá pra ver só os serviços", async ({ page }) => {
 
   await page.getByLabel("Tipo de OS no mapa").selectOption("interna");
 
-  await expect.poll(async () => (await marcadores(page)).losangos).toBe(0);
+  await expect.poll(async () => {
+    const m = await marcadores(page);
+    return m.total > 0 && m.losangos === 0;
+  }).toBe(true);
   expect((await marcadores(page)).circulos).toBeGreaterThan(0);
 });
 
@@ -124,6 +137,56 @@ test("a legenda explica as duas formas", async ({ page }) => {
 
   await expect(page.getByText("Serviço", { exact: true })).toBeVisible();
   await expect(page.getByText("Retirada", { exact: true })).toBeVisible();
+});
+
+/*
+ * HALO = contrato irregular. É o sinal que evita o erro mais caro da operação:
+ * mandar técnico à casa de um contrato cancelado. O seed tem exatamente uma OS
+ * assim (e2e-os-cancelada).
+ */
+test("contrato irregular ganha halo; contrato ativo nao", async ({ page }) => {
+  await login(page);
+  await page.goto("/mapa");
+  await page.waitForSelector(".leaflet-marker-icon");
+
+  const m = await marcadores(page);
+
+  expect(m.comHalo).toBe(1);
+  // Se TODO pino tivesse halo, o sinal nao sinalizaria nada.
+  expect(m.comHalo).toBeLessThan(m.total);
+});
+
+test("o halo NAO substitui a cor do provedor", async ({ page }) => {
+  /*
+   * A cor do preenchimento e o unico canal panoramico de identidade do
+   * provedor (o nome so aparece dentro do popup). Se alguem "simplificar" o
+   * halo pra pintar o preenchimento, todo pino normal fica cinza e esse teste
+   * cai.
+   */
+  await login(page);
+  await page.goto("/mapa");
+  await page.waitForSelector(".leaflet-marker-icon");
+
+  const m = await marcadores(page);
+
+  expect(m.comPreenchimento).toBe(m.total);
+});
+
+test("a legenda do halo so aparece quando ha contrato irregular", async ({ page }) => {
+  await login(page);
+  await page.goto("/mapa");
+  await page.waitForSelector(".leaflet-marker-icon");
+
+  await expect(page.getByText(/Contrato irregular \(1\)/)).toBeVisible();
+
+  // Só retiradas: a única OS de contrato cancelado é de serviço, então o
+  // recorte fica sem irregular nenhum e a legenda tem que sumir.
+  await page.getByLabel("Tipo de OS no mapa").selectOption("externa");
+  await expect.poll(async () => {
+    const m = await marcadores(page);
+    return m.total > 0 && m.comHalo === 0;
+  }).toBe(true);
+  await expect(page.getByText(/Contrato irregular/)).toHaveCount(0);
 });
 
 test("o contador do topo diz que sao OS ABERTAS", async ({ page }) => {
