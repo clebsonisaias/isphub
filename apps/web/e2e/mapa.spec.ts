@@ -64,6 +64,58 @@ test("retirada aparece com marcador diferente do servico", async ({ page }) => {
   expect(m.circulos).toBeGreaterThan(0);
 });
 
+test("dá pra ver só as retiradas", async ({ page }) => {
+  await login(page);
+  await page.goto("/mapa");
+  await page.waitForSelector(".leaflet-marker-icon");
+
+  await page.getByLabel("Tipo de OS no mapa").selectOption("externa");
+
+  // `expect.poll` porque a troca dispara um refetch: medir os pinos na hora
+  // leria a tela ANTES da resposta chegar.
+  await expect.poll(async () => (await marcadores(page)).circulos).toBe(0);
+  expect((await marcadores(page)).losangos).toBeGreaterThan(0);
+});
+
+test("dá pra ver só os serviços", async ({ page }) => {
+  await login(page);
+  await page.goto("/mapa");
+  await page.waitForSelector(".leaflet-marker-icon");
+
+  await page.getByLabel("Tipo de OS no mapa").selectOption("interna");
+
+  await expect.poll(async () => (await marcadores(page)).losangos).toBe(0);
+  expect((await marcadores(page)).circulos).toBeGreaterThan(0);
+});
+
+test("o recorte vai pro SERVIDOR, nao filtra pinos ja cortados no cliente", async ({ page }) => {
+  /*
+   * Filtrar no cliente esconderia pinos de um conjunto que o servidor pode ter
+   * truncado — o mapa mostraria menos do que existe achando que mostrou tudo.
+   * Pedir `equipe=externa` reduz o conjunto ANTES do teto.
+   */
+  const pedidos: string[] = [];
+  page.on("request", (r) => {
+    if (r.url().includes("/fila?")) pedidos.push(r.url());
+  });
+
+  await login(page);
+  await page.goto("/mapa");
+  await page.waitForSelector(".leaflet-marker-icon");
+  await page.getByLabel("Tipo de OS no mapa").selectOption("externa");
+  await expect.poll(() => pedidos.some((u) => u.includes("equipe=externa"))).toBe(true);
+});
+
+test("a legenda so explica as formas que podem aparecer", async ({ page }) => {
+  // Explicar um losango com o filtro em "Só serviços" e ruido.
+  await login(page);
+  await page.goto("/mapa");
+
+  await page.getByLabel("Tipo de OS no mapa").selectOption("interna");
+  await expect(page.getByText("Serviço", { exact: true })).toBeVisible();
+  await expect(page.getByText("Retirada", { exact: true })).toHaveCount(0);
+});
+
 test("a legenda explica as duas formas", async ({ page }) => {
   // Marcador com significado e enigma sem legenda: quem olha ve um losango e
   // nao tem como deduzir que aquilo e retirada.

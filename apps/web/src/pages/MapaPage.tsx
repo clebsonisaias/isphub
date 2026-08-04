@@ -22,6 +22,19 @@ function mensagem(err: unknown): string {
 }
 
 /**
+ * Recorte de equipe do mapa. Os valores sao os que a API entende
+ * (`equipe` em GET /fila); os rotulos falam a lingua da operacao — quem usa
+ * esta tela pensa em "serviço" e "retirada", nao em "equipe interna/externa".
+ */
+type EquipeFiltro = "todas" | "interna" | "externa";
+
+const EQUIPE_OPCOES: { valor: EquipeFiltro; rotulo: string }[] = [
+  { valor: "todas", rotulo: "Serviços e retiradas" },
+  { valor: "interna", rotulo: "Só serviços" },
+  { valor: "externa", rotulo: "Só retiradas" },
+];
+
+/**
  * Pin colorido com a cor do provedor (evita depender dos icones default do
  * Leaflet). Monta o elemento via DOM API (nao interpolando `cor` numa string
  * HTML) para nao depender so da validacao do backend contra a cor conter markup.
@@ -95,6 +108,13 @@ export function MapaPage() {
   const { toast } = useToast();
   const [provedores, setProvedores] = useState<Provedor[]>([]);
   const [provedorId, setProvedorId] = useState("");
+  /*
+   * Recorte de equipe. Vai pro SERVIDOR, nao filtra no cliente: pedir so
+   * "externa" reduz o conjunto ANTES do teto do servidor, enquanto esconder
+   * pinos aqui deixaria de fora o que ja tinha sido cortado — o mapa mostraria
+   * menos do que existe achando que mostrou tudo.
+   */
+  const [equipe, setEquipe] = useState<EquipeFiltro>("todas");
   const [itens, setItens] = useState<FilaItem[]>([]);
   const [carregando, setCarregando] = useState(true);
 
@@ -117,12 +137,12 @@ export function MapaPage() {
          */
         grupo: "abertos",
         /*
-         * "todas" traz também as de equipe externa (retiradas), que ficavam de
-         * fora do mapa por herdar o padrão "interna" do Painel. Elas ocupam
-         * rua e agenda como qualquer outra — só são executadas por outra
-         * equipe, e é isso que o marcador em losango comunica.
+         * Padrão "todas": traz também as de equipe externa (retiradas), que
+         * ficavam de fora do mapa por herdar o padrão "interna" do Painel.
+         * Elas ocupam rua e agenda como qualquer outra — só são executadas por
+         * outra equipe, e é isso que o marcador em losango comunica.
          */
-        equipe: "todas",
+        equipe,
       })
       .then((resp) => {
         const comCoordenadas = resp.itens.filter(
@@ -141,7 +161,7 @@ export function MapaPage() {
       })
       .catch((err) => toast({ titulo: "Erro ao carregar o mapa", descricao: mensagem(err), variante: "erro" }))
       .finally(() => setCarregando(false));
-  }, [provedorId]);
+  }, [provedorId, equipe]);
 
   const pontos = useMemo<[number, number][]>(
     () => itens.map((i) => [i.endereco.lat as number, i.endereco.lng as number]),
@@ -163,34 +183,55 @@ export function MapaPage() {
             Legenda. Marcador com significado e enigma sem ela — quem olha ve
             um losango e nao tem como deduzir que aquilo e retirada.
           */}
+          {/* Só as formas que PODEM aparecer no recorte atual: explicar um
+              losango quando o filtro está em "Só serviços" é ruído. */}
           <p className="mt-1.5 flex items-center gap-3 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              <span aria-hidden className="size-2.5 rounded-full border border-white bg-muted-foreground" />
-              Serviço
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span
-                aria-hidden
-                className="size-2.5 rotate-45 rounded-[2px] border border-white bg-muted-foreground"
-              />
-              Retirada
-            </span>
+            {equipe !== "externa" && (
+              <span className="flex items-center gap-1.5">
+                <span aria-hidden className="size-2.5 rounded-full border border-white bg-muted-foreground" />
+                Serviço
+              </span>
+            )}
+            {equipe !== "interna" && (
+              <span className="flex items-center gap-1.5">
+                <span
+                  aria-hidden
+                  className="size-2.5 rotate-45 rounded-[2px] border border-white bg-muted-foreground"
+                />
+                Retirada
+              </span>
+            )}
           </p>
         </div>
-        {usuario?.role !== UserRole.PROVEDOR && usuario?.role !== UserRole.TECNICO && (
+        <div className="flex flex-wrap items-center gap-2">
           <Select
-            value={provedorId}
-            onChange={(e) => setProvedorId(e.target.value)}
+            value={equipe}
+            onChange={(e) => setEquipe(e.target.value as EquipeFiltro)}
+            aria-label="Tipo de OS no mapa"
             className="bg-secondary/40"
           >
-            <option value="">Todos os provedores</option>
-            {provedores.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.nome}
+            {EQUIPE_OPCOES.map((o) => (
+              <option key={o.valor} value={o.valor}>
+                {o.rotulo}
               </option>
             ))}
           </Select>
-        )}
+          {usuario?.role !== UserRole.PROVEDOR && usuario?.role !== UserRole.TECNICO && (
+            <Select
+              value={provedorId}
+              onChange={(e) => setProvedorId(e.target.value)}
+              aria-label="Provedor"
+              className="bg-secondary/40"
+            >
+              <option value="">Todos os provedores</option>
+              {provedores.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.nome}
+                </option>
+              ))}
+            </Select>
+          )}
+        </div>
       </div>
 
       {carregando ? (
