@@ -595,9 +595,16 @@ export function AppShell({ children }: { children: ReactNode }) {
                       ativo={ativo}
                       badge={to === "/chat" ? naoLidasChat : undefined}
                     />
-                    {/* Abreviado abaixo de `lg`, completo a partir dali. */}
-                    <span className="relative lg:hidden">{labelCurto ?? label}</span>
-                    <span className="relative hidden lg:inline">{label}</span>
+                    {/*
+                      Rotulo curto em TODA largura, nao so no rodape do mobile.
+                      "Administração"/"Provisionar" sozinhos custam ~255px dos
+                      ~780px que a linha tem; como "Admin"/"ONU" custam ~155px,
+                      e a diferenca entre os 8 itens caberem na linha ou dois
+                      deles irem pro menu "Mais" — um clique a mais em algo que
+                      cabia. O nome COMPLETO continua no `aria-label` e no
+                      `title`, entao leitor de tela, tooltip e testes nao mudam.
+                    */}
+                    <span className="relative">{labelCurto ?? label}</span>
                   </Link>
                 );
               })}
