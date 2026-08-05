@@ -31,6 +31,7 @@ import {
   MessageCircle,
   MessageSquareText,
   MoreHorizontal,
+  Wallet,
 } from "lucide-react";
 
 const INTERVALO_POLLING_NAO_LIDAS_MS = 45_000;
@@ -49,6 +50,16 @@ const INTERVALO_POLLING_NAO_LIDAS_MS = 45_000;
  * continua no `aria-label` e volta a aparecer no desktop, entao nada muda pro
  * leitor de tela nem pra arvore de acessibilidade.
  */
+/**
+ * `soDesktop` tira o item da ABA FIXA do rodape (mas nao da navegacao): a mesma
+ * <nav> serve os dois papeis, entao cada item novo estreita todas as abas em
+ * 375px. Medido com nove: os alvos caiam pra 36-40px, abaixo do piso de 40 que
+ * a auditoria de responsividade cobra — dedo em campo erraria o toque.
+ *
+ * Quem leva a marca some da barra do polegar e reaparece no menu do usuario
+ * (ver `itensSoDesktop` em UserMenu), que e onde destino de baixa frequencia
+ * pertence. So marque assim o que ninguem usa de pe, na rua.
+ */
 const NAV_ITEMS: {
   to: string;
   label: string;
@@ -56,6 +67,7 @@ const NAV_ITEMS: {
   icon: typeof LayoutGrid;
   ocultoPara: UserRole[];
   modulo?: ModuloId;
+  soDesktop?: boolean;
 }[] = [
   { to: "/", label: "Painel", icon: LayoutGrid, ocultoPara: [] },
   { to: "/mapa", label: "Mapa", icon: Map, ocultoPara: [] },
@@ -94,6 +106,27 @@ const NAV_ITEMS: {
     labelCurto: "ONU",
     icon: Router,
     ocultoPara: [UserRole.TECNICO],
+  },
+  /*
+   * Dinheiro da PROPRIA HubISP. Escondido de todo mundo menos ADMIN, e nao so
+   * pelo modulo: `rolesPermitidos` e configuravel em /admin/modulos, e um
+   * PROVEDOR adicionado ali por engano veria o preco combinado com os
+   * concorrentes dele. A rota da API recusa de qualquer jeito — isto aqui e a
+   * primeira das tres camadas, nao a unica.
+   */
+  {
+    to: "/financeiro",
+    label: "Financeiro",
+    // Sem `labelCurto`: "R$" ao lado de "Painel" e "Dashboard" nao diz o que
+    // e. "ONU" funciona porque e termo do dominio; simbolo de moeda nao. Com
+    // 10 caracteres ele cabe na mesma faixa de "Retiradas"/"Dashboard", e se um
+    // dia nao couber, o menu de excesso ja resolve — que e pra isso que ele existe.
+    icon: Wallet,
+    ocultoPara: [UserRole.PROVEDOR, UserRole.TECNICO, UserRole.GESTOR],
+    modulo: "financeiro",
+    // Back-office: ninguem lanca conta a pagar de pe, na rua. Fora da barra do
+    // polegar (que e a ferramenta de campo), presente no menu do usuario.
+    soDesktop: true,
   },
 ];
 
@@ -211,6 +244,26 @@ function useQuantosCabem(qtdItens: number, navRef: React.RefObject<HTMLElement |
  * o rotulo "Administração" continua unico na arvore de acessibilidade em
  * qualquer largura, do jeito que os testes e2e esperam.
  */
+/**
+ * UMA classe de display, decidida aqui — nunca duas empilhadas no `cn`.
+ *
+ * Empilhar `"lg:hidden"` com `"hidden lg:flex"` parece somar as duas regras,
+ * mas o tailwind-merge deduplica por grupo de utilitario e o ULTIMO vence:
+ * `lg:flex` apagava o `lg:hidden`, e o item marcado `soDesktop` nunca
+ * conseguia ir pro menu "Mais". Resultado medido: a linha do cabecalho
+ * estourava em TODAS as larguras de desktop, de 1024 a 1920.
+ */
+function classeVisibilidade(soNoExcesso: boolean, soDesktop: boolean): string {
+  // Fora da barra do rodape E ja empurrado pro "Mais": nao aparece em lugar
+  // nenhum como item de linha (o menu "Mais" o renderiza por conta propria).
+  if (soDesktop && soNoExcesso) return "hidden";
+  // Fora da barra do rodape, mas cabe na linha do desktop.
+  if (soDesktop) return "hidden lg:flex";
+  // Coube no rodape; some so da LINHA do desktop e reaparece no "Mais".
+  if (soNoExcesso) return "lg:hidden";
+  return "";
+}
+
 function navItemClass(ativo: boolean): string {
   return cn(
     // `lg:shrink-0` + `whitespace-nowrap`: agora que o nav rola (ver a nota no
@@ -286,10 +339,13 @@ function UserMenu({
   nome,
   role,
   onLogout,
+  itensSoDesktop,
 }: {
   nome: string;
   role: UserRole;
   onLogout: () => void;
+  /** Itens marcados `soDesktop` — saem da barra do rodape e entram aqui no celular. */
+  itensSoDesktop: { to: string; label: string; icon: typeof LayoutGrid }[];
 }) {
   const { theme, toggleTheme } = useTheme();
   const [aberto, setAberto] = useState(false);
@@ -339,6 +395,23 @@ function UserMenu({
         <div className="border-b border-border px-2.5 pb-2 pt-1.5">
           <HeaderClock />
         </div>
+        {/*
+          `lg:hidden`: no desktop estes itens ja estao na linha do cabecalho, e
+          repeti-los aqui seria dois caminhos pro mesmo lugar. No celular esta
+          e a UNICA porta — sem isto o admin de telefone na mao nao teria como
+          chegar la (ver `soDesktop` em NAV_ITEMS).
+        */}
+        {itensSoDesktop.map(({ to, label, icon: Icon }) => (
+          <Link
+            key={to}
+            to={to}
+            onClick={() => setAberto(false)}
+            className="mt-1 flex items-center gap-2 rounded-md px-2.5 py-2 text-sm text-foreground outline-none transition-colors hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11 lg:hidden"
+          >
+            <Icon className="size-4 text-muted-foreground" />
+            {label}
+          </Link>
+        ))}
         <Link
           to="/perfil"
           onClick={() => setAberto(false)}
@@ -566,7 +639,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               className="fixed inset-x-0 bottom-0 z-30 flex items-stretch justify-around border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:static lg:inset-auto lg:z-auto lg:min-w-0 lg:flex-1 lg:items-center lg:justify-start lg:gap-1 lg:overflow-x-auto lg:border-t-0 lg:bg-transparent lg:pb-0 lg:backdrop-blur-none lg:scrollbar-none"
               aria-label="Navegação principal"
             >
-              {itensNav.map(({ to, label, labelCurto, icon: Icon }, i) => {
+              {itensNav.map(({ to, label, labelCurto, icon: Icon, soDesktop }, i) => {
                 const ativo = to === "/admin" ? location.pathname.startsWith("/admin") : location.pathname === to;
                 const soNoExcesso = i >= cabem;
                 return (
@@ -583,7 +656,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                      * dentro de "Mais". Abaixo de `lg` continua visivel — ali o
                      * nav e a barra do rodape, com layout proprio.
                      */
-                    className={cn(navItemClass(ativo), soNoExcesso && "lg:hidden")}
+                    className={cn(navItemClass(ativo), classeVisibilidade(soNoExcesso, !!soDesktop))}
                   >
                     {ativo && (
                       <NavActivePill
@@ -633,6 +706,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 nome={usuario.nome}
                 role={usuario.role}
                 onLogout={logout}
+                itensSoDesktop={itensNav.filter((i) => i.soDesktop)}
               />
             )}
           </div>

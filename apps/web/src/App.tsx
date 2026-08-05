@@ -14,6 +14,7 @@ import { RetiradasPage } from "@/pages/RetiradasPage";
 import { MapaPage } from "@/pages/MapaPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { ProvisionamentoPage } from "@/pages/ProvisionamentoPage";
+import { FinanceiroPage } from "@/pages/FinanceiroPage";
 import { ChatPage } from "@/pages/ChatPage";
 import { ClientesChatPage } from "@/pages/ClientesChatPage";
 import { ProvedoresPage } from "@/pages/admin/ProvedoresPage";
@@ -91,6 +92,21 @@ function App() {
                       ]}
                     >
                       <ProvisionamentoPage />
+                    </RequireAuth>
+                  }
+                />
+                {/*
+                  Financeiro da HubISP: ADMIN e so. Nem GESTOR nem PROVEDOR —
+                  a tabela tem o preco combinado com cada provedor, e um
+                  provedor logado veria o dos concorrentes. Terceira camada da
+                  guarda (as outras duas: rolesPadrao do modulo e requireRole
+                  na rota da API).
+                */}
+                <Route
+                  path="/financeiro"
+                  element={
+                    <RequireAuth roles={[UserRole.ADMIN]}>
+                      <FinanceiroPage />
                     </RequireAuth>
                   }
                 />

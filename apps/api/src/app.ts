@@ -14,6 +14,7 @@ import { syncRouter } from "./routes/sync.js";
 import { filaRouter } from "./routes/fila.js";
 import { ordensServicoRouter } from "./routes/ordensServico.js";
 import { dashboardRouter } from "./routes/dashboard.js";
+import { financeiroRouter } from "./routes/financeiro.js";
 import { tecnicosRouter } from "./routes/tecnicos.js";
 import { conexaoRouter } from "./routes/conexao.js";
 import { fttxRouter } from "./routes/fttx.js";
@@ -68,6 +69,11 @@ export function createApp() {
   // acima: quem precisa fugir do parser global tem que vir antes dele.
   app.use("/ordens-servico/:id/evidencias", express.json({ limit: "4mb" }));
 
+  // Comprovante financeiro: PDF/imagem de ate 3MB vira ~4MB em base64. Mesmo
+  // motivo e mesma ordem do bloco acima — montado ANTES do parser global,
+  // senao o body-parser ja marcou `req._body` e este json() nunca roda.
+  app.use("/financeiro/lancamentos/:id/comprovante", express.json({ limit: "5mb" }));
+
   // Limite global apertado. O corpo grande so e legitimo em anexos (foto/audio
   // em base64), que tem rota propria — nao ha motivo pra /auth/login aceitar 5MB.
   app.use(express.json({ limit: "1mb" }));
@@ -99,6 +105,7 @@ export function createApp() {
   app.use("/fila", filaRouter);
   app.use("/ordens-servico", ordensServicoRouter);
   app.use("/dashboard", dashboardRouter);
+  app.use("/financeiro", financeiroRouter);
 
   app.use((_req, res) => {
     res.status(404).json({ error: "Rota nao encontrada" });

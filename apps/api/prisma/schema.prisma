@@ -54,6 +54,9 @@ model Provedor {
   ordensServico OrdemServico[]
   usuarios      Usuario[]
   syncLogs      SyncLog[]
+  /// Lancamentos em que este provedor e a CONTRAPARTE (quem deve a hub).
+  /// Diferente de todas as relacoes acima: nao e particao multi-tenant.
+  lancamentos   Lancamento[]
 
   @@map("provedores")
 }
@@ -288,6 +291,9 @@ model Usuario {
 
   sessoesRefresh    SessaoRefresh[]
   tokensRecuperacao TokenRecuperacaoSenha[]
+
+  lancamentosCriados Lancamento[]       @relation("LancamentosCriados")
+  lancamentoEventos  LancamentoEvento[] @relation("LancamentoEventos")
 
   @@map("usuarios")
 }
@@ -728,4 +734,146 @@ model MensagemCliente {
   @@unique([canal, waMessageId])
   @@index([conversaId, criadoEm])
   @@map("mensagens_clientes")
+}
+
+// ---------------------------------------------------------------------------
+// FINANCEIRO DA HUBISP
+//
+// Este bloco e o UNICO do schema que nao fala do assinante do provedor. Aqui o
+// dinheiro e da propria HubISP: o que cada provedor paga a ela (contrato
+// provedor<->hub) e o que ela mesma gasta. Titulo, fatura e boleto de cliente
+// final do SGP NAO entram — o conector SGP nem e consultado por este modulo.
+//
+// Consequencia que vale gravar: `Lancamento.provedorId` e CONTRAPARTE ("quem
+// deve a hub"), nao particao multi-tenant ("de quem e este dado"). Todo o resto
+// do schema usa provedorId como fronteira de acesso; aqui e campo de negocio,
+// opcional, e o acesso e controlado por papel (so ADMIN por padrao).
+// ---------------------------------------------------------------------------
+
+enum LancamentoTipo {
+  receita
+  despesa
+}
+
+/// So o que e FATO. "Atrasado" nao esta aqui de proposito: e funcao pura de
+/// (vencimento < hoje && status = pendente), derivada na leitura. Grava-lo
+/// exigiria um job virando linhas, e entre duas execucoes o banco mentiria.
+enum LancamentoStatus {
+  pendente
+  pago
+  cancelado
+}
+
+enum FormaPagamento {
+  pix
+  boleto
+  transferencia
+  dinheiro
+  cartao
+  outro
+}
+
+enum LancamentoEventoTipo {
+  criado
+  editado
+  baixado
+  estornado
+  cancelado
+}
+
+/// Classificador simples (Aluguel, Infraestrutura, Mensalidade de provedor...).
+/// NAO e plano de contas: hierarquia com codigo "1.1.01" e capacidade de outra
+/// fatia, e misturar as duas coisas agora deixaria a arvore pela metade.
+model CategoriaFinanceira {
+  id       String         @id @default(uuid())
+  nome     String         @unique
+  tipo     LancamentoTipo
+  cor      String         @default("#6366f1")
+  ativo    Boolean        @default(true)
+  criadoEm DateTime       @default(now())
+
+  lancamentos Lancamento[]
+
+  @@map("categorias_financeiras")
+}
+
+model Lancamento {
+  id     String @id @default(uuid())
+  /// Identificador humano ("o lancamento 231"). uuid nao serve pra conversa
+  /// entre duas pessoas olhando a mesma tela.
+  numero Int    @unique @default(autoincrement())
+
+  tipo      LancamentoTipo
+  status    LancamentoStatus @default(pendente)
+  descricao String           @db.VarChar(200)
+
+  /// Decimal, NUNCA float. A API serializa como string e o cliente nunca soma
+  /// dinheiro — totais saem de aggregate (o SUM do Postgres sobre numeric e
+  /// exato). 14,2 comporta ate 999.999.999.999,99.
+  valor Decimal @db.Decimal(14, 2)
+
+  /// Data CIVIL (@db.Date), nao instante. Vencimento com hora arrastaria o
+  /// bug classico de fuso: meia-noite UTC vira o dia anterior em BRT e a tela
+  /// mostra um dia a menos. @db.Date remove a classe inteira na origem.
+  vencimento DateTime @db.Date
+  /// Mes de referencia, sempre no dia 1. Separado do vencimento de proposito:
+  /// a mensalidade de marco que vence 10/abril PERTENCE a marco. Sem esta
+  /// coluna, relatorio por competencia so mentiria.
+  competencia DateTime @db.Date
+
+  // --- baixa ---
+  pagoEm         DateTime?       @db.Date
+  /// Pode divergir de `valor` (juros, multa, desconto).
+  valorPago      Decimal?        @db.Decimal(14, 2)
+  formaPagamento FormaPagamento?
+
+  /// Contraparte: o provedor que deve a hub. Null nas despesas da propria hub.
+  provedorId String?
+  provedor   Provedor? @relation(fields: [provedorId], references: [id], onDelete: SetNull)
+
+  categoriaId String?
+  categoria   CategoriaFinanceira? @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
+
+  observacao String? @db.VarChar(500)
+
+  /// Comprovante (bytes-in-postgres, mesmo padrao de Mensagem.anexoDados —
+  /// inclusive o mesmo caminho de migracao pra S3/MinIO documentado la, que
+  /// nao muda o contrato da API).
+  comprovanteDados   Bytes?
+  comprovanteMime    String?
+  comprovanteNome    String? @db.VarChar(200)
+  comprovanteTamanho Int?
+
+  criadoPorId String?
+  criadoPor   Usuario? @relation("LancamentosCriados", fields: [criadoPorId], references: [id], onDelete: SetNull)
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  eventos LancamentoEvento[]
+
+  /// Cobre exatamente a consulta de vencidos (status=pendente AND vencimento <
+  /// hoje), que e o preco de derivar "atrasado" em vez de grava-lo.
+  @@index([status, vencimento])
+  @@index([tipo, competencia])
+  @@index([provedorId])
+  @@map("lancamentos")
+}
+
+/// Trilha de auditoria. Dinheiro sem "quem marcou como pago" nao resolve
+/// divergencia nenhuma. Mesmo padrao do OsEvento.
+model LancamentoEvento {
+  id           String               @id @default(uuid())
+  lancamentoId String
+  lancamento   Lancamento           @relation(fields: [lancamentoId], references: [id], onDelete: Cascade)
+  tipo         LancamentoEventoTipo
+  autorId      String?
+  autor        Usuario?             @relation("LancamentoEventos", fields: [autorId], references: [id], onDelete: SetNull)
+  /// Diferenca aplicada. Valores monetarios aqui tambem vao como STRING —
+  /// um Number no JSON ja perdeu a garantia do decimal.
+  detalhe      Json?
+  criadoEm     DateTime             @default(now())
+
+  @@index([lancamentoId, criadoEm])
+  @@map("lancamento_eventos")
 }

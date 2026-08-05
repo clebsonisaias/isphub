@@ -21,6 +21,13 @@ const ICONE_MODULO: Record<ModuloId, { familia: "feather" | "mci"; nome: string 
   retiradas: { familia: "mci", nome: "package-variant-remove" },
   chat: { familia: "feather", nome: "message-circle" },
   "chat-clientes": { familia: "mci", nome: "whatsapp" },
+  /*
+   * Financeiro nao tem tela no app do tecnico (nao esta em ROTAS_MODULO, que e
+   * `Partial`, entao nunca vira aba). A entrada existe so porque este mapa e um
+   * `Record` COMPLETO — e e bom que seja: se um dia o modulo ganhar tela
+   * mobile, o typecheck ja cobrou o icone em vez de quebrar em runtime.
+   */
+  financeiro: { familia: "mci", nome: "wallet-outline" },
 };
 
 export function ModuloIcon({ id, color, size }: { id: ModuloId; color: ColorValue; size: number }) {

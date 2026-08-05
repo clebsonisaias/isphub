@@ -10,7 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { modulosApi, type ModuloAdmin } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
-import { LayoutList, Camera, Route, Wifi, PenLine, PackageX, Bell, Router, MessageCircle, MessageSquareText, Lock, ChevronUp, ChevronDown, type LucideIcon } from "lucide-react";
+import { LayoutList, Camera, Route, Wifi, PenLine, PackageX, Bell, Router, MessageCircle, MessageSquareText, Wallet, Lock, ChevronUp, ChevronDown, type LucideIcon } from "lucide-react";
 
 const ICONES: Record<ModuloId, LucideIcon> = {
   "minhas-os": LayoutList,
@@ -23,6 +23,7 @@ const ICONES: Record<ModuloId, LucideIcon> = {
   notificacoes: Bell,
   chat: MessageCircle,
   "chat-clientes": MessageSquareText,
+  financeiro: Wallet,
 };
 
 const DESCRICOES: Record<ModuloId, string> = {
@@ -36,6 +37,8 @@ const DESCRICOES: Record<ModuloId, string> = {
   notificacoes: "Nova OS atribuída · mudança relevante",
   chat: "Conversa interna — DM, grupo, thread por OS, avisos",
   "chat-clientes": "Caixa de entrada WhatsApp com clientes (Meta/Evolution) — configure em Canais WhatsApp",
+  // Só na web e só para ADMIN: é o dinheiro da própria HubISP, não do assinante.
+  financeiro: "Contas a pagar e a receber da HubISP — só na web, só para administradores",
 };
 
 function mensagem(err: unknown): string {

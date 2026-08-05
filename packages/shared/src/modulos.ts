@@ -19,6 +19,7 @@ export const MODULO_IDS = [
   "notificacoes", // in-app + (depois) push
   "chat", // conversa interna (DM, grupo, thread por OS, avisos)
   "chat-clientes", // caixa de entrada omnichannel de WhatsApp (Meta/Evolution) com clientes
+  "financeiro", // contas a pagar/receber DA HUBISP (web apenas — sem tela no app do tecnico)
 ] as const;
 
 export type ModuloId = (typeof MODULO_IDS)[number];
@@ -72,6 +73,20 @@ export const MODULO_CATALOGO: Record<ModuloId, ModuloMeta> = {
   chat: { id: "chat", nome: "Chat", icone: "message-circle", core: false, ativoPadrao: true, ordemPadrao: 45, rolesPadrao: [UserRole.ADMIN, UserRole.GESTOR, UserRole.TECNICO] },
   // ativoPadrao:false — inutil ate um admin configurar pelo menos um canal WhatsApp em /admin/canais-whatsapp.
   "chat-clientes": { id: "chat-clientes", nome: "Conversas com clientes", icone: "message-square-text", core: false, ativoPadrao: false, ordemPadrao: 55, rolesPadrao: [UserRole.ADMIN, UserRole.GESTOR, UserRole.TECNICO] },
+  /*
+   * Dinheiro da PROPRIA HubISP (o que cada provedor paga a ela e o que ela
+   * gasta) — nao o financeiro do assinante do provedor.
+   *
+   * `rolesPadrao: [ADMIN]` e a excecao do catalogo: todo modulo acima e
+   * ferramenta de operacao e inclui TECNICO/GESTOR. Este e back-office, e
+   * PROVEDOR em particular nunca entra — ver a guarda em routes/financeiro.ts,
+   * que nao depende so desta lista.
+   *
+   * Sem entrada em ROTAS_MODULO (apps/mobile) de proposito: aquele mapa e
+   * `Partial`, entao um modulo sem rota simplesmente nao vira aba no app do
+   * tecnico. Existe so na web.
+   */
+  financeiro: { id: "financeiro", nome: "Financeiro", icone: "wallet", core: false, ativoPadrao: false, ordemPadrao: 70, rolesPadrao: [UserRole.ADMIN] },
 };
 
 /** Modulo ja resolvido para um usuario (o que `GET /config` devolve). */

@@ -6,3 +6,4 @@ export * from "./modulos.js";
 export * from "./chat.js";
 export * from "./clienteChat.js";
 export * from "./smtp.js";
+export * from "./financeiro.js";
