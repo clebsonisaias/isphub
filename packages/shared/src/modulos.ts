@@ -82,11 +82,17 @@ export const MODULO_CATALOGO: Record<ModuloId, ModuloMeta> = {
    * PROVEDOR em particular nunca entra — ver a guarda em routes/financeiro.ts,
    * que nao depende so desta lista.
    *
+   * `ativoPadrao: true` (diferente de `chat-clientes`, que nasce desligado):
+   * aquele depende de alguem cadastrar um canal de WhatsApp antes de servir
+   * pra alguma coisa; este funciona no instante em que a tela abre, sem
+   * configurar nada. Nascer desligado so escondia a tela de quem foi
+   * procura-la. O recorte que importa aqui e o de PAPEL, nao o de toggle.
+   *
    * Sem entrada em ROTAS_MODULO (apps/mobile) de proposito: aquele mapa e
    * `Partial`, entao um modulo sem rota simplesmente nao vira aba no app do
    * tecnico. Existe so na web.
    */
-  financeiro: { id: "financeiro", nome: "Financeiro", icone: "wallet", core: false, ativoPadrao: false, ordemPadrao: 70, rolesPadrao: [UserRole.ADMIN] },
+  financeiro: { id: "financeiro", nome: "Financeiro", icone: "wallet", core: false, ativoPadrao: true, ordemPadrao: 70, rolesPadrao: [UserRole.ADMIN] },
 };
 
 /** Modulo ja resolvido para um usuario (o que `GET /config` devolve). */
