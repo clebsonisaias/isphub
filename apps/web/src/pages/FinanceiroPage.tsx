@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FORMA_PAGAMENTO_ROTULO,
   FORMAS_PAGAMENTO,
-  competenciaDe,
   formatarCompetencia,
   formatarDataIso,
   formatarMoeda,
@@ -23,7 +22,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -33,6 +31,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { FinanceiroTabs } from "@/components/financeiro/FinanceiroTabs";
+import { LancamentoDialog } from "@/components/financeiro/LancamentoDialog";
+import { LancamentoDetalheDialog } from "@/components/financeiro/LancamentoDetalheDialog";
 import { financeiroApi } from "@/lib/financeiroApi";
 import { provedoresApi } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
@@ -87,6 +87,9 @@ export function FinanceiroPage() {
   const [tipo, setTipo] = useState<LancamentoTipo>("receita");
   const [situacao, setSituacao] = useState<LancamentoSituacao | "todas">("todas");
   const [provedorId, setProvedorId] = useState("");
+  const [categoriaId, setCategoriaId] = useState("");
+  const [de, setDe] = useState("");
+  const [ate, setAte] = useState("");
   const [busca, setBusca] = useState("");
 
   const [itens, setItens] = useState<LancamentoPublic[]>([]);
@@ -98,17 +101,33 @@ export function FinanceiroPage() {
   const [categorias, setCategorias] = useState<CategoriaFinanceiraPublic[]>([]);
 
   const [novoAberto, setNovoAberto] = useState(false);
+  const [editando, setEditando] = useState<LancamentoPublic | null>(null);
+  const [detalhe, setDetalhe] = useState<LancamentoPublic | null>(null);
   const [baixando, setBaixando] = useState<LancamentoPublic | null>(null);
+  const [carregandoMais, setCarregandoMais] = useState(false);
+
+  /*
+   * UM filtro, usado pela primeira pagina e pelo "carregar mais". Duplicado, o
+   * "mais" acabaria pedindo um recorte diferente do que esta na tela e
+   * emendaria linhas de outro conjunto no fim da lista.
+   */
+  const filtro = useMemo(
+    () => ({
+      tipo,
+      situacao: situacao === "todas" ? undefined : situacao,
+      provedorId: provedorId || undefined,
+      categoriaId: categoriaId || undefined,
+      de: de || undefined,
+      ate: ate || undefined,
+      busca: busca.trim() || undefined,
+    }),
+    [tipo, situacao, provedorId, categoriaId, de, ate, busca],
+  );
 
   const carregar = useCallback(async () => {
     setCarregando(true);
     try {
-      const r = await financeiroApi.listar({
-        tipo,
-        situacao: situacao === "todas" ? undefined : situacao,
-        provedorId: provedorId || undefined,
-        busca: busca.trim() || undefined,
-      });
+      const r = await financeiroApi.listar(filtro);
       setItens(r.itens);
       setTotal(r.total);
       setResumo(r.resumo);
@@ -121,7 +140,32 @@ export function FinanceiroPage() {
     } finally {
       setCarregando(false);
     }
-  }, [tipo, situacao, provedorId, busca, toast]);
+  }, [filtro, toast]);
+
+  /**
+   * Proxima pagina, ANEXANDO.
+   *
+   * O servidor devolve no maximo 200 por vez. Sem isto a lista simplesmente
+   * parava ali — a tela chegava a escrever "mostrando 200" de um total maior e
+   * nao oferecia caminho nenhum pro resto. O sintoma em producao seria
+   * "sumiram lancamentos", que e o pior tipo de bug: parece perda de dado.
+   */
+  const carregarMais = useCallback(async () => {
+    setCarregandoMais(true);
+    try {
+      const r = await financeiroApi.listar({ ...filtro, offset: itens.length });
+      setItens((atuais) => [...atuais, ...r.itens]);
+      setTotal(r.total);
+    } catch (err) {
+      toast({
+        titulo: "Não deu para carregar mais",
+        descricao: err instanceof ApiError ? err.message : undefined,
+        variante: "erro",
+      });
+    } finally {
+      setCarregandoMais(false);
+    }
+  }, [filtro, itens.length, toast]);
 
   useEffect(() => {
     void carregar();
@@ -204,6 +248,56 @@ export function FinanceiroPage() {
                   </option>
                 ))}
               </Select>
+
+              <Select
+                aria-label="Filtrar por categoria"
+                value={categoriaId}
+                onChange={(e) => setCategoriaId(e.target.value)}
+              >
+                <option value="">Todas as categorias</option>
+                {categorias
+                  .filter((c) => c.tipo === tipo)
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nome}
+                    </option>
+                  ))}
+              </Select>
+            </div>
+
+            {/*
+              Recorte por VENCIMENTO. A API ja aceitava `de`/`ate` desde a
+              primeira fatia; sem o controle na tela nao havia como olhar um
+              mes fechado, que e o recorte de todo fechamento.
+            */}
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="fin-de" className="text-xs">
+                  Vencimento de
+                </Label>
+                <Input id="fin-de" type="date" value={de} onChange={(e) => setDe(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="fin-ate" className="text-xs">
+                  até
+                </Label>
+                <Input id="fin-ate" type="date" value={ate} onChange={(e) => setAte(e.target.value)} />
+              </div>
+              {(de || ate || categoriaId || provedorId || busca) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setDe("");
+                    setAte("");
+                    setCategoriaId("");
+                    setProvedorId("");
+                    setBusca("");
+                  }}
+                >
+                  Limpar filtros
+                </Button>
+              )}
             </div>
 
             {/* Chips de situacao. "Atrasados" e derivado, nao coluna. */}
@@ -231,6 +325,9 @@ export function FinanceiroPage() {
           itens={itens}
           total={total}
           carregando={carregando}
+          carregandoMais={carregandoMais}
+          onCarregarMais={carregarMais}
+          onAbrirDetalhe={setDetalhe}
           onBaixar={setBaixando}
           onEstornar={async (l) => {
             try {
@@ -248,15 +345,32 @@ export function FinanceiroPage() {
         />
       </div>
 
-      <DialogNovoLancamento
-        aberto={novoAberto}
+      <LancamentoDialog
+        aberto={novoAberto || !!editando}
+        lancamento={editando}
         tipoInicial={tipo}
         provedores={provedores}
         categorias={categorias}
-        onFechar={() => setNovoAberto(false)}
-        onCriado={async () => {
+        onFechar={() => {
           setNovoAberto(false);
+          setEditando(null);
+        }}
+        onSalvo={async () => {
+          setNovoAberto(false);
+          setEditando(null);
           await carregar();
+        }}
+      />
+
+      <LancamentoDetalheDialog
+        lancamento={detalhe}
+        onFechar={() => setDetalhe(null)}
+        // So a LISTA. O detalhe se recarrega sozinho (ver recarregarEste) —
+        // o pai mexendo no estado dele reabria o dialogo recem-fechado.
+        onMudou={() => void carregar()}
+        onEditar={(l) => {
+          setDetalhe(null);
+          setEditando(l);
         }}
       />
 
@@ -339,12 +453,18 @@ function Lista({
   itens,
   total,
   carregando,
+  carregandoMais,
+  onCarregarMais,
+  onAbrirDetalhe,
   onBaixar,
   onEstornar,
 }: {
   itens: LancamentoPublic[];
   total: number;
   carregando: boolean;
+  carregandoMais: boolean;
+  onCarregarMais: () => void;
+  onAbrirDetalhe: (l: LancamentoPublic) => void;
   onBaixar: (l: LancamentoPublic) => void;
   onEstornar: (l: LancamentoPublic) => void;
 }) {
@@ -388,8 +508,20 @@ function Lista({
           <CardContent className="flex flex-wrap items-center gap-x-4 gap-y-2 p-4">
             <span className="font-mono text-xs text-muted-foreground tabular-nums">#{l.numero}</span>
 
+            {/*
+              A descricao e um BOTAO, nao o card inteiro. Card clicavel com
+              botoes dentro aninha elemento interativo em elemento interativo —
+              o leitor de tela anuncia errado e o teclado tabula pra lugar
+              nenhum.
+            */}
             <div className="min-w-0 flex-1">
-              <p className="truncate font-medium">{l.descricao}</p>
+              <button
+                type="button"
+                onClick={() => onAbrirDetalhe(l)}
+                className="max-w-full truncate text-left font-medium underline-offset-2 hover:underline"
+              >
+                {l.descricao}
+              </button>
               <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
                 <span>Vence {formatarDataIso(l.vencimento)}</span>
                 <span aria-hidden>·</span>
@@ -445,217 +577,15 @@ function Lista({
         </li>
         ))}
       </ul>
-    </div>
-  );
-}
 
-// ---------------------------------------------------------------------------
-// Novo lancamento
-// ---------------------------------------------------------------------------
-
-function DialogNovoLancamento({
-  aberto,
-  tipoInicial,
-  provedores,
-  categorias,
-  onFechar,
-  onCriado,
-}: {
-  aberto: boolean;
-  tipoInicial: LancamentoTipo;
-  provedores: Provedor[];
-  categorias: CategoriaFinanceiraPublic[];
-  onFechar: () => void;
-  onCriado: () => void;
-}) {
-  const { toast } = useToast();
-  const [tipo, setTipo] = useState<LancamentoTipo>(tipoInicial);
-  const [descricao, setDescricao] = useState("");
-  const [valor, setValor] = useState("");
-  const [vencimento, setVencimento] = useState(hojeIso());
-  const [provedorId, setProvedorId] = useState("");
-  const [categoriaId, setCategoriaId] = useState("");
-  const [observacao, setObservacao] = useState("");
-  const [salvando, setSalvando] = useState(false);
-
-  useEffect(() => {
-    if (aberto) {
-      setTipo(tipoInicial);
-      setDescricao("");
-      setValor("");
-      setVencimento(hojeIso());
-      setProvedorId("");
-      setCategoriaId("");
-      setObservacao("");
-    }
-  }, [aberto, tipoInicial]);
-
-  // Valida na TELA com a mesma funcao que a API usa (packages/shared), pra que
-  // "1.234,56" nao seja aceito aqui e recusado la — ou vice-versa.
-  const valorNormalizado = useMemo(() => (valor.trim() ? normalizarValor(valor) : null), [valor]);
-  const valorInvalido = valor.trim().length > 0 && valorNormalizado === null;
-
-  const categoriasDoTipo = categorias.filter((c) => c.tipo === tipo && c.ativo);
-
-  async function salvar() {
-    if (!descricao.trim() || !valorNormalizado) return;
-    setSalvando(true);
-    try {
-      await financeiroApi.criar({
-        tipo,
-        descricao: descricao.trim(),
-        valor: valorNormalizado,
-        vencimento,
-        provedorId: provedorId || null,
-        categoriaId: categoriaId || null,
-        observacao: observacao.trim() || null,
-      });
-      toast({ titulo: "Lançamento criado", variante: "sucesso" });
-      onCriado();
-    } catch (err) {
-      toast({
-        titulo: "Não deu para criar o lançamento",
-        descricao: err instanceof ApiError ? err.message : undefined,
-        variante: "erro",
-      });
-    } finally {
-      setSalvando(false);
-    }
-  }
-
-  return (
-    <Dialog open={aberto} onOpenChange={(o) => !o && onFechar()}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Novo lançamento</DialogTitle>
-          <DialogDescription>
-            Conta da HubISP — a receber de um provedor, ou a pagar pela própria hub.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="fin-tipo">Tipo</Label>
-              <Select
-                id="fin-tipo"
-                className="w-full"
-                value={tipo}
-                onChange={(e) => {
-                  setTipo(e.target.value as LancamentoTipo);
-                  setCategoriaId("");
-                }}
-              >
-                <option value="receita">A receber</option>
-                <option value="despesa">A pagar</option>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="fin-valor">Valor</Label>
-              <Input
-                id="fin-valor"
-                // `inputMode="decimal"` abre o teclado numerico no celular sem
-                // recusar a virgula — `type="number"` recusaria, e no Brasil o
-                // decimal se digita com virgula.
-                inputMode="decimal"
-                placeholder="0,00"
-                value={valor}
-                onChange={(e) => setValor(e.target.value)}
-                aria-invalid={valorInvalido}
-                aria-describedby={valorInvalido ? "fin-valor-erro" : undefined}
-              />
-              {valorInvalido && (
-                <p id="fin-valor-erro" role="alert" className="text-xs text-destructive">
-                  Informe um valor maior que zero (ex.: 1.234,56).
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="fin-descricao">Descrição</Label>
-            <Input
-              id="fin-descricao"
-              placeholder={tipo === "receita" ? "Mensalidade do provedor X" : "Aluguel do escritório"}
-              value={descricao}
-              onChange={(e) => setDescricao(e.target.value)}
-              maxLength={200}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="fin-vencimento">Vencimento</Label>
-              <Input
-                id="fin-vencimento"
-                type="date"
-                value={vencimento}
-                onChange={(e) => setVencimento(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                Competência: {formatarCompetencia(competenciaDe(vencimento))}
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="fin-categoria">Categoria</Label>
-              <Select
-                id="fin-categoria"
-                className="w-full"
-                value={categoriaId}
-                onChange={(e) => setCategoriaId(e.target.value)}
-              >
-                <option value="">Sem categoria</option>
-                {categoriasDoTipo.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.nome}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          </div>
-
-          {/* Provedor so faz sentido no que a hub RECEBE: e a contraparte. */}
-          {tipo === "receita" && (
-            <div className="space-y-1.5">
-              <Label htmlFor="fin-provedor">Provedor (quem paga)</Label>
-              <Select
-                id="fin-provedor"
-                className="w-full"
-                value={provedorId}
-                onChange={(e) => setProvedorId(e.target.value)}
-              >
-                <option value="">Sem provedor</option>
-                {provedores.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.nome}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          )}
-
-          <div className="space-y-1.5">
-            <Label htmlFor="fin-obs">Observação</Label>
-            <Textarea
-              id="fin-obs"
-              rows={2}
-              value={observacao}
-              onChange={(e) => setObservacao(e.target.value)}
-              maxLength={500}
-            />
-          </div>
+      {itens.length < total && (
+        <div className="pt-2 text-center">
+          <Button variant="secondary" onClick={onCarregarMais} disabled={carregandoMais}>
+            {carregandoMais ? "Carregando…" : `Carregar mais (${total - itens.length} restantes)`}
+          </Button>
         </div>
-
-        <DialogFooter>
-          <Button variant="ghost" onClick={onFechar}>
-            Cancelar
-          </Button>
-          <Button onClick={salvar} disabled={salvando || !descricao.trim() || !valorNormalizado}>
-            {salvando ? "Salvando…" : "Criar lançamento"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      )}
+    </div>
   );
 }
 

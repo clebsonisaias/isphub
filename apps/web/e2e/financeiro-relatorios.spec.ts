@@ -53,8 +53,9 @@ async function criarLancamento(
   await page.getByLabel("Tipo", { exact: true }).selectOption(opts.tipo);
   await page.getByLabel("Descrição").fill(opts.descricao);
   await page.getByLabel("Valor").fill(opts.valor);
-  if (opts.vencimento) await page.getByLabel("Vencimento").fill(opts.vencimento);
-  if (opts.categoria) await page.getByLabel("Categoria").selectOption({ label: opts.categoria });
+  if (opts.vencimento) await page.getByLabel("Vencimento", { exact: true }).fill(opts.vencimento);
+  // `exact`: o novo filtro da lista tambem se chama "Filtrar por categoria".
+  if (opts.categoria) await page.getByLabel("Categoria", { exact: true }).selectOption({ label: opts.categoria });
   await page.getByRole("button", { name: "Criar lançamento" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 }
@@ -136,7 +137,8 @@ test.describe("o não-classificado não se esconde", () => {
     await page.getByLabel("Nova categoria").fill(categoria);
     await page.getByLabel("Tipo", { exact: true }).selectOption("despesa");
     await page.getByRole("button", { name: "Criar" }).click();
-    await expect(page.getByText(categoria)).toBeVisible();
+    // O nome vive no `value` de um input editavel — `getByText` nao alcança.
+    await expect(page.getByLabel(`Nome da categoria ${categoria}`)).toBeVisible();
 
     const resultadoAntes = await linhaDre(page, "Resultado operacional");
 
@@ -164,7 +166,8 @@ test.describe("o não-classificado não se esconde", () => {
     await page.getByLabel("Nova categoria").fill(categoria);
     await page.getByLabel("Tipo", { exact: true }).selectOption("despesa");
     await page.getByRole("button", { name: "Criar" }).click();
-    await expect(page.getByText(categoria)).toBeVisible();
+    // O nome vive no `value` de um input editavel — `getByText` nao alcança.
+    await expect(page.getByLabel(`Nome da categoria ${categoria}`)).toBeVisible();
 
     await criarLancamento(page, {
       descricao: unico("Vai virar operacional"),

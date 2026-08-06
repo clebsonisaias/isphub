@@ -199,7 +199,7 @@ test.describe("situacao derivada", () => {
     await page.getByRole("button", { name: "Novo lançamento" }).click();
     await page.getByLabel("Descrição").fill(descricao);
     await page.getByLabel("Valor").fill("10,00");
-    await page.getByLabel("Vencimento").fill("2020-01-01");
+    await page.getByLabel("Vencimento", { exact: true }).fill("2020-01-01");
     await page.getByRole("button", { name: "Criar lançamento" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
 

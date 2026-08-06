@@ -6,6 +6,7 @@ import { useToast } from "@/context/ToastContext";
 import { ApiError } from "@/lib/apiClient";
 import type { EnviarMensagemInput } from "@/lib/chatApi";
 import { Send, Paperclip, MapPin, Mic, Square, X } from "lucide-react";
+import { blobParaBase64 } from "@/lib/arquivo";
 
 const MAX_LINHAS = 5;
 const LIMITE_AUDIO_SEG = 60;
@@ -20,18 +21,6 @@ function mimeAudioSuportado(): string {
     if (MediaRecorder.isTypeSupported(mime)) return mime;
   }
   return "audio/webm";
-}
-
-function blobParaBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const resultado = reader.result as string;
-      resolve(resultado.slice(resultado.indexOf(",") + 1));
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
 }
 
 export function Composer({
