@@ -526,6 +526,34 @@ export function ocorrenciasEntre({ inicio, fim, frequencia, diaVencimento, ate }
   return datas;
 }
 
+/**
+ * Os quatro tipos de provisao. Slug sem acento (vai pro banco), rotulo com
+ * acento (vai pra tela) — como na origem.
+ */
+export const TIPOS_PROVISAO = ["previsivel", "folha", "tributos", "obrigatorio"] as const;
+export type TipoProvisao = (typeof TIPOS_PROVISAO)[number];
+
+export const TIPO_PROVISAO_ROTULO: Record<TipoProvisao, string> = {
+  previsivel: "Previsível",
+  folha: "Folha",
+  tributos: "Tributos",
+  obrigatorio: "Obrigatório",
+};
+
+export const TIPO_PROVISAO_PADRAO: TipoProvisao = "previsivel";
+
+/**
+ * Tipo desconhecido cai no padrao em vez de sumir da tela.
+ *
+ * Regra copiada da origem, e ela esta certa: nenhuma linha pode ficar invisivel
+ * por causa de um slug estranho — some do total e ninguem descobre.
+ */
+export function tipoProvisaoOuPadrao(valor: string | null | undefined): TipoProvisao {
+  return (TIPOS_PROVISAO as readonly string[]).includes(valor ?? "")
+    ? (valor as TipoProvisao)
+    : TIPO_PROVISAO_PADRAO;
+}
+
 export interface RecorrenciaPublic {
   id: string;
   tipo: LancamentoTipo;
@@ -537,6 +565,8 @@ export interface RecorrenciaPublic {
   inicio: string;
   fim: string | null;
   ativa: boolean;
+  /** Null = recorrência comum; preenchido = provisão daquele tipo. */
+  tipoProvisao: TipoProvisao | null;
   provedorId: string | null;
   provedorNome: string | null;
   provedorCor: string | null;
@@ -552,6 +582,7 @@ export interface RecorrenciaInput {
   tipo: LancamentoTipo;
   descricao: string;
   valor: string;
+  tipoProvisao?: TipoProvisao | null;
   frequencia: FrequenciaRecorrencia;
   diaVencimento: number;
   inicio: string;

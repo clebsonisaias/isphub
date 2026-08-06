@@ -109,8 +109,9 @@ export interface PeriodoRelatorio {
 
 /** Recorrências — a regra que gera lançamentos repetidos. */
 export const recorrenciaApi = {
-  listar: (tipo?: "receita" | "despesa") =>
-    api.get<RecorrenciaPublic[]>(`/financeiro/recorrencias${tipo ? `?tipo=${tipo}` : ""}`),
+  /** `provisoes`: true = só provisões, false = só recorrências comuns. */
+  listar: (opts: { tipo?: "receita" | "despesa"; provisoes?: boolean } = {}) =>
+    api.get<RecorrenciaPublic[]>(`/financeiro/recorrencias${query(opts)}`),
 
   ocorrencias: (id: string) =>
     api.get<LancamentoPublic[]>(`/financeiro/recorrencias/${id}/ocorrencias`),

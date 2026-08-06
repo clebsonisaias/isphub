@@ -4,6 +4,7 @@ import {
   CLASSIFICACOES_DRE,
   FORMAS_PAGAMENTO,
   FREQUENCIAS,
+  TIPOS_PROVISAO,
   LANCAMENTO_STATUS,
   LANCAMENTO_TIPOS,
   REGIMES,
@@ -247,6 +248,8 @@ const recorrenciaBase = {
   diaVencimento: z.coerce.number().int().min(1).max(31),
   inicio: dataIso,
   fim: dataIso.nullish(),
+  // Null = recorrencia comum; preenchido = provisao daquele tipo.
+  tipoProvisao: z.enum(TIPOS_PROVISAO).nullish(),
   provedorId: z.string().uuid().nullish(),
   categoriaId: z.string().uuid().nullish(),
   observacao: z.string().trim().max(500).nullish(),
@@ -262,8 +265,13 @@ const editarRecorrenciaSchema = z
 financeiroRouter.get(
   "/recorrencias",
   asyncHandler(async (req, res) => {
-    const { tipo } = z.object({ tipo: z.enum(LANCAMENTO_TIPOS).optional() }).parse(req.query);
-    res.json(await recorrencias.listar(tipo));
+    const { tipo, provisoes } = z
+      .object({
+        tipo: z.enum(LANCAMENTO_TIPOS).optional(),
+        provisoes: z.enum(["true", "false"]).optional(),
+      })
+      .parse(req.query);
+    res.json(await recorrencias.listar(tipo, provisoes === undefined ? undefined : provisoes === "true"));
   }),
 );
 

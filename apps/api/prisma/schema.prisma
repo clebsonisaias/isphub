@@ -812,6 +812,20 @@ enum FrequenciaRecorrencia {
   anual
 }
 
+/// Os quatro tipos de provisao — os mesmos slugs da origem.
+///
+/// Uma provisao NAO e outra maquina: e uma Recorrencia com tipo preenchido. A
+/// origem mantem um gerador separado so pra provisao (RPC
+/// `generate_recurring_provision_transactions_v2`, "diferente do caminho das
+/// despesas"), e e exatamente por isso que um dos dois duplicava e o outro nao
+/// — dois caminhos pro mesmo problema divergem sozinhos.
+enum TipoProvisao {
+  previsivel
+  folha
+  tributos
+  obrigatorio
+}
+
 enum ClassificacaoDre {
   /// Imposto sobre a receita (Simples Nacional). Sai da receita bruta.
   deducao
@@ -990,6 +1004,13 @@ model Recorrencia {
 
   ativa Boolean @default(true)
 
+  /// Null = recorrencia comum. Preenchido = PROVISAO daquele tipo.
+  ///
+  /// Um campo, nao um model novo: o que muda entre provisao e despesa
+  /// recorrente e a classificacao e a tela, nao a regra de geracao. Duplicar o
+  /// gerador e o que faz os dois divergirem.
+  tipoProvisao TipoProvisao?
+
   provedorId String?
   provedor   Provedor? @relation(fields: [provedorId], references: [id], onDelete: SetNull)
 
@@ -1007,6 +1028,7 @@ model Recorrencia {
   lancamentos Lancamento[]
 
   @@index([ativa, tipo])
+  @@index([tipoProvisao])
   @@map("recorrencias")
 }
 

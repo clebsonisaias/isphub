@@ -56,7 +56,7 @@ export function FinanceiroRecorrenciasPage() {
   const carregar = useCallback(async () => {
     setCarregando(true);
     try {
-      setItens(await recorrenciaApi.listar());
+      setItens(await recorrenciaApi.listar({ provisoes: false }));
     } catch (err) {
       toast({
         titulo: "Não deu para carregar as recorrências",

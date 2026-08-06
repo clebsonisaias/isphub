@@ -8,6 +8,7 @@ import {
   ultimoDiaDoMes,
   type FrequenciaRecorrencia,
   type LancamentoTipo,
+  type TipoProvisao,
 } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../middleware/errorHandler.js";
@@ -62,6 +63,7 @@ export const RECORRENCIA_SELECT = {
   inicio: true,
   fim: true,
   ativa: true,
+  tipoProvisao: true,
   provedorId: true,
   categoriaId: true,
   observacao: true,
@@ -84,6 +86,7 @@ export function toPublic(row: RecorrenciaRow) {
     inicio: isoDeData(row.inicio)!,
     fim: isoDeData(row.fim),
     ativa: row.ativa,
+    tipoProvisao: row.tipoProvisao,
     provedorId: row.provedorId,
     provedorNome: row.provedor?.nome ?? null,
     provedorCor: row.provedor?.cor ?? null,
@@ -208,6 +211,7 @@ export interface RecorrenciaArgs {
   diaVencimento: number;
   inicio: string;
   fim?: string | null;
+  tipoProvisao?: TipoProvisao | null;
   provedorId?: string | null;
   categoriaId?: string | null;
   observacao?: string | null;
@@ -231,6 +235,7 @@ export async function criar(args: RecorrenciaArgs) {
       diaVencimento: args.diaVencimento,
       inicio: dataCivil(args.inicio),
       fim: args.fim ? dataCivil(args.fim) : null,
+      tipoProvisao: args.tipoProvisao ?? null,
       provedorId: args.provedorId ?? null,
       categoriaId: args.categoriaId ?? null,
       observacao: args.observacao?.trim() || null,
@@ -269,6 +274,7 @@ export async function editar(args: EditarArgs) {
   if (args.inicio !== undefined) data.inicio = dataCivil(args.inicio, "inicio");
   if (args.fim !== undefined) data.fim = args.fim ? dataCivil(args.fim, "fim") : null;
   if (args.ativa !== undefined) data.ativa = args.ativa;
+  if (args.tipoProvisao !== undefined) data.tipoProvisao = args.tipoProvisao;
   if (args.observacao !== undefined) data.observacao = args.observacao?.trim() || null;
   if (args.provedorId !== undefined) {
     data.provedor = args.provedorId ? { connect: { id: args.provedorId } } : { disconnect: true };
@@ -282,9 +288,17 @@ export async function editar(args: EditarArgs) {
   return { recorrencia: await obter(args.id), geracao };
 }
 
-export async function listar(tipo?: LancamentoTipo) {
+/**
+ * `provisoes`: true = so provisoes, false = so recorrencias comuns, undefined =
+ * todas. A separacao e um FILTRO, nao duas tabelas — mesma regra de geracao.
+ */
+export async function listar(tipo?: LancamentoTipo, provisoes?: boolean) {
   const rows = await prisma.recorrencia.findMany({
-    where: tipo ? { tipo } : undefined,
+    where: {
+      ...(tipo ? { tipo } : {}),
+      ...(provisoes === true ? { tipoProvisao: { not: null } } : {}),
+      ...(provisoes === false ? { tipoProvisao: null } : {}),
+    },
     select: RECORRENCIA_SELECT,
     // Ativas primeiro: a lista existe pra acompanhar o que esta rodando.
     orderBy: [{ ativa: "desc" }, { descricao: "asc" }],
