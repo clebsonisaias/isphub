@@ -1,11 +1,20 @@
 import { Router } from "express";
 import { z } from "zod";
-import { CLASSIFICACOES_DRE, FORMAS_PAGAMENTO, LANCAMENTO_STATUS, LANCAMENTO_TIPOS, REGIMES, UserRole } from "@isphub/shared";
+import {
+  CLASSIFICACOES_DRE,
+  FORMAS_PAGAMENTO,
+  FREQUENCIAS,
+  LANCAMENTO_STATUS,
+  LANCAMENTO_TIPOS,
+  REGIMES,
+  UserRole,
+} from "@isphub/shared";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { prisma } from "../lib/prisma.js";
 import * as lancamentos from "../services/lancamentoService.js";
 import * as relatorios from "../services/relatorioFinanceiroService.js";
+import * as recorrencias from "../services/recorrenciaService.js";
 
 export const financeiroRouter = Router();
 
@@ -221,6 +230,77 @@ financeiroRouter.delete(
       data: { comprovanteDados: null, comprovanteMime: null, comprovanteNome: null, comprovanteTamanho: null },
     });
     res.json(await lancamentos.obter(req.params.id));
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Recorrencias
+// ---------------------------------------------------------------------------
+
+const recorrenciaBase = {
+  descricao: z.string().trim().min(1, "Informe a descricao").max(200),
+  valor: dinheiro,
+  frequencia: z.enum(FREQUENCIAS),
+  // 1-31 mesmo em fevereiro: o dia e preso ao ultimo dia de cada mes na hora de
+  // calcular (ver vencimentoNoMes), e volta ao original no mes seguinte.
+  diaVencimento: z.coerce.number().int().min(1).max(31),
+  inicio: dataIso,
+  fim: dataIso.nullish(),
+  provedorId: z.string().uuid().nullish(),
+  categoriaId: z.string().uuid().nullish(),
+  observacao: z.string().trim().max(500).nullish(),
+};
+
+const criarRecorrenciaSchema = z.object({ tipo: z.enum(LANCAMENTO_TIPOS), ...recorrenciaBase });
+
+/** `tipo` fora: mudar receita em despesa inverteria o sinal do que ja foi gerado. */
+const editarRecorrenciaSchema = z
+  .object({ ...recorrenciaBase, ativa: z.boolean() })
+  .partial();
+
+financeiroRouter.get(
+  "/recorrencias",
+  asyncHandler(async (req, res) => {
+    const { tipo } = z.object({ tipo: z.enum(LANCAMENTO_TIPOS).optional() }).parse(req.query);
+    res.json(await recorrencias.listar(tipo));
+  }),
+);
+
+financeiroRouter.get(
+  "/recorrencias/:id/ocorrencias",
+  asyncHandler(async (req, res) => {
+    res.json(await recorrencias.ocorrencias(req.params.id));
+  }),
+);
+
+financeiroRouter.post(
+  "/recorrencias",
+  asyncHandler(async (req, res) => {
+    const dados = criarRecorrenciaSchema.parse(req.body);
+    res.status(201).json(await recorrencias.criar({ ...dados, autorId: req.user!.sub }));
+  }),
+);
+
+financeiroRouter.patch(
+  "/recorrencias/:id",
+  asyncHandler(async (req, res) => {
+    const dados = editarRecorrenciaSchema.parse(req.body);
+    res.json(await recorrencias.editar({ ...dados, id: req.params.id }));
+  }),
+);
+
+/**
+ * Gerar as ocorrencias que faltam ate o horizonte, SOB DEMANDA.
+ *
+ * O job diario ja faz isso; o botao existe pra quem nao quer esperar ate
+ * amanha. Chamar dez vezes seguidas deixa o mesmo conjunto — a resposta diz
+ * `{criados, existentes}` justamente pra mensagem na tela nao anunciar
+ * "geradas" quando nao gerou nada, que era o que a origem fazia.
+ */
+financeiroRouter.post(
+  "/recorrencias/:id/gerar",
+  asyncHandler(async (req, res) => {
+    res.json(await recorrencias.gerarOcorrencias(req.params.id));
   }),
 );
 

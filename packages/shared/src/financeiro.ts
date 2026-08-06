@@ -443,3 +443,135 @@ export function diasEntre(de: string, ate: string): number {
   const b = Date.parse(`${ate}T12:00:00.000Z`);
   return Math.round((b - a) / MS_DIA);
 }
+
+// ---------------------------------------------------------------------------
+// RECORRENCIA
+// ---------------------------------------------------------------------------
+
+/**
+ * UMA lista de frequencias. O ERP de origem tem duas divergentes — a expansao
+ * virtual dele entende `semanal`/`quinzenal`/`mensal` e o gerador entende
+ * `bimestral`/`trimestral`/`semestral`/`anual` —, entao uma recorrencia
+ * trimestral aparece num caminho do sistema e some no outro.
+ */
+export const FREQUENCIAS = ["mensal", "bimestral", "trimestral", "semestral", "anual"] as const;
+export type FrequenciaRecorrencia = (typeof FREQUENCIAS)[number];
+
+/** Passo em MESES de cada frequencia. */
+export const PASSO_MESES: Record<FrequenciaRecorrencia, number> = {
+  mensal: 1,
+  bimestral: 2,
+  trimestral: 3,
+  semestral: 6,
+  anual: 12,
+};
+
+export const FREQUENCIA_ROTULO: Record<FrequenciaRecorrencia, string> = {
+  mensal: "Mensal",
+  bimestral: "A cada 2 meses",
+  trimestral: "Trimestral",
+  semestral: "Semestral",
+  anual: "Anual",
+};
+
+/**
+ * O vencimento de UM mes, com o dia preso ao ultimo dia daquele mes.
+ *
+ * `diaVencimento` 31 em fevereiro vira 28 (ou 29) — e no mes seguinte volta a
+ * ser 31. E a diferenca entre recalcular do dia GUARDADO e ir somando "+1 mes"
+ * a partir da ocorrencia anterior: somando, o dia encolhe PERMANENTEMENTE
+ * (31/07 -> 31/08 -> 30/09 -> ... -> 28/02 -> 28/03) e nunca mais volta.
+ * Observado ao vivo no ERP de origem, e a causa de uma 13a ocorrencia caber
+ * numa janela de 12 meses.
+ */
+export function vencimentoNoMes(mes: string, diaVencimento: number): string {
+  const ultimo = Number(ultimoDiaDoMes(mes).slice(8));
+  const dia = Math.min(Math.max(1, diaVencimento), ultimo);
+  return `${mes}-${String(dia).padStart(2, "0")}`;
+}
+
+export interface OcorrenciasArgs {
+  /** Competencia inicial "YYYY-MM-DD" (dia 1) ou "YYYY-MM". */
+  inicio: string;
+  /** Fim da vigencia (inclusivo) ou null = indefinida. */
+  fim: string | null;
+  frequencia: FrequenciaRecorrencia;
+  diaVencimento: number;
+  /** Ate onde materializar — o horizonte do gerador, "YYYY-MM-DD". */
+  ate: string;
+}
+
+/**
+ * As datas de vencimento entre o inicio da recorrencia e o horizonte.
+ *
+ * Anda por INDICE de mes a partir do inicio (mes_inicial + i*passo), nunca a
+ * partir da ocorrencia anterior — e o que impede o deslize acumulado.
+ */
+export function ocorrenciasEntre({ inicio, fim, frequencia, diaVencimento, ate }: OcorrenciasArgs): string[] {
+  const mesInicial = inicio.slice(0, 7);
+  const passo = PASSO_MESES[frequencia];
+  const datas: string[] = [];
+
+  // Teto de 600 iteracoes (50 anos de mensal): horizonte vem de configuracao,
+  // mas um laco sem teto sobre dado editavel e como se trava um servidor.
+  for (let i = 0; i < 600; i++) {
+    const mes = somarMeses(mesInicial, i * passo);
+    const vencimento = vencimentoNoMes(mes, diaVencimento);
+    if (vencimento > ate) break;
+    if (fim && vencimento > fim) break;
+    // A primeira ocorrencia pode cair ANTES do inicio quando o dia ja passou no
+    // mes inicial (inicio 10/03 com diaVencimento 5). Pular, nao antecipar.
+    if (vencimento >= inicio.slice(0, 10)) datas.push(vencimento);
+  }
+  return datas;
+}
+
+export interface RecorrenciaPublic {
+  id: string;
+  tipo: LancamentoTipo;
+  descricao: string;
+  /** Dinheiro: string. */
+  valor: string;
+  frequencia: FrequenciaRecorrencia;
+  diaVencimento: number;
+  inicio: string;
+  fim: string | null;
+  ativa: boolean;
+  provedorId: string | null;
+  provedorNome: string | null;
+  provedorCor: string | null;
+  categoriaId: string | null;
+  categoriaNome: string | null;
+  observacao: string | null;
+  /** Quantas ocorrencias ja foram materializadas como lancamento. */
+  ocorrenciasGeradas: number;
+  criadoEm: string;
+}
+
+export interface RecorrenciaInput {
+  tipo: LancamentoTipo;
+  descricao: string;
+  valor: string;
+  frequencia: FrequenciaRecorrencia;
+  diaVencimento: number;
+  inicio: string;
+  fim?: string | null;
+  provedorId?: string | null;
+  categoriaId?: string | null;
+  observacao?: string | null;
+}
+
+/**
+ * O que a geracao fez. `existentes` importa tanto quanto `criados`: sem ele a
+ * mensagem na tela diria "geradas" mesmo quando nao gerou nada — que e
+ * exatamente o que a origem dizia enquanto duplicava em silencio.
+ */
+export interface ResultadoGeracao {
+  criados: number;
+  existentes: number;
+}
+
+export interface RecorrenciaSalva {
+  recorrencia: RecorrenciaPublic;
+  geracao: ResultadoGeracao;
+}

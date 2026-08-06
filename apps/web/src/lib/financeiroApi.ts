@@ -11,6 +11,10 @@ import type {
   LancamentoListaResposta,
   LancamentoPublic,
   Regime,
+  RecorrenciaInput,
+  RecorrenciaPublic,
+  RecorrenciaSalva,
+  ResultadoGeracao,
   SerieMensalResultado,
 } from "@isphub/shared";
 import { api } from "@/lib/apiClient";
@@ -100,3 +104,21 @@ export interface PeriodoRelatorio {
   ate?: string;
   regime?: Regime;
 }
+
+/** Recorrências — a regra que gera lançamentos repetidos. */
+export const recorrenciaApi = {
+  listar: (tipo?: "receita" | "despesa") =>
+    api.get<RecorrenciaPublic[]>(`/financeiro/recorrencias${tipo ? `?tipo=${tipo}` : ""}`),
+
+  ocorrencias: (id: string) =>
+    api.get<LancamentoPublic[]>(`/financeiro/recorrencias/${id}/ocorrencias`),
+
+  criar: (dados: RecorrenciaInput) =>
+    api.post<RecorrenciaSalva>("/financeiro/recorrencias", dados),
+
+  editar: (id: string, dados: Partial<Omit<RecorrenciaInput, "tipo">> & { ativa?: boolean }) =>
+    api.patch<RecorrenciaSalva>(`/financeiro/recorrencias/${id}`, dados),
+
+  gerar: (id: string) =>
+    api.post<ResultadoGeracao>(`/financeiro/recorrencias/${id}/gerar`),
+};

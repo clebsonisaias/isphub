@@ -57,6 +57,7 @@ model Provedor {
   /// Lancamentos em que este provedor e a CONTRAPARTE (quem deve a hub).
   /// Diferente de todas as relacoes acima: nao e particao multi-tenant.
   lancamentos   Lancamento[]
+  recorrencias  Recorrencia[]
 
   @@map("provedores")
 }
@@ -293,6 +294,7 @@ model Usuario {
   tokensRecuperacao TokenRecuperacaoSenha[]
 
   lancamentosCriados Lancamento[]       @relation("LancamentosCriados")
+  recorrenciasCriadas Recorrencia[]     @relation("RecorrenciasCriadas")
   lancamentoEventos  LancamentoEvento[] @relation("LancamentoEventos")
 
   @@map("usuarios")
@@ -793,6 +795,21 @@ enum LancamentoEventoTipo {
 /// Nulo continua sendo possivel (categoria nova, ou lancamento sem categoria),
 /// e nesse caso o valor aparece numa LINHA PROPRIA do DRE — nunca dobrado em
 /// outra em silencio.
+/// Com que passo a recorrencia se repete.
+///
+/// UMA lista. O ERP de origem tem duas divergentes — a expansao virtual dele
+/// entende `semanal`/`quinzenal`/`mensal` e o gerador entende
+/// `bimestral`/`trimestral`/`semestral`/`anual`, entao uma recorrencia
+/// trimestral aparece num caminho e nao no outro. Aqui o passo e sempre em
+/// MESES, o que tambem mantem a competencia sempre definida.
+enum FrequenciaRecorrencia {
+  mensal
+  bimestral
+  trimestral
+  semestral
+  anual
+}
+
 enum ClassificacaoDre {
   /// Imposto sobre a receita (Simples Nacional). Sai da receita bruta.
   deducao
@@ -818,7 +835,8 @@ model CategoriaFinanceira {
   /// mostra o valor separado em vez de escolher uma linha por conta propria.
   classificacao ClassificacaoDre?
 
-  lancamentos Lancamento[]
+  lancamentos  Lancamento[]
+  recorrencias Recorrencia[]
 
   @@map("categorias_financeiras")
 }
@@ -870,6 +888,10 @@ model Lancamento {
   comprovanteNome    String? @db.VarChar(200)
   comprovanteTamanho Int?
 
+  /// Quando esta ocorrencia veio de uma regra de recorrencia.
+  recorrenciaId String?
+  recorrencia   Recorrencia? @relation(fields: [recorrenciaId], references: [id], onDelete: SetNull)
+
   criadoPorId String?
   criadoPor   Usuario? @relation("LancamentosCriados", fields: [criadoPorId], references: [id], onDelete: SetNull)
 
@@ -880,6 +902,17 @@ model Lancamento {
 
   /// Cobre exatamente a consulta de vencidos (status=pendente AND vencimento <
   /// hoje), que e o preco de derivar "atrasado" em vez de grava-lo.
+  /*
+   * A TRAVA DE IDEMPOTENCIA da recorrencia, no banco.
+   *
+   * O gerador pode rodar quantas vezes quiser: uma segunda tentativa de criar a
+   * ocorrencia do mesmo vencimento bate aqui. E a diferenca entre este modelo e
+   * o do ERP de origem, cujo botao de sincronizar inseria sem verificar nada —
+   * cada clique criava um conjunto completo novo, e o proprio changelog deles
+   * registra "tres chamadas seguidas deixam 12 lancamentos, nao 36" como
+   * CORRECAO. Garantir isso em JavaScript e garantir ate o primeiro retry.
+   */
+  @@unique([recorrenciaId, vencimento])
   @@index([status, vencimento])
   @@index([tipo, competencia])
   @@index([provedorId])
@@ -902,4 +935,66 @@ model LancamentoEvento {
 
   @@index([lancamentoId, criadoEm])
   @@map("lancamento_eventos")
+}
+
+/// Regra que gera lancamentos repetidos — a mensalidade que cada provedor paga
+/// a hub, o aluguel, a contabilidade.
+///
+/// AS OCORRENCIAS SAO LANCAMENTOS DE VERDADE, materializadas por um job. A
+/// alternativa (expandir na leitura e pagar por uma tabela de "override", que e
+/// o caminho do ERP de origem) foi descartada por uma limitacao que a propria
+/// documentacao deles registra: no override "valor pago diferente, metodo,
+/// chave fiscal e a nota nao sao persistidos por ocorrencia". Aqui cada
+/// ocorrencia e um `Lancamento` inteiro — ela ja tem baixa com valor e forma
+/// proprios, comprovante, historico, e entra no DRE e na inadimplencia sem uma
+/// linha de codigo especial.
+///
+/// O preco de materializar e o risco de DUPLICAR, que foi exatamente o que
+/// aconteceu la: o botao de sincronizar deles inseria sem verificar nada, e
+/// cada clique criava um conjunto completo novo. Aqui a trava e
+/// `@@unique([recorrenciaId, vencimento])` no Lancamento — no BANCO, nao no
+/// JavaScript. Rodar o job duas vezes, um retry, ou dois containers num deploy
+/// sobreposto nao tem como cobrar em dobro.
+model Recorrencia {
+  id        String                @id @default(uuid())
+  tipo      LancamentoTipo
+  descricao String                @db.VarChar(200)
+  valor     Decimal               @db.Decimal(14, 2)
+  frequencia FrequenciaRecorrencia @default(mensal)
+
+  /// Dia do vencimento (1-31). Guardado como NUMERO, e o vencimento de cada mes
+  /// e calculado com clamp ao ultimo dia daquele mes.
+  ///
+  /// Nao e detalhe: somar "+1 mes" a partir do dia 31 encolhe PERMANENTEMENTE
+  /// (31/07 -> 31/08 -> 30/09 -> ... -> 28/02 -> 28/03), e o deslize pra tras
+  /// ainda faz caber uma 13a ocorrencia na janela de 12 meses. Foi observado ao
+  /// vivo no ERP de origem. Recalcular do dia guardado a cada mes nao desliza.
+  diaVencimento Int
+
+  /// Primeira competencia (dia 1 do mes). O gerador anda em passos de mes a
+  /// partir daqui — nunca a partir da ocorrencia anterior.
+  inicio DateTime  @db.Date
+  /// Null = indefinida. Recorrencia permanente e permanente mesmo.
+  fim    DateTime? @db.Date
+
+  ativa Boolean @default(true)
+
+  provedorId String?
+  provedor   Provedor? @relation(fields: [provedorId], references: [id], onDelete: SetNull)
+
+  categoriaId String?
+  categoria   CategoriaFinanceira? @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
+
+  observacao String? @db.VarChar(500)
+
+  criadoPorId String?
+  criadoPor   Usuario? @relation("RecorrenciasCriadas", fields: [criadoPorId], references: [id], onDelete: SetNull)
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  lancamentos Lancamento[]
+
+  @@index([ativa, tipo])
+  @@map("recorrencias")
 }

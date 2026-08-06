@@ -3,6 +3,7 @@ import { env } from "./config/env.js";
 import { prisma } from "./lib/prisma.js";
 import { startSyncScheduler } from "./jobs/syncScheduler.js";
 import { startSlaAlertScheduler } from "./jobs/slaAlertScheduler.js";
+import { startRecorrenciaScheduler } from "./jobs/recorrenciaScheduler.js";
 import { fecharTodasConexoes } from "./services/realtimeHub.js";
 
 const app = createApp();
@@ -11,6 +12,7 @@ const server = app.listen(env.PORT, () => {
   console.log(`[isphub-api] ouvindo na porta ${env.PORT}`);
   startSyncScheduler();
   startSlaAlertScheduler();
+  startRecorrenciaScheduler();
 });
 
 /**
