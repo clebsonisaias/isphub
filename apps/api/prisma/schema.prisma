@@ -297,6 +297,8 @@ model Usuario {
   lancamentosCriados Lancamento[]       @relation("LancamentosCriados")
   recorrenciasCriadas Recorrencia[]     @relation("RecorrenciasCriadas")
   parcelamentosCriados Parcelamento[]   @relation("ParcelamentosCriados")
+  abastecimentos       Abastecimento[]   @relation("AbastecimentosRegistrados")
+  cartoesCombustivel   CartaoCombustivel[] @relation("CartoesCombustivel")
   lancamentoEventos  LancamentoEvento[] @relation("LancamentoEventos")
 
   @@map("usuarios")
@@ -921,6 +923,9 @@ model Lancamento {
   recorrenciaId String?
   recorrencia   Recorrencia? @relation(fields: [recorrenciaId], references: [id], onDelete: SetNull)
 
+  /// Quando este lancamento e a despesa de um abastecimento.
+  abastecimento Abastecimento?
+
   /// Quando esta linha e uma PARCELA de uma compra parcelada.
   parcelamentoId String?
   parcelamento   Parcelamento? @relation(fields: [parcelamentoId], references: [id], onDelete: SetNull)
@@ -1078,4 +1083,119 @@ model Parcelamento {
   lancamentos Lancamento[]
 
   @@map("parcelamentos")
+}
+
+// ---------------------------------------------------------------------------
+// FROTA
+// ---------------------------------------------------------------------------
+
+enum TipoCombustivel {
+  gasolina
+  etanol
+  diesel
+  gnv
+  eletrico
+}
+
+model Veiculo {
+  id       String  @id @default(uuid())
+  placa    String  @unique
+  modelo   String  @db.VarChar(80)
+  ano      Int?
+  /// Odometro do ultimo abastecimento registrado — cache de leitura, sempre
+  /// recalculavel a partir de Abastecimento. Existe so pra lista nao precisar
+  /// de subconsulta; a VERDADE sao os abastecimentos.
+  ativo    Boolean @default(true)
+  criadoEm DateTime @default(now())
+
+  abastecimentos Abastecimento[]
+
+  @@map("veiculos")
+}
+
+/// Um abastecimento. Gera um Lancamento de despesa na MESMA transacao.
+///
+/// O vinculo com o financeiro e a FK `lancamentoId`, nao um booleano
+/// "ja sincronizou". A origem guarda `synced_to_finance` ao lado de
+/// `finance_transaction_id` — dois fatos sobre a mesma coisa, e o booleano pode
+/// dizer "sim" com a FK vazia. Aqui a FK E a resposta.
+model Abastecimento {
+  id        String   @id @default(uuid())
+  veiculoId String
+  veiculo   Veiculo  @relation(fields: [veiculoId], references: [id], onDelete: Cascade)
+
+  data       DateTime        @db.Date
+  /// Odometro no momento do abastecimento.
+  km         Int
+  litros     Decimal         @db.Decimal(10, 3)
+  valorTotal Decimal         @db.Decimal(14, 2)
+  combustivel TipoCombustivel @default(gasolina)
+  posto      String?         @db.VarChar(120)
+
+  /**
+   * Encheu o tanque?
+   *
+   * Sem isso o km/l e mentira: com abastecimento parcial nao se sabe quanto
+   * combustivel havia no tanque, entao a distancia percorrida nao corresponde
+   * aos litros postos. O consumo so e calculado entre dois tanques CHEIOS
+   * consecutivos — e o unico intervalo em que a conta fecha.
+   */
+  tanqueCheio Boolean @default(true)
+
+  /// O lancamento de despesa gerado. Um por abastecimento.
+  lancamentoId String?     @unique
+  lancamento   Lancamento? @relation(fields: [lancamentoId], references: [id], onDelete: SetNull)
+
+  responsavelId String?
+  responsavel   Usuario? @relation("AbastecimentosRegistrados", fields: [responsavelId], references: [id], onDelete: SetNull)
+
+  criadoEm DateTime @default(now())
+
+  /// Dois abastecimentos do mesmo veiculo no mesmo odometro sao lancamento
+  /// duplicado, nao dois eventos.
+  @@unique([veiculoId, km])
+  @@index([veiculoId, data])
+  @@map("abastecimentos")
+}
+
+enum MovimentoCartaoTipo {
+  deposito
+  consumo
+  estorno
+}
+
+/// Cartao-combustivel de um usuario.
+///
+/// SEM coluna de saldo. A origem guarda `current_balance` no cartao E
+/// `new_balance` em cada movimento — duas copias derivadas do mesmo fato, e
+/// nenhuma delas e a lista de movimentos. Basta um movimento inserido fora de
+/// ordem ou removido pra as tres versoes discordarem. Aqui o saldo e a SOMA dos
+/// movimentos, calculada na leitura.
+model CartaoCombustivel {
+  id        String  @id @default(uuid())
+  numero    String  @unique @db.VarChar(40)
+  titularId String?
+  titular   Usuario? @relation("CartoesCombustivel", fields: [titularId], references: [id], onDelete: SetNull)
+  ativo     Boolean @default(true)
+  criadoEm  DateTime @default(now())
+
+  movimentos MovimentoCartao[]
+
+  @@map("cartoes_combustivel")
+}
+
+model MovimentoCartao {
+  id        String              @id @default(uuid())
+  cartaoId  String
+  cartao    CartaoCombustivel   @relation(fields: [cartaoId], references: [id], onDelete: Cascade)
+  tipo      MovimentoCartaoTipo
+  /// Sempre POSITIVO. O sinal vem do `tipo`, nao do numero — valor negativo
+  /// gravado e a porta pra um "deposito" de -500 zerar o saldo sem rastro.
+  valor     Decimal             @db.Decimal(14, 2)
+  data      DateTime            @db.Date
+  descricao String?             @db.VarChar(200)
+  criadoEm  DateTime            @default(now())
+
+  @@index([cartaoId, data])
+  @@map("movimentos_cartao")
 }

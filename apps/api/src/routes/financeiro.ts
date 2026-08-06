@@ -8,6 +8,8 @@ import {
   LANCAMENTO_STATUS,
   LANCAMENTO_TIPOS,
   ORIGENS_LANCAMENTO,
+  MOVIMENTO_CARTAO_TIPOS,
+  TIPOS_COMBUSTIVEL,
   REGIMES,
   UserRole,
 } from "@isphub/shared";
@@ -18,6 +20,7 @@ import * as lancamentos from "../services/lancamentoService.js";
 import * as relatorios from "../services/relatorioFinanceiroService.js";
 import * as recorrencias from "../services/recorrenciaService.js";
 import * as parcelamentos from "../services/parcelamentoService.js";
+import * as frota from "../services/frotaService.js";
 
 export const financeiroRouter = Router();
 
@@ -363,6 +366,101 @@ financeiroRouter.post(
   asyncHandler(async (req, res) => {
     const dados = parcelamentoSchema.parse(req.body);
     res.status(201).json(await parcelamentos.criar({ ...dados, autorId: req.user!.sub }));
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Frota
+// ---------------------------------------------------------------------------
+
+financeiroRouter.get("/frota/veiculos", asyncHandler(async (_req, res) => {
+  res.json(await frota.listarVeiculos());
+}));
+
+financeiroRouter.post(
+  "/frota/veiculos",
+  asyncHandler(async (req, res) => {
+    const dados = z
+      .object({
+        placa: z.string().trim().min(5).max(10),
+        modelo: z.string().trim().min(1).max(80),
+        ano: z.coerce.number().int().min(1950).max(2100).nullish(),
+      })
+      .parse(req.body);
+    res.status(201).json(await frota.criarVeiculo(dados));
+  }),
+);
+
+financeiroRouter.patch(
+  "/frota/veiculos/:id",
+  asyncHandler(async (req, res) => {
+    const { ativo } = z.object({ ativo: z.boolean() }).parse(req.body);
+    await frota.alternarVeiculo(req.params.id, ativo);
+    res.json({ ok: true });
+  }),
+);
+
+financeiroRouter.get(
+  "/frota/abastecimentos",
+  asyncHandler(async (req, res) => {
+    const { veiculoId } = z.object({ veiculoId: z.string().uuid().optional() }).parse(req.query);
+    res.json(await frota.listarAbastecimentos(veiculoId));
+  }),
+);
+
+financeiroRouter.post(
+  "/frota/abastecimentos",
+  asyncHandler(async (req, res) => {
+    const dados = z
+      .object({
+        veiculoId: z.string().uuid(),
+        data: dataIso,
+        km: z.coerce.number().int().min(0),
+        litros: z.string().trim().min(1).max(12),
+        valorTotal: dinheiro,
+        combustivel: z.enum(TIPOS_COMBUSTIVEL),
+        posto: z.string().trim().max(120).nullish(),
+        tanqueCheio: z.boolean().optional(),
+        categoriaId: z.string().uuid().nullish(),
+      })
+      .parse(req.body);
+    res.status(201).json(await frota.registrarAbastecimento({ ...dados, autorId: req.user!.sub }));
+  }),
+);
+
+financeiroRouter.get("/frota/cartoes", asyncHandler(async (_req, res) => {
+  res.json(await frota.listarCartoes());
+}));
+
+financeiroRouter.post(
+  "/frota/cartoes",
+  asyncHandler(async (req, res) => {
+    const dados = z
+      .object({ numero: z.string().trim().min(1).max(40), titularId: z.string().uuid().nullish() })
+      .parse(req.body);
+    res.status(201).json(await frota.criarCartao(dados));
+  }),
+);
+
+financeiroRouter.get(
+  "/frota/cartoes/:id/movimentos",
+  asyncHandler(async (req, res) => {
+    res.json(await frota.movimentosDoCartao(req.params.id));
+  }),
+);
+
+financeiroRouter.post(
+  "/frota/cartoes/:id/movimentos",
+  asyncHandler(async (req, res) => {
+    const dados = z
+      .object({
+        tipo: z.enum(MOVIMENTO_CARTAO_TIPOS),
+        valor: dinheiro,
+        data: dataIso,
+        descricao: z.string().trim().max(200).nullish(),
+      })
+      .parse(req.body);
+    res.status(201).json(await frota.movimentarCartao({ ...dados, cartaoId: req.params.id }));
   }),
 );
 

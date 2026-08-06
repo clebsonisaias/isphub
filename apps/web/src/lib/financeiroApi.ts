@@ -11,6 +11,11 @@ import type {
   LancamentoListaResposta,
   LancamentoPublic,
   Regime,
+  AbastecimentoPublic,
+  CartaoPublic,
+  MovimentoCartaoTipo,
+  TipoCombustivel,
+  VeiculoPublic,
   ParcelamentoInput,
   ParcelamentoPublic,
   RecorrenciaInput,
@@ -134,4 +139,36 @@ export const parcelamentoApi = {
   parcelas: (id: string) => api.get<LancamentoPublic[]>(`/financeiro/parcelamentos/${id}/parcelas`),
 
   criar: (dados: ParcelamentoInput) => api.post<ParcelamentoPublic>("/financeiro/parcelamentos", dados),
+};
+
+/** Frota — veículos, abastecimentos e cartão-combustível. */
+export const frotaApi = {
+  veiculos: () => api.get<VeiculoPublic[]>("/financeiro/frota/veiculos"),
+  criarVeiculo: (d: { placa: string; modelo: string; ano?: number | null }) =>
+    api.post<{ id: string }>("/financeiro/frota/veiculos", d),
+  alternarVeiculo: (id: string, ativo: boolean) =>
+    api.patch<{ ok: true }>(`/financeiro/frota/veiculos/${id}`, { ativo }),
+
+  abastecimentos: (veiculoId?: string) =>
+    api.get<AbastecimentoPublic[]>(`/financeiro/frota/abastecimentos${veiculoId ? `?veiculoId=${veiculoId}` : ""}`),
+  registrarAbastecimento: (d: {
+    veiculoId: string;
+    data: string;
+    km: number;
+    litros: string;
+    valorTotal: string;
+    combustivel: TipoCombustivel;
+    posto?: string | null;
+    tanqueCheio?: boolean;
+  }) => api.post<{ id: string }>("/financeiro/frota/abastecimentos", d),
+
+  cartoes: () => api.get<CartaoPublic[]>("/financeiro/frota/cartoes"),
+  criarCartao: (d: { numero: string; titularId?: string | null }) =>
+    api.post<{ id: string }>("/financeiro/frota/cartoes", d),
+  movimentos: (id: string) =>
+    api.get<{ id: string; tipo: MovimentoCartaoTipo; valor: string; data: string; descricao: string | null }[]>(
+      `/financeiro/frota/cartoes/${id}/movimentos`,
+    ),
+  movimentar: (id: string, d: { tipo: MovimentoCartaoTipo; valor: string; data: string; descricao?: string | null }) =>
+    api.post<{ id: string }>(`/financeiro/frota/cartoes/${id}/movimentos`, d),
 };

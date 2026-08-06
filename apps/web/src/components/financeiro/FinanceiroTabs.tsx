@@ -14,6 +14,7 @@ const ABAS = [
   { chave: "recorrencias", rotulo: "Recorrências", to: "/financeiro/recorrencias" },
   { chave: "parcelados", rotulo: "Parcelados", to: "/financeiro/parcelados" },
   { chave: "provisoes", rotulo: "Provisões", to: "/financeiro/provisoes" },
+  { chave: "frota", rotulo: "Frota", to: "/financeiro/frota" },
   { chave: "relatorios", rotulo: "Relatórios", to: "/financeiro/relatorios" },
 ] as const;
 

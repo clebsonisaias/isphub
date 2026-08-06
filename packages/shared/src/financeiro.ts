@@ -693,3 +693,128 @@ export interface ParcelamentoInput {
   categoriaId?: string | null;
   observacao?: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// FROTA
+// ---------------------------------------------------------------------------
+
+export const TIPOS_COMBUSTIVEL = ["gasolina", "etanol", "diesel", "gnv", "eletrico"] as const;
+export type TipoCombustivel = (typeof TIPOS_COMBUSTIVEL)[number];
+
+export const COMBUSTIVEL_ROTULO: Record<TipoCombustivel, string> = {
+  gasolina: "Gasolina",
+  etanol: "Etanol",
+  diesel: "Diesel",
+  gnv: "GNV",
+  eletrico: "Elétrico",
+};
+
+export interface AbastecimentoBase {
+  km: number;
+  /** Litros como string — mesma regra do dinheiro. */
+  litros: string;
+  tanqueCheio: boolean;
+}
+
+/**
+ * Consumo (km/l) pelo metodo TANQUE CHEIO A TANQUE CHEIO.
+ *
+ * A conta so fecha entre dois enchimentos completos: num abastecimento parcial
+ * nao se sabe quanto havia no tanque, entao a distancia percorrida nao
+ * corresponde aos litros postos. Entre dois cheios, os litros gastos sao a soma
+ * de TUDO que entrou depois do primeiro ate o segundo, inclusive os parciais no
+ * meio — e a distancia e a diferenca de odometro.
+ *
+ * Devolve `null` onde nao da pra afirmar: primeiro abastecimento (sem km
+ * anterior), abastecimento parcial, ou odometro que nao andou.
+ *
+ * `null` e o ponto. Um numero inventado num painel de custo vira decisao
+ * errada; "—" e honesto.
+ */
+export function consumoPorAbastecimento(lista: AbastecimentoBase[]): (number | null)[] {
+  // Ordem crescente de odometro e o que a conta pressupoe.
+  const ordenado = [...lista].sort((a, b) => a.km - b.km);
+  const porKm = new Map<number, number | null>();
+
+  let ultimoCheio: number | null = null;
+  let litrosAcumulados = 0;
+
+  for (const a of ordenado) {
+    const litros = Number(a.litros);
+    if (!a.tanqueCheio) {
+      // Parcial nao fecha intervalo, mas os litros contam no proximo cheio.
+      litrosAcumulados += litros;
+      porKm.set(a.km, null);
+      continue;
+    }
+
+    litrosAcumulados += litros;
+    if (ultimoCheio === null || a.km <= ultimoCheio || litrosAcumulados <= 0) {
+      porKm.set(a.km, null);
+    } else {
+      porKm.set(a.km, (a.km - ultimoCheio) / litrosAcumulados);
+    }
+    ultimoCheio = a.km;
+    litrosAcumulados = 0;
+  }
+
+  return lista.map((a) => porKm.get(a.km) ?? null);
+}
+
+/** "12,5 km/l" — uma casa basta; duas fingem precisao que a medicao nao tem. */
+export function formatarConsumo(kmPorLitro: number | null): string {
+  return kmPorLitro === null ? "—" : `${kmPorLitro.toFixed(1).replace(".", ",")} km/l`;
+}
+
+export interface VeiculoPublic {
+  id: string;
+  placa: string;
+  modelo: string;
+  ano: number | null;
+  ativo: boolean;
+  totalAbastecimentos: number;
+  /** Ultimo odometro registrado, ou null se nunca abasteceu. */
+  ultimoKm: number | null;
+}
+
+export interface AbastecimentoPublic {
+  id: string;
+  veiculoId: string;
+  veiculoPlaca: string;
+  data: string;
+  km: number;
+  litros: string;
+  valorTotal: string;
+  combustivel: TipoCombustivel;
+  posto: string | null;
+  tanqueCheio: boolean;
+  /** km/l desde o último tanque cheio; null quando não dá para afirmar. */
+  consumo: number | null;
+  lancamentoId: string | null;
+  responsavelNome: string | null;
+}
+
+export interface CartaoPublic {
+  id: string;
+  numero: string;
+  titularId: string | null;
+  titularNome: string | null;
+  ativo: boolean;
+  /** SOMA dos movimentos — não uma coluna. */
+  saldo: string;
+  totalMovimentos: number;
+}
+
+export const MOVIMENTO_CARTAO_TIPOS = ["deposito", "consumo", "estorno"] as const;
+export type MovimentoCartaoTipo = (typeof MOVIMENTO_CARTAO_TIPOS)[number];
+
+export const MOVIMENTO_CARTAO_ROTULO: Record<MovimentoCartaoTipo, string> = {
+  deposito: "Depósito",
+  consumo: "Consumo",
+  estorno: "Estorno",
+};
+
+/** Depósito e estorno somam; consumo subtrai. O sinal vem do TIPO. */
+export function sinalDoMovimento(tipo: MovimentoCartaoTipo): 1 | -1 {
+  return tipo === "consumo" ? -1 : 1;
+}
