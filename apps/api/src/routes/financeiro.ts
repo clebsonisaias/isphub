@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { z } from "zod";
-import { FORMAS_PAGAMENTO, LANCAMENTO_STATUS, LANCAMENTO_TIPOS, UserRole } from "@isphub/shared";
+import { CLASSIFICACOES_DRE, FORMAS_PAGAMENTO, LANCAMENTO_STATUS, LANCAMENTO_TIPOS, REGIMES, UserRole } from "@isphub/shared";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { prisma } from "../lib/prisma.js";
 import * as lancamentos from "../services/lancamentoService.js";
+import * as relatorios from "../services/relatorioFinanceiroService.js";
 
 export const financeiroRouter = Router();
 
@@ -224,6 +225,58 @@ financeiroRouter.delete(
 );
 
 // ---------------------------------------------------------------------------
+// Relatorios
+// ---------------------------------------------------------------------------
+
+const mesIso = z.string().regex(/^\d{4}-\d{2}$/, "Use o formato AAAA-MM");
+
+const periodoSchema = z
+  .object({
+    de: mesIso.optional(),
+    ate: mesIso.optional(),
+    regime: z.enum(REGIMES).default("competencia"),
+  })
+  .transform((v) => {
+    // Padrao: os ultimos 12 meses terminando no mes corrente.
+    const padrao = relatorios.ultimosMeses(12);
+    return { de: v.de ?? padrao.de, ate: v.ate ?? padrao.ate, regime: v.regime };
+  })
+  .refine((v) => v.de <= v.ate, { message: "O mes inicial nao pode ser depois do final" });
+
+financeiroRouter.get(
+  "/relatorios/dre",
+  asyncHandler(async (req, res) => {
+    // DRE de 12 meses e o padrao da tela, mas o recorte util e menor (um mes,
+    // um trimestre) — por isso `de`/`ate` sao livres.
+    const { de, ate, regime } = periodoSchema.parse(req.query);
+    res.json(await relatorios.dre({ de, ate, regime }));
+  }),
+);
+
+financeiroRouter.get(
+  "/relatorios/inadimplencia",
+  asyncHandler(async (_req, res) => {
+    res.json(await relatorios.inadimplencia());
+  }),
+);
+
+financeiroRouter.get(
+  "/relatorios/serie-mensal",
+  asyncHandler(async (req, res) => {
+    const { de, ate, regime } = periodoSchema.parse(req.query);
+    res.json(await relatorios.serieMensal({ de, ate, regime }));
+  }),
+);
+
+financeiroRouter.get(
+  "/relatorios/composicao-despesa",
+  asyncHandler(async (req, res) => {
+    const { de, ate, regime } = periodoSchema.parse(req.query);
+    res.json(await relatorios.composicaoDespesa({ de, ate, regime }));
+  }),
+);
+
+// ---------------------------------------------------------------------------
 // Categorias financeiras
 // ---------------------------------------------------------------------------
 
@@ -232,6 +285,11 @@ const categoriaSchema = z.object({
   tipo: z.enum(LANCAMENTO_TIPOS),
   cor: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Cor deve ser hexadecimal (#rrggbb)").optional(),
   ativo: z.boolean().optional(),
+  /**
+   * Onde a despesa entra no DRE. `null` limpa a classificacao; ausente mantem
+   * a atual — sao coisas diferentes e a tela precisa poder fazer as duas.
+   */
+  classificacao: z.enum(CLASSIFICACOES_DRE).nullish(),
 });
 
 financeiroRouter.get(
@@ -240,7 +298,7 @@ financeiroRouter.get(
     res.json(
       await prisma.categoriaFinanceira.findMany({
         orderBy: [{ tipo: "asc" }, { nome: "asc" }],
-        select: { id: true, nome: true, tipo: true, cor: true, ativo: true },
+        select: { id: true, nome: true, tipo: true, cor: true, ativo: true, classificacao: true },
       }),
     );
   }),
@@ -255,7 +313,7 @@ financeiroRouter.post(
     res.status(201).json(
       await prisma.categoriaFinanceira.create({
         data: dados,
-        select: { id: true, nome: true, tipo: true, cor: true, ativo: true },
+        select: { id: true, nome: true, tipo: true, cor: true, ativo: true, classificacao: true },
       }),
     );
   }),
@@ -269,7 +327,7 @@ financeiroRouter.patch(
       await prisma.categoriaFinanceira.update({
         where: { id: req.params.id },
         data: dados,
-        select: { id: true, nome: true, tipo: true, cor: true, ativo: true },
+        select: { id: true, nome: true, tipo: true, cor: true, ativo: true, classificacao: true },
       }),
     );
   }),

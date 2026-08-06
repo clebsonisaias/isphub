@@ -32,6 +32,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { FinanceiroTabs } from "@/components/financeiro/FinanceiroTabs";
 import { financeiroApi } from "@/lib/financeiroApi";
 import { provedoresApi } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
@@ -134,20 +135,24 @@ export function FinanceiroPage() {
   return (
     <AppShell>
       <div className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6">
-        <header className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-              <Wallet className="size-6 text-muted-foreground" aria-hidden />
-              Financeiro
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Contas a pagar e a receber da HubISP — o que os provedores pagam à hub e o que a hub gasta.
-            </p>
+        <header className="space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+                <Wallet className="size-6 text-muted-foreground" aria-hidden />
+                Financeiro
+              </h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Contas a pagar e a receber da HubISP — o que os provedores pagam à hub e o que a hub gasta.
+              </p>
+            </div>
+            <Button onClick={() => setNovoAberto(true)}>
+              <Plus className="size-4" aria-hidden />
+              Novo lançamento
+            </Button>
           </div>
-          <Button onClick={() => setNovoAberto(true)}>
-            <Plus className="size-4" aria-hidden />
-            Novo lançamento
-          </Button>
+
+          <FinanceiroTabs atual="lancamentos" />
         </header>
 
         <ResumoCabecalho resumo={resumo} carregando={carregando && !resumo} />

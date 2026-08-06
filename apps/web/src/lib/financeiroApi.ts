@@ -1,11 +1,17 @@
 import type {
   BaixaInput,
   CategoriaFinanceiraPublic,
+  ClassificacaoDre,
+  ComposicaoCategoria,
+  DreResultado,
+  InadimplenciaResultado,
   LancamentoEventoPublic,
   LancamentoFiltro,
   LancamentoInput,
   LancamentoListaResposta,
   LancamentoPublic,
+  Regime,
+  SerieMensalResultado,
 } from "@isphub/shared";
 import { api } from "@/lib/apiClient";
 
@@ -68,4 +74,29 @@ export const financeiroApi = {
 
   criarCategoria: (dados: { nome: string; tipo: "receita" | "despesa"; cor?: string }) =>
     api.post<CategoriaFinanceiraPublic>("/financeiro/categorias", dados),
+
+  /** `classificacao: null` LIMPA; omitir mantem a atual. */
+  editarCategoria: (
+    id: string,
+    dados: { nome?: string; cor?: string; ativo?: boolean; classificacao?: ClassificacaoDre | null },
+  ) => api.patch<CategoriaFinanceiraPublic>(`/financeiro/categorias/${id}`, dados),
+
+  // --- relatorios ---
+  dre: (p: PeriodoRelatorio) => api.get<DreResultado>(`/financeiro/relatorios/dre${query(p)}`),
+
+  inadimplencia: () =>
+    api.get<InadimplenciaResultado>("/financeiro/relatorios/inadimplencia"),
+
+  serieMensal: (p: PeriodoRelatorio) =>
+    api.get<SerieMensalResultado>(`/financeiro/relatorios/serie-mensal${query(p)}`),
+
+  composicaoDespesa: (p: PeriodoRelatorio) =>
+    api.get<ComposicaoCategoria[]>(`/financeiro/relatorios/composicao-despesa${query(p)}`),
 };
+
+/** Recorte dos relatorios: meses "YYYY-MM" e o regime. Tudo opcional. */
+export interface PeriodoRelatorio {
+  de?: string;
+  ate?: string;
+  regime?: Regime;
+}

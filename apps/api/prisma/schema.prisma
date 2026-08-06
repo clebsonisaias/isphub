@@ -781,6 +781,27 @@ enum LancamentoEventoTipo {
   cancelado
 }
 
+/// Onde a despesa entra no DRE.
+///
+/// Vive na CATEGORIA, nao no lancamento — e a diferenca que decide se o
+/// relatorio presta. No ERP de origem esse campo fica em cada transacao, e a
+/// propria documentacao deles registra o resultado: "despesas sem
+/// classificacao caem silenciosamente em custos variaveis". Ninguem preenche
+/// um campo a cada lancamento; na categoria o admin preenche UMA vez e todo
+/// lancamento daquela categoria herda.
+///
+/// Nulo continua sendo possivel (categoria nova, ou lancamento sem categoria),
+/// e nesse caso o valor aparece numa LINHA PROPRIA do DRE — nunca dobrado em
+/// outra em silencio.
+enum ClassificacaoDre {
+  /// Imposto sobre a receita (Simples Nacional). Sai da receita bruta.
+  deducao
+  /// Custo que acompanha o numero de provedores atendidos.
+  custo_variavel
+  /// Estrutura: fixo, pessoal, administrativo.
+  despesa_operacional
+}
+
 /// Classificador simples (Aluguel, Infraestrutura, Mensalidade de provedor...).
 /// NAO e plano de contas: hierarquia com codigo "1.1.01" e capacidade de outra
 /// fatia, e misturar as duas coisas agora deixaria a arvore pela metade.
@@ -791,6 +812,11 @@ model CategoriaFinanceira {
   cor      String         @default("#6366f1")
   ativo    Boolean        @default(true)
   criadoEm DateTime       @default(now())
+
+  /// So faz sentido em categoria de DESPESA — receita nao se classifica, ela
+  /// e a primeira linha do DRE. Nulo = ainda nao classificada; o relatorio
+  /// mostra o valor separado em vez de escolher uma linha por conta propria.
+  classificacao ClassificacaoDre?
 
   lancamentos Lancamento[]
 
