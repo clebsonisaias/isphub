@@ -17,6 +17,7 @@ import { ProvisionamentoPage } from "@/pages/ProvisionamentoPage";
 import { FinanceiroPage } from "@/pages/FinanceiroPage";
 import { FinanceiroRelatoriosPage } from "@/pages/FinanceiroRelatoriosPage";
 import { FinanceiroRecorrenciasPage } from "@/pages/FinanceiroRecorrenciasPage";
+import { FinanceiroParceladosPage } from "@/pages/FinanceiroParceladosPage";
 import { ChatPage } from "@/pages/ChatPage";
 import { ClientesChatPage } from "@/pages/ClientesChatPage";
 import { ProvedoresPage } from "@/pages/admin/ProvedoresPage";
@@ -117,6 +118,14 @@ function App() {
                   element={
                     <RequireAuth roles={[UserRole.ADMIN]}>
                       <FinanceiroRecorrenciasPage />
+                    </RequireAuth>
+                  }
+                />
+                <Route
+                  path="/financeiro/parcelados"
+                  element={
+                    <RequireAuth roles={[UserRole.ADMIN]}>
+                      <FinanceiroParceladosPage />
                     </RequireAuth>
                   }
                 />

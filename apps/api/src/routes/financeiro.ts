@@ -15,6 +15,7 @@ import { prisma } from "../lib/prisma.js";
 import * as lancamentos from "../services/lancamentoService.js";
 import * as relatorios from "../services/relatorioFinanceiroService.js";
 import * as recorrencias from "../services/recorrenciaService.js";
+import * as parcelamentos from "../services/parcelamentoService.js";
 
 export const financeiroRouter = Router();
 
@@ -301,6 +302,52 @@ financeiroRouter.post(
   "/recorrencias/:id/gerar",
   asyncHandler(async (req, res) => {
     res.json(await recorrencias.gerarOcorrencias(req.params.id));
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Parcelamentos
+// ---------------------------------------------------------------------------
+
+const parcelamentoSchema = z.object({
+  tipo: z.enum(LANCAMENTO_TIPOS),
+  descricao: z.string().trim().min(1, "Informe a descricao").max(200),
+  valorTotal: dinheiro,
+  quantidade: z.coerce.number().int().min(2).max(parcelamentos.MAX_PARCELAS),
+  primeiroVencimento: dataIso,
+  provedorId: z.string().uuid().nullish(),
+  categoriaId: z.string().uuid().nullish(),
+  observacao: z.string().trim().max(500).nullish(),
+});
+
+financeiroRouter.get(
+  "/parcelamentos",
+  asyncHandler(async (req, res) => {
+    const { tipo } = z.object({ tipo: z.enum(LANCAMENTO_TIPOS).optional() }).parse(req.query);
+    res.json(await parcelamentos.listar(tipo));
+  }),
+);
+
+financeiroRouter.get(
+  "/parcelamentos/:id/parcelas",
+  asyncHandler(async (req, res) => {
+    res.json(await parcelamentos.parcelas(req.params.id));
+  }),
+);
+
+/**
+ * Sem rota de EDITAR nem de EXCLUIR de proposito.
+ *
+ * Mudar o total ou o numero de parcelas de uma compra ja parcelada exigiria
+ * redistribuir valores entre parcelas que podem estar pagas — reescreveria
+ * dinheiro que ja saiu. Para corrigir, cancela-se as parcelas em aberto (uma a
+ * uma, com motivo, no detalhe) e lanca-se de novo.
+ */
+financeiroRouter.post(
+  "/parcelamentos",
+  asyncHandler(async (req, res) => {
+    const dados = parcelamentoSchema.parse(req.body);
+    res.status(201).json(await parcelamentos.criar({ ...dados, autorId: req.user!.sub }));
   }),
 );
 

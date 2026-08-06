@@ -575,3 +575,66 @@ export interface RecorrenciaSalva {
   recorrencia: RecorrenciaPublic;
   geracao: ResultadoGeracao;
 }
+
+// ---------------------------------------------------------------------------
+// PARCELAMENTO
+// ---------------------------------------------------------------------------
+
+/**
+ * Divide um total em N parcelas que somam EXATAMENTE o total.
+ *
+ * R$ 100,00 em 3x da 33,3333... Arredondar cada parcela pra 33,33 soma 99,99 e
+ * some um centavo; a sobra tem que ir pra alguma parcela. Convencao (a mesma do
+ * ERP de origem): a ULTIMA absorve a diferenca — 33,33 + 33,33 + 33,34.
+ *
+ * A conta e feita em CENTAVOS INTEIROS. A origem chega no mesmo resultado, mas
+ * por correcao em float (`parseFloat((total/n).toFixed(2))` e depois
+ * `valor * n`), o que da certo na maioria dos valores e depende de arredondamento
+ * pra fechar. Em inteiro, fechar nao e conserto: e consequencia.
+ */
+export function dividirEmParcelas(valorTotal: string, quantidade: number): string[] {
+  if (!Number.isInteger(quantidade) || quantidade < 1) {
+    throw new Error("quantidade de parcelas deve ser um inteiro >= 1");
+  }
+  const totalCentavos = paraCentavos(valorTotal);
+  const base = Math.floor(totalCentavos / quantidade);
+  const sobra = totalCentavos - base * quantidade;
+
+  return Array.from({ length: quantidade }, (_, i) =>
+    // A sobra (sempre < quantidade centavos) vai inteira pra ultima.
+    deCentavos(i === quantidade - 1 ? base + sobra : base),
+  );
+}
+
+/** "Aluguel" + 2 de 5 -> "Aluguel (2/5)". Como a origem nomeia. */
+export function descricaoParcela(descricao: string, numero: number, quantidade: number): string {
+  return `${descricao} (${numero}/${quantidade})`;
+}
+
+export interface ParcelamentoPublic {
+  id: string;
+  tipo: LancamentoTipo;
+  descricao: string;
+  valorTotal: string;
+  quantidade: number;
+  primeiroVencimento: string;
+  provedorId: string | null;
+  provedorNome: string | null;
+  categoriaId: string | null;
+  categoriaNome: string | null;
+  observacao: string | null;
+  /** Quantas parcelas ja foram pagas. */
+  parcelasPagas: number;
+  criadoEm: string;
+}
+
+export interface ParcelamentoInput {
+  tipo: LancamentoTipo;
+  descricao: string;
+  valorTotal: string;
+  quantidade: number;
+  primeiroVencimento: string;
+  provedorId?: string | null;
+  categoriaId?: string | null;
+  observacao?: string | null;
+}

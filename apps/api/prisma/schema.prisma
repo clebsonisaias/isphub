@@ -58,6 +58,7 @@ model Provedor {
   /// Diferente de todas as relacoes acima: nao e particao multi-tenant.
   lancamentos   Lancamento[]
   recorrencias  Recorrencia[]
+  parcelamentos Parcelamento[]
 
   @@map("provedores")
 }
@@ -295,6 +296,7 @@ model Usuario {
 
   lancamentosCriados Lancamento[]       @relation("LancamentosCriados")
   recorrenciasCriadas Recorrencia[]     @relation("RecorrenciasCriadas")
+  parcelamentosCriados Parcelamento[]   @relation("ParcelamentosCriados")
   lancamentoEventos  LancamentoEvento[] @relation("LancamentoEventos")
 
   @@map("usuarios")
@@ -835,8 +837,9 @@ model CategoriaFinanceira {
   /// mostra o valor separado em vez de escolher uma linha por conta propria.
   classificacao ClassificacaoDre?
 
-  lancamentos  Lancamento[]
-  recorrencias Recorrencia[]
+  lancamentos   Lancamento[]
+  recorrencias  Recorrencia[]
+  parcelamentos Parcelamento[]
 
   @@map("categorias_financeiras")
 }
@@ -892,6 +895,12 @@ model Lancamento {
   recorrenciaId String?
   recorrencia   Recorrencia? @relation(fields: [recorrenciaId], references: [id], onDelete: SetNull)
 
+  /// Quando esta linha e uma PARCELA de uma compra parcelada.
+  parcelamentoId String?
+  parcelamento   Parcelamento? @relation(fields: [parcelamentoId], references: [id], onDelete: SetNull)
+  /// 1..quantidade. Junto com parcelamentoId forma a trava de idempotencia.
+  numeroParcela  Int?
+
   criadoPorId String?
   criadoPor   Usuario? @relation("LancamentosCriados", fields: [criadoPorId], references: [id], onDelete: SetNull)
 
@@ -913,6 +922,8 @@ model Lancamento {
    * CORRECAO. Garantir isso em JavaScript e garantir ate o primeiro retry.
    */
   @@unique([recorrenciaId, vencimento])
+  /// Mesma logica da recorrencia: gerar duas vezes nao cria a parcela 2 duas vezes.
+  @@unique([parcelamentoId, numeroParcela])
   @@index([status, vencimento])
   @@index([tipo, competencia])
   @@index([provedorId])
@@ -997,4 +1008,39 @@ model Recorrencia {
 
   @@index([ativa, tipo])
   @@map("recorrencias")
+}
+
+
+/// Compra dividida em N parcelas — diferente da recorrencia, que e indefinida.
+///
+/// Todas as parcelas nascem de uma vez: o total e o numero de vezes ja sao
+/// conhecidos, entao nao ha janela movel nem job. Cada parcela e um
+/// `Lancamento` normal, com baixa, comprovante e historico proprios.
+model Parcelamento {
+  id         String         @id @default(uuid())
+  tipo       LancamentoTipo
+  descricao  String         @db.VarChar(200)
+  /// A soma das parcelas fecha EXATAMENTE neste valor — a divisao e feita em
+  /// centavos inteiros e a sobra vai pra ultima parcela (ver dividirEmParcelas).
+  valorTotal Decimal        @db.Decimal(14, 2)
+  quantidade Int
+
+  primeiroVencimento DateTime @db.Date
+
+  provedorId String?
+  provedor   Provedor? @relation(fields: [provedorId], references: [id], onDelete: SetNull)
+
+  categoriaId String?
+  categoria   CategoriaFinanceira? @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
+
+  observacao String? @db.VarChar(500)
+
+  criadoPorId String?
+  criadoPor   Usuario? @relation("ParcelamentosCriados", fields: [criadoPorId], references: [id], onDelete: SetNull)
+
+  criadoEm DateTime @default(now())
+
+  lancamentos Lancamento[]
+
+  @@map("parcelamentos")
 }

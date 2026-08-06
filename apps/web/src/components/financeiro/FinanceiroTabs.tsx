@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 const ABAS = [
   { chave: "lancamentos", rotulo: "Lançamentos", to: "/financeiro" },
   { chave: "recorrencias", rotulo: "Recorrências", to: "/financeiro/recorrencias" },
+  { chave: "parcelados", rotulo: "Parcelados", to: "/financeiro/parcelados" },
   { chave: "relatorios", rotulo: "Relatórios", to: "/financeiro/relatorios" },
 ] as const;
 

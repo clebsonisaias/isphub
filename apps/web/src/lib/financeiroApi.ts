@@ -11,6 +11,8 @@ import type {
   LancamentoListaResposta,
   LancamentoPublic,
   Regime,
+  ParcelamentoInput,
+  ParcelamentoPublic,
   RecorrenciaInput,
   RecorrenciaPublic,
   RecorrenciaSalva,
@@ -121,4 +123,14 @@ export const recorrenciaApi = {
 
   gerar: (id: string) =>
     api.post<ResultadoGeracao>(`/financeiro/recorrencias/${id}/gerar`),
+};
+
+/** Parcelamentos — uma compra dividida em N vezes. */
+export const parcelamentoApi = {
+  listar: (tipo?: "receita" | "despesa") =>
+    api.get<ParcelamentoPublic[]>(`/financeiro/parcelamentos${tipo ? `?tipo=${tipo}` : ""}`),
+
+  parcelas: (id: string) => api.get<LancamentoPublic[]>(`/financeiro/parcelamentos/${id}/parcelas`),
+
+  criar: (dados: ParcelamentoInput) => api.post<ParcelamentoPublic>("/financeiro/parcelamentos", dados),
 };
