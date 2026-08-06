@@ -1,4 +1,4 @@
-import type { EvidenciaResumo, FilaFiltros, FilaItem, OrdemServico, OsEvento, OsFichaSgp, OsStatus } from "@isphub/shared";
+import type { EvidenciaResumo, FilaFiltros, FilaItem, OrdemServico, OsEvento, OsFichaSgp, OsStatus, CodigoStatusContrato } from "@isphub/shared";
 import { api } from "@/lib/apiClient";
 import type { ImagemComprimida } from "@/lib/imagem";
 
@@ -48,6 +48,10 @@ export const ordensServicoApi = {
   obter: (id: string) => api.get<OrdemServico>(`/ordens-servico/${id}`),
   aCaminho: (id: string) => api.post<OrdemServico>(`/ordens-servico/${id}/acaminho`),
   mudarStatus: (id: string, status: OsStatus) => api.patch<OrdemServico>(`/ordens-servico/${id}/status`, { status }),
+
+  /** Status do CONTRATO no SGP (não o da OS). `status` é o código REST 1..7. */
+  mudarContratoStatus: (id: string, status: CodigoStatusContrato) =>
+    api.post<OrdemServico>(`/ordens-servico/${id}/contrato-status`, { status }),
   anotar: (id: string, texto: string) => api.post<OrdemServico>(`/ordens-servico/${id}/anotacoes`, { texto }),
   atribuir: (id: string, tecnicoId: string) => api.post<OrdemServico>(`/ordens-servico/${id}/atribuir`, { tecnicoId }),
   eventos: (id: string) => api.get<OsEvento[]>(`/ordens-servico/${id}/eventos`),

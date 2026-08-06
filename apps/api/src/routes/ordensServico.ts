@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { OsStatus, UserRole } from "@isphub/shared";
+import { OsStatus, UserRole, ehCodigoStatusContrato, type CodigoStatusContrato } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
@@ -78,6 +78,34 @@ ordensServicoRouter.patch(
     await assertAcesso(req, req.params.id);
     const { status } = statusSchema.parse(req.body);
     const os = await writeback.mudarStatus(req.params.id, status, req.user!.sub);
+    res.json(os);
+  }),
+);
+
+const contratoStatusSchema = z.object({
+  status: z.number().int().refine(ehCodigoStatusContrato, "Codigo de status de contrato invalido (use 1..7)"),
+});
+
+/**
+ * Muda o status do CONTRATO no SGP (nao o da OS).
+ *
+ * `requireRole` aqui e so a porta grossa — quem decide de verdade e o service,
+ * porque o papel SOZINHO nao responde: o tecnico pode ou nao pode dependendo do
+ * status ATUAL do contrato. Deixar a decisao no middleware obrigaria a carregar
+ * a OS duas vezes ou a duplicar a regra.
+ */
+ordensServicoRouter.post(
+  "/:id/contrato-status",
+  requireRole(...acoesRoles),
+  asyncHandler(async (req, res) => {
+    await assertAcesso(req, req.params.id);
+    const { status } = contratoStatusSchema.parse(req.body);
+    const os = await writeback.alterarStatusContrato(
+      req.params.id,
+      status as CodigoStatusContrato,
+      req.user!.sub,
+      req.user!.role,
+    );
     res.json(os);
   }),
 );

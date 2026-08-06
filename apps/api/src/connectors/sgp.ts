@@ -1054,6 +1054,30 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
     },
 
     /**
+     * Muda o status do CONTRATO. Endpoint e formato confirmados contra uma
+     * implementacao em PRODUCAO (o Maxxi usa este mesmo endpoint contra o mesmo
+     * SGP — `maxxi/src/services/erp.js:1212`): POST JSON com app+token+contrato
+     * +status, sendo `contrato` uma STRING e `status` o inteiro do REST.
+     *
+     * Escrita de alto impacto: cancelar um contrato aqui derruba o servico de
+     * um cliente real. Por isso quem chama (writebackService) valida papel e
+     * transicao ANTES, e registra a trilha DEPOIS.
+     */
+    async alterarStatusContrato(contratoId: string, status: number): Promise<void> {
+      if (!Number.isInteger(status) || status < 1 || status > 7) {
+        throw new SgpError(`Status de contrato invalido: ${status}. Use 1..7 (codigo do REST).`);
+      }
+      const path = "/api/ura/contrato/status/edit/";
+      const data = await sgpPostJson(creds, path, {
+        // String, como na implementacao de referencia — o SGP e Django/DRF e
+        // trata o contrato como identificador, nao como numero.
+        contrato: String(contratoId),
+        status,
+      });
+      assertSgpEscritaOk(data, path);
+    },
+
+    /**
      * Ficha completa da OS. O endpoint devolve um ARRAY com um item (formato da
      * doc "Ordem de Servico por ID"), entao pega o primeiro; array vazio =
      * o SGP nao conhece essa OS.

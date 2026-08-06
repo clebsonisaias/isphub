@@ -122,7 +122,53 @@ const SEED_CANCELADA = {
   os_data_agendamento: "2026-12-31 12:00:00",
 };
 
-let ordens = [{ ...SEED }, { ...SEED_SEM_TIPO }, { ...SEED_RETIRADA }, { ...SEED_CANCELADA }];
+/*
+ * Contrato INATIVO — a UNICA origem que o tecnico pode mudar (Inativo -> Ativo).
+ * Sem esta fixture o caso mais importante da regra de papel nao teria como ser
+ * exercitado: com "Cancelado" o tecnico e barrado por motivo DIFERENTE, e o
+ * teste passaria sem provar nada.
+ */
+const SEED_INATIVA = {
+  os_id: "e2e-os-inativa",
+  os_status: 0,
+  os_conteudo: "OS de contrato inativo (fixture e2e)",
+  cliente_nome: "Cliente Contrato Inativo",
+  contrato_id: "5",
+  contrato_status: "Inativo",
+  motivo: "1",
+  os_data_agendamento: "2026-12-31 12:00:00",
+};
+
+/*
+ * OS DESCARTAVEL, so para os testes que MUDAM o status do contrato.
+ *
+ * Existe porque mudar o contrato de uma OS que outro spec LE quebra aquele spec
+ * conforme a ORDEM da suite. Aconteceu: os testes de admin mudavam a
+ * SEED_CANCELADA e o mapa.spec, que conta o halo de contrato irregular, passava
+ * sozinho e falhava na suite inteira.
+ *
+ * Sem `endereco_ll` de proposito — assim nao vira marcador e fica fora da
+ * contagem do mapa.
+ */
+const SEED_MUTAVEL = {
+  os_id: "e2e-os-mutavel",
+  os_status: 0,
+  os_conteudo: "OS de contrato mutavel (fixture e2e)",
+  cliente_nome: "Cliente Contrato Mutavel",
+  contrato_id: "6",
+  contrato_status: "Inativo",
+  motivo: "1",
+  os_data_agendamento: "2026-12-31 12:00:00",
+};
+
+let ordens = [
+  { ...SEED },
+  { ...SEED_SEM_TIPO },
+  { ...SEED_RETIRADA },
+  { ...SEED_CANCELADA },
+  { ...SEED_INATIVA },
+  { ...SEED_MUTAVEL },
+];
 
 app.get("/", (_req, res) => res.json({ ok: true, service: "mock-sgp-e2e" }));
 
@@ -136,7 +182,14 @@ app.post("/_test/reset", (_req, res) => {
    * seguinte, e o spec que dependia dela falha so quando a suite roda inteira,
    * nunca sozinho. Foi o que aconteceu com a retirada do mapa.
    */
-  ordens = [{ ...SEED }, { ...SEED_SEM_TIPO }, { ...SEED_RETIRADA }, { ...SEED_CANCELADA }];
+  ordens = [
+    { ...SEED },
+    { ...SEED_SEM_TIPO },
+    { ...SEED_RETIRADA },
+    { ...SEED_CANCELADA },
+    { ...SEED_INATIVA },
+    { ...SEED_MUTAVEL },
+  ];
   res.json({ ok: true });
 });
 
@@ -261,6 +314,32 @@ app.post("/api/os/update/id/:id/", (req, res) => {
   if (exigirAuth(req, res)) return;
   registrar({ acao: "status", osId: req.params.id, osStatus: req.body.os_status });
   res.json({ ok: true });
+});
+
+/**
+ * Muda o status do contrato. Guarda o texto correspondente ao codigo REST na OS
+ * — assim o proximo ciclo de sync devolve o valor novo, e o teste consegue
+ * verificar que a mudanca ATRAVESSOU (nao so que a API respondeu 200).
+ */
+const ROTULO_STATUS_CONTRATO = {
+  1: "Ativo",
+  2: "Inativo",
+  3: "Cancelado",
+  4: "Suspenso",
+  5: "Inviabilidade tecnica",
+  6: "Novo",
+  7: "Velocidade reduzida",
+};
+
+app.post("/api/ura/contrato/status/edit/", (req, res) => {
+  const { contrato, status } = req.body ?? {};
+  log.push({ rota: "contrato/status/edit", contrato, status });
+  const rotulo = ROTULO_STATUS_CONTRATO[status];
+  if (!rotulo) return res.status(400).json({ erro: `status invalido: ${status}` });
+  for (const os of ordens) {
+    if (String(os.contrato_id) === String(contrato)) os.contrato_status = rotulo;
+  }
+  res.json({ msg: "ok" });
 });
 
 app.post("/api/os/anotacoes/add/id/:id/", (req, res) => {

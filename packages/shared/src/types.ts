@@ -225,7 +225,8 @@ export interface FilaFiltros {
 }
 
 /** Tipo de evento na timeline de uma OS. */
-export type OsEventoTipo = "atribuicao" | "status" | "anotacao" | "foto" | "edicao";
+/** `contrato` = mudanca do status do CONTRATO (nao da OS) feita a partir dela. */
+export type OsEventoTipo = "atribuicao" | "status" | "anotacao" | "foto" | "edicao" | "contrato";
 
 /** Evento da timeline de uma OS (status, anotacao, atribuicao, foto). */
 export interface OsEvento {

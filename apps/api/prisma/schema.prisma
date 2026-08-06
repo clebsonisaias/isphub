@@ -39,6 +39,10 @@ enum OsEventoTipo {
   anotacao
   foto
   edicao
+  /// Mudanca do status do CONTRATO (nao da OS) feita a partir desta OS.
+  /// A trilha nasce junto com a funcionalidade: o ERP de referencia registra em
+  /// comentario que teve um incidente de "mudancas via URA sem rastro".
+  contrato
 }
 
 model Provedor {
@@ -199,6 +203,10 @@ model OrdemServico {
   /// escrita, entao o sync so volta a confiar na leitura dele apos a janela
   /// de graca (ver syncService.ts).
   observacaoAlteradaEm DateTime?
+  /// Quando o status do CONTRATO foi alterado por acao humana daqui. Mesma
+  /// janela de graca do statusAlteradoEm: o SGP aceita a escrita mas a leitura
+  /// seguinte ainda devolve o valor antigo por alguns ciclos.
+  contratoStatusAlteradoEm DateTime?
   /// Quando o backfill tentou puxar o cadastro do cliente (/api/ura/clientes/)
   /// pra esta OS — a listagem de OS do SGP nao traz endereco de rua, geo nem
   /// telefone, so esse endpoint traz. Marca a TENTATIVA (com ou sem dado) pra

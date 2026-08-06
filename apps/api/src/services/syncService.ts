@@ -222,7 +222,15 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
       where: { provedorId },
       // `id` e `tecnicoId` entram pro aviso em tempo real no fim do sync (ver
       // "avisa quem precisa saber" abaixo) — mesma query, custo zero.
-      select: { id: true, sgpOsId: true, status: true, tecnicoId: true, statusAlteradoEm: true, observacaoAlteradaEm: true },
+      select: {
+        id: true,
+        sgpOsId: true,
+        status: true,
+        tecnicoId: true,
+        statusAlteradoEm: true,
+        observacaoAlteradaEm: true,
+        contratoStatusAlteradoEm: true,
+      },
     });
     const limiteProtecao = Date.now() - CAMPO_PROTEGIDO_MS;
     const statusProtegido = new Set(
@@ -231,6 +239,17 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
     const observacaoProtegida = new Set(
       osConhecidas
         .filter((o) => o.observacaoAlteradaEm && o.observacaoAlteradaEm.getTime() > limiteProtecao)
+        .map((o) => o.sgpOsId),
+    );
+    /*
+     * Terceiro campo protegido, mesma janela dos dois acima. O SGP aceita a
+     * troca de status do contrato mas a leitura seguinte ainda devolve o valor
+     * antigo por alguns ciclos — sem isto, o proximo sync desfaria na tela o
+     * que a pessoa acabou de fazer, e ela clicaria de novo.
+     */
+    const contratoStatusProtegido = new Set(
+      osConhecidas
+        .filter((o) => o.contratoStatusAlteradoEm && o.contratoStatusAlteradoEm.getTime() > limiteProtecao)
         .map((o) => o.sgpOsId),
     );
     const statusLocalPorSgpId = new Map(osConhecidas.map((o) => [o.sgpOsId, o.status as OsStatus]));
@@ -284,7 +303,7 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
         clienteNome: raw.clienteNome,
         clienteDocumento: raw.clienteDocumento,
         contratoId: raw.contratoId,
-        contratoStatus: raw.contratoStatus,
+        ...(contratoStatusProtegido.has(raw.sgpOsId) ? {} : { contratoStatus: raw.contratoStatus }),
         protocolo: raw.protocolo,
         // conteudo nao tem protecao porque nao ha edicao local: a API do SGP
         // nao expoe escrita nesse campo (ver connector.ts addOsNote).

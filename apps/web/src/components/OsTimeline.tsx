@@ -4,7 +4,7 @@ import { ordensServicoApi } from "@/lib/filaApi";
 import { ApiError } from "@/lib/apiClient";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ErrorState";
-import { UserPlus, RefreshCw, MessageSquare, Camera, Pencil, type LucideIcon } from "lucide-react";
+import { UserPlus, RefreshCw, MessageSquare, Camera, Pencil, FileSignature, type LucideIcon } from "lucide-react";
 
 const ICONE_POR_TIPO: Record<OsEvento["tipo"], LucideIcon> = {
   atribuicao: UserPlus,
@@ -12,6 +12,9 @@ const ICONE_POR_TIPO: Record<OsEvento["tipo"], LucideIcon> = {
   anotacao: MessageSquare,
   foto: Camera,
   edicao: Pencil,
+  // Mudanca do status do CONTRATO — icone proprio pra nao se confundir com o
+  // `status` (que e o da OS) na mesma timeline.
+  contrato: FileSignature,
 };
 
 function mensagem(err: unknown): string {

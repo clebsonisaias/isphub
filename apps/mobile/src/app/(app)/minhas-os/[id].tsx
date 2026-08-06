@@ -10,6 +10,7 @@ import { apiFetch } from "@/lib/api";
 import { Button, Card, Field, Muted, Pill, Screen, SectionLabel, Title, type PillTone } from "@/components/ui";
 import { colors, font, space } from "@/theme/tokens";
 import { useAcoesOs } from "@/features/minhas-os/acoes";
+import { AcaoContratoStatus } from "@/features/minhas-os/acao-contrato-status";
 import { ConexaoStatus } from "@/features/minhas-os/conexao-status";
 import { FichaSgpComoChegar, FichaSgpConexao, FichaSgpContrato, useFichaSgp } from "@/features/minhas-os/ficha-sgp";
 import { useCriarConversa } from "@/features/chat/hooks";
@@ -52,13 +53,13 @@ function proximaAcao(status: OsStatus): { label: string; alvo: OsStatus | "acami
 
 export default function DetalheOs() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { token } = useAuth();
+  const { token, usuario } = useAuth();
   const router = useRouter();
   const { modulos } = useModulos();
   const temProvisionamento = modulos.some((m) => m.id === "provisionamento");
   const temChat = modulos.some((m) => m.id === "chat");
   const [nota, setNota] = useState("");
-  const { marcarACaminho, mudarStatus, anotar } = useAcoesOs(id);
+  const { marcarACaminho, mudarStatus, anotar, mudarContratoStatus } = useAcoesOs(id);
   const { garantirConversaDeOs } = useCriarConversa();
 
   const query = useQuery({
@@ -192,6 +193,20 @@ export default function DetalheOs() {
                 ONU na mão. O cabeçalho mostra sinal e plano sem precisar abrir. */}
             <FichaSgpConexao ficha={ficha} carregando={carregandoFicha} erro={erroFicha} />
             <FichaSgpContrato ficha={ficha} carregando={carregandoFicha} erro={erroFicha} />
+
+            {/*
+              Reativar contrato — a acao que faltava pra quem esta na porta do
+              cliente. So aparece quando o papel de fato alcanca: `alvosPermitidos`
+              e a MESMA funcao que o servidor usa pra recusar, entao a tela nunca
+              oferece o que a API nega. Pro tecnico isso significa exatamente um
+              caso: contrato Inativo.
+            */}
+            <AcaoContratoStatus
+              os={os}
+              role={usuario?.role}
+              executando={mudarContratoStatus.isPending}
+              onAplicar={(codigo) => mudarContratoStatus.mutate(codigo)}
+            />
 
             {/* Anotacao */}
             <View style={{ gap: space.sm }}>

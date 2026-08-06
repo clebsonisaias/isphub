@@ -126,7 +126,7 @@ test("fluxo despacho -> status: marcar a caminho e concluir uma OS, refletindo n
   await expect(statusBadge).toHaveText("A caminho");
 
   // 2) Mudar status para concluida.
-  await dialog.getByRole("combobox").first().selectOption({ label: "Concluida" });
+  await dialog.getByLabel("Novo status da OS").selectOption({ label: "Concluida" });
   await dialog.getByRole("button", { name: "Atualizar status" }).click();
   await expect(statusBadge).toHaveText("Concluida");
 

@@ -325,6 +325,16 @@ export interface ErpConnector {
   obterStatusOs(sgpOsId: string): Promise<number | string | null>;
 
   /**
+   * Muda o status do CONTRATO no ERP (nao o da OS).
+   *
+   * `status` e o codigo do REST (1..7 — ver STATUS_CONTRATO em
+   * contratoStatus.ts), que NAO e o mesmo conjunto da coluna do banco do SGP:
+   * no REST 3=Cancelado, na coluna 5=Cancelado. Mandar o numero errado muda o
+   * contrato pro status errado sem devolver erro nenhum.
+   */
+  alterarStatusContrato(contratoId: string, status: number): Promise<void>;
+
+  /**
    * Adiciona uma anotacao/andamento na OS.
    *
    * Nao existe contraparte de EDICAO da descricao (`conteudo`) da OS: a API do

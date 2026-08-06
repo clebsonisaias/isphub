@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Alert } from "react-native";
-import type { OsStatus } from "@isphub/shared";
+import type { CodigoStatusContrato, OsStatus } from "@isphub/shared";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
@@ -51,5 +51,17 @@ export function useAcoesOs(osId: string) {
     onError: avisarFalha("salvar a anotação"),
   });
 
-  return { marcarACaminho, mudarStatus, anotar };
+  /**
+   * Status do CONTRATO (nao o da OS). Pro tecnico so existe uma transicao —
+   * Inativo -> Ativo —, e quem decide isso e o servidor: a tela oferece o que
+   * `alvosPermitidos` disser, e a API recusa com 403 o que passar.
+   */
+  const mudarContratoStatus = useMutation({
+    mutationFn: (status: CodigoStatusContrato) =>
+      apiFetch<void>(`/ordens-servico/${osId}/contrato-status`, { method: "POST", token, body: { status } }),
+    onSuccess: aoMudar,
+    onError: avisarFalha("mudar o status do contrato"),
+  });
+
+  return { marcarACaminho, mudarStatus, anotar, mudarContratoStatus };
 }

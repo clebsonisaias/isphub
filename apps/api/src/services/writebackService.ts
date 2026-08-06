@@ -1,9 +1,14 @@
 import {
+  MOTIVO_RECUSA_TEXTO,
   OS_STATUS_LABEL,
   OsStatus,
+  STATUS_CONTRATO,
   SgpOsStatus,
   UserRole,
+  rotuloDoTexto,
   toSgpOsStatus,
+  transicaoPermitida,
+  type CodigoStatusContrato,
   type OsEventoTipo,
   type OsFichaSgp,
   type RealtimeEventoTipo,
@@ -153,6 +158,74 @@ export async function mudarStatus(ordemServicoId: string, novoStatus: OsStatus, 
     }),
     evento(os.id, "status", autorId, descricao),
   ]);
+  notificarTecnico(osAtualizada.tecnicoId, "os-alterada", os.id);
+  return osAtualizada;
+}
+
+
+/**
+ * Muda o status do CONTRATO no SGP, a partir de uma OS.
+ *
+ * TRES coisas acontecem aqui, nesta ordem, e a ordem importa:
+ *
+ * 1. VALIDA papel + transicao ANTES de qualquer chamada. Cancelar um contrato
+ *    derruba o servico de um cliente real — a recusa tem que vir antes da
+ *    escrita, nao depois. A regra vive em packages/shared (`transicaoPermitida`)
+ *    porque a TELA precisa da MESMA resposta pra decidir o que oferecer; duas
+ *    copias divergiriam e a tela ofereceria o que a API recusa.
+ *
+ * 2. ESCREVE no SGP. Falhou, nada muda no espelho — o contrario deixaria o
+ *    ISPhub afirmando um status que o ERP nao tem.
+ *
+ * 3. GRAVA espelho + trilha na MESMA transacao. A implementacao de referencia
+ *    registra em comentario um incidente por "mudancas via URA sem rastro":
+ *    aqui o evento nasce junto, nao como refinamento.
+ */
+export async function alterarStatusContrato(
+  ordemServicoId: string,
+  alvo: CodigoStatusContrato,
+  autorId: string,
+  role: UserRole,
+) {
+  const { os, connector } = await loadOsWithConnector(ordemServicoId);
+
+  if (!os.contratoId) {
+    throw new HttpError(409, "Esta OS nao tem contrato vinculado no SGP");
+  }
+
+  const veredito = transicaoPermitida(role, os.contratoStatus, alvo);
+  if (!veredito.permitido) {
+    /*
+     * 403, nao 400: o pedido esta bem formado e o alvo e valido — o que nao
+     * alcanca e o papel de quem pediu (ou o estado de onde parte). 400 diria
+     * "voce escreveu errado", mandando a pessoa corrigir o que esta certo.
+     */
+    throw new HttpError(403, MOTIVO_RECUSA_TEXTO[veredito.motivo]);
+  }
+
+  const de = rotuloDoTexto(os.contratoStatus);
+  const para = STATUS_CONTRATO[alvo];
+
+  await chamarSgp(() => connector.alterarStatusContrato(os.contratoId!, alvo));
+
+  const [osAtualizada] = await prisma.$transaction([
+    prisma.ordemServico.update({
+      where: { id: os.id },
+      data: {
+        /*
+         * Grava o ROTULO canonico, nao o texto cru: o proximo sync traz o texto
+         * real do SGP e sobrescreve este. Ate la, a tela mostra o que a pessoa
+         * acabou de escolher em vez do valor antigo — e `contratoStatusAlteradoEm`
+         * segura o sync por 5 min, porque o SGP aceita a escrita mas a leitura
+         * seguinte ainda devolve o antigo por alguns ciclos.
+         */
+        contratoStatus: para,
+        contratoStatusAlteradoEm: new Date(),
+      },
+    }),
+    evento(os.id, "contrato", autorId, `Contrato ${os.contratoId}: ${de} → ${para}`),
+  ]);
+
   notificarTecnico(osAtualizada.tecnicoId, "os-alterada", os.id);
   return osAtualizada;
 }

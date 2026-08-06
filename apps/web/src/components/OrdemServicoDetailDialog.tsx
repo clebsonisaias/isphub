@@ -16,6 +16,7 @@ import { ProvedorBadge } from "@/components/ProvedorBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { SlaBadge } from "@/components/SlaBadge";
 import { ContratoStatusBadge } from "@/components/ContratoStatusBadge";
+import { ContratoStatusAcao } from "@/components/ContratoStatusAcao";
 import { FichaSgpConexao, FichaSgpIdentificacao, useFichaSgp } from "@/components/FichaSgpOs";
 import { ConexaoStatus } from "@/components/ConexaoStatus";
 import { OsTimeline } from "@/components/OsTimeline";
@@ -157,6 +158,21 @@ export function OrdemServicoDetailDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {/*
+          A acao fica no DETALHE, nao no badge: o badge tambem aparece no card
+          da fila e no popup do mapa, onde um controle de escrita no ERP seria
+          um clique acidental esperando acontecer.
+        */}
+        <ContratoStatusAcao
+          os={os}
+          onAtualizado={(atualizado) => {
+            // Mesmo padrao das outras acoes: atualiza o eco local (a tela reage
+            // na hora) e avisa o pai pra fila re-buscar.
+            setOs((prev) => ({ ...prev, contratoStatus: atualizado.contratoStatus }));
+            marcarMudanca();
+          }}
+        />
+
         <Tabs defaultValue="detalhes">
           <TabsList>
             <TabsTrigger value="detalhes">Detalhes</TabsTrigger>
@@ -214,6 +230,13 @@ export function OrdemServicoDetailDialog({
                 </Button>
 
                 <Select
+                  /*
+                   * Sem rotulo, este <select> so era alcancavel por
+                   * `combobox.first()` — que passou a casar com OUTRO seletor
+                   * assim que um novo apareceu antes dele no dialogo. Leitor de
+                   * tela tinha o mesmo problema, sem a saida do `.first()`.
+                   */
+                  aria-label="Novo status da OS"
                   value={novoStatus}
                   onChange={(e) => setNovoStatus(e.target.value as OsStatus)}
                   className="bg-secondary/40 px-2"
@@ -239,6 +262,7 @@ export function OrdemServicoDetailDialog({
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Despacho</p>
                   <div className="flex flex-wrap items-center gap-2">
                   <Select
+                    aria-label="Atribuir técnico"
                     value={tecnicoSelecionado}
                     onChange={(e) => setTecnicoSelecionado(e.target.value)}
                     className="flex-1 bg-secondary/40 px-2"

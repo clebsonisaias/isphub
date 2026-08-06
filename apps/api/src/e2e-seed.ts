@@ -212,6 +212,82 @@ async function main() {
   });
 
   /*
+   * OS com CONTRATO INATIVO: a UNICA origem que o tecnico pode mudar
+   * (Inativo -> Ativo). Com "Cancelado" ele seria barrado por motivo DIFERENTE,
+   * e o teste da regra de papel passaria sem provar nada.
+   */
+  await prisma.ordemServico.upsert({
+    where: { provedorId_sgpOsId: { provedorId: provedor.id, sgpOsId: "e2e-os-inativa" } },
+    create: {
+      provedorId: provedor.id,
+      sgpOsId: "e2e-os-inativa",
+      tipoOsId: tipo.id,
+      status: "aberta",
+      clienteNome: "Cliente Contrato Inativo",
+      contratoId: "5",
+      contratoStatus: "Inativo",
+      logradouro: "Rua do Inativo",
+      numero: "5",
+      cidade: "Natal",
+      // SEM lat/lng: e fixture de DIALOGO, nao de mapa. Com coordenada ela
+      // virava um SEGUNDO marcador de contrato irregular e a legenda do
+      // mapa.spec, que afirma "Contrato irregular (1)", passava a ver 2.
+      dataAgendamento: new Date("2026-12-31T12:00:00.000Z"),
+    },
+    update: {
+      status: "aberta",
+      clienteNome: "Cliente Contrato Inativo",
+      contratoStatus: "Inativo",
+      // Explicito, porque `create` nao roda em banco que ja tem a linha: sem
+      // isto a coordenada de uma rodada anterior sobrevive e a OS volta a ser
+      // um marcador no mapa.
+      lat: null,
+      lng: null,
+      // Explicito: sem isto a OS herdaria o tecnico deixado por outro spec e a
+      // janela de graca de um teste anterior — foi assim que o seed ja deixou
+      // de ser deterministico antes.
+      tecnicoId: tecnico.id,
+      contratoStatusAlteradoEm: null,
+    },
+  });
+
+  /*
+   * OS DESCARTAVEL para os testes que MUDAM o status do contrato.
+   *
+   * Existe porque mudar o contrato de uma OS que outro spec LE quebra aquele
+   * spec conforme a ORDEM da suite — foi exatamente o que aconteceu: os testes
+   * de admin mudavam a "Contrato Cancelado" e o mapa.spec, que conta o halo de
+   * contrato irregular, passava sozinho e falhava na suite.
+   *
+   * Sem lat/lng de proposito: assim nao vira marcador e nao entra na contagem
+   * do mapa. Sem tecnico: o tecnico nao a enxerga, entao mexer nela nao muda o
+   * que os testes de papel veem.
+   */
+  await prisma.ordemServico.upsert({
+    where: { provedorId_sgpOsId: { provedorId: provedor.id, sgpOsId: "e2e-os-mutavel" } },
+    create: {
+      provedorId: provedor.id,
+      sgpOsId: "e2e-os-mutavel",
+      tipoOsId: tipo.id,
+      status: "aberta",
+      clienteNome: "Cliente Contrato Mutavel",
+      contratoId: "6",
+      contratoStatus: "Inativo",
+      logradouro: "Rua do Mutavel",
+      numero: "6",
+      cidade: "Natal",
+      dataAgendamento: new Date("2026-12-31T12:00:00.000Z"),
+    },
+    update: {
+      status: "aberta",
+      clienteNome: "Cliente Contrato Mutavel",
+      contratoStatus: "Inativo",
+      tecnicoId: null,
+      contratoStatusAlteradoEm: null,
+    },
+  });
+
+  /*
    * Liga TODOS os modulos. O cabecalho tem que caber no PIOR caso — o numero
    * de itens de navegacao VARIA com os modulos, e com o padrao (`chat-clientes`
    * desligado) o seed tinha 7 itens enquanto producao tinha 8. Foi assim que
