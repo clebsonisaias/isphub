@@ -13,8 +13,10 @@ import {
   type LancamentoPublic,
   type LancamentoSituacao,
   type LancamentoTipo,
+  type OrigemLancamento,
   type Provedor,
 } from "@isphub/shared";
+import { useSearchParams } from "react-router-dom";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -84,6 +86,15 @@ const ROTULO_SITUACAO: Record<LancamentoSituacao, string> = {
 export function FinanceiroPage() {
   const { toast } = useToast();
 
+  /*
+   * O recorte vem da URL: as abas "Pontuais" e "Serviços" sao links pra esta
+   * mesma tela com parametro. Guardar o recorte so no estado tornaria a aba
+   * nao-compartilhavel e perderia o recorte no F5.
+   */
+  const [params, setParams] = useSearchParams();
+  const origem = (params.get("origem") as OrigemLancamento | null) ?? undefined;
+  const servico = params.get("servico") === "true" ? true : undefined;
+
   const [tipo, setTipo] = useState<LancamentoTipo>("receita");
   const [situacao, setSituacao] = useState<LancamentoSituacao | "todas">("todas");
   const [provedorId, setProvedorId] = useState("");
@@ -120,8 +131,10 @@ export function FinanceiroPage() {
       de: de || undefined,
       ate: ate || undefined,
       busca: busca.trim() || undefined,
+      origem,
+      servico,
     }),
-    [tipo, situacao, provedorId, categoriaId, de, ate, busca],
+    [tipo, situacao, provedorId, categoriaId, de, ate, busca, origem, servico],
   );
 
   const carregar = useCallback(async () => {
@@ -196,7 +209,7 @@ export function FinanceiroPage() {
             </Button>
           </div>
 
-          <FinanceiroTabs atual="lancamentos" />
+          <FinanceiroTabs atual={servico ? "servicos" : origem === "avulso" ? "pontuais" : "lancamentos"} />
         </header>
 
         <ResumoCabecalho resumo={resumo} carregando={carregando && !resumo} />
@@ -299,6 +312,20 @@ export function FinanceiroPage() {
                 </Button>
               )}
             </div>
+
+            {(origem || servico) && (
+              <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs">
+                <span className="font-medium">
+                  {servico ? "Só notas fiscais de serviço" : "Só lançamentos avulsos"}
+                </span>
+                <span className="text-muted-foreground">
+                  — é a mesma lista com um recorte, não outra tabela.
+                </span>
+                <Button variant="ghost" size="sm" className="ml-auto" onClick={() => setParams({})}>
+                  Ver todos
+                </Button>
+              </div>
+            )}
 
             {/* Chips de situacao. "Atrasados" e derivado, nao coluna. */}
             <div className="flex flex-wrap gap-1.5">

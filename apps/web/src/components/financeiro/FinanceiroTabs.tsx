@@ -3,6 +3,14 @@ import { cn } from "@/lib/utils";
 
 const ABAS = [
   { chave: "lancamentos", rotulo: "Lançamentos", to: "/financeiro" },
+  /*
+   * "Pontuais" e "Serviços" nao sao telas novas: sao a MESMA lista com um
+   * recorte. E assim na origem tambem — as duas abas dela compartilham a tabela
+   * `lancamentos_pontuais`, distinguidas por um campo. Duas telas quase iguais
+   * seriam duas coisas pra manter e um lugar a mais pra divergir.
+   */
+  { chave: "pontuais", rotulo: "Pontuais", to: "/financeiro?origem=avulso" },
+  { chave: "servicos", rotulo: "Serviços", to: "/financeiro?servico=true" },
   { chave: "recorrencias", rotulo: "Recorrências", to: "/financeiro/recorrencias" },
   { chave: "parcelados", rotulo: "Parcelados", to: "/financeiro/parcelados" },
   { chave: "provisoes", rotulo: "Provisões", to: "/financeiro/provisoes" },

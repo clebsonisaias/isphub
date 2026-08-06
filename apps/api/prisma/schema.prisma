@@ -897,6 +897,18 @@ model Lancamento {
 
   observacao String? @db.VarChar(500)
 
+  /// Numero da nota fiscal, boleto ou contrato. E por ele que se concilia com o
+  /// papel — sem campo proprio, isso ia parar na observacao e nao dava pra buscar.
+  numeroDocumento String? @db.VarChar(60)
+
+  /// Nota fiscal de SERVICO tomado.
+  ///
+  /// Um campo, nao uma tabela: e assim na origem tambem — "Pontuais" e
+  /// "Servicos" sao a MESMA tabela (`lancamentos_pontuais`), distinguidas por
+  /// `expense_type`. A doc deles registra isso explicitamente como divergencia
+  /// doc-codigo; aqui e o desenho declarado.
+  ehServico Boolean @default(false)
+
   /// Comprovante (bytes-in-postgres, mesmo padrao de Mensagem.anexoDados —
   /// inclusive o mesmo caminho de migracao pra S3/MinIO documentado la, que
   /// nao muda o contrato da API).
@@ -941,6 +953,7 @@ model Lancamento {
   @@index([status, vencimento])
   @@index([tipo, competencia])
   @@index([provedorId])
+  @@index([ehServico])
   @@map("lancamentos")
 }
 

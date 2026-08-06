@@ -122,6 +122,10 @@ export interface LancamentoPublic {
   categoriaCor: string | null;
 
   observacao: string | null;
+  numeroDocumento: string | null;
+  ehServico: boolean;
+  /** De onde a linha veio — derivado dos vinculos, nao gravado. */
+  origem: OrigemLancamento;
 
   temComprovante: boolean;
   comprovanteNome: string | null;
@@ -130,9 +134,25 @@ export interface LancamentoPublic {
   criadoEm: string;
 }
 
+/**
+ * De onde o lancamento veio. DERIVADO dos vinculos (recorrencia/parcelamento),
+ * nao uma coluna — gravar duplicaria a verdade e dava pra divergir.
+ */
+export const ORIGENS_LANCAMENTO = ["avulso", "recorrente", "provisao", "parcelado"] as const;
+export type OrigemLancamento = (typeof ORIGENS_LANCAMENTO)[number];
+
+export const ORIGEM_ROTULO: Record<OrigemLancamento, string> = {
+  avulso: "Avulso",
+  recorrente: "Recorrente",
+  provisao: "Provisão",
+  parcelado: "Parcelado",
+};
+
 export interface LancamentoInput {
   tipo: LancamentoTipo;
   descricao: string;
+  numeroDocumento?: string | null;
+  ehServico?: boolean;
   /** String, sempre. Aceita "1234.56" ou "1234,56". */
   valor: string;
   vencimento: string;
@@ -162,6 +182,10 @@ export interface LancamentoFiltro {
   de?: string;
   ate?: string;
   busca?: string;
+  /** Recorte por procedencia — "Pontuais" e a lista com `origem=avulso`. */
+  origem?: OrigemLancamento;
+  /** Nota fiscal de servico tomado — e a aba "Serviços". */
+  servico?: boolean;
 }
 
 /**

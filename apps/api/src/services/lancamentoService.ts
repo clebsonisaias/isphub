@@ -11,6 +11,7 @@ import {
   type LancamentoPublic,
   type LancamentoSituacao,
   type LancamentoStatus,
+  type OrigemLancamento,
 } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../middleware/errorHandler.js";
@@ -142,6 +143,11 @@ export const LANCAMENTO_SELECT = {
   provedorId: true,
   categoriaId: true,
   observacao: true,
+  numeroDocumento: true,
+  ehServico: true,
+  recorrenciaId: true,
+  parcelamentoId: true,
+  recorrencia: { select: { tipoProvisao: true } },
   comprovanteMime: true,
   comprovanteNome: true,
   criadoEm: true,
@@ -151,6 +157,22 @@ export const LANCAMENTO_SELECT = {
 } satisfies Prisma.LancamentoSelect;
 
 type LancamentoRow = Prisma.LancamentoGetPayload<{ select: typeof LANCAMENTO_SELECT }>;
+
+/**
+ * De onde a linha veio, DERIVADO dos vinculos.
+ *
+ * Nao e coluna de proposito: gravar "origem" ao lado das FKs criaria duas
+ * verdades sobre o mesmo fato, e a que diverge sempre e a denormalizada.
+ */
+export function origemDe(row: {
+  recorrenciaId: string | null;
+  parcelamentoId: string | null;
+  recorrencia: { tipoProvisao: unknown } | null;
+}): OrigemLancamento {
+  if (row.parcelamentoId) return "parcelado";
+  if (row.recorrenciaId) return row.recorrencia?.tipoProvisao ? "provisao" : "recorrente";
+  return "avulso";
+}
 
 export function toPublic(row: LancamentoRow, hoje: string = hojeIso()): LancamentoPublic {
   const vencimento = isoDeData(row.vencimento)!;
@@ -174,6 +196,9 @@ export function toPublic(row: LancamentoRow, hoje: string = hojeIso()): Lancamen
     categoriaNome: row.categoria?.nome ?? null,
     categoriaCor: row.categoria?.cor ?? null,
     observacao: row.observacao,
+    numeroDocumento: row.numeroDocumento,
+    ehServico: row.ehServico,
+    origem: origemDe(row),
     // Sem carregar os bytes: o mime so existe quando ha comprovante.
     temComprovante: row.comprovanteMime !== null,
     comprovanteNome: row.comprovanteNome,
@@ -210,6 +235,8 @@ export interface FiltroInterno {
   de?: string;
   ate?: string;
   busca?: string;
+  origem?: OrigemLancamento;
+  servico?: boolean;
 }
 
 /**
@@ -242,12 +269,32 @@ export function montarWhere(f: FiltroInterno, hoje: string = hojeIso()): Prisma.
     where.vencimento = { ...(where.vencimento as object), ...faixa };
   }
 
+  /*
+   * "Pontuais" da origem = lancamento avulso. Como `origem` e derivada, o
+   * filtro vira condicao sobre os VINCULOS — e por isso nao ha como ela
+   * divergir do que a lista mostra.
+   */
+  if (f.origem === "avulso") {
+    where.recorrenciaId = null;
+    where.parcelamentoId = null;
+  } else if (f.origem === "parcelado") {
+    where.parcelamentoId = { not: null };
+  } else if (f.origem === "recorrente") {
+    where.recorrencia = { is: { tipoProvisao: null } };
+  } else if (f.origem === "provisao") {
+    where.recorrencia = { is: { tipoProvisao: { not: null } } };
+  }
+
+  if (f.servico !== undefined) where.ehServico = f.servico;
+
   if (f.busca?.trim()) {
     const termo = f.busca.trim();
     const comoNumero = Number(termo);
     where.OR = [
       { descricao: { contains: termo, mode: "insensitive" } },
       { observacao: { contains: termo, mode: "insensitive" } },
+      // Conciliar com o papel comeca por procurar o numero da nota.
+      { numeroDocumento: { contains: termo, mode: "insensitive" } },
       // Buscar por "231" tem que achar o lancamento 231 — e como as pessoas
       // se referem a ele.
       ...(Number.isInteger(comoNumero) && comoNumero > 0 ? [{ numero: comoNumero }] : []),
@@ -270,6 +317,8 @@ export interface CriarArgs {
   provedorId?: string | null;
   categoriaId?: string | null;
   observacao?: string | null;
+  numeroDocumento?: string | null;
+  ehServico?: boolean;
   autorId: string;
 }
 
@@ -291,6 +340,8 @@ export async function criar(args: CriarArgs): Promise<LancamentoPublic> {
         provedorId: args.provedorId ?? null,
         categoriaId: args.categoriaId ?? null,
         observacao: args.observacao?.trim() || null,
+        numeroDocumento: args.numeroDocumento?.trim() || null,
+        ehServico: args.ehServico ?? false,
         criadoPorId: args.autorId,
       },
       select: LANCAMENTO_SELECT,
@@ -429,6 +480,8 @@ export interface EditarArgs {
   provedorId?: string | null;
   categoriaId?: string | null;
   observacao?: string | null;
+  numeroDocumento?: string | null;
+  ehServico?: boolean;
   autorId: string;
 }
 
@@ -479,6 +532,14 @@ export async function editar(args: EditarArgs): Promise<LancamentoPublic> {
   if (args.observacao !== undefined) {
     data.observacao = args.observacao?.trim() || null;
     detalhe.observacao = data.observacao;
+  }
+  if (args.numeroDocumento !== undefined) {
+    data.numeroDocumento = args.numeroDocumento?.trim() || null;
+    detalhe.numeroDocumento = data.numeroDocumento;
+  }
+  if (args.ehServico !== undefined) {
+    data.ehServico = args.ehServico;
+    detalhe.ehServico = args.ehServico;
   }
 
   return prisma.$transaction(async (tx) => {

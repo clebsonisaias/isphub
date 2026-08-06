@@ -65,6 +65,8 @@ export function LancamentoDialog({
   const [provedorId, setProvedorId] = useState("");
   const [categoriaId, setCategoriaId] = useState("");
   const [observacao, setObservacao] = useState("");
+  const [numeroDocumento, setNumeroDocumento] = useState("");
+  const [ehServico, setEhServico] = useState(false);
   const [salvando, setSalvando] = useState(false);
 
   // Repovoa a cada abertura: reaproveitar o estado do formulario anterior faria
@@ -79,6 +81,8 @@ export function LancamentoDialog({
       setProvedorId(lancamento.provedorId ?? "");
       setCategoriaId(lancamento.categoriaId ?? "");
       setObservacao(lancamento.observacao ?? "");
+      setNumeroDocumento(lancamento.numeroDocumento ?? "");
+      setEhServico(lancamento.ehServico);
     } else {
       setTipo(tipoInicial);
       setDescricao("");
@@ -87,6 +91,8 @@ export function LancamentoDialog({
       setProvedorId("");
       setCategoriaId("");
       setObservacao("");
+      setNumeroDocumento("");
+      setEhServico(false);
     }
   }, [aberto, lancamento, tipoInicial]);
 
@@ -107,6 +113,8 @@ export function LancamentoDialog({
         provedorId: provedorId || null,
         categoriaId: categoriaId || null,
         observacao: observacao.trim() || null,
+        numeroDocumento: numeroDocumento.trim() || null,
+        ehServico,
       };
       if (lancamento) {
         // `tipo` fica de fora na edicao: virar receita em despesa mudaria o
@@ -249,6 +257,37 @@ export function LancamentoDialog({
               </Select>
             </div>
           )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="fin-doc">Nota / documento</Label>
+              <Input
+                id="fin-doc"
+                placeholder="NF 1234, boleto, contrato…"
+                value={numeroDocumento}
+                onChange={(e) => setNumeroDocumento(e.target.value)}
+                maxLength={60}
+              />
+              <p className="text-xs text-muted-foreground">Aparece na busca.</p>
+            </div>
+            {tipo === "despesa" && (
+              <div className="space-y-1.5">
+                <Label htmlFor="fin-servico">Nota de serviço</Label>
+                <div className="flex h-10 items-center gap-2">
+                  <input
+                    id="fin-servico"
+                    type="checkbox"
+                    checked={ehServico}
+                    onChange={(e) => setEhServico(e.target.checked)}
+                    className="size-4 accent-primary"
+                  />
+                  <label htmlFor="fin-servico" className="text-sm text-muted-foreground">
+                    Serviço tomado
+                  </label>
+                </div>
+              </div>
+            )}
+          </div>
 
           <div className="space-y-1.5">
             <Label htmlFor="fin-obs">Observação</Label>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   FORMA_PAGAMENTO_ROTULO,
+  ORIGEM_ROTULO,
   formatarCompetencia,
   formatarDataIso,
   formatarMoeda,
@@ -211,6 +212,8 @@ export function LancamentoDetalheDialog({
             <Campo rotulo="Competência" valor={formatarCompetencia(dados.competencia)} />
             <Campo rotulo="Provedor" valor={dados.provedorNome ?? "—"} />
             <Campo rotulo="Categoria" valor={dados.categoriaNome ?? "—"} />
+            <Campo rotulo="Nota / documento" valor={dados.numeroDocumento ?? "—"} />
+            <Campo rotulo="Origem" valor={ORIGEM_ROTULO[dados.origem] + (dados.ehServico ? " · serviço" : "")} />
             {dados.pagoEm && <Campo rotulo="Pago em" valor={formatarDataIso(dados.pagoEm)} />}
             {dados.valorPago && (
               <Campo rotulo="Valor pago" valor={formatarMoeda(dados.valorPago)} />

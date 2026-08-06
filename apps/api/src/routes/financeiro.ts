@@ -7,6 +7,7 @@ import {
   TIPOS_PROVISAO,
   LANCAMENTO_STATUS,
   LANCAMENTO_TIPOS,
+  ORIGENS_LANCAMENTO,
   REGIMES,
   UserRole,
 } from "@isphub/shared";
@@ -53,6 +54,8 @@ const criarSchema = z.object({
   provedorId: z.string().uuid().nullish(),
   categoriaId: z.string().uuid().nullish(),
   observacao: z.string().trim().max(500).nullish(),
+  numeroDocumento: z.string().trim().max(60).nullish(),
+  ehServico: z.boolean().optional(),
 });
 
 const editarSchema = z.object({
@@ -63,6 +66,8 @@ const editarSchema = z.object({
   provedorId: z.string().uuid().nullish(),
   categoriaId: z.string().uuid().nullish(),
   observacao: z.string().trim().max(500).nullish(),
+  numeroDocumento: z.string().trim().max(60).nullish(),
+  ehServico: z.boolean().optional(),
 });
 
 const baixaSchema = z.object({
@@ -80,6 +85,8 @@ const filtroSchema = z.object({
   de: dataIso.optional(),
   ate: dataIso.optional(),
   busca: z.string().trim().max(100).optional(),
+  origem: z.enum(ORIGENS_LANCAMENTO).optional(),
+  servico: z.enum(["true", "false"]).optional().transform((v) => (v === undefined ? undefined : v === "true")),
   limite: z.coerce.number().int().min(1).max(lancamentos.LIMITE_PAGINA).optional(),
   offset: z.coerce.number().int().min(0).optional(),
 });

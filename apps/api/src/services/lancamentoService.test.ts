@@ -19,6 +19,7 @@ import {
   isoDeData,
   moeda,
   montarWhere,
+  origemDe,
   podeTransicionar,
   somarValores,
   toPublic,
@@ -218,7 +219,10 @@ describe("montarWhere", () => {
 
   it("busca por texto nao vira busca por numero", () => {
     const w = montarWhere({ busca: "aluguel" }, hoje);
-    expect(w.OR).toHaveLength(2); // descricao + observacao, sem o numero
+    // descricao + observacao + numeroDocumento — e NENHUM ramo por `numero`,
+    // que so entra quando o termo e um inteiro positivo.
+    expect(w.OR).toHaveLength(3);
+    expect(w.OR).not.toContainEqual(expect.objectContaining({ numero: expect.anything() }));
   });
 
   it("nao inventa filtro quando nada foi pedido", () => {
@@ -255,6 +259,11 @@ describe("regra do dinheiro — nenhum campo monetario sai como number", () => {
     provedorId: null,
     categoriaId: null,
     observacao: null,
+    numeroDocumento: null,
+    ehServico: false,
+    recorrenciaId: null,
+    parcelamentoId: null,
+    recorrencia: null,
     comprovanteMime: null,
     comprovanteNome: null,
     criadoEm: new Date("2026-08-01T09:00:00.000Z"),
@@ -307,5 +316,70 @@ describe("regra do dinheiro — nenhum campo monetario sai como number", () => {
     const vencido = { ...linha, status: "pendente" as const, pagoEm: null, valorPago: null };
     expect(toPublic(vencido, "2026-08-15").situacao).toBe("atrasado");
     expect(toPublic(vencido, "2026-08-15").status).toBe("pendente");
+  });
+});
+
+/*
+ * ORIGEM DERIVADA, nao gravada.
+ *
+ * Uma coluna "origem" ao lado das FKs seria uma segunda verdade sobre o mesmo
+ * fato — e a denormalizada e sempre a que diverge, porque nada obriga as duas a
+ * andarem juntas.
+ */
+describe("origemDe", () => {
+  const base = { recorrenciaId: null, parcelamentoId: null, recorrencia: null };
+
+  it("sem vinculo nenhum e avulso — o 'pontual' da origem", () => {
+    expect(origemDe(base)).toBe("avulso");
+  });
+
+  it("com parcelamento e parcelado", () => {
+    expect(origemDe({ ...base, parcelamentoId: "p1" })).toBe("parcelado");
+  });
+
+  it("com recorrencia SEM tipo de provisao e recorrente", () => {
+    expect(origemDe({ ...base, recorrenciaId: "r1", recorrencia: { tipoProvisao: null } })).toBe("recorrente");
+  });
+
+  it("com recorrencia COM tipo de provisao e provisao", () => {
+    expect(origemDe({ ...base, recorrenciaId: "r1", recorrencia: { tipoProvisao: "folha" } })).toBe("provisao");
+  });
+
+  it("parcelamento ganha da recorrencia — uma linha nao e as duas coisas", () => {
+    expect(
+      origemDe({ recorrenciaId: "r1", parcelamentoId: "p1", recorrencia: { tipoProvisao: "folha" } }),
+    ).toBe("parcelado");
+  });
+});
+
+describe("montarWhere — recorte por origem", () => {
+  const hoje = "2026-08-05";
+
+  it("avulso exige AUSENCIA dos dois vinculos", () => {
+    const w = montarWhere({ origem: "avulso" }, hoje);
+    expect(w.recorrenciaId).toBeNull();
+    expect(w.parcelamentoId).toBeNull();
+  });
+
+  it("provisao e recorrente se distinguem pelo tipo na recorrencia", () => {
+    expect(montarWhere({ origem: "provisao" }, hoje).recorrencia).toEqual({
+      is: { tipoProvisao: { not: null } },
+    });
+    expect(montarWhere({ origem: "recorrente" }, hoje).recorrencia).toEqual({
+      is: { tipoProvisao: null },
+    });
+  });
+
+  it("servico e um booleano, e `false` recorta de verdade", () => {
+    // `if (f.servico)` deixaria o `false` cair fora e a aba "nao-servico"
+    // mostraria tudo.
+    expect(montarWhere({ servico: true }, hoje).ehServico).toBe(true);
+    expect(montarWhere({ servico: false }, hoje).ehServico).toBe(false);
+    expect(montarWhere({}, hoje).ehServico).toBeUndefined();
+  });
+
+  it("a busca alcanca o numero do documento", () => {
+    const w = montarWhere({ busca: "NF-123" }, hoje);
+    expect(w.OR).toContainEqual({ numeroDocumento: { contains: "NF-123", mode: "insensitive" } });
   });
 });
