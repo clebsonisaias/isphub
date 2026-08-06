@@ -5,6 +5,7 @@ import { gsap, useGSAP } from "@/lib/gsapSetup";
 import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/lib/apiClient";
 import { BrandMark } from "@/components/BrandMark";
+import { CampoComBrilho } from "@/components/CampoComBrilho";
 import { GeoDecor } from "@/components/GeoDecor";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
@@ -54,6 +55,15 @@ export function LoginPage() {
   const [enviando, setEnviando] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const emailRef = useRef<HTMLInputElement>(null);
+  const painelRef = useRef<HTMLElement>(null);
+  const haloRef = useRef<HTMLDivElement>(null);
+  /*
+   * `quickTo` reusa UM tween em vez de criar outro a cada movimento do mouse —
+   * e a recomendacao do proprio GSAP pra seguidor de cursor. O componente de
+   * origem guardava a posicao em `useState`, o que re-renderiza a pagina
+   * inteira a cada quadro so pra mover um borrao decorativo.
+   */
+  const moverHalo = useRef<{ x: (v: number) => void; y: (v: number) => void } | null>(null);
 
   /*
    * Entrada com `from`, nao `fromTo` com `opacity-0` na classe: o estado de
@@ -66,6 +76,31 @@ export function LoginPage() {
     if (!formRef.current || !animarEntrada()) return;
     gsap.from(formRef.current, { opacity: 0, y: 16, duration: 0.5, delay: 0.45, ease: "power1.out" });
   }, []);
+
+  /**
+   * Prepara o seguidor do halo — na PRIMEIRA vez que o mouse entra, nao na
+   * montagem.
+   *
+   * `animarEntrada()` seria a porta errada aqui. Ela junta duas perguntas:
+   * "a aba esta escondida?" e "a pessoa pediu menos movimento?". A primeira
+   * importa pra animacao de ENTRADA, que dispara sozinha e sumiria com o
+   * requestAnimationFrame congelado. Pra um efeito de HOVER a pergunta nao faz
+   * sentido — quem passa o mouse esta, por definicao, olhando. Criar o quickTo
+   * na montagem com a aba em segundo plano o deixaria inexistente pra sempre
+   * naquela sessao, e o halo ficaria morto ate um F5. Medido: a aba do preview
+   * reporta `document.hidden = true` e o halo nao movia.
+   *
+   * O que continua valendo e `prefers-reduced-motion`: borrao perseguindo
+   * cursor e movimento.
+   */
+  function prepararHalo() {
+    if (moverHalo.current || !haloRef.current) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    moverHalo.current = {
+      x: gsap.quickTo(haloRef.current, "x", { duration: 0.5, ease: "power3" }),
+      y: gsap.quickTo(haloRef.current, "y", { duration: 0.5, ease: "power3" }),
+    };
+  }
 
   // Shake sutil ao errar — feedback imediato, sem depender so da cor do texto.
   useGSAP(
@@ -126,12 +161,44 @@ export function LoginPage() {
         painel: antes ela flutuava solta em volta do formulario, e os acentos
         decorativos apareciam perto de campo de dado.
       */}
-      <aside className="relative hidden overflow-hidden lg:flex lg:flex-col lg:justify-between lg:p-12 xl:p-16">
+      <aside
+        ref={painelRef}
+        className="group/painel relative hidden overflow-hidden lg:flex lg:flex-col lg:justify-between lg:p-12 xl:p-16"
+        onPointerMove={(e) => {
+          // So mouse: em toque o pointermove dispara uma vez e deixaria o halo
+          // parado num canto, parecendo defeito.
+          if (e.pointerType !== "mouse" || !painelRef.current) return;
+          prepararHalo();
+          if (!moverHalo.current) return; // reduced-motion: o halo fica parado
+          const r = painelRef.current.getBoundingClientRect();
+          moverHalo.current.x(e.clientX - r.left - 250);
+          moverHalo.current.y(e.clientY - r.top - 250);
+        }}
+      >
         <div
           aria-hidden
           className="absolute inset-0 opacity-[0.14]"
           style={{ background: "linear-gradient(135deg, var(--brand-from), var(--brand-to))" }}
         />
+
+        {/*
+          O halo. Cor da MARCA (--brand-from/--brand-to), a mesma do gradiente
+          acima — o componente de origem usava roxo/azul/rosa proprios, o que
+          seria trocar a paleta da tela.
+
+          Anima so `transform` (via quickTo) e opacidade: nada que force
+          recalculo de layout a cada quadro.
+        */}
+        <div
+          ref={haloRef}
+          aria-hidden
+          className="pointer-events-none absolute left-0 top-0 size-[500px] rounded-full opacity-0 blur-3xl transition-opacity duration-300 group-hover/painel:opacity-100 motion-reduce:hidden"
+          style={{
+            background:
+              "radial-gradient(circle, color-mix(in oklab, var(--brand-to) 45%, transparent) 0%, transparent 70%)",
+          }}
+        />
+
         <GeoDecor variant="hero" />
 
         <div className="relative z-10">
@@ -188,6 +255,7 @@ export function LoginPage() {
           <form ref={formRef} onSubmit={handleSubmit} className="flex flex-col gap-5" aria-busy={enviando}>
             <div className="flex flex-col gap-2">
               <Label htmlFor="email">E-mail</Label>
+              <CampoComBrilho>
               <Input
                 id="email"
                 ref={emailRef}
@@ -203,10 +271,12 @@ export function LoginPage() {
                 // com frequencia no celular. Nao mexo no Input compartilhado.
                 className="h-11"
               />
+              </CampoComBrilho>
             </div>
 
             <div className="flex flex-col gap-2">
               <Label htmlFor="senha">Senha</Label>
+              <CampoComBrilho>
               <div className="relative">
                 <Input
                   id="senha"
@@ -237,6 +307,7 @@ export function LoginPage() {
                   {mostrarSenha ? <EyeOff className="size-[18px]" aria-hidden /> : <Eye className="size-[18px]" aria-hidden />}
                 </button>
               </div>
+              </CampoComBrilho>
               {capsLigado && (
                 <p className="flex items-center gap-1.5 text-xs text-warning" role="status">
                   <AlertCircle className="size-3.5 shrink-0" aria-hidden />
@@ -255,7 +326,18 @@ export function LoginPage() {
               </p>
             )}
 
-            <Button type="submit" variant="brand" size="lg" disabled={enviando} className="mt-1">
+            {/*
+              A varredura do componente de origem, como classe LOCAL — sem nova
+              variante no Button compartilhado, porque o efeito e desta tela.
+              `overflow-hidden` prende o brilho dentro da pilula.
+            */}
+            <Button
+              type="submit"
+              variant="brand"
+              size="lg"
+              disabled={enviando}
+              className="group/entrar relative mt-1 overflow-hidden"
+            >
               {enviando ? (
                 <>
                   <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -263,6 +345,14 @@ export function LoginPage() {
                 </>
               ) : (
                 "Entrar"
+              )}
+              {!enviando && (
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 flex justify-center [transform:skew(-13deg)_translateX(-100%)] group-hover/entrar:duration-1000 group-hover/entrar:[transform:skew(-13deg)_translateX(100%)] motion-reduce:hidden"
+                >
+                  <span className="h-full w-8 bg-white/20" />
+                </span>
               )}
             </Button>
           </form>
