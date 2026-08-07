@@ -1,0 +1,56 @@
+name: CI
+
+# Roda em todo push e em todo PR. O repo tem 184 testes que, ate aqui, so
+# rodavam se alguem lembrasse — o que significa que uma regressao chegava em
+# producao sem nada barrar no caminho.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# Um push novo na mesma branch cancela a execucao anterior: o resultado que
+# importa e o do ultimo commit.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    name: typecheck · testes · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      # O @isphub/shared e consumido pelos outros workspaces ja compilado —
+      # sem este passo, typecheck e build dos demais falham por falta do dist/.
+      - name: Build do pacote compartilhado
+        run: npm run build:shared
+
+      # Os tipos do Prisma Client sao gerados, nao versionados: sem generate o
+      # typecheck da API nao enxerga model nenhum.
+      - name: Gerar Prisma Client
+        run: npm run prisma:generate -w @isphub/api
+
+      - name: Typecheck (api · web · mobile · shared)
+        run: npm run typecheck
+
+      - name: Testes da API
+        run: npm test -w @isphub/api
+
+      - name: Lint do web
+        run: npm run lint -w @isphub/web
+
+      # Build de verdade: pega erro que o typecheck sozinho nao pega (resolucao
+      # de assets, plugins do Vite, saida do tsc da API).
+      - name: Build de producao
+        run: npm run build
