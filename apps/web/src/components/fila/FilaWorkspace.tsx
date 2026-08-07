@@ -14,7 +14,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { cn } from "@/lib/utils";
 import { filaApi } from "@/lib/filaApi";
-import { useRealtime } from "@/lib/realtime";
+import { useRealtime, useRealtimeConectado } from "@/lib/realtime";
 import { categoriasApi, provedoresApi } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
 import { OrdemServicoDetailDialog } from "@/components/OrdemServicoDetailDialog";
@@ -41,6 +41,7 @@ import {
   Loader2,
   Info,
   RefreshCw,
+  WifiOff,
 } from "lucide-react";
 
 /**
@@ -140,6 +141,7 @@ export function FilaWorkspace({
   const [selecionado, setSelecionado] = useState<FilaItem | null>(null);
   const [refetch, setRefetch] = useState(0);
   const [atualizadoEm, setAtualizadoEm] = useState<number | null>(null);
+  const aoVivo = useRealtimeConectado();
   // "Aberta há" recalcula a cada minuto sem re-fetch.
   const [agora, setAgora] = useState(() => Date.now());
 
@@ -325,6 +327,11 @@ export function FilaWorkspace({
     filtros.prioridade !== "todas" ||
     filtros.categoriaId !== "todas" ||
     filtros.provedorId !== "todos" ||
+    // `tecnicoId` faltava aqui, e o chip dele JA era renderizado — entao com so
+    // o filtro de Despacho ligado a lista vinha vazia e a tela dizia "Nenhuma
+    // OS aberta no momento". Ou seja, afirmava que nao havia OS quando havia,
+    // e ainda escondia o botao de limpar que resolveria.
+    filtros.tecnicoId !== "todos" ||
     busca.trim() !== "";
 
   function limparFiltros() {
@@ -387,6 +394,18 @@ export function FilaWorkspace({
             {atualizadoEm && !carregando && (
               <span className="text-xs text-muted-foreground" title={new Date(atualizadoEm).toLocaleString("pt-BR")}>
                 {segundosDesde(atualizadoEm, agora)}
+              </span>
+            )}
+            {/* Sem isto, um stream caido e indistinguivel de "nao houve
+                novidade" — a tela fica com cara de atualizada enquanto para de
+                receber OS nova. */}
+            {!aoVivo && (
+              <span
+                className="inline-flex items-center gap-1 text-xs font-medium text-warning"
+                title="A atualização automática caiu. A lista só muda ao clicar em Atualizar agora ou ao voltar para esta aba."
+              >
+                <WifiOff className="size-3.5" aria-hidden />
+                sem atualização automática
               </span>
             )}
           </div>

@@ -3,6 +3,7 @@ import {
   useContext,
   useEffect,
   useRef,
+  useState,
   type ReactNode,
 } from "react";
 import type { RealtimeEvento } from "@isphub/shared";
@@ -16,7 +17,7 @@ const BACKOFF_MAX_MS = 30_000;
 type Listener = (evento: RealtimeEvento) => void;
 
 const RealtimeContext = createContext<
-  { subscribe: (l: Listener) => () => void } | undefined
+  { subscribe: (l: Listener) => () => void; conectado: boolean } | undefined
 >(undefined);
 
 /**
@@ -34,6 +35,12 @@ const RealtimeContext = createContext<
 export function RealtimeProvider({ children }: { children: ReactNode }) {
   const { usuario } = useAuth();
   const listenersRef = useRef(new Set<Listener>());
+  /*
+   * Exposto porque um stream morto e INVISIVEL: a tela simplesmente para de
+   * receber novidade e continua com cara de atualizada. A queixa "abri a OS no
+   * SGP e nao apareceu, ja faz meia hora" tem essa forma exata.
+   */
+  const [conectado, setConectado] = useState(false);
 
   useEffect(() => {
     if (!usuario) return;
@@ -68,15 +75,25 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
             void conectar();
             return;
           }
-          // Renovacao recusada: quem desmonta isto e o AuthContext, ao ver a
-          // sessao cair. Sai sem reagendar pra nao martelar o servidor.
-          return;
+          /*
+           * Renovacao recusada. NAO sai mais em silencio: a recusa pode ser
+           * transitoria (blip de rede, 5xx no refresh) e a sessao continuar
+           * viva — e nesse caso o stream morria pra sempre, deixando a tela
+           * congelada ate alguem apertar F5.
+           *
+           * Cair no backoff comum resolve os dois casos: se a sessao morreu
+           * mesmo, o AuthContext desmonta isto em segundos; se foi blip, a
+           * proxima tentativa reconecta. O teto de 30s garante que "nao
+           * martelar o servidor" continua valendo.
+           */
+          throw new Error("renovacao de sessao recusada");
         }
 
         if (!res.ok || !res.body)
           throw new Error(`SSE respondeu ${res.status}`);
 
         backoffMs = BACKOFF_INICIAL_MS; // conectou -> reseta o backoff pra proxima queda
+        setConectado(true);
 
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
@@ -109,6 +126,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         // conexao caiu (rede, proxy, servidor reiniciando) — reconecta abaixo com backoff
       }
 
+      setConectado(false);
       if (parado) return;
       timeoutId = setTimeout(() => void conectar(), backoffMs);
       backoffMs = Math.min(backoffMs * 2, BACKOFF_MAX_MS);
@@ -118,6 +136,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
 
     return () => {
       parado = true;
+      setConectado(false);
       controller.abort();
       if (timeoutId) clearTimeout(timeoutId);
     };
@@ -131,10 +150,15 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <RealtimeContext.Provider value={{ subscribe }}>
+    <RealtimeContext.Provider value={{ subscribe, conectado }}>
       {children}
     </RealtimeContext.Provider>
   );
+}
+
+/** O stream esta de pe? Use pra avisar que a tela pode estar desatualizada. */
+export function useRealtimeConectado(): boolean {
+  return useContext(RealtimeContext)?.conectado ?? false;
 }
 
 /** Assina eventos SSE — o callback pode mudar a cada render sem precisar memoizar. */

@@ -9,6 +9,23 @@ import { copiarTexto, numeroWhatsApp } from "@/lib/clipboard";
 import { iconeCategoria } from "@/lib/categoriaIcons";
 import { Clock, ChevronRight, ChevronsUp, MapPin, MessageCircle, Copy, Check, UserPlus, HelpCircle } from "lucide-react";
 
+/**
+ * Chegou no espelho ha pouco? `criadoEm` e do ISPhub, nao do SGP: e literalmente
+ * "apareceu aqui agora".
+ *
+ * Existe porque a queixa recorrente e "abri no SGP e nao apareceu" — e varias
+ * vezes a OS ESTAVA na tela, so que numa faixa de SLA que a joga pro fim da
+ * lista. Uma marca resolve o "nao vi" sem mexer na ordenacao, que e por
+ * urgencia de proposito: quem esta estourando prazo tem que vir antes de quem
+ * acabou de chegar.
+ */
+const CHEGOU_AGORA_MS = 60 * 60_000;
+
+function chegouAgora(item: FilaItem): boolean {
+  const t = Date.parse(item.criadoEm ?? "");
+  return !Number.isNaN(t) && Date.now() - t < CHEGOU_AGORA_MS;
+}
+
 /** Cor da barra lateral do card, pelo semáforo de SLA. É a ÚNICA cor forte do
  * card — urgência manda; o resto dos badges fica neutro pra não competir. */
 function corRail(item: FilaItem): string {
@@ -184,6 +201,14 @@ export function FilaCard({ item, agora, onClick }: { item: FilaItem; agora: numb
       <div className="flex shrink-0 flex-col items-start gap-1.5 border-border/60 bg-secondary/30 p-3 sm:w-44 sm:border-r">
         <div className="flex w-full items-center justify-between gap-2">
           <span className="text-xs font-semibold tracking-tight text-muted-foreground">OS #{item.sgpOsId}</span>
+          {chegouAgora(item) && (
+            <span
+              className="inline-flex items-center rounded-full bg-primary/15 px-1.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-primary"
+              title="Chegou do SGP na última hora"
+            >
+              Nova
+            </span>
+          )}
           {alta && (
             <span className="inline-flex items-center gap-0.5 text-[0.7rem] font-bold text-foreground">
               <ChevronsUp className="size-3.5" />

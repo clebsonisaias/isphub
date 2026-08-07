@@ -288,6 +288,33 @@ async function main() {
   });
 
   /*
+   * Fora a lista acima, NADA sobrevive de uma rodada pra outra.
+   *
+   * O banco de teste e persistente, e varios specs criam OS pelo mock
+   * (`/_test/os`). Antes elas sumiam por acidente: a reconciliacao tratava a
+   * resposta vazia do SGP como "removida" e cancelava tudo que nao estivesse no
+   * mock. Quando essa reconciliacao foi corrigida (ela cancelava OS viva em
+   * producao), o lixo passou a se acumular aberto, empurrando os cards das
+   * fixtures pra segunda pagina — e specs que passavam sozinhos falhavam na
+   * suite.
+   *
+   * Determinismo do seed nao pode depender de efeito colateral de outra parte
+   * do sistema. Aqui e explicito.
+   */
+  const FIXTURES = [
+    "e2e-os-1",
+    "e2e-os-retirada",
+    "e2e-os-cancelada",
+    "e2e-os-sem-tipo",
+    "e2e-os-inativa",
+    "e2e-os-mutavel",
+  ];
+  const { count: descartadas } = await prisma.ordemServico.deleteMany({
+    where: { provedorId: provedor.id, sgpOsId: { notIn: FIXTURES } },
+  });
+  if (descartadas > 0) console.log(`  ${descartadas} OS de rodadas anteriores descartadas`);
+
+  /*
    * Liga TODOS os modulos. O cabecalho tem que caber no PIOR caso — o numero
    * de itens de navegacao VARIA com os modulos, e com o padrao (`chat-clientes`
    * desligado) o seed tinha 7 itens enquanto producao tinha 8. Foi assim que

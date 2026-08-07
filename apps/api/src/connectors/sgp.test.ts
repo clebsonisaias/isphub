@@ -1792,38 +1792,81 @@ describe("obterStatusOs — a pergunta ESTRITA (usada pra reconciliar OS fora da
   });
 
   /**
-   * O contrato de erro deste metodo e a unica coisa entre uma instabilidade do
-   * SGP e a fila do provedor sendo cancelada em massa: a reconciliacao de
-   * status marca OS como CANCELADA quando ele responde `null`. Por isso erro
-   * de transporte PRECISA propagar — quem chama trata como "sem evidencia".
+   * O retorno deste metodo autoriza o sync a CANCELAR a OS, e cancelar tira o
+   * cliente da fila. Por isso ele nao devolve mais `number | string | null`: o
+   * `null` significava ao mesmo tempo "nao existe" e "nao entendi a resposta".
    *
-   * Era `osExisteNoSgp(): boolean` — respondia "sim, existe" pra OS fechada
-   * (que existe, so nao esta mais aberta), e o chamador antigo tratava "existe"
-   * como "nao mexe". Por isso OS fechada no SGP nunca saia da fila do ISPhub.
+   * Em ago/2026 so o segundo caso acontecia em producao, e o sync cancelou as
+   * OS 96770, 96799 e 96821 — que o SGP estava listando no mesmo minuto.
    */
-  it("resposta vazia e bem-sucedida => null (a OS realmente nao esta la)", async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse({ ordens_servicos: [] }));
-    expect(await createSgpConnector(creds).obterStatusOs("999")).toBeNull();
-  });
-
-  it("OS encontrada => devolve o status bruto (nao um booleano)", async () => {
+  it("OS encontrada => 'encontrada' com o status bruto", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse([{ os_id: 6755, os_status: 1 }]));
-    expect(await createSgpConnector(creds).obterStatusOs("6755")).toBe(1);
+    expect(await createSgpConnector(creds).obterStatusOs("6755")).toEqual({
+      tipo: "encontrada",
+      statusBruto: 1,
+    });
   });
 
   it("OS encontrada so com rotulo textual => devolve o texto", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse([{ os_id: 6755, status: "Encerrada" }]));
-    expect(await createSgpConnector(creds).obterStatusOs("6755")).toBe("Encerrada");
+    expect(await createSgpConnector(creds).obterStatusOs("6755")).toEqual({
+      tipo: "encontrada",
+      statusBruto: "Encerrada",
+    });
   });
 
-  it("erro 500 PROPAGA — nunca vira `null`, senao o sync cancelaria OS viva", async () => {
+  it("404 => 'ausente': a UNICA prova de que o id nao existe mais", async () => {
+    // Antes o 404 virava excecao e era engolido pelo `catch` de quem chamava —
+    // ou seja, a unica evidencia boa era a unica que nao fazia nada.
+    fetchMock.mockResolvedValueOnce(new Response("nao encontrado", { status: 404 }));
+    expect(await createSgpConnector(creds).obterStatusOs("999")).toEqual({ tipo: "ausente" });
+  });
+
+  it("envelope desconhecido => 'indeterminado', NUNCA ausente", async () => {
+    // ESTE e o caso que cancelava OS viva. `asArray` nao acha nenhuma das
+    // chaves conhecidas e devolve [] — indistinguivel de "nao existe".
+    const r = await (async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ ordemservico: { os_id: 96821, os_status: 2 } }));
+      return createSgpConnector(creds).obterStatusOs("96821");
+    })();
+    expect(r.tipo).toBe("indeterminado");
+  });
+
+  it("o motivo do indeterminado carrega as CHAVES do envelope — nunca os valores", async () => {
+    // E o que vai revelar o formato real em producao sem eu chamar o SGP. So
+    // chaves: o payload traz nome, CPF/CNPJ, endereco e telefone do assinante.
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ ordemservico: { cliente_nome: "Fulano de Tal", cliente_cpf: "12345678900" } }),
+    );
+    const r = await createSgpConnector(creds).obterStatusOs("96821");
+    if (r.tipo !== "indeterminado") throw new Error("esperado indeterminado");
+    expect(r.motivo).toContain("ordemservico");
+    expect(r.motivo).not.toContain("Fulano");
+    expect(r.motivo).not.toContain("12345678900");
+  });
+
+  it("lista vazia num envelope CONHECIDO tambem nao cancela", async () => {
+    /*
+     * Decisao consciente, e com custo: `{ordens_servicos: []}` parece dizer "a
+     * OS nao esta la", e antes era tratado assim. Mas o SGP ja se contradisse —
+     * devolveu OS na listagem e "vazio" na consulta individual —, entao vazio
+     * nao e prova. So 404 e.
+     *
+     * O custo: OS realmente removida fica na fila ate alguem resolver. E o lado
+     * certo de errar, e o log de formato dira se esse caso acontece de verdade.
+     */
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ordens_servicos: [] }));
+    expect((await createSgpConnector(creds).obterStatusOs("999")).tipo).toBe("indeterminado");
+  });
+
+  it("erro 500 => 'indeterminado' (instabilidade nao e ausencia)", async () => {
     fetchMock.mockResolvedValueOnce(new Response("erro interno", { status: 500 }));
-    await expect(createSgpConnector(creds).obterStatusOs("6755")).rejects.toThrow();
+    expect((await createSgpConnector(creds).obterStatusOs("6755")).tipo).toBe("indeterminado");
   });
 
-  it("timeout/rede fora PROPAGA — mesma razao", async () => {
+  it("timeout/rede fora => 'indeterminado', mesma razao", async () => {
     fetchMock.mockRejectedValueOnce(new Error("network down"));
-    await expect(createSgpConnector(creds).obterStatusOs("6755")).rejects.toThrow();
+    expect((await createSgpConnector(creds).obterStatusOs("6755")).tipo).toBe("indeterminado");
   });
 });
 

@@ -265,6 +265,26 @@ export interface ProvisionarOnuResultado {
 }
 
 /**
+ * Resposta de `obterStatusOs`. Tres estados, porque so UM deles autoriza mexer
+ * na OS — e antes disso os tres cabiam num `null` so.
+ *
+ * `indeterminado` NAO e um erro a ser tratado depois: e a resposta honesta pra
+ * "perguntei e nao entendi o que voltou". Quem chama tem que poder distinguir
+ * isso de "a OS nao existe", senao um envelope que o parser nao reconhece vira
+ * cancelamento de atendimento de cliente.
+ */
+export type ResultadoStatusOs =
+  /** O SGP devolveu a OS. `statusBruto` e o valor cru, pra `mapSgpOsStatus`. */
+  | { tipo: "encontrada"; statusBruto: number | string }
+  /** Prova POSITIVA de ausencia: o SGP respondeu 404 pra este id. */
+  | { tipo: "ausente" }
+  /**
+   * Nao da pra afirmar nada: falha de transporte, envelope fora do formato
+   * conhecido, ou registro sem campo de status. Nunca justifica escrita.
+   */
+  | { tipo: "indeterminado"; motivo: string };
+
+/**
  * Contrato de integracao com um ERP. Cada ERP (SGP, e futuros) implementa esta
  * interface; o nucleo do ISPhub (sync + write-back) so conhece este contrato,
  * nunca os detalhes de cada API.
@@ -310,19 +330,27 @@ export interface ErpConnector {
    *  - `obterFichaOs` responde "o que consigo mostrar?" e e TOLERANTE: engole
    *    falha de uma fonte pra entregar a outra.
    *  - esta responde "o espelho ainda pode confiar no status que tem?" e NAO
-   *    engole nada: erro de transporte PROPAGA, porque o unico `null` aceitavel
-   *    e o de uma resposta bem-sucedida e vazia (a OS nao existe mais). Tratar
-   *    timeout como ausencia cancelaria OS viva em massa numa instabilidade do
-   *    ERP (ver a reconciliacao de status no sync).
+   *    engole nada.
    *
    * Era `osExisteNoSgp(): boolean` — respondia "existe?" quando a pergunta
    * certa e "ainda esta aberta?". Uma OS fechada EXISTE (o SGP a devolve),
    * entao o booleano dizia "sim" e a OS fechada nunca saia da fila de abertas
-   * do ISPhub. O status cru resolve os dois casos que importam: `null` (nao
-   * existe mais → cancelada aqui) e um codigo (usa `mapSgpOsStatus` pra saber
-   * se ainda esta aberta ou se fechou).
+   * do ISPhub.
+   *
+   * DEPOIS foi `Promise<number | string | null>`, e o `null` era a armadilha:
+   * ele significava ao mesmo tempo "a OS nao existe" e "nao consegui ler a
+   * resposta". Em producao (ago/2026) o segundo caso era o unico que acontecia
+   * — em 404 ciclos de sync este metodo NUNCA devolveu um status legivel — e o
+   * sync cancelou OS que o SGP estava listando naquele mesmo minuto (96770,
+   * 96799, 96821...). Cancelada some do Painel, e o cliente fica sem
+   * atendimento agendado.
+   *
+   * Por isso o retorno e DISCRIMINADO: "nao sei" tem que ser dizivel, e
+   * dizivel de forma que o compilador force quem chama a decidir o que fazer
+   * com ele. Um tipo que nao consegue expressar a duvida vira uma certeza
+   * falsa.
    */
-  obterStatusOs(sgpOsId: string): Promise<number | string | null>;
+  obterStatusOs(sgpOsId: string): Promise<ResultadoStatusOs>;
 
   /**
    * Muda o status do CONTRATO no ERP (nao o da OS).

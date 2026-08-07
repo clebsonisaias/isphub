@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { OsStatus } from "@isphub/shared";
-import { camposEnderecoDoListado, contratosParaBackfillGeo, deveAvisarMudanca, reconciliarStatus } from "./syncService.js";
+import { OsStatus, SgpOsStatus } from "@isphub/shared";
+import {
+  camposEnderecoDoListado,
+  contratosParaBackfillGeo,
+  decidirSobreDesaparecida,
+  deveAvisarMudanca,
+  reconciliarStatus,
+} from "./syncService.js";
 
 describe("reconciliarStatus", () => {
   it("mantem Cancelada quando o SGP diz Concluida (SGP so tem 'Encerrada', sem distinguir cancelado)", () => {
@@ -94,5 +100,84 @@ describe("deveAvisarMudanca", () => {
 
   it("OS nova avisa mesmo com a flag de protegido (nao ha o que proteger)", () => {
     expect(deveAvisarMudanca(undefined, OsStatus.ABERTA, true)).toBe(true);
+  });
+});
+
+describe("decidirSobreDesaparecida — quando a OS some da varredura", () => {
+  const aberta = { status: OsStatus.ABERTA, ausenciasConsecutivas: 0 };
+
+  /*
+   * O TESTE QUE ESTE ARQUIVO NAO TINHA.
+   *
+   * Em ago/2026 o sync cancelou as OS 96770, 96799 e 96821 dizendo "nao existe
+   * mais no SGP" — enquanto o SGP as devolvia na varredura do mesmo minuto. A
+   * causa: a resposta da consulta individual nao era reconhecida pelo parser, e
+   * "nao entendi" era representado do mesmo jeito que "nao existe".
+   */
+  it("NAO mexe quando nao deu pra entender a resposta do SGP", () => {
+    const d = decidirSobreDesaparecida(
+      { tipo: "indeterminado", motivo: "envelope nao reconhecido" },
+      aberta,
+    );
+    expect(d.acao).toBe("nao_mexer");
+  });
+
+  it("nao cancela nem depois de MUITAS respostas indeterminadas seguidas", () => {
+    // Repetir uma duvida nao a transforma em prova. Se o formato do SGP mudar,
+    // a OS fica na fila para sempre — que e o lado certo de errar.
+    for (const vezes of [0, 1, 2, 3, 10, 99]) {
+      const d = decidirSobreDesaparecida(
+        { tipo: "indeterminado", motivo: "falha na consulta: timeout" },
+        { status: OsStatus.ABERTA, ausenciasConsecutivas: vezes },
+      );
+      expect(d.acao).toBe("nao_mexer");
+    }
+  });
+
+  it("um 404 sozinho ainda nao cancela — so conta", () => {
+    const d = decidirSobreDesaparecida({ tipo: "ausente" }, aberta);
+    expect(d).toEqual({ acao: "contar_ausencia", vezes: 1 });
+  });
+
+  it("o segundo 404 tambem nao cancela", () => {
+    const d = decidirSobreDesaparecida({ tipo: "ausente" }, { ...aberta, ausenciasConsecutivas: 1 });
+    expect(d).toEqual({ acao: "contar_ausencia", vezes: 2 });
+  });
+
+  it("o terceiro 404 seguido cancela", () => {
+    const d = decidirSobreDesaparecida({ tipo: "ausente" }, { ...aberta, ausenciasConsecutivas: 2 });
+    expect(d.acao).toBe("fechar");
+    if (d.acao === "fechar") expect(d.status).toBe(OsStatus.CANCELADA);
+  });
+
+  it("reaparecer no meio da contagem desarma o cancelamento", () => {
+    // Duas ausencias acumuladas e o SGP responde que ela esta aberta: nao basta
+    // "nao cancelar", tem que ZERAR — senao o proximo 404 isolado cancelaria.
+    const d = decidirSobreDesaparecida(
+      { tipo: "encontrada", statusBruto: 0 },
+      { status: OsStatus.ABERTA, ausenciasConsecutivas: 2 },
+    );
+    expect(d.acao).toBe("zerar_contador");
+  });
+
+  it("encerrada no SGP fecha na hora, sem esperar repeticao", () => {
+    // Aqui a evidencia e direta e positiva: o SGP disse o status, e ele e
+    // fechado. Exigir 3 ciclos so deixaria OS morta entulhando a fila.
+    const d = decidirSobreDesaparecida(
+      { tipo: "encontrada", statusBruto: SgpOsStatus.ENCERRADA },
+      aberta,
+    );
+    expect(d.acao).toBe("fechar");
+    if (d.acao === "fechar") expect(d.status).toBe(OsStatus.CONCLUIDA);
+  });
+
+  it("OS ja cancelada aqui nao vira concluida quando o SGP diz Encerrada", () => {
+    // O SGP nao separa cancelado de concluido; o espelho separa. Delega a
+    // reconciliarStatus em vez de repetir a regra.
+    const d = decidirSobreDesaparecida(
+      { tipo: "encontrada", statusBruto: SgpOsStatus.ENCERRADA },
+      { status: OsStatus.CANCELADA, ausenciasConsecutivas: 0 },
+    );
+    if (d.acao === "fechar") expect(d.status).toBe(OsStatus.CANCELADA);
   });
 });

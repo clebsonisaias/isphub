@@ -1,4 +1,12 @@
-import { mapSgpOsStatus, sgpStatusReconhecido, OS_STATUS_ABERTOS, OsStatus, SgpOsStatus, type RawOs } from "@isphub/shared";
+import {
+  mapSgpOsStatus,
+  sgpStatusReconhecido,
+  OS_STATUS_ABERTOS,
+  OsStatus,
+  SgpOsStatus,
+  type RawOs,
+  type ResultadoStatusOs,
+} from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { OS_EXTERNA_WHERE, OS_INTERNA_WHERE } from "./equipeService.js";
 import { buildConnector } from "./erpConnectorService.js";
@@ -48,6 +56,19 @@ const GEO_BACKFILL_MAX_POR_SYNC = 30;
  * em regime normal a lista de candidatas por ciclo e de poucas unidades.
  */
 const DESAPARECIDAS_MAX_POR_SYNC = 50;
+
+/**
+ * Quantos 404 SEGUIDOS o SGP precisa dar pra que a OS seja cancelada aqui.
+ *
+ * Existe porque em ago/2026 o sync cancelou OS que o SGP estava listando no
+ * mesmo minuto — o parser nao reconhecia o envelope da consulta individual e
+ * "nao entendi" virava "nao existe". A causa daquilo foi corrigida no conector
+ * (`ResultadoStatusOs`), e isto e o cinto de seguranca: mesmo com prova
+ * positiva, um engano pontual nao tira o cliente da fila. Com o ciclo em 60s,
+ * 3 confirmacoes custam poucos minutos de atraso pra limpar OS realmente
+ * removida — e valem cada segundo comparadas a um atendimento perdido.
+ */
+const DESAPARECIMENTOS_PRA_CANCELAR = 3;
 
 /**
  * Apos consultar a geo de um contrato (com ou sem coordenada), so
@@ -122,6 +143,59 @@ export function reconciliarStatus(statusSgp: OsStatus, statusLocalAtual: OsStatu
   if (statusLocalAtual === OsStatus.CANCELADA && statusSgp === OsStatus.CONCLUIDA) return OsStatus.CANCELADA;
   if (statusLocalAtual === OsStatus.EM_DESLOCAMENTO && statusSgp === OsStatus.ABERTA) return OsStatus.EM_DESLOCAMENTO;
   return statusSgp;
+}
+
+/** O que fazer com uma OS que sumiu da varredura de abertas. */
+export type AcaoDesaparecida =
+  /** Sem evidencia — nao escreve nada. */
+  | { acao: "nao_mexer"; motivo: string }
+  /** Ausencia confirmada, mas ainda nao repetida o bastante pra agir. */
+  | { acao: "contar_ausencia"; vezes: number }
+  /** O SGP diz que ela esta viva: desarma qualquer contagem em andamento. */
+  | { acao: "zerar_contador"; statusBruto: number | string }
+  /** Sai da fila de abertas. */
+  | { acao: "fechar"; status: OsStatus; descricao: string };
+
+/**
+ * A regra que decide o destino de uma OS ausente da varredura — pura, porque
+ * e ela que erra caro: cancelar tira a OS do Painel e deixa um cliente sem
+ * atendimento agendado.
+ *
+ * A versao anterior morava dentro do laco do sync, misturada com `prisma`, e
+ * por isso nunca teve teste. Ela tratava "nao entendi a resposta" como "a OS
+ * nao existe" e cancelou OS que o SGP estava listando no mesmo minuto. Aqui os
+ * dois casos sao ramos diferentes e sao verificaveis sem banco.
+ */
+export function decidirSobreDesaparecida(
+  r: ResultadoStatusOs,
+  os: { status: OsStatus; ausenciasConsecutivas: number },
+): AcaoDesaparecida {
+  // Duvida nunca autoriza escrita — e o ramo mais importante desta funcao.
+  if (r.tipo === "indeterminado") return { acao: "nao_mexer", motivo: r.motivo };
+
+  if (r.tipo === "ausente") {
+    const vezes = os.ausenciasConsecutivas + 1;
+    if (vezes < DESAPARECIMENTOS_PRA_CANCELAR) return { acao: "contar_ausencia", vezes };
+    return {
+      acao: "fechar",
+      status: OsStatus.CANCELADA,
+      descricao: "Removida no SGP — saiu da fila do ISPhub",
+    };
+  }
+
+  const statusResolvido = mapSgpOsStatus(r.statusBruto);
+  // Contradiz a varredura, que se disse completa e nao trouxe esta OS. Nao e
+  // motivo pra fechar nada: ou o SGP mudou de ideia entre as duas chamadas, ou
+  // ha status nao mapeado aqui.
+  if (OS_STATUS_ABERTOS.includes(statusResolvido)) {
+    return { acao: "zerar_contador", statusBruto: r.statusBruto };
+  }
+  // Encerramento e prova positiva por si so — nao espera repeticao.
+  return {
+    acao: "fechar",
+    status: reconciliarStatus(statusResolvido, os.status),
+    descricao: `Encerrada no SGP (status "${r.statusBruto}") — saiu da fila do ISPhub`,
+  };
 }
 
 /**
@@ -230,6 +304,7 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
         statusAlteradoEm: true,
         observacaoAlteradaEm: true,
         contratoStatusAlteradoEm: true,
+        ausenciasConsecutivas: true,
       },
     });
     const limiteProtecao = Date.now() - CAMPO_PROTEGIDO_MS;
@@ -318,6 +393,12 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
         dataCadastro: raw.dataCadastro ? new Date(raw.dataCadastro) : null,
         dataAgendamento: raw.dataAgendamento ? new Date(raw.dataAgendamento) : null,
         tecnicoSgpNome: raw.tecnicoSgpNome,
+        /*
+         * Ver a OS na varredura zera a contagem de sumicos. E o UNICO ponto de
+         * reset, e ele e automatico: qualquer reaparecimento desarma o
+         * cancelamento em andamento, sem ninguem precisar lembrar disso.
+         */
+        ausenciasConsecutivas: 0,
       };
       await prisma.ordemServico.upsert({
         where: { provedorId_sgpOsId: { provedorId, sgpOsId: raw.sgpOsId } },
@@ -499,59 +580,70 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
       }
 
       for (const os of saiuDaFila) {
-        let statusBruto: number | string | null;
+        // `obterStatusOs` e nao `obterFichaOs`: a ficha e tolerante a falha de
+        // fonte (devolve o que conseguir), e usar o silencio dela como prova de
+        // ausencia transformaria instabilidade do SGP em cancelamento em massa.
+        let resposta: ResultadoStatusOs;
         try {
-          // `obterStatusOs` e nao `obterFichaOs`: a ficha e tolerante a falha
-          // de fonte (devolve o que conseguir, ou null), e usar null dela como
-          // prova de ausencia transformaria uma instabilidade do SGP em
-          // cancelamento em massa. Este metodo PROPAGA erro de transporte —
-          // cai no catch abaixo.
-          statusBruto = await connector.obterStatusOs(os.sgpOsId);
-        } catch {
-          // Falha na confirmacao = nenhuma evidencia. NAO mexe: marcar OS em
-          // massa por causa de uma instabilidade do SGP seria muito pior que
-          // deixar uma OS velha na fila.
+          resposta = await connector.obterStatusOs(os.sgpOsId);
+        } catch (e) {
+          // O conector do SGP nao lanca (converte tudo em ResultadoStatusOs),
+          // mas a INTERFACE nao garante isso pros outros — e uma excecao aqui
+          // abortaria o ciclo inteiro do provedor, nao so esta OS.
+          resposta = {
+            tipo: "indeterminado",
+            motivo: `conector lancou: ${e instanceof Error ? e.message : String(e)}`,
+          };
+        }
+        const decisao = decidirSobreDesaparecida(resposta, {
+          status: os.status as OsStatus,
+          ausenciasConsecutivas: os.ausenciasConsecutivas,
+        });
+
+        if (decisao.acao === "nao_mexer") {
+          console.warn(
+            `[sync] OS ${os.sgpOsId} do provedor ${provedorId}: sumiu da varredura mas nao deu pra ` +
+              `confirmar no SGP (${decisao.motivo}) — nao mexido.`,
+          );
           continue;
         }
 
-        let novoStatus: OsStatus;
-        let descricaoEvento: string;
-        if (statusBruto === null) {
-          // Nao existe mais no SGP — comportamento ja validado (contrato 1672).
-          novoStatus = OsStatus.CANCELADA;
-          descricaoEvento = "Removida no SGP — saiu da fila do ISPhub";
-        } else {
-          const statusResolvido = mapSgpOsStatus(statusBruto);
-          if (OS_STATUS_ABERTOS.includes(statusResolvido)) {
-            // Contradiz a varredura (que disse completa e nao trouxe esta OS).
-            // Nao mexe e grita: ou o SGP mudou de ideia entre as duas chamadas,
-            // ou ha algo nao mapeado aqui — merece atencao, nao um cancelamento.
-            console.warn(
-              `[sync] OS ${os.sgpOsId} do provedor ${provedorId}: sumiu da varredura de abertas mas ` +
-                `obterStatusOs devolveu status "${statusBruto}" (ainda aberto) — nao mexido, investigar.`,
-            );
-            continue;
-          }
-          novoStatus = reconciliarStatus(statusResolvido, os.status as OsStatus);
-          descricaoEvento = `Encerrada no SGP (status "${statusBruto}") — saiu da fila do ISPhub`;
+        if (decisao.acao === "contar_ausencia") {
+          await prisma.ordemServico.update({
+            where: { id: os.id },
+            data: { ausenciasConsecutivas: decisao.vezes },
+          });
+          console.warn(
+            `[sync] OS ${os.sgpOsId} do provedor ${provedorId}: 404 no SGP ` +
+              `(${decisao.vezes}/${DESAPARECIMENTOS_PRA_CANCELAR}) — mantida na fila ate confirmar.`,
+          );
+          continue;
+        }
+
+        if (decisao.acao === "zerar_contador") {
+          await prisma.ordemServico.update({ where: { id: os.id }, data: { ausenciasConsecutivas: 0 } });
+          console.warn(
+            `[sync] OS ${os.sgpOsId} do provedor ${provedorId}: sumiu da varredura de abertas mas ` +
+              `obterStatusOs devolveu status "${decisao.statusBruto}" (ainda aberto) — nao mexido, investigar.`,
+          );
+          continue;
         }
 
         await prisma.$transaction([
           prisma.ordemServico.update({
             where: { id: os.id },
-            data: { status: novoStatus, sincronizadoEm: new Date(), statusAlteradoEm: new Date() },
+            data: { status: decisao.status, sincronizadoEm: new Date(), statusAlteradoEm: new Date() },
           }),
           // Registra o MOTIVO: sem isto, a OS muda de status e ninguem sabe
           // por que — parece que alguem mexeu sem avisar.
           prisma.osEvento.create({
-            data: { ordemServicoId: os.id, tipo: "status", descricao: descricaoEvento },
+            data: { ordemServicoId: os.id, tipo: "status", descricao: decisao.descricao },
           }),
         ]);
         mexidas.push({ id: os.id, tecnicoId: os.tecnicoId });
         console.warn(
           `[sync] OS ${os.sgpOsId} do provedor ${provedorId} saiu da fila de abertas — ` +
-            `${statusBruto === null ? "nao existe mais no SGP" : `status bruto "${statusBruto}"`}, ` +
-            `virou ${novoStatus} no espelho.`,
+            `${decisao.descricao}, virou ${decisao.status} no espelho.`,
         );
       }
     }

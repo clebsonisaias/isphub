@@ -80,6 +80,7 @@ function osAberta(overrides: Partial<Record<string, unknown>> = {}) {
     tecnicoId: "tec-1",
     statusAlteradoEm: null,
     observacaoAlteradaEm: null,
+    ausenciasConsecutivas: 0,
     ...overrides,
   };
 }
@@ -137,7 +138,7 @@ describe("varredura incompleta — nao ha evidencia confiavel", () => {
 
 describe("varredura completa — reconcilia OS que saiu da fila de abertas", () => {
   it("OS fechada no SGP (status encerrada) vira CONCLUIDA, nao fica presa como aberta", async () => {
-    obterStatusOs.mockResolvedValue(1); // SgpOsStatus.ENCERRADA
+    obterStatusOs.mockResolvedValue({ tipo: "encontrada", statusBruto: 1 }); // ENCERRADA
 
     await syncProvedor(PROVEDOR_ID);
 
@@ -151,8 +152,30 @@ describe("varredura completa — reconcilia OS que saiu da fila de abertas", () 
     );
   });
 
-  it("OS removida do SGP (nao existe mais) vira CANCELADA — comportamento ja validado (contrato 1672)", async () => {
-    obterStatusOs.mockResolvedValue(null);
+  /*
+   * ESTE TESTE AFIRMAVA O BUG. Ele mockava `obterStatusOs` devolvendo `null` e
+   * exigia CANCELADA — mas `null` tambem era o que o conector devolvia quando
+   * nao reconhecia a resposta do SGP. Em producao (ago/2026) era SO isso que
+   * acontecia, e o sync cancelou OS que o SGP estava listando no mesmo minuto.
+   * Agora "nao existe" (404) e "nao entendi" sao respostas diferentes.
+   */
+  it("404 no SGP so cancela apos 3 ciclos seguidos — um sozinho apenas conta", async () => {
+    obterStatusOs.mockResolvedValue({ tipo: "ausente" });
+
+    await syncProvedor(PROVEDOR_ID);
+
+    expect($transaction).not.toHaveBeenCalled();
+    expect(ordemServicoUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { ausenciasConsecutivas: 1 } }),
+    );
+  });
+
+  it("o 3o 404 seguido cancela de verdade", async () => {
+    ordemServicoFindMany.mockImplementation(async (args: { select?: Record<string, unknown> }) => {
+      if (args?.select && "contratoId" in args.select && !("statusAlteradoEm" in args.select)) return [];
+      return [osAberta({ ausenciasConsecutivas: 2 })];
+    });
+    obterStatusOs.mockResolvedValue({ tipo: "ausente" });
 
     await syncProvedor(PROVEDOR_ID);
 
@@ -164,8 +187,14 @@ describe("varredura completa — reconcilia OS que saiu da fila de abertas", () 
     );
   });
 
-  it("obterStatusOs contradiz a varredura (ainda aberta no SGP) — nao mexe, so loga", async () => {
-    obterStatusOs.mockResolvedValue(0); // SgpOsStatus.ABERTA — contradiz "sumiu da varredura completa"
+  it("resposta que o conector nao entendeu NUNCA cancela, nem com o contador no limite", async () => {
+    // A regressao de producao, no nivel do sync: mesmo com 2 ausencias ja
+    // acumuladas, "indeterminado" nao pode empurrar a OS pro cancelamento.
+    ordemServicoFindMany.mockImplementation(async (args: { select?: Record<string, unknown> }) => {
+      if (args?.select && "contratoId" in args.select && !("statusAlteradoEm" in args.select)) return [];
+      return [osAberta({ ausenciasConsecutivas: 2 })];
+    });
+    obterStatusOs.mockResolvedValue({ tipo: "indeterminado", motivo: "envelope nao reconhecido" });
 
     await syncProvedor(PROVEDOR_ID);
 
@@ -173,7 +202,21 @@ describe("varredura completa — reconcilia OS que saiu da fila de abertas", () 
     expect(ordemServicoUpdate).not.toHaveBeenCalled();
   });
 
+  it("obterStatusOs contradiz a varredura (ainda aberta no SGP) — nao mexe, so loga", async () => {
+    obterStatusOs.mockResolvedValue({ tipo: "encontrada", statusBruto: 0 }); // ABERTA — contradiz a varredura
+
+    await syncProvedor(PROVEDOR_ID);
+
+    expect($transaction).not.toHaveBeenCalled();
+    // Zera o contador: o SGP acabou de dizer que ela esta viva.
+    expect(ordemServicoUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { ausenciasConsecutivas: 0 } }),
+    );
+  });
+
   it("erro de transporte em obterStatusOs — sem evidencia, NAO mexe (nunca cancela por instabilidade)", async () => {
+    // Conector que LANCA: a interface nao proibe, e uma excecao aqui nao pode
+    // derrubar o ciclo inteiro do provedor.
     obterStatusOs.mockRejectedValue(new Error("timeout"));
 
     const resultado = await syncProvedor(PROVEDOR_ID);
@@ -191,7 +234,7 @@ describe("varredura completa — reconcilia OS que saiu da fila de abertas", () 
       // mudar pra incluir Cancelada, o teste flagra a regressao aqui.
       return [osAberta({ status: OsStatus.CANCELADA })];
     });
-    obterStatusOs.mockResolvedValue(1);
+    obterStatusOs.mockResolvedValue({ tipo: "encontrada", statusBruto: 1 });
 
     await syncProvedor(PROVEDOR_ID);
 
@@ -201,7 +244,7 @@ describe("varredura completa — reconcilia OS que saiu da fila de abertas", () 
   });
 
   it("avisa em tempo real (SSE) quando reconcilia uma OS", async () => {
-    obterStatusOs.mockResolvedValue(1);
+    obterStatusOs.mockResolvedValue({ tipo: "encontrada", statusBruto: 1 });
 
     await syncProvedor(PROVEDOR_ID);
 

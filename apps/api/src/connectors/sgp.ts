@@ -12,6 +12,7 @@ import type {
   ProvisionarOnuInput,
   ProvisionarOnuResultado,
   RawOs,
+  ResultadoStatusOs,
   OsFichaSgp,
   RawOsType,
   SgpImagem,
@@ -1181,14 +1182,50 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
     },
 
     /**
-     * Sem `try`/`catch` de proposito: ver a nota do metodo na interface. `null`
-     * so quando o SGP respondeu e nao havia OS com esse id.
+     * Este metodo autoriza o sync a CANCELAR a OS no espelho, entao ele nunca
+     * pode dizer "ausente" sem prova.
+     *
+     * A versao anterior devolvia `number | string | null` e tratava `null` como
+     * "nao existe". So que `null` vinha de UM lugar so — `asArray` nao achar
+     * nenhuma das chaves conhecidas —, ou seja, de "nao entendi a resposta". E
+     * o 404, unica prova real de ausencia, virava excecao e era engolido pelo
+     * `catch` de quem chamava. A logica estava invertida: a evidencia boa nao
+     * agia e a evidencia nenhuma cancelava OS de cliente.
      */
-    async obterStatusOs(sgpOsId: string): Promise<number | string | null> {
-      const data = await sgpPostForm(creds, `/api/os/list/id/${encodeURIComponent(sgpOsId)}/`);
+    async obterStatusOs(sgpOsId: string): Promise<ResultadoStatusOs> {
+      const path = `/api/os/list/id/${encodeURIComponent(sgpOsId)}/`;
+      let data: any;
+      try {
+        data = await sgpPostForm(creds, path);
+      } catch (e) {
+        // 404 e a UNICA resposta que prova ausencia. Timeout, 500 ou recusa de
+        // credencial nao provam nada sobre a OS.
+        if (e instanceof SgpError && e.status === 404) return { tipo: "ausente" };
+        const motivo = e instanceof Error ? e.message : String(e);
+        return { tipo: "indeterminado", motivo: `falha na consulta: ${motivo}` };
+      }
+
       const [item] = asArray(data, "ordens_servicos", "resultados", "results");
-      if (!item) return null;
-      return statusCodeDe(item);
+      if (!item) {
+        /*
+         * So as CHAVES, nunca os valores: este payload carrega nome, CPF/CNPJ,
+         * endereco e telefone do assinante. E e justamente a chave que falta
+         * descobrir — se aparecer um nome novo aqui, ele entra na lista do
+         * `asArray` acima e este caso seca.
+         */
+        const formato =
+          data && typeof data === "object" && !Array.isArray(data)
+            ? JSON.stringify(Object.keys(data).sort())
+            : Array.isArray(data)
+              ? "[] (array vazio)"
+              : String(data);
+        console.warn(
+          `[sgp] ${path}: resposta sem OS reconhecivel — envelope ${formato}. ` +
+            "NAO tratado como ausencia (so 404 prova isso).",
+        );
+        return { tipo: "indeterminado", motivo: `envelope nao reconhecido: ${formato}` };
+      }
+      return { tipo: "encontrada", statusBruto: statusCodeDe(item) };
     },
 
     async addOsNote(sgpOsId: string, texto: string): Promise<void> {

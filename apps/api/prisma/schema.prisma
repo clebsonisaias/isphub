@@ -207,6 +207,12 @@ model OrdemServico {
   /// janela de graca do statusAlteradoEm: o SGP aceita a escrita mas a leitura
   /// seguinte ainda devolve o valor antigo por alguns ciclos.
   contratoStatusAlteradoEm DateTime?
+  /// Quantos ciclos de sync SEGUIDOS o SGP confirmou (com 404) que esta OS nao
+  /// existe mais. Zera sozinho assim que ela reaparece na varredura. Uma
+  /// confirmacao so nao cancela: em ago/2026 o sync cancelou OS que o SGP
+  /// estava listando no mesmo minuto, e exigir repeticao torna um engano
+  /// pontual inofensivo (ver a reconciliacao em syncService.ts).
+  ausenciasConsecutivas Int @default(0)
   /// Quando o backfill tentou puxar o cadastro do cliente (/api/ura/clientes/)
   /// pra esta OS — a listagem de OS do SGP nao traz endereco de rua, geo nem
   /// telefone, so esse endpoint traz. Marca a TENTATIVA (com ou sem dado) pra
