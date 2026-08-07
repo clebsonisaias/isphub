@@ -254,7 +254,7 @@ export interface EvidenciaResumo {
 export interface Notificacao {
   id: string;
   /** "mensagem" = chat generico; "mencao" = "@fulano" numa mensagem que cita este usuario. */
-  tipo: "atribuicao" | "sla_estourado" | "mensagem" | "mencao";
+  tipo: "atribuicao" | "sla_estourado" | "os_nova" | "mensagem" | "mencao";
   mensagem: string;
   ordemServicoId?: string | null;
   lida: boolean;

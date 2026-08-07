@@ -315,6 +315,23 @@ async function main() {
   if (descartadas > 0) console.log(`  ${descartadas} OS de rodadas anteriores descartadas`);
 
   /*
+   * O MESMO pra financeiro — e pela mesma razao, que so ficou visivel depois.
+   *
+   * Nenhum lancamento vem deste seed: cada spec cria os seus. Mas nada os
+   * apagava, entao o banco de teste chegou a 414 lancamentos acumulados de
+   * dezenas de rodadas. A tela de /financeiro foi ficando lenta ate o spec
+   * "limpar filtros volta a lista inteira" estourar os 5s de espera — passando
+   * sozinho e falhando na suite, sem nenhuma mudanca no codigo do financeiro.
+   *
+   * A ordem importa: eventos e vinculos primeiro, senao a FK barra.
+   */
+  await prisma.lancamentoEvento.deleteMany({});
+  const { count: lancDescartados } = await prisma.lancamento.deleteMany({});
+  await prisma.recorrencia.deleteMany({});
+  await prisma.parcelamento.deleteMany({});
+  if (lancDescartados > 0) console.log(`  ${lancDescartados} lancamentos de rodadas anteriores descartados`);
+
+  /*
    * Liga TODOS os modulos. O cabecalho tem que caber no PIOR caso — o numero
    * de itens de navegacao VARIA com os modulos, e com o padrao (`chat-clientes`
    * desligado) o seed tinha 7 itens enquanto producao tinha 8. Foi assim que

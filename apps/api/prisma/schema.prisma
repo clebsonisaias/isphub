@@ -213,6 +213,11 @@ model OrdemServico {
   /// estava listando no mesmo minuto, e exigir repeticao torna um engano
   /// pontual inofensivo (ver a reconciliacao em syncService.ts).
   ausenciasConsecutivas Int @default(0)
+  /// Quando o aviso de "OS nova" foi disparado. Trava o alerta em UMA vez por
+  /// OS — sem isto o job avisaria a mesma OS a cada minuto. Nulo = ainda nao
+  /// avisada; a migracao preenche as JA existentes com a data de entao, senao o
+  /// primeiro tick despejaria o acervo inteiro no sino de todo mundo.
+  novaNotificadaEm DateTime?
   /// Quando o backfill tentou puxar o cadastro do cliente (/api/ura/clientes/)
   /// pra esta OS — a listagem de OS do SGP nao traz endereco de rua, geo nem
   /// telefone, so esse endpoint traz. Marca a TENTATIVA (com ou sem dado) pra
