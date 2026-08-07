@@ -399,7 +399,10 @@ export function FilaWorkspace({
             {/* Sem isto, um stream caido e indistinguivel de "nao houve
                 novidade" — a tela fica com cara de atualizada enquanto para de
                 receber OS nova. */}
-            {!aoVivo && (
+            {/* `=== false` e nao `!aoVivo`: `null` significa "primeira conexao
+                ainda em curso", e tratar isso como queda faria a tela gritar a
+                cada carregamento. */}
+            {aoVivo === false && (
               <span
                 className="inline-flex items-center gap-1 text-xs font-medium text-warning"
                 title="A atualização automática caiu. A lista só muda ao clicar em Atualizar agora ou ao voltar para esta aba."

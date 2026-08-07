@@ -1822,6 +1822,46 @@ describe("obterStatusOs — a pergunta ESTRITA (usada pra reconciliar OS fora da
     expect(await createSgpConnector(creds).obterStatusOs("999")).toEqual({ tipo: "ausente" });
   });
 
+  it("OS CRUA (o formato real do SGP em producao) => encontrada", async () => {
+    /*
+     * REGRESSAO DE PRODUCAO, com as chaves de verdade.
+     *
+     * `/api/os/list/id/{id}/` devolve a OS sem invólucro nenhum. O parser so
+     * aceitava array ou os envelopes `ordens_servicos`/`resultados`/`results`,
+     * entao jogava fora uma resposta que continha a OS inteira — e o sync lia
+     * isso como "nao existe" e cancelava OS viva (96770, 96799, 96821...).
+     *
+     * As chaves abaixo sao as que o log de producao revelou, incluindo as que
+     * so a OS traz e que a ficha vinha perdendo em silencio.
+     */
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        cliente: "Fulano",
+        cliente_id: 123,
+        contrato_id: 456,
+        contrato_status: "Ativo",
+        endereco_pontoreferencia: "Portao azul",
+        os_id: 95717,
+        os_status: 2,
+        os_status_txt: "Em execucao",
+        os_motivo_descricao: "Sem conexao",
+        os_servicoprestado: "Troca de ONU",
+        os_setor: "Suporte",
+      }),
+    );
+    expect(await createSgpConnector(creds).obterStatusOs("95717")).toEqual({
+      tipo: "encontrada",
+      statusBruto: 2,
+    });
+  });
+
+  it("corpo de objeto SEM os_id nao e confundido com OS", async () => {
+    // A guarda que impede o oposto do bug: tratar um corpo de erro do SGP como
+    // se fosse a OS, e daí inventar um status.
+    fetchMock.mockResolvedValueOnce(jsonResponse({ erro: "token invalido", detail: "..." }));
+    expect((await createSgpConnector(creds).obterStatusOs("95717")).tipo).toBe("indeterminado");
+  });
+
   it("envelope desconhecido => 'indeterminado', NUNCA ausente", async () => {
     // ESTE e o caso que cancelava OS viva. `asArray` nao acha nenhuma das
     // chaves conhecidas e devolve [] — indistinguivel de "nao existe".

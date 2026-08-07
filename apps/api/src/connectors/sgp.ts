@@ -822,6 +822,30 @@ function asArray(payload: any, ...possibleKeys: string[]): any[] {
   return [];
 }
 
+/**
+ * O registro da OS dentro da resposta de `/api/os/list/id/{id}/`.
+ *
+ * Este endpoint devolve a OS CRUA — um objeto, sem invólucro. Descoberto lendo
+ * producao em ago/2026: o log de formato mostrou
+ * `["cliente","cliente_id","contrato_id",...,"os_id","os_status",...]` no nivel
+ * de cima. Como `asArray` so aceita array ou uma das chaves de envelope
+ * conhecidas, ele devolvia [] e a OS inteira era jogada fora.
+ *
+ * O estrago era duplo e silencioso: a reconciliacao do sync lia isso como "a OS
+ * nao existe" e CANCELAVA OS viva; e `obterFichaOs` perdia todos os campos que
+ * so vem da OS (motivo, servico prestado, setor, ponto de referencia) — o
+ * comentario de la culpava a instancia do SGP por nao devolve-los.
+ */
+function registroDeOs(payload: any): Record<string, any> | null {
+  const [doEnvelope] = asArray(payload, "ordens_servicos", "resultados", "results");
+  if (doEnvelope) return doEnvelope;
+  // OS crua: exige `os_id`/`id` pra nao confundir com um corpo de erro.
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    if (payload.os_id != null || payload.id != null) return payload;
+  }
+  return null;
+}
+
 /** Converte um valor do SGP (string|number|""|null) em number ou null. */
 function numeroOuNull(v: unknown): number | null {
   if (v == null || v === "") return null;
@@ -1109,7 +1133,7 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
           : Promise.resolve(null),
       ]);
 
-      const [itemOs] = asArray(dataOs, "ordens_servicos", "resultados", "results");
+      const itemOs = registroDeOs(dataOs);
       const cliente = Array.isArray(dataCliente?.clientes) ? dataCliente.clientes[0] : undefined;
 
       /*
@@ -1205,7 +1229,7 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
         return { tipo: "indeterminado", motivo: `falha na consulta: ${motivo}` };
       }
 
-      const [item] = asArray(data, "ordens_servicos", "resultados", "results");
+      const item = registroDeOs(data);
       if (!item) {
         /*
          * So as CHAVES, nunca os valores: este payload carrega nome, CPF/CNPJ,

@@ -17,7 +17,7 @@ const BACKOFF_MAX_MS = 30_000;
 type Listener = (evento: RealtimeEvento) => void;
 
 const RealtimeContext = createContext<
-  { subscribe: (l: Listener) => () => void; conectado: boolean } | undefined
+  { subscribe: (l: Listener) => () => void; conectado: boolean | null } | undefined
 >(undefined);
 
 /**
@@ -40,7 +40,15 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
    * receber novidade e continua com cara de atualizada. A queixa "abri a OS no
    * SGP e nao apareceu, ja faz meia hora" tem essa forma exata.
    */
-  const [conectado, setConectado] = useState(false);
+  /*
+   * TRES estados, nao dois. `null` = ainda tentando a primeira conexao.
+   *
+   * Com booleano o valor inicial era `false`, e a tela piscava "sem atualizacao
+   * automatica" em TODA carga de pagina, antes de o SSE sequer ter chance de
+   * conectar. Alarme falso ensina a ignorar o alarme — e ainda mexia no layout
+   * a cada load.
+   */
+  const [conectado, setConectado] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (!usuario) return;
@@ -156,9 +164,12 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/** O stream esta de pe? Use pra avisar que a tela pode estar desatualizada. */
-export function useRealtimeConectado(): boolean {
-  return useContext(RealtimeContext)?.conectado ?? false;
+/**
+ * O stream esta de pe? `null` enquanto a primeira conexao nao resolveu — quem
+ * mostra aviso deve tratar `null` como "ainda nao sei", nunca como "caiu".
+ */
+export function useRealtimeConectado(): boolean | null {
+  return useContext(RealtimeContext)?.conectado ?? null;
 }
 
 /** Assina eventos SSE — o callback pode mudar a cada render sem precisar memoizar. */
