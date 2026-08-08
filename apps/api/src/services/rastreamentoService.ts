@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { simplificarTrilha, type RastreadorConnector, type StatusRastreador, type TipoVeiculo } from "@isphub/shared";
 import { comConcorrenciaLimitada } from "../lib/limitador.js";
 import { prisma } from "../lib/prisma.js";
@@ -36,6 +37,54 @@ export interface ResumoColeta {
   gravados: number;
   statusOk: boolean;
   erro: string | null;
+  /** Quantos aparelhos tiveram o cadastro do fornecedor atualizado neste tique. */
+  cadastrosAtualizados: number;
+  dicionarioAtualizado: boolean;
+}
+
+/**
+ * O cadastro e o dicionario mudam em ESCALA DE MES, nao de minuto.
+ *
+ * Buscar os dois a cada tique dobraria as requisicoes por credencial pra
+ * atualizar dados que quase nunca mudam. Um dia e folgado: se um aparelho for
+ * trocado hoje, a tela mostra o modelo antigo por algumas horas — e o modelo do
+ * aparelho nao muda nenhuma decisao operacional.
+ */
+const CADASTRO_VALIDO_MS = 24 * 60 * 60_000;
+
+/**
+ * Espelha `GET /trackers` nos rastreadores que ja conhecemos.
+ *
+ * NAO cria rastreador: a conta do fornecedor tem aparelhos que nao sao nossos, e
+ * cadastrar sozinho encheria a frota de carro alheio. Quem cadastra e o gestor.
+ */
+async function sincronizarCadastro(conector: RastreadorConnector, provedorId: string | null): Promise<number> {
+  const r = await conector.cadastroDeTodos();
+  if (r.tipo !== "lista") return 0;
+
+  const nossos = await prisma.rastreador.findMany({
+    where: { provedorId, ativo: true },
+    select: { id: true, identificadorExterno: true },
+  });
+  const porExterno = new Map(nossos.map((x) => [x.identificadorExterno, x.id]));
+
+  let n = 0;
+  for (const c of r.itens) {
+    const id = porExterno.get(c.identificadorExterno);
+    if (!id) continue;
+    await prisma.rastreador.update({
+      where: { id },
+      data: {
+        modeloFornecedor: c.modelo,
+        nomeFornecedor: c.nome,
+        intervaloFornecedorSeg: c.intervaloSegundos,
+        temComandoCorte: c.temComandoCorte,
+        instaladoEm: c.instaladoEm ? new Date(c.instaladoEm) : null,
+      },
+    });
+    n += 1;
+  }
+  return n;
 }
 
 /** Uma credencial e seus rastreadores COM veiculo vinculado. */
@@ -62,12 +111,47 @@ async function rastreadoresParaColetar(provedorId: string | null) {
  * Recebe o conector por parametro pra o teste poder injetar um duble sem rede.
  */
 export async function coletarDeUmaConfig(
-  config: { id: string; provedorId: string | null; fornecedor: "plataformatk"; baseUrl: string; chaveCifrada: string },
+  config: {
+    id: string;
+    provedorId: string | null;
+    fornecedor: "plataformatk";
+    baseUrl: string;
+    chaveCifrada: string;
+    dicionarioEm?: Date | null;
+  },
   conector: RastreadorConnector = buildRastreadorConnector(config),
 ): Promise<ResumoColeta> {
   const rastreadores = await rastreadoresParaColetar(config.provedorId);
-  const resumo: ResumoColeta = { configId: config.id, consultados: rastreadores.length, gravados: 0, statusOk: true, erro: null };
+  const resumo: ResumoColeta = {
+    configId: config.id,
+    consultados: rastreadores.length,
+    gravados: 0,
+    statusOk: true,
+    erro: null,
+    cadastrosAtualizados: 0,
+    dicionarioAtualizado: false,
+  };
   if (rastreadores.length === 0) return resumo;
+
+  // 0) Cadastro e dicionario, no maximo uma vez por dia.
+  const agoraMs = Date.now();
+  const cadastroVencido = !config.dicionarioEm || agoraMs - config.dicionarioEm.getTime() >= CADASTRO_VALIDO_MS;
+  if (cadastroVencido) {
+    resumo.cadastrosAtualizados = await sincronizarCadastro(conector, config.provedorId);
+    const dic = await conector.dicionarioDeSensores();
+    if (dic.tipo === "dicionario") {
+      await prisma.rastreadorConfig.update({
+        where: { id: config.id },
+        data: { dicionarioSensores: dic.dados as Prisma.InputJsonValue, dicionarioEm: new Date() },
+      });
+      resumo.dicionarioAtualizado = true;
+    }
+    /*
+     * Dicionario que falhou NAO carimba `dicionarioEm`: o antigo continua
+     * valendo (e melhor um rotulo de ontem que nenhum) e o proximo tique tenta
+     * de novo. Carimbar mesmo em falha nos deixaria 24h sem tentar.
+     */
+  }
 
   // 1) Uma chamada cobre a frota inteira.
   const status = await conector.statusDeTodos();
@@ -95,16 +179,7 @@ export async function coletarDeUmaConfig(
   );
 
   const agora = new Date();
-  const novas: {
-    rastreadorId: string;
-    registradoEm: Date;
-    lat: number;
-    lng: number;
-    velocidadeKmh: number | null;
-    movendo: boolean | null;
-    comunicando: boolean | null;
-    rastreando: boolean | null;
-  }[] = [];
+  const novas: Prisma.PosicaoRastreadorCreateManyInput[] = [];
 
   for (const { rastreador, resultado } of posicoes) {
     const s = porId.get(rastreador.identificadorExterno);
@@ -116,6 +191,15 @@ export async function coletarDeUmaConfig(
         ultimoStatusEm: status.tipo === "lista" ? agora : undefined,
         comunicando: s ? s.comunicando : undefined,
         rastreando: s ? s.rastreando : undefined,
+        /*
+         * O estado corrente. Sem `s` os campos ficam `undefined` (nao mexe), e
+         * NAO `null` — apagar o ultimo estado conhecido so porque a consulta de
+         * status falhou trocaria "esta bloqueado" por "nao sei", que e pior.
+         */
+        ignicao: s ? s.ignicao : undefined,
+        bateriaPct: s ? s.bateriaPct : undefined,
+        bloqueado: s ? s.bloqueado : undefined,
+        sensores: s ? s.sensores : undefined,
         ...(resultado.tipo === "posicao" ? { ultimaPosicaoEm: new Date(resultado.registradoEm) } : {}),
       },
     });
@@ -136,6 +220,15 @@ export async function coletarDeUmaConfig(
       movendo: s?.movendo ?? null,
       comunicando: s?.comunicando ?? null,
       rastreando: s?.rastreando ?? null,
+      /*
+       * Estes quatro JA vinham interpretados do conector e eram jogados fora
+       * aqui, na ultima curva. A ignicao — que e o que faz uma VIAGEM existir —
+       * chegava a cada minuto e nunca era gravada.
+       */
+      ignicao: s?.ignicao ?? null,
+      bateriaPct: s?.bateriaPct ?? null,
+      bloqueado: s?.bloqueado ?? null,
+      sensores: s?.sensores ?? Prisma.DbNull,
     });
   }
 

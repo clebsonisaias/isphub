@@ -1030,6 +1030,7 @@ model Lancamento {
   /// hoje), que e o preco de derivar "atrasado" em vez de grava-lo.
   /**
    * /**
+   * /**
    * /*
    * A TRAVA DE IDEMPOTENCIA da recorrencia, no banco.
    * O gerador pode rodar quantas vezes quiser: uma segunda tentativa de criar a
@@ -1243,6 +1244,8 @@ model Veiculo {
   abastecimentos Abastecimento[]
   ocupacoes      OcupacaoVeiculo[]
   vinculos       VinculoRastreador[]
+  eventos        EventoRastreador[]
+  viagens        Viagem[]
 
   @@index([provedorId, status])
   @@map("veiculos")
@@ -1426,6 +1429,8 @@ model OcupacaoVeiculo {
   observacao     String?  @db.VarChar(200)
   criadoEm       DateTime @default(now())
 
+  viagens Viagem[]
+
   @@index([veiculoId, inicioEm])
   @@index([usuarioId, inicioEm])
   @@index([jornadaId])
@@ -1435,6 +1440,37 @@ model OcupacaoVeiculo {
 
 enum RastreadorFornecedor {
   plataformatk
+}
+
+/// TRES estados, e nao um booleano.
+///
+/// O fornecedor tem `ACC: ANOMALY` — "Ignição com Problemas". Traduzir isso pra
+/// `false` afirmaria que o motor esta desligado, que e diferente de "o sensor
+/// de ignicao esta com defeito". Como a VIAGEM nasce da ignicao, tratar
+/// anomalia como desligado fecharia viagem sozinho por defeito de sensor.
+///
+/// Ausencia da coluna (NULL) continua sendo o quarto caso: o aparelho nao
+/// contou. Ver `Ignicao` em @isphub/shared.
+enum EstadoIgnicao {
+  ligada
+  desligada
+  anomalia
+}
+
+/// Os tipos de EventoRastreador. Espelha `EVENTOS_RASTREADOR` de @isphub/shared
+/// — a lista fechada e la; aqui e a trava do banco.
+enum EventoRastreadorTipo {
+  ignicao_ligada
+  ignicao_desligada
+  ignicao_anomalia
+  bloqueio_ativado
+  bloqueio_removido
+  bateria_baixa
+  bateria_normalizada
+  ficou_offline
+  voltou_online
+  excesso_velocidade
+  parado_com_motor_ligado
 }
 
 /// O rastreador e uma COISA, nao uma coluna do veiculo.
@@ -1467,10 +1503,41 @@ model Rastreador {
   comunicando     Boolean?
   rastreando      Boolean?
 
+  /// ESTADO CORRENTE — tambem cache, recomputavel da ultima posicao. Existe pra
+  /// a lista e o filtro ("quem esta com bateria baixa") nao precisarem varrer a
+  /// serie de posicoes de cada aparelho.
+  ignicao    EstadoIgnicao?
+  bateriaPct Int?
+  bloqueado  Boolean?
+  /// Mapa CRU de todos os sensores. Ver o comentario em PosicaoRastreador.
+  sensores   Json?
+
+  /// Espelho do cadastro do fornecedor (`GET /trackers`), atualizado na coleta.
+  ///
+  /// NAO guarda `password`, IMEI nem numero do chip. A API devolve os tres — a
+  /// senha SMS em texto puro — e nao temos uso para eles; guardar so criaria
+  /// risco. O que fica e o que a tela precisa dizer sobre o aparelho.
+  modeloFornecedor       String?   @db.VarChar(60)
+  nomeFornecedor         String?   @db.VarChar(120)
+  intervaloFornecedorSeg Int?
+  temComandoCorte        Boolean   @default(false)
+  instaladoEm            DateTime?
+
+  /// Travas de idempotencia do SINO, no padrao de `OrdemServico.slaNotificadoEm`.
+  ///
+  /// Sao COLUNA e nao memoria, e sao gravadas na MESMA transacao da notificacao:
+  /// escrever uma sem a outra ou repete o alerta para sempre, ou o perde para
+  /// sempre. Sem elas, bateria a 12% notifica a cada minuto ate a bateria acabar.
+  bateriaNotificadaEm  DateTime?
+  offlineNotificadoEm  DateTime?
+  bloqueioNotificadoEm DateTime?
+
   criadoEm DateTime @default(now())
 
   posicoes PosicaoRastreador[]
   vinculos VinculoRastreador[]
+  eventos  EventoRastreador[]
+  viagens  Viagem[]
 
   @@unique([fornecedor, identificadorExterno])
   @@index([provedorId, ativo])
@@ -1527,12 +1594,116 @@ model PosicaoRastreador {
   comunicando Boolean?
   rastreando  Boolean?
 
+  /// Os TRES que viram coluna, e o porque de cada um:
+  ///   `ignicao`    — e o que abre e fecha VIAGEM;
+  ///   `bateriaPct` — e o que dispara ALERTA;
+  ///   `bloqueado`  — e o estado que o gestor FILTRA.
+  /// Consultar qualquer um deles dentro do Json seria lento e ilegivel.
+  ignicao    EstadoIgnicao?
+  bateriaPct Int?
+  bloqueado  Boolean?
+
+  /// TODOS os sensores, crus, como o fornecedor mandou.
+  ///
+  /// Esta coluna e a decisao central do modulo: **sensor nao vira coluna**. O
+  /// fornecedor publica 14 hoje (`GET /status-descriptions`) e pode publicar o
+  /// 15o amanha. Escolher quais viram coluna seria eu apostando em quais
+  /// importam — e a aposta erra no dia em que chega um aparelho com sensor de
+  /// porta, temperatura ou carga.
+  ///
+  /// O que nao tem coluna aqui em cima fica guardado aqui e aparece na tela
+  /// pelo DICIONARIO do fornecedor, sem migracao nenhuma.
+  sensores Json?
+
   /// Quando NOS buscamos. Nunca entra em chave nenhuma — cada replica tem o
   /// seu, e usa-lo na unicidade dobraria a tabela a cada replica.
   coletadoEm DateTime @default(now())
 
   @@unique([rastreadorId, registradoEm])
   @@map("posicoes_rastreador")
+}
+
+/// MUDANCA DE ESTADO — o que a linha do tempo conta e o sino avisa.
+///
+/// Serie de posicao responde "onde o carro estava"; evento responde "o que
+/// mudou". Sao perguntas diferentes, e derivar a segunda da primeira toda vez
+/// que alguem abre a tela custaria varrer 1.200 linhas por veiculo por dia.
+model EventoRastreador {
+  id           String     @id @default(uuid())
+  rastreadorId String
+  rastreador   Rastreador @relation(fields: [rastreadorId], references: [id], onDelete: Cascade)
+
+  /// Qual VEICULO estava com o aparelho quando o evento aconteceu.
+  ///
+  /// Aqui a associacao e CONGELADA — ao contrario da posicao, que resolve o
+  /// veiculo na leitura pelo vinculo vigente. A diferenca e proposital: "o
+  /// carro estava a 118 km/h" e um fato historico daquele carro, e trocar o
+  /// aparelho de veiculo amanha nao pode reescrever de quem foi a infracao.
+  veiculoId String?
+  veiculo   Veiculo? @relation(fields: [veiculoId], references: [id], onDelete: SetNull)
+
+  tipo EventoRastreadorTipo
+  /// O carimbo DO APARELHO, como em PosicaoRastreador — e o que torna a chave
+  /// natural estavel entre replicas.
+  em   DateTime
+
+  lat     Float?
+  lng     Float?
+  detalhe Json?
+
+  /// Trava do sino, no padrao de `slaNotificadoEm`: nulo = ainda nao avisado.
+  /// O job retenta no tique seguinte o que falhou.
+  notificadoEm DateTime?
+
+  criadoEm DateTime @default(now())
+
+  /// Duas replicas rodando a mesma coleta produzem o MESMO evento a partir do
+  /// mesmo par de leituras. A chave natural faz a segunda virar no-op em vez de
+  /// duplicar o alerta.
+  @@unique([rastreadorId, tipo, em])
+  @@index([veiculoId, em])
+  @@index([notificadoEm])
+  @@map("eventos_rastreador")
+}
+
+/// VIAGEM — de ignicao ligada a ignicao desligada.
+///
+/// E o que responde "quantas saidas o carro fez hoje e quanto rodou". Antes
+/// disso a unica resposta possivel era inferir parada por velocidade, que nao
+/// distingue "chegou no cliente" de "parou no semaforo".
+model Viagem {
+  id           String     @id @default(uuid())
+  veiculoId    String
+  veiculo      Veiculo    @relation(fields: [veiculoId], references: [id], onDelete: Cascade)
+  rastreadorId String
+  rastreador   Rastreador @relation(fields: [rastreadorId], references: [id], onDelete: Cascade)
+
+  /// Quem estava a bordo, quando havia ocupacao declarada. Opcional de
+  /// proposito: o carro pode rodar sem ninguem ter declarado nada, e a viagem
+  /// existiu do mesmo jeito.
+  ocupacaoId String?
+  ocupacao   OcupacaoVeiculo? @relation(fields: [ocupacaoId], references: [id], onDelete: SetNull)
+
+  inicioEm DateTime
+  /// Nulo = viagem EM CURSO. O indice parcial observa isto.
+  fimEm    DateTime?
+
+  latInicio Float
+  lngInicio Float
+  latFim    Float
+  lngFim    Float
+
+  distanciaMetros         Int?
+  velocidadeMaxKmh        Float?
+  /// Motor ligado com o carro imovel. Combustivel queimado a toa — e o insumo
+  /// do alerta "parado com o motor ligado".
+  paradoComMotorLigadoSeg Int?
+
+  atualizadoEm DateTime @updatedAt
+
+  @@index([veiculoId, inicioEm])
+  @@index([rastreadorId, inicioEm])
+  @@map("viagens")
 }
 
 /// Credencial do fornecedor de rastreamento, cifrada (AES-256-GCM, lib/crypto).
@@ -1556,6 +1727,21 @@ model RastreadorConfig {
 
   intervaloPollingSegundos Int     @default(60)
   ativo                    Boolean @default(true)
+
+  /// Limite unico da frota, em km/h. Configuravel porque 100 e o limite de uma
+  /// rodovia e o absurdo de uma rua residencial — e quem sabe qual serve e o
+  /// gestor, nao eu.
+  limiteVelocidadeKmh Int @default(100)
+
+  /// Cache de `GET /status-descriptions` — o dicionario que da rotulo e
+  /// severidade a cada sensor.
+  ///
+  /// No BANCO e nao em memoria: se o fornecedor estiver fora no boot, a tela
+  /// ainda sabe dizer que `ACC` e "IGNIÇÃO" e que 12% e `danger`. Um cache em
+  /// memoria transformaria uma indisponibilidade deles numa tela ilegivel
+  /// nossa.
+  dicionarioSensores Json?
+  dicionarioEm       DateTime?
 
   ultimaColetaEm       DateTime?
   ultimaColetaOk       Boolean?

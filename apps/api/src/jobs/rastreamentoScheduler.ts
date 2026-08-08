@@ -42,6 +42,8 @@ async function tick() {
          */
         console.log(
           `[rastreamento] ${r.consultados} rastreador(es) consultado(s), ${r.gravados} posicao(oes) nova(s)` +
+            (r.cadastrosAtualizados > 0 ? `, ${r.cadastrosAtualizados} cadastro(s) do fornecedor` : "") +
+            (r.dicionarioAtualizado ? ", dicionario de sensores atualizado" : "") +
             (r.statusOk ? "" : " — status do fornecedor indisponivel"),
         );
         if (r.erro) console.warn(`[rastreamento] config ${c.id}: ${r.erro}`);

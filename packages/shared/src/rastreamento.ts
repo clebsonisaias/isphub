@@ -39,6 +39,8 @@
  * chave nao tem escopo de empresa (uma chave = a conta toda).
  */
 
+import type { Ignicao, MapaSensores } from "./sensores.js";
+
 export const RASTREADOR_FORNECEDORES = ["plataformatk"] as const;
 export type RastreadorFornecedor = (typeof RASTREADOR_FORNECEDORES)[number];
 
@@ -66,26 +68,73 @@ export type ResultadoPosicao =
 
 export interface StatusRastreador {
   identificadorExterno: string;
+
+  /**
+   * O mapa CRU de todos os sensores, como o fornecedor mandou.
+   *
+   * E a fonte; os campos abaixo sao LEITURAS dele, feitas pelas funcoes de
+   * `sensores.ts`. Guardar o mapa inteiro e o que permite um sensor novo
+   * (temperatura, porta, carga) aparecer na tela sem migracao nem codigo.
+   */
+  sensores: MapaSensores;
+
   /**
    * Todos tri-estado, e isso NAO e zelo excessivo: um rastreador offline
    * reporta so o COMMUNICATION, e os demais campos simplesmente nao vem.
    * `false` diria "o GPS esta sem fix"; `null` diz "nao sabemos" — que e a
    * verdade, e a diferenca decide se o mapa apaga um carro ou o mostra velho.
    */
-  /** COMMUNICATION === "UP" — o aparelho fala com o servidor. */
+  /** COMMUNICATION — o aparelho fala com o servidor. */
   comunicando: boolean | null;
-  /** TRACKING === "ON" — o GPS tem fix. */
+  /** TRACKING — o GPS tem fix. */
   rastreando: boolean | null;
-  /** MOVEMENT === "MOVING". */
+  /** MOVEMENT. Cuidado: o aparelho responde `UNDEFINED`, que vira `null`. */
   movendo: boolean | null;
-  /** ACC === "ON" — ignicao ligada. */
-  ignicao: boolean | null;
+  /** ACC. QUATRO estados contando o `null` — ver `Ignicao`. */
+  ignicao: Ignicao;
   /** BAT em porcentagem. */
   bateriaPct: number | null;
+  /** CUT — o veiculo esta bloqueado pelo aparelho. */
+  bloqueado: boolean | null;
 }
 
 export type ResultadoStatus =
   | { tipo: "lista"; itens: StatusRastreador[] }
+  | { tipo: "indeterminado"; motivo: string };
+
+/**
+ * O cadastro do aparelho no fornecedor — o que a tela precisa dizer sobre o
+ * hardware sem ninguem digitar nada.
+ *
+ * O que NAO esta aqui e tao intencional quanto o que esta: a resposta real traz
+ * `password` (senha SMS em texto puro), `imei`, `phoneNumber` e `apnPassword`.
+ * Nenhum deles entra no nosso modelo.
+ */
+export interface CadastroRastreador {
+  identificadorExterno: string;
+  /** "CRX" — o modelo do aparelho. */
+  modelo: string | null;
+  /** "C003 - FIAT UNO - HFX 3652" — como o cliente batizou la. */
+  nome: string | null;
+  /** De quanto em quanto tempo o aparelho transmite. */
+  intervaloSegundos: number | null;
+  /**
+   * Se o aparelho ACEITA comando de corte de motor.
+   *
+   * Guardamos so pra INFORMAR. O ISPhub nao envia comando nenhum — quem bloqueia
+   * segue sendo a plataforma do fornecedor, que ja tem o controle e a
+   * responsabilidade.
+   */
+  temComandoCorte: boolean;
+  instaladoEm: string | null;
+}
+
+export type ResultadoCadastro =
+  | { tipo: "lista"; itens: CadastroRastreador[] }
+  | { tipo: "indeterminado"; motivo: string };
+
+export type ResultadoDicionario =
+  | { tipo: "dicionario"; dados: unknown }
   | { tipo: "indeterminado"; motivo: string };
 
 export interface PontoHistorico {
@@ -123,6 +172,18 @@ export interface RastreadorConnector {
   testarConexao(): Promise<{ ok: boolean; mensagem?: string }>;
   /** A UNICA chamada em lote — 1 requisicao cobre a frota inteira. */
   statusDeTodos(): Promise<ResultadoStatus>;
+  /** Cadastro de todos os aparelhos. Tambem em lote, tambem 1 requisicao. */
+  cadastroDeTodos(): Promise<ResultadoCadastro>;
+  /**
+   * O dicionario de sensores (`GET /status-descriptions`).
+   *
+   * Devolve `unknown` de proposito: e um documento do FORNECEDOR, guardado como
+   * veio num `Json`. Tipar campo a campo aqui obrigaria uma migracao toda vez
+   * que eles acrescentassem uma chave — exatamente o acoplamento que o desenho
+   * generico existe pra evitar. Quem da sentido a ele e `sensores.ts`, na
+   * leitura, tolerando o que nao conhece.
+   */
+  dicionarioDeSensores(): Promise<ResultadoDicionario>;
   ultimaPosicao(identificadorExterno: string): Promise<ResultadoPosicao>;
   historico(
     identificadorExterno: string,

@@ -1,12 +1,22 @@
-import type {
-  PontoHistorico,
-  RastreadorConnector,
-  RastreadorCredenciais,
-  ResultadoHistorico,
-  ResultadoPosicao,
-  ResultadoResumoDia,
-  ResultadoStatus,
-  StatusRastreador,
+import {
+  bateriaPct,
+  bloqueado,
+  comunicando,
+  ignicao,
+  lerSensores,
+  movendo,
+  rastreando,
+  type CadastroRastreador,
+  type PontoHistorico,
+  type RastreadorConnector,
+  type RastreadorCredenciais,
+  type ResultadoCadastro,
+  type ResultadoDicionario,
+  type ResultadoHistorico,
+  type ResultadoPosicao,
+  type ResultadoResumoDia,
+  type ResultadoStatus,
+  type StatusRastreador,
 } from "@isphub/shared";
 
 /**
@@ -114,48 +124,70 @@ export function createPlataformaTkConnector(creds: RastreadorCredenciais): Rastr
   /**
    * Converte o array `statuses` no nosso registro.
    *
-   * Cada campo comeca `null` e SO vira booleano se o nome apareceu. E o que
-   * separa "o GPS esta sem fix" de "o aparelho nao contou".
+   * O conector NAO interpreta sensor: ele guarda o mapa cru e delega a leitura
+   * as funcoes de `sensores.ts`. Antes havia um `switch` aqui com um `case` por
+   * sensor conhecido e um `default: break` que ENGOLIA o resto — foi assim que
+   * o `CUT` (bloqueio do veiculo) ficou fora do sistema mesmo chegando em toda
+   * resposta.
+   *
+   * Com o mapa, sensor novo do fornecedor entra sozinho; e a decisao de o que
+   * cada valor significa mora num lugar so, compartilhado com a web.
    */
   function lerStatuses(bruto: unknown): StatusRastreador | null {
     if (!bruto || typeof bruto !== "object") return null;
     const r = bruto as { trackerId?: unknown; statuses?: unknown };
     if (r.trackerId == null) return null;
 
-    const item: StatusRastreador = {
-      identificadorExterno: String(r.trackerId),
-      comunicando: null,
-      rastreando: null,
-      movendo: null,
-      ignicao: null,
-      bateriaPct: null,
-    };
+    const sensores = lerSensores(
+      (Array.isArray(r.statuses) ? r.statuses : []).filter(
+        (s): s is { name: string; status: string } =>
+          !!s && typeof s === "object" && typeof (s as { name?: unknown }).name === "string",
+      ),
+    );
 
-    for (const s of Array.isArray(r.statuses) ? r.statuses : []) {
-      if (!s || typeof s !== "object") continue;
-      const { name, status } = s as { name?: unknown; status?: unknown };
-      const valor = typeof status === "string" ? status.toUpperCase() : "";
-      switch (name) {
-        case "COMMUNICATION":
-          item.comunicando = valor === "UP" || valor === "TRUE";
-          break;
-        case "TRACKING":
-          item.rastreando = valor === "ON" || valor === "TRUE";
-          break;
-        case "MOVEMENT":
-          item.movendo = valor === "MOVING";
-          break;
-        case "ACC":
-          item.ignicao = valor === "ON" || valor === "TRUE";
-          break;
-        case "BAT":
-          item.bateriaPct = comoNumero(status);
-          break;
-        default:
-          break; // CUT e o que mais vier: ignorado sem quebrar.
-      }
-    }
-    return item;
+    return {
+      identificadorExterno: String(r.trackerId),
+      sensores,
+      comunicando: comunicando(sensores),
+      rastreando: rastreando(sensores),
+      movendo: movendo(sensores),
+      ignicao: ignicao(sensores),
+      bateriaPct: bateriaPct(sensores),
+      bloqueado: bloqueado(sensores),
+    };
+  }
+
+  /**
+   * Cadastro do aparelho (`GET /trackers`).
+   *
+   * Os nomes de campo abaixo foram lidos da resposta REAL da API de producao —
+   * `trackerModelName`, `trackingIntervalSeconds`, `hasCutCommands`,
+   * `creationDate`. Nao sao um palpite razoavel: um palpite razoavel seria
+   * `model`, `interval`, `hasCut`, `installationDate`, e os quatro dariam
+   * `undefined` calado.
+   *
+   * ⚠️ SEGURANCA: esta resposta traz `password` — a senha SMS do rastreador, em
+   * TEXTO PURO —, alem de `imei`, `phoneNumber` e `apnPassword`. Nenhum dos
+   * quatro e lido aqui, de proposito: nao temos uso para eles, e guarda-los so
+   * criaria um vazamento a espera de acontecer.
+   *
+   * `isBlocked` tambem fica de fora: nao da pra saber pela resposta se e o
+   * veiculo bloqueado ou a conta do aparelho suspensa, e o bloqueio do veiculo
+   * ja vem pelo sensor `CUT`, que e inequivoco.
+   */
+  function lerCadastro(bruto: unknown): CadastroRastreador | null {
+    if (!bruto || typeof bruto !== "object") return null;
+    const r = bruto as Record<string, unknown>;
+    if (r.trackerId == null) return null;
+    const criado = typeof r.creationDate === "string" ? Date.parse(r.creationDate) : NaN;
+    return {
+      identificadorExterno: String(r.trackerId),
+      modelo: typeof r.trackerModelName === "string" ? r.trackerModelName.slice(0, 60) : null,
+      nome: typeof r.name === "string" ? r.name.slice(0, 120) : null,
+      intervaloSegundos: comoNumero(r.trackingIntervalSeconds),
+      temComandoCorte: r.hasCutCommands === true,
+      instaladoEm: Number.isNaN(criado) ? null : new Date(criado).toISOString(),
+    };
   }
 
   return {
@@ -175,6 +207,30 @@ export function createPlataformaTkConnector(creds: RastreadorCredenciais): Rastr
           return { tipo: "indeterminado", motivo: "PTK: /trackers/status nao devolveu lista" };
         }
         return { tipo: "lista", itens: dados.map(lerStatuses).filter((i): i is StatusRastreador => i !== null) };
+      } catch (e) {
+        return { tipo: "indeterminado", motivo: motivo(e) };
+      }
+    },
+
+    async cadastroDeTodos(): Promise<ResultadoCadastro> {
+      try {
+        const dados = await buscar("/trackers");
+        if (!Array.isArray(dados)) {
+          return { tipo: "indeterminado", motivo: "PTK: /trackers nao devolveu lista" };
+        }
+        return { tipo: "lista", itens: dados.map(lerCadastro).filter((i): i is CadastroRastreador => i !== null) };
+      } catch (e) {
+        return { tipo: "indeterminado", motivo: motivo(e) };
+      }
+    },
+
+    async dicionarioDeSensores(): Promise<ResultadoDicionario> {
+      try {
+        const dados = await buscar("/status-descriptions");
+        if (!dados || typeof dados !== "object" || Array.isArray(dados)) {
+          return { tipo: "indeterminado", motivo: "PTK: /status-descriptions nao devolveu objeto" };
+        }
+        return { tipo: "dicionario", dados };
       } catch (e) {
         return { tipo: "indeterminado", motivo: motivo(e) };
       }
