@@ -32,6 +32,7 @@ import {
   MessageSquareText,
   MoreHorizontal,
   Wallet,
+  Truck,
 } from "lucide-react";
 
 const INTERVALO_POLLING_NAO_LIDAS_MS = 45_000;
@@ -106,6 +107,19 @@ const NAV_ITEMS: {
     labelCurto: "ONU",
     icon: Router,
     ocultoPara: [UserRole.TECNICO],
+  },
+  /*
+   * Frota. PROVEDOR fica de fora: a posicao de uma viatura conta a um ISP
+   * quando o concorrente foi atendido — e ha carro da operacao, que nao e de
+   * ninguem em particular. TECNICO tambem: ele declara a viatura DENTRO da
+   * jornada, no app; uma lista de cadastro na web nao serve pra ele.
+   */
+  {
+    to: "/frota",
+    label: "Frota",
+    icon: Truck,
+    ocultoPara: [UserRole.PROVEDOR, UserRole.TECNICO],
+    modulo: "frota",
   },
   /*
    * Dinheiro da PROPRIA HubISP. Escondido de todo mundo menos ADMIN, e nao so

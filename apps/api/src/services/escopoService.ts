@@ -33,6 +33,41 @@ export function podeAcessarOs(user: JwtPayload, os: { provedorId: string; tecnic
 }
 
 /**
+ * Escopo de VEICULO. A semantica NAO e a mesma do `escopoOsWhere`, e a
+ * diferenca importa nos dois papeis:
+ *
+ * - PROVEDOR ve so os proprios, e NAO os de `provedorId = NULL`. Carro nulo e da
+ *   operacao ISPhub e atende varios provedores — a posicao dele contaria a um
+ *   ISP quando o concorrente foi atendido. Carro compartilhado e dado da hub.
+ * - TECNICO ve todos os ativos, e NAO "os que ele ja ocupou": ele precisa
+ *   ESCOLHER uma viatura pra declarar a ocupacao, e restringir ao historico
+ *   tornaria o primeiro uso impossivel. Ele e pessoal da ISPhub, nao de um
+ *   provedor — a mesma premissa que `escopoOsWhere` ja documenta.
+ *
+ * Ver o veiculo na lista NAO da direito a ver a TRILHA dele; aquilo e mais
+ * estreito e tem guarda propria.
+ */
+export function escopoVeiculoWhere(user: JwtPayload, filtroProvedorId?: string): Record<string, unknown> {
+  if (user.role === UserRole.PROVEDOR) {
+    return { provedorId: user.provedorId ?? "__nenhum__" };
+  }
+  if (user.role === UserRole.TECNICO) {
+    return { status: { not: "inativo" } };
+  }
+  return filtroProvedorId ? { provedorId: filtroProvedorId } : {};
+}
+
+/** Confere se o usuario pode ler/editar um veiculo especifico. */
+export function podeAcessarVeiculo(user: JwtPayload, veiculo: { provedorId: string | null }): boolean {
+  if (user.role === UserRole.PROVEDOR) {
+    // `null == null` seria `true` se o provedor nao tivesse provedorId — daria
+    // a ele os carros da hub. A checagem explicita fecha isso.
+    return veiculo.provedorId != null && veiculo.provedorId === user.provedorId;
+  }
+  return true;
+}
+
+/**
  * Escopo de acesso as rotas POR PROVEDOR que falam ao vivo com o SGP dele
  * (conexao/*, fttx/*) — consultas de assinante e ESCRITA DE REDE (autorizar/
  * desautorizar ONU numa OLT).

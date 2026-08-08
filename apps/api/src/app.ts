@@ -28,6 +28,7 @@ import { canaisWhatsappRouter } from "./routes/canaisWhatsapp.js";
 import { smtpRouter } from "./routes/smtp.js";
 import { diagnosticoRouter } from "./routes/diagnostico.js";
 import { jornadaRouter } from "./routes/jornada.js";
+import { frotaRouter } from "./routes/frota.js";
 import { webhooksWhatsappRouter } from "./routes/webhooksWhatsapp.js";
 import { clienteChatRouter } from "./routes/clienteChat.js";
 
@@ -115,6 +116,7 @@ export function createApp() {
   app.use("/ordens-servico", ordensServicoRouter);
   app.use("/dashboard", dashboardRouter);
   app.use("/financeiro", financeiroRouter);
+  app.use("/frota", frotaRouter);
 
   app.use((_req, res) => {
     res.status(404).json({ error: "Rota nao encontrada" });

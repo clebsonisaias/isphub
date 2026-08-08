@@ -20,6 +20,7 @@ import { FinanceiroRecorrenciasPage } from "@/pages/FinanceiroRecorrenciasPage";
 import { FinanceiroParceladosPage } from "@/pages/FinanceiroParceladosPage";
 import { FinanceiroProvisoesPage } from "@/pages/FinanceiroProvisoesPage";
 import { FinanceiroFrotaPage } from "@/pages/FinanceiroFrotaPage";
+import { FrotaVeiculosPage } from "@/pages/FrotaVeiculosPage";
 import { ChatPage } from "@/pages/ChatPage";
 import { ClientesChatPage } from "@/pages/ClientesChatPage";
 import { ProvedoresPage } from "@/pages/admin/ProvedoresPage";
@@ -144,6 +145,19 @@ function App() {
                   element={
                     <RequireAuth roles={[UserRole.ADMIN]}>
                       <FinanceiroFrotaPage />
+                    </RequireAuth>
+                  }
+                />
+                {/*
+                  Frota (operacional) — ADMIN e GESTOR. Nao fica sob /financeiro:
+                  aquela arvore inteira e ADMIN-only por desenho, e quem despacha
+                  precisa saber quais viaturas existem.
+                */}
+                <Route
+                  path="/frota"
+                  element={
+                    <RequireAuth roles={[UserRole.ADMIN, UserRole.GESTOR]}>
+                      <FrotaVeiculosPage />
                     </RequireAuth>
                   }
                 />
