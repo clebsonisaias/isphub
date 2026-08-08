@@ -21,6 +21,13 @@ const envSchema = z.object({
   CRYPTO_KEY: z
     .string()
     .length(64, "CRYPTO_KEY deve ser uma string hex de 64 caracteres (32 bytes)"),
+  /**
+   * Origem(ns) do navegador liberadas no CORS. Aceita LISTA separada por
+   * virgula: em producao e um valor so, mas em desenvolvimento o painel web
+   * (5173) e o app do tecnico rodando no navegador (8081) precisam falar com a
+   * MESMA API — e trocar a variavel pra alternar entre eles ja custou uma
+   * suite e2e inteira travada em CORS.
+   */
   WEB_ORIGIN: z.string().default("http://localhost:5173"),
   /**
    * Loga o payload bruto do SGP (util pra descobrir nomes de campo reais).

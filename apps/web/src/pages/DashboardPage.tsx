@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import type { DashboardMetrics } from "@isphub/shared";
+import type { DashboardMetrics, TecnicoEmJornada } from "@isphub/shared";
 import { gsap, useGSAP, ScrollTrigger } from "@/lib/gsapSetup";
 import { AppShell } from "@/components/AppShell";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,9 +11,10 @@ import { CountUp } from "@/components/CountUp";
 import { RankedBars } from "@/components/RankedBars";
 import { StatusDonut } from "@/components/StatusDonut";
 import { dashboardApi } from "@/lib/dashboardApi";
+import { EmJornada } from "@/components/dashboard/EmJornada";
 import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
-import { ArrowRight, PackageX, Inbox, CheckCircle2, Building2, AlarmClock, type LucideIcon } from "lucide-react";
+import { ArrowRight, PackageX, Inbox, CheckCircle2, Building2, AlarmClock, Activity, type LucideIcon } from "lucide-react";
 
 function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
@@ -104,6 +105,7 @@ function DashboardSkeleton() {
 export function DashboardPage() {
   const { toast } = useToast();
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [emJornada, setEmJornada] = useState<TecnicoEmJornada[]>([]);
   const [carregando, setCarregando] = useState(true);
   const pageRef = useRef<HTMLDivElement>(null);
 
@@ -116,6 +118,12 @@ export function DashboardPage() {
         toast({ titulo: "Erro ao carregar métricas", descricao: mensagem(err), variante: "erro" });
       })
       .finally(() => setCarregando(false));
+    /*
+     * Consulta separada e tolerante: quem esta em jornada e informacao de apoio.
+     * Se ela falhar, o Dashboard inteiro nao pode ficar sem numeros — o bloco
+     * so aparece vazio.
+     */
+    dashboardApi.emJornada().then(setEmJornada).catch(() => setEmJornada([]));
   }
 
   useEffect(() => {
@@ -183,6 +191,26 @@ export function DashboardPage() {
           <KpiTile label="Provedores" value={metrics.porProvedor.length} tone="blue" icon={Building2} />
           <KpiTile label="SLA estourado" value={metrics.slaEstourado} tone="critico" icon={AlarmClock} />
         </div>
+
+        {/* Quem esta na rua AGORA — decide o despacho, entao vem antes dos
+            recortes por provedor/categoria. */}
+        <Card className="dash-top-card mb-6 opacity-0">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="size-4 text-muted-foreground" />
+              Em jornada agora
+              {emJornada.length > 0 ? (
+                <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-semibold tabular-nums text-muted-foreground">
+                  {emJornada.length}
+                </span>
+              ) : null}
+            </CardTitle>
+            <CardDescription>Técnicos que iniciaram a jornada e ainda não encerraram.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <EmJornada tecnicos={emJornada} />
+          </CardContent>
+        </Card>
 
         {/* Retiradas/cancelamentos ficam separadas: sao executadas por equipe de
             fora, entao nao entram nos numeros da operacao acima. */}

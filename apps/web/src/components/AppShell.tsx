@@ -150,7 +150,17 @@ const GAP_NAV = 4;
  */
 function useQuantosCabem(qtdItens: number, navRef: React.RefObject<HTMLElement | null>) {
   const [cabem, setCabem] = useState(qtdItens);
+  /**
+   * A medicao ja chegou a uma conclusao?
+   *
+   * Enquanto for `false`, o cabecalho mostra TODOS os itens — nao porque cabem,
+   * mas porque ainda nao se sabe. E um estado transitorio real, e quem le a
+   * barra nesse instante (pessoa ou teste) le uma linha que ainda vai mudar.
+   * Vira `data-nav-medido` no DOM pra que dê pra esperar por ele.
+   */
+  const [medido, setMedido] = useState(false);
   const largurasRef = useRef<number[] | null>(null);
+  const retryRef = useRef<number | null>(null);
 
   const recalcular = useCallback(() => {
     const el = navRef.current;
@@ -160,6 +170,7 @@ function useQuantosCabem(qtdItens: number, navRef: React.RefObject<HTMLElement |
     // nada de esconder item ali.
     if (!window.matchMedia("(min-width: 1024px)").matches) {
       setCabem(qtdItens);
+      setMedido(true);
       return;
     }
 
@@ -175,13 +186,31 @@ function useQuantosCabem(qtdItens: number, navRef: React.RefObject<HTMLElement |
        * mesmo colapsados (o colapso e `display:none` via CSS), so nao tem
        * largura. Medida invalida: sai sem gravar e tenta no proximo quadro.
        */
-      if (medidas.length < qtdItens || medidas.some((w) => w === 0)) return;
+      if (medidas.length < qtdItens || medidas.some((w) => w === 0)) {
+        /*
+         * ESTE agendamento faltava, e o comentario acima prometia ele.
+         *
+         * Sem reagendar, a remedicao so acontecia se algo MAIS causasse um
+         * render — na pratica, o reflow do carregamento da fonte. Ate la o
+         * cabecalho ficava com todos os itens na linha e depois recolhia: um
+         * pulo visivel, e a janela em que o teste do menu lia a barra antes de
+         * ela assentar (falhou duas vezes em 07/08).
+         */
+        if (retryRef.current === null) {
+          retryRef.current = requestAnimationFrame(() => {
+            retryRef.current = null;
+            recalcularRef.current?.();
+          });
+        }
+        return;
+      }
       largurasRef.current = medidas;
     }
 
     const larguras = largurasRef.current;
     const disponivel = el.clientWidth;
     const total = larguras.reduce((a, b) => a + b, 0) + GAP_NAV * (larguras.length - 1);
+    setMedido(true);
     if (total <= disponivel) {
       setCabem(qtdItens);
       return;
@@ -198,9 +227,19 @@ function useQuantosCabem(qtdItens: number, navRef: React.RefObject<HTMLElement |
     setCabem(Math.max(1, n));
   }, [qtdItens, navRef]);
 
+  // O rAF acima precisa chamar a versao ATUAL de `recalcular`; a ref evita a
+  // dependencia circular de referenciar o callback dentro dele mesmo.
+  const recalcularRef = useRef(recalcular);
+  recalcularRef.current = recalcular;
+
+  useEffect(() => () => {
+    if (retryRef.current !== null) cancelAnimationFrame(retryRef.current);
+  }, []);
+
   // Lista mudou (modulo ligado/desligado, troca de papel): remede do zero.
   useLayoutEffect(() => {
     largurasRef.current = null;
+    setMedido(false);
     setCabem(qtdItens);
   }, [qtdItens]);
 
@@ -233,7 +272,7 @@ function useQuantosCabem(qtdItens: number, navRef: React.RefObject<HTMLElement |
     return () => ro.disconnect();
   }, [recalcular, navRef]);
 
-  return cabem;
+  return { cabem, medido };
 }
 
 /**
@@ -555,7 +594,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     return base;
   }, [usuario, modulosHabilitados]);
 
-  const cabem = useQuantosCabem(itensNav.length, navRef);
+  const { cabem, medido: navMedido } = useQuantosCabem(itensNav.length, navRef);
   const noExcesso = itensNav.slice(cabem);
 
   useEffect(() => {
@@ -638,6 +677,12 @@ export function AppShell({ children }: { children: ReactNode }) {
                */
               className="fixed inset-x-0 bottom-0 z-30 flex items-stretch justify-around border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:static lg:inset-auto lg:z-auto lg:min-w-0 lg:flex-1 lg:items-center lg:justify-start lg:gap-1 lg:overflow-x-auto lg:border-t-0 lg:bg-transparent lg:pb-0 lg:backdrop-blur-none lg:scrollbar-none"
               aria-label="Navegação principal"
+              /*
+               * `false` enquanto a medicao nao concluiu — nesse instante a
+               * barra mostra todos os itens porque ainda nao se SABE quais
+               * cabem, nao porque cabem. Deixa isso legivel de fora.
+               */
+              data-nav-medido={navMedido}
             >
               {itensNav.map(({ to, label, labelCurto, icon: Icon, soDesktop }, i) => {
                 const ativo = to === "/admin" ? location.pathname.startsWith("/admin") : location.pathname === to;

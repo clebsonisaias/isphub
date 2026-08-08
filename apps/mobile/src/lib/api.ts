@@ -81,6 +81,14 @@ export function buildFilaQuery(filtros: FilaFiltros): string {
   if (filtros.grupo) p.set("grupo", filtros.grupo);
   if (filtros.equipe) p.set("equipe", filtros.equipe);
   if (filtros.busca) p.set("busca", filtros.busca);
+  /*
+   * `de`/`ate` recortam por `dataAgendamento` — e o que sustenta a "agenda do
+   * dia". O filtro sempre existiu no servidor (routes/fila.ts, que ate ordena
+   * por esse campo); faltava so serializar aqui, entao a agenda era inalcancavel
+   * pelo app sem nenhuma razao de produto.
+   */
+  if (filtros.de) p.set("de", filtros.de);
+  if (filtros.ate) p.set("ate", filtros.ate);
   const s = p.toString();
   return s ? `?${s}` : "";
 }

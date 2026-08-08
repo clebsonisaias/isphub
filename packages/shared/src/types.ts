@@ -285,6 +285,29 @@ export interface DashboardMetrics {
   retiradas: DashboardRetiradas;
 }
 
+/**
+ * O dia do tecnico, do ponto de vista DELE — nao do gestor.
+ *
+ * Distinto de `DashboardMetrics`, que e agregado global e sem recorte de dia.
+ * Aqui o corte e o dia CIVIL brasileiro (ver meuDiaService.diaBrasileiro) e o
+ * escopo e sempre o proprio tecnico.
+ *
+ * `concluidas` e o campo que justifica o endpoint existir: o app derivava os
+ * contadores da fila ABERTA em memoria, e uma lista de abertas nao sabe de
+ * concluida — o tecnico terminava o dia e o numero nao mexia.
+ */
+export interface MeuDiaResumo {
+  /** Abertas hoje que ainda nao sairam do lugar. */
+  programadas: number;
+  concluidas: number;
+  /** Em deslocamento ou em execucao: ja comecaram, nao terminaram. */
+  pendentes: number;
+  /** Canceladas — cliente ausente, sem acesso, etc. */
+  naoRealizadas: number;
+  /** 0..100. Concluidas sobre o total do dia; ver meuDiaService.produtividade. */
+  produtividade: number;
+}
+
 /** Metricas das OS de equipe externa (retirada/cancelamento) — ver DashboardMetrics.retiradas. */
 export interface DashboardRetiradas {
   abertas: number;

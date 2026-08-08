@@ -325,6 +325,22 @@ async function main() {
    *
    * A ordem importa: eventos e vinculos primeiro, senao a FK barra.
    */
+  /*
+   * Jornada: apaga as de rodadas anteriores e deixa UMA aberta pro tecnico.
+   * Sem apagar, o indice parcial `jornadas_tecnico_uma_aberta_por_usuario`
+   * recusaria a insercao na segunda rodada — e o seed falharia inteiro, nao so
+   * este trecho.
+   */
+  await prisma.jornadaTecnico.deleteMany({});
+  await prisma.jornadaTecnico.create({
+    data: {
+      usuarioId: tecnico.id,
+      // 2h atras: tempo suficiente pra aparecer no card sem cair no alerta de
+      // 12h, que e um estado diferente e tem teste proprio.
+      inicioEm: new Date(Date.now() - 2 * 60 * 60_000),
+    },
+  });
+
   await prisma.lancamentoEvento.deleteMany({});
   const { count: lancDescartados } = await prisma.lancamento.deleteMany({});
   await prisma.recorrencia.deleteMany({});

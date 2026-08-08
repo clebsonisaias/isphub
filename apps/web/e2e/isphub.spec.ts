@@ -23,11 +23,28 @@ test.describe("login por papel", () => {
      * O que importa aqui e ser ALCANCAVEL, nao em qual dos dois lugares esta.
      */
     await expect(page.getByRole("navigation", { name: "Navegação principal" })).toBeVisible();
-    const mais = page.getByRole("button", { name: /Mais seções/ });
-    if ((await mais.count()) > 0) await mais.click();
-    await expect(page.getByRole("link", { name: "Administração" })).toBeVisible();
 
-    await page.getByRole("link", { name: "Administração" }).click();
+    /*
+     * `toPass` reavalia o BLOCO inteiro, e e o unico formato que aguenta este
+     * cabecalho — ele assenta em ETAPAS, nao numa so:
+     *
+     *   1. renderiza com os itens que ja se conhece;
+     *   2. `/config` chega e a lista de modulos muda (o item de Administração
+     *      depende de modulo habilitado — ver AppShell.tsx:42);
+     *   3. a medicao de largura roda e colapsa o excesso dentro de "Mais".
+     *
+     * Um `if` executado uma vez decide sobre um instantâneo que ainda vai
+     * mudar: foi o que fez este teste dar falso negativo duas vezes em 07/08,
+     * ora com "Mais" ainda inexistente, ora com a lista de itens incompleta.
+     */
+    const link = page.getByRole("link", { name: "Administração" });
+    const mais = page.getByRole("button", { name: /Mais seções/ });
+    await expect(async () => {
+      if (await mais.isVisible()) await mais.click();
+      await expect(link).toBeVisible({ timeout: 1_000 });
+    }).toPass({ timeout: 15_000 });
+
+    await link.click();
     await expect(page).toHaveURL("/admin");
     await expect(page.getByRole("heading", { name: "Provedores" })).toBeVisible();
   });

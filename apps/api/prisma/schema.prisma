@@ -144,65 +144,65 @@ model TipoOs {
 
 /// Ordem de Servico espelhada do ERP do provedor.
 model OrdemServico {
-  id                   String    @id @default(uuid())
-  provedorId           String
-  provedor             Provedor  @relation(fields: [provedorId], references: [id], onDelete: Cascade)
-  sgpOsId              String
-  tipoOsId             String?
-  tipoOs               TipoOs?   @relation(fields: [tipoOsId], references: [id], onDelete: SetNull)
-  status               OsStatus  @default(aberta)
-  prioridade           Int       @default(2)
-  clienteNome          String?
-  clienteDocumento     String?
+  id                       String    @id @default(uuid())
+  provedorId               String
+  provedor                 Provedor  @relation(fields: [provedorId], references: [id], onDelete: Cascade)
+  sgpOsId                  String
+  tipoOsId                 String?
+  tipoOs                   TipoOs?   @relation(fields: [tipoOsId], references: [id], onDelete: SetNull)
+  status                   OsStatus  @default(aberta)
+  prioridade               Int       @default(2)
+  clienteNome              String?
+  clienteDocumento         String?
   /// Telefone/contato do cliente, do cadastro no SGP (/api/ura/clientes/) —
   /// a listagem de OS nao traz, vem no mesmo backfill do endereco/geo.
-  telefone             String?
-  contratoId           String?
-  protocolo            String?
-  conteudo             String?
-  observacao           String?
-  logradouro           String?
-  numero               String?
-  bairro               String?
-  cidade               String?
-  lat                  Float?
-  lng                  Float?
+  telefone                 String?
+  contratoId               String?
+  protocolo                String?
+  conteudo                 String?
+  observacao               String?
+  logradouro               String?
+  numero                   String?
+  bairro                   String?
+  cidade                   String?
+  lat                      Float?
+  lng                      Float?
   /// Localidade/POP do SGP (ex.: "Macaíba") — o SGP nao expoe endereco de
   /// rua nas listagens de OS, isso e o dado de localizacao mais
   /// fino disponivel.
-  pop                  String?
+  pop                      String?
   /// Status do contrato no SGP no momento do sync (ex.: "Ativo",
   /// "Cancelado"). Usado para alertar o gestor/tecnico antes de despachar
   /// para um contrato ja cancelado/suspenso.
-  contratoStatus       String?
+  contratoStatus           String?
   /// Usuario do SGP que registrou a OS (auditoria).
-  usuario              String?
+  usuario                  String?
   /// Data/hora reais de abertura no SGP (data_cadastro+hora_cadastro) —
   /// distinta de criadoEm, que so reflete quando o ISPhub sincronizou pela
   /// primeira vez.
-  dataCadastro         DateTime?
-  dataAgendamento      DateTime?
+  dataCadastro             DateTime?
+  dataAgendamento          DateTime?
   /// Tecnico ISPhub atribuido (Usuario com role=tecnico) — despacho feito
   /// dentro do ISPhub, nao vem do SGP.
-  tecnicoId            String?
-  tecnico              Usuario?  @relation(fields: [tecnicoId], references: [id], onDelete: SetNull)
+  tecnicoId                String?
+  tecnico                  Usuario?  @relation(fields: [tecnicoId], references: [id], onDelete: SetNull)
   /// Nome do tecnico designado no SGP do provedor (informativo — o SGP e de
   /// pessoal do provedor, nao do tecnico ISPhub que de fato executa a OS).
-  tecnicoSgpNome       String?
+  tecnicoSgpNome           String?
   /// Marca quando o alerta de "SLA estourado" ja foi disparado pra esta OS —
   /// evita notificar de novo a cada tick do slaAlertScheduler.
-  slaNotificadoEm      DateTime?
+  slaNotificadoEm          DateTime?
   /// Quando o status foi alterado por acao humana no ISPhub (writebackService),
   /// nao pelo sync. Usado pra sync nao sobrescrever, por uma janela de graca,
   /// um status recem-confirmado com o SGP enquanto a leitura do SGP ainda
   /// nao refletiu a escrita (consistencia eventual do lado do SGP).
-  statusAlteradoEm     DateTime?
+  statusAlteradoEm         DateTime?
   /// Quando a observacao (eco local da ultima anotacao) foi alterada por
   /// acao humana — mesma logica do statusAlteradoEm, mas pro campo
   /// observacao: o SGP nao expoe historico de anotacoes pra confirmar a
   /// escrita, entao o sync so volta a confiar na leitura dele apos a janela
   /// de graca (ver syncService.ts).
-  observacaoAlteradaEm DateTime?
+  observacaoAlteradaEm     DateTime?
   /// Quando o status do CONTRATO foi alterado por acao humana daqui. Mesma
   /// janela de graca do statusAlteradoEm: o SGP aceita a escrita mas a leitura
   /// seguinte ainda devolve o valor antigo por alguns ciclos.
@@ -212,21 +212,21 @@ model OrdemServico {
   /// confirmacao so nao cancela: em ago/2026 o sync cancelou OS que o SGP
   /// estava listando no mesmo minuto, e exigir repeticao torna um engano
   /// pontual inofensivo (ver a reconciliacao em syncService.ts).
-  ausenciasConsecutivas Int @default(0)
+  ausenciasConsecutivas    Int       @default(0)
   /// Quando o aviso de "OS nova" foi disparado. Trava o alerta em UMA vez por
   /// OS — sem isto o job avisaria a mesma OS a cada minuto. Nulo = ainda nao
   /// avisada; a migracao preenche as JA existentes com a data de entao, senao o
   /// primeiro tick despejaria o acervo inteiro no sino de todo mundo.
-  novaNotificadaEm DateTime?
+  novaNotificadaEm         DateTime?
   /// Quando o backfill tentou puxar o cadastro do cliente (/api/ura/clientes/)
   /// pra esta OS — a listagem de OS do SGP nao traz endereco de rua, geo nem
   /// telefone, so esse endpoint traz. Marca a TENTATIVA (com ou sem dado) pra
   /// nao reconsultar pra sempre um contrato que o SGP nao detalha; reconsulta
   /// so apos um TTL (ver syncService.ts).
-  geoConsultadoEm      DateTime?
-  criadoEm             DateTime  @default(now())
-  atualizadoEm         DateTime  @updatedAt
-  sincronizadoEm       DateTime  @default(now())
+  geoConsultadoEm          DateTime?
+  criadoEm                 DateTime  @default(now())
+  atualizadoEm             DateTime  @updatedAt
+  sincronizadoEm           DateTime  @default(now())
 
   atribuicoes  Atribuicao[]
   eventos      OsEvento[]
@@ -313,12 +313,13 @@ model Usuario {
   sessoesRefresh    SessaoRefresh[]
   tokensRecuperacao TokenRecuperacaoSenha[]
 
-  lancamentosCriados Lancamento[]       @relation("LancamentosCriados")
-  recorrenciasCriadas Recorrencia[]     @relation("RecorrenciasCriadas")
-  parcelamentosCriados Parcelamento[]   @relation("ParcelamentosCriados")
-  abastecimentos       Abastecimento[]   @relation("AbastecimentosRegistrados")
+  lancamentosCriados   Lancamento[]        @relation("LancamentosCriados")
+  recorrenciasCriadas  Recorrencia[]       @relation("RecorrenciasCriadas")
+  parcelamentosCriados Parcelamento[]      @relation("ParcelamentosCriados")
+  abastecimentos       Abastecimento[]     @relation("AbastecimentosRegistrados")
   cartoesCombustivel   CartaoCombustivel[] @relation("CartoesCombustivel")
-  lancamentoEventos  LancamentoEvento[] @relation("LancamentoEventos")
+  lancamentoEventos    LancamentoEvento[]  @relation("LancamentoEventos")
+  jornadas             JornadaTecnico[]
 
   @@map("usuarios")
 }
@@ -428,6 +429,41 @@ model PushToken {
 
   @@index([usuarioId])
   @@map("push_tokens")
+}
+
+/// Turno de trabalho do tecnico — MARCADOR OPERACIONAL, nao ponto eletronico.
+///
+/// Responde "estou em servico desde as X" pra operacao. NAO vale como registro
+/// de jornada da CLT (Portaria 671 exigiria registro inviolavel, espelho de
+/// ponto e comprovante por marcacao); se um dia precisar valer, isto vira outro
+/// modelo, nao um campo a mais neste.
+///
+/// Sem coluna de duracao: e `fimEm - inicioEm`. Guardar um total que o banco
+/// sabe calcular e a receita de os dois discordarem.
+///
+/// ⚠️ INDICE PARCIAL FEITO A MAO. A migracao
+/// `20260807T203000_jornada_tecnico` cria
+/// `CREATE UNIQUE INDEX ... ON "jornadas_tecnico"("usuarioId") WHERE "fimEm" IS NULL`
+/// — a garantia de UMA jornada aberta por tecnico. Indice parcial nao e
+/// expressavel aqui no schema, entao um `prisma migrate diff` futuro vai propor
+/// DROP desse indice. Esse DROP e uma REGRESSAO, nao limpeza: sem ele, dois
+/// toques no botao viram duas jornadas e o "tempo trabalhado" vira ficcao.
+model JornadaTecnico {
+  id        String    @id @default(uuid())
+  usuarioId String
+  usuario   Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  inicioEm  DateTime  @default(now())
+  /// Nulo = jornada ABERTA. E o que o indice parcial acima observa.
+  fimEm     DateTime?
+  /// Onde o tecnico estava ao bater inicio/fim. Best-effort: permissao negada
+  /// nao pode impedir alguem de comecar o turno, entao sao nulaveis.
+  latInicio Float?
+  lngInicio Float?
+  latFim    Float?
+  lngFim    Float?
+
+  @@index([usuarioId, inicioEm])
+  @@map("jornadas_tecnico")
 }
 
 /// Despacho de uma OS para um tecnico (historico de atribuicoes).
@@ -897,7 +933,7 @@ model Lancamento {
   /// Data CIVIL (@db.Date), nao instante. Vencimento com hora arrastaria o
   /// bug classico de fuso: meia-noite UTC vira o dia anterior em BRT e a tela
   /// mostra um dia a menos. @db.Date remove a classe inteira na origem.
-  vencimento DateTime @db.Date
+  vencimento  DateTime @db.Date
   /// Mes de referencia, sempre no dia 1. Separado do vencimento de proposito:
   /// a mensalidade de marco que vence 10/abril PERTENCE a marco. Sem esta
   /// coluna, relatorio por competencia so mentiria.
@@ -961,9 +997,9 @@ model Lancamento {
 
   /// Cobre exatamente a consulta de vencidos (status=pendente AND vencimento <
   /// hoje), que e o preco de derivar "atrasado" em vez de grava-lo.
-  /*
+  /**
+   * /*
    * A TRAVA DE IDEMPOTENCIA da recorrencia, no banco.
-   *
    * O gerador pode rodar quantas vezes quiser: uma segunda tentativa de criar a
    * ocorrencia do mesmo vencimento bate aqui. E a diferenca entre este modelo e
    * o do ERP de origem, cujo botao de sincronizar inseria sem verificar nada —
@@ -1018,10 +1054,10 @@ model LancamentoEvento {
 /// JavaScript. Rodar o job duas vezes, um retry, ou dois containers num deploy
 /// sobreposto nao tem como cobrar em dobro.
 model Recorrencia {
-  id        String                @id @default(uuid())
-  tipo      LancamentoTipo
-  descricao String                @db.VarChar(200)
-  valor     Decimal               @db.Decimal(14, 2)
+  id         String                @id @default(uuid())
+  tipo       LancamentoTipo
+  descricao  String                @db.VarChar(200)
+  valor      Decimal               @db.Decimal(14, 2)
   frequencia FrequenciaRecorrencia @default(mensal)
 
   /// Dia do vencimento (1-31). Guardado como NUMERO, e o vencimento de cada mes
@@ -1068,7 +1104,6 @@ model Recorrencia {
   @@index([tipoProvisao])
   @@map("recorrencias")
 }
-
 
 /// Compra dividida em N parcelas — diferente da recorrencia, que e indefinida.
 ///
@@ -1117,14 +1152,14 @@ enum TipoCombustivel {
 }
 
 model Veiculo {
-  id       String  @id @default(uuid())
-  placa    String  @unique
-  modelo   String  @db.VarChar(80)
+  id       String   @id @default(uuid())
+  placa    String   @unique
+  modelo   String   @db.VarChar(80)
   ano      Int?
   /// Odometro do ultimo abastecimento registrado — cache de leitura, sempre
   /// recalculavel a partir de Abastecimento. Existe so pra lista nao precisar
   /// de subconsulta; a VERDADE sao os abastecimentos.
-  ativo    Boolean @default(true)
+  ativo    Boolean  @default(true)
   criadoEm DateTime @default(now())
 
   abastecimentos Abastecimento[]
@@ -1139,21 +1174,20 @@ model Veiculo {
 /// `finance_transaction_id` — dois fatos sobre a mesma coisa, e o booleano pode
 /// dizer "sim" com a FK vazia. Aqui a FK E a resposta.
 model Abastecimento {
-  id        String   @id @default(uuid())
+  id        String  @id @default(uuid())
   veiculoId String
-  veiculo   Veiculo  @relation(fields: [veiculoId], references: [id], onDelete: Cascade)
+  veiculo   Veiculo @relation(fields: [veiculoId], references: [id], onDelete: Cascade)
 
-  data       DateTime        @db.Date
+  data        DateTime        @db.Date
   /// Odometro no momento do abastecimento.
-  km         Int
-  litros     Decimal         @db.Decimal(10, 3)
-  valorTotal Decimal         @db.Decimal(14, 2)
+  km          Int
+  litros      Decimal         @db.Decimal(10, 3)
+  valorTotal  Decimal         @db.Decimal(14, 2)
   combustivel TipoCombustivel @default(gasolina)
-  posto      String?         @db.VarChar(120)
+  posto       String?         @db.VarChar(120)
 
   /**
    * Encheu o tanque?
-   *
    * Sem isso o km/l e mentira: com abastecimento parcial nao se sabe quanto
    * combustivel havia no tanque, entao a distancia percorrida nao corresponde
    * aos litros postos. O consumo so e calculado entre dois tanques CHEIOS
@@ -1191,11 +1225,11 @@ enum MovimentoCartaoTipo {
 /// ordem ou removido pra as tres versoes discordarem. Aqui o saldo e a SOMA dos
 /// movimentos, calculada na leitura.
 model CartaoCombustivel {
-  id        String  @id @default(uuid())
-  numero    String  @unique @db.VarChar(40)
+  id        String   @id @default(uuid())
+  numero    String   @unique @db.VarChar(40)
   titularId String?
   titular   Usuario? @relation("CartoesCombustivel", fields: [titularId], references: [id], onDelete: SetNull)
-  ativo     Boolean @default(true)
+  ativo     Boolean  @default(true)
   criadoEm  DateTime @default(now())
 
   movimentos MovimentoCartao[]

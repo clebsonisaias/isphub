@@ -27,6 +27,7 @@ import { chatRouter } from "./routes/chat.js";
 import { canaisWhatsappRouter } from "./routes/canaisWhatsapp.js";
 import { smtpRouter } from "./routes/smtp.js";
 import { diagnosticoRouter } from "./routes/diagnostico.js";
+import { jornadaRouter } from "./routes/jornada.js";
 import { webhooksWhatsappRouter } from "./routes/webhooksWhatsapp.js";
 import { clienteChatRouter } from "./routes/clienteChat.js";
 
@@ -42,7 +43,12 @@ export function createApp() {
   app.set("trust proxy", 1);
 
   app.use(helmet());
-  app.use(cors({ origin: env.WEB_ORIGIN, credentials: true }));
+  // Lista separada por virgula -> array; um valor so continua sendo string.
+  // O `cors` aceita os dois, entao producao nao muda de comportamento.
+  const origens = env.WEB_ORIGIN.split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+  app.use(cors({ origin: origens.length > 1 ? origens : origens[0], credentials: true }));
   // Compressao antes das rotas: a fila devolve ate 2000 itens de JSON muito
   // repetitivo — gzip corta a maior parte do trafego do app em campo (3G/4G).
   app.use(compression());
@@ -98,6 +104,7 @@ export function createApp() {
   app.use("/admin/canais-whatsapp", canaisWhatsappRouter);
   app.use("/admin/smtp", smtpRouter);
   app.use("/admin/diagnostico", diagnosticoRouter);
+  app.use("/jornada", jornadaRouter);
   app.use("/chat-clientes", clienteChatRouter);
   app.use("/provedores/:provedorId/erp-config", erpConfigRouter);
   app.use("/provedores/:provedorId/tipos-os", tiposOsRouter);

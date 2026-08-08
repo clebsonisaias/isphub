@@ -1,10 +1,19 @@
 import { Router } from "express";
-import { OsStatus, OS_STATUS_ABERTOS, UserRole, type DashboardMetrics, type DashboardRetiradas } from "@isphub/shared";
+import {
+  OsStatus,
+  OS_STATUS_ABERTOS,
+  UserRole,
+  type DashboardMetrics,
+  type DashboardRetiradas,
+  type MeuDiaResumo,
+  diaBrasileiro,
+} from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth } from "../middleware/auth.js";
 import { calcularSla } from "../services/slaService.js";
 import { escopoOsWhere } from "../services/escopoService.js";
+import { produtividade } from "../services/meuDiaService.js";
 import { OS_EXTERNA_WHERE, OS_INTERNA_WHERE } from "../services/equipeService.js";
 
 export const dashboardRouter = Router();
@@ -182,5 +191,48 @@ dashboardRouter.get(
     };
 
     res.json(metrics);
+  }),
+);
+
+/**
+ * O dia do TECNICO logado. Endpoint proprio, e nao um recorte de /metrics,
+ * por tres razoes: o escopo aqui e sempre a propria pessoa, o corte e o dia
+ * civil (o de /metrics e o acervo inteiro), e este e chamado a cada abertura
+ * do app — precisa ser barato.
+ */
+dashboardRouter.get(
+  "/meu-dia",
+  asyncHandler(async (req, res) => {
+    const { inicio, fim } = diaBrasileiro(new Date());
+    /*
+     * `escopoOsWhere` ja resolve o papel: tecnico ve so as dele. Admin/gestor
+     * que abrirem isto veem o dia da operacao inteira — nao e a tela deles, mas
+     * tambem nao ha o que esconder.
+     */
+    const doDia = {
+      ...escopoOsWhere(req.user!),
+      AND: [OS_INTERNA_WHERE],
+      dataAgendamento: { gte: inicio, lt: fim },
+    };
+
+    // Uma consulta so, agrupada — o app chama isto em toda abertura.
+    const grupos = await prisma.ordemServico.groupBy({
+      by: ["status"],
+      where: doDia,
+      _count: { _all: true },
+    });
+    const por = (...alvos: OsStatus[]) =>
+      grupos.filter((g) => alvos.includes(g.status as OsStatus)).reduce((t, g) => t + g._count._all, 0);
+
+    const contagens = {
+      programadas: por(OsStatus.ABERTA),
+      concluidas: por(OsStatus.CONCLUIDA),
+      // Ja saiu do lugar mas nao terminou — o que esta EM ANDAMENTO agora.
+      pendentes: por(OsStatus.EM_DESLOCAMENTO, OsStatus.EM_EXECUCAO, OsStatus.PENDENTE),
+      naoRealizadas: por(OsStatus.CANCELADA),
+    };
+
+    const resumo: MeuDiaResumo = { ...contagens, produtividade: produtividade(contagens) };
+    res.json(resumo);
   }),
 );

@@ -8,3 +8,5 @@ export * from "./clienteChat.js";
 export * from "./smtp.js";
 export * from "./financeiro.js";
 export * from "./contratoStatus.js";
+export * from "./dia.js";
+export * from "./jornada.js";
