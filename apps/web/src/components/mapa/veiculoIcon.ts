@@ -1,48 +1,59 @@
 import L from "leaflet";
+import { EMOJI_VEICULO, type TipoVeiculo } from "@isphub/shared";
 
 /**
- * Pino de VEICULO.
+ * Pino de VEICULO no mapa.
  *
  * Construido por API de DOM, nunca por string de HTML — a mesma razao que o
- * `pinIcon` da fila documenta: a cor vem do provedor, e concatenar isso num
- * `innerHTML` e injecao esperando acontecer.
+ * `pinIcon` da fila documenta.
  *
- * Um significado por canal visual, pra a leitura nao depender so de cor:
+ * O pictograma e um EMOJI e carrega o TIPO do veiculo (carro, moto, van,
+ * caminhao). O quadradinho anterior nao dizia isso: num patio com carro e moto,
+ * todos os pinos eram iguais.
  *
- *   forma       quadrado arredondado  — distingue de OS (circulo) e de retirada
- *                                       (losango). Um pino de frota nunca deve
- *                                       ser confundido com um de OS no mesmo mapa.
- *   preenchido  cor do provedor       — de quem e o carro (neutro = da operacao)
- *   halo        posicao velha/offline — o carro pode nao estar mais ali
- *   pulso       em movimento          — anda agora
+ * Como emoji tem cor FIXA, ele nao pode carregar estado — entao os estados
+ * continuam no HALO em volta, e nao no desenho:
  *
- * NAO ha rotacao por direcao: o contrato do fornecedor nao traz heading, e
- * derivar de dois pontos consecutivos aponta pro lado errado sempre que o carro
- * esta parado — que e a maior parte do tempo.
+ *   halo cinza + esmaecido   posicao velha ou sem comunicacao — nao confie no pino
+ *   halo verde               em movimento agora
+ *   sombra discreta          parado, com posicao recente
+ *
+ * O estado nunca depende SO de cor: a lista ao lado do mapa diz "em movimento"
+ * / "parado" / "sem comunicação" por extenso, e o popup traz a idade da posicao.
  */
-export function veiculoIcon(opts: { cor: string; velha: boolean; movendo: boolean }): L.DivIcon {
+export function veiculoIcon(opts: { tipo: TipoVeiculo; velha: boolean; movendo: boolean }): L.DivIcon {
   const caixa = document.createElement("div");
-  // 44px de area de toque em volta de um marcador de 18px: o alvo do dedo nao
-  // pode ser do tamanho do desenho.
+  // 44px de area de toque em volta de um glifo de ~26px: o alvo do dedo nao
+  // pode ter o tamanho do desenho.
   caixa.style.width = "44px";
   caixa.style.height = "44px";
   caixa.style.display = "flex";
   caixa.style.alignItems = "center";
   caixa.style.justifyContent = "center";
 
-  const marca = document.createElement("div");
-  marca.style.width = "18px";
-  marca.style.height = "18px";
-  marca.style.borderRadius = "5px";
-  marca.style.background = opts.cor;
-  marca.style.border = "2px solid rgba(255,255,255,.9)";
-  marca.style.boxShadow = opts.velha
-    ? "0 0 0 3px rgba(148,163,184,.55)" // halo cinza: nao confie na posicao
+  const disco = document.createElement("div");
+  disco.style.width = "36px";
+  disco.style.height = "36px";
+  disco.style.borderRadius = "50%";
+  // Disco claro por baixo: emoji sobre foto de satelite ou sobre rua clara some
+  // sem um fundo proprio.
+  disco.style.background = "rgba(255,255,255,.92)";
+  disco.style.display = "flex";
+  disco.style.alignItems = "center";
+  disco.style.justifyContent = "center";
+  disco.style.fontSize = "20px";
+  disco.style.lineHeight = "1";
+  disco.style.boxShadow = opts.velha
+    ? "0 0 0 3px rgba(148,163,184,.6)"
     : opts.movendo
-      ? "0 0 0 3px rgba(34,197,94,.45)" // halo verde: andando
-      : "0 1px 4px rgba(0,0,0,.45)";
-  if (opts.velha) marca.style.opacity = "0.55";
+      ? "0 0 0 3px rgba(34,197,94,.55)"
+      : "0 1px 5px rgba(0,0,0,.4)";
+  if (opts.velha) disco.style.opacity = "0.6";
 
-  caixa.appendChild(marca);
+  // `textContent`, e nao innerHTML: o emoji vem de um mapa fechado, mas a regra
+  // da casa e nunca montar marcador por string.
+  disco.textContent = EMOJI_VEICULO[opts.tipo] ?? EMOJI_VEICULO.carro;
+
+  caixa.appendChild(disco);
   return L.divIcon({ className: "", html: caixa, iconSize: [44, 44], iconAnchor: [22, 22] });
 }

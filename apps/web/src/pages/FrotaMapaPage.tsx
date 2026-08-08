@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MapContainer, Marker, Polyline, Popup, CircleMarker } from "react-leaflet";
-import { formatarPlaca, idadeDaPosicao, posicaoVelha } from "@isphub/shared";
+import { EMOJI_VEICULO, formatarPlaca, idadeDaPosicao, posicaoVelha } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
 import { AnimatedPage } from "@/components/AnimatedPage";
 import { Button } from "@/components/ui/button";
@@ -155,11 +155,16 @@ export function FrotaMapaPage() {
                       <Marker
                         key={v.veiculoId}
                         position={[v.lat, v.lng]}
-                        icon={veiculoIcon({ cor: COR_PADRAO, velha, movendo: v.movendo === true })}
+                        icon={veiculoIcon({ tipo: v.tipo, velha, movendo: v.movendo === true })}
                         eventHandlers={{ click: () => void abrirTrilha(v.veiculoId) }}
                       >
                         <Popup>
-                          <p className="font-semibold tabular-nums">{formatarPlaca(v.placa)}</p>
+                          <p className="font-semibold tabular-nums">
+                            <span className="mr-1" aria-hidden>
+                              {EMOJI_VEICULO[v.tipo]}
+                            </span>
+                            {formatarPlaca(v.placa)}
+                          </p>
                           <p className="text-xs">{v.modelo}</p>
                           <p className="text-xs">
                             {v.velocidadeKmh != null ? `${Math.round(v.velocidadeKmh)} km/h` : "—"} ·{" "}
@@ -191,7 +196,12 @@ export function FrotaMapaPage() {
                         )}
                       >
                         <p className="flex items-center justify-between gap-2">
-                          <span className="font-semibold tabular-nums">{formatarPlaca(v.placa)}</span>
+                          <span className="font-semibold tabular-nums">
+                            <span className="mr-1" aria-hidden>
+                              {EMOJI_VEICULO[v.tipo]}
+                            </span>
+                            {formatarPlaca(v.placa)}
+                          </span>
                           {/* Ícone + texto, nunca só cor — quem não distingue
                               verde de cinza precisa do mesmo aviso. */}
                           <span

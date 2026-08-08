@@ -245,3 +245,24 @@ export function ocupacaoPrecisaAtencao(inicioEm: string, agora: Date): boolean {
   if (Number.isNaN(inicio)) return false;
   return agora.getTime() - inicio >= OCUPACAO_LONGA_MS;
 }
+
+/**
+ * Pictograma do veiculo no mapa.
+ *
+ * Emoji aqui, e nao icone de biblioteca, por uma razao especifica de MAPA: o
+ * marcador precisa dizer O QUE e o veiculo num alvo de ~26px, sem legenda e sem
+ * cor disponivel (o pino ja usa cor e halo pra ESTADO). Um pictograma colorido
+ * resolve isso melhor que um glifo monocromatico.
+ *
+ * Isto NAO abre excecao pro resto da interface: em botao, menu e lista o
+ * sistema continua com lucide. Emoji como icone de UI e ruim porque muda de
+ * desenho a cada plataforma e nao herda cor de tema — num marcador de mapa,
+ * nenhuma das duas coisas atrapalha.
+ */
+export const EMOJI_VEICULO: Record<TipoVeiculo, string> = {
+  carro: "🚗",
+  moto: "🏍️",
+  van: "🚐",
+  caminhao: "🚛",
+  utilitario: "🛻",
+};

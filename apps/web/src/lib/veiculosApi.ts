@@ -63,6 +63,7 @@ export interface VeiculoNoMapa {
   veiculoId: string;
   placa: string;
   modelo: string;
+  tipo: TipoVeiculo;
   provedorNome: string | null;
   lat: number;
   lng: number;

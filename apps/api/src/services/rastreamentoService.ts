@@ -1,4 +1,4 @@
-import { simplificarTrilha, type RastreadorConnector, type StatusRastreador } from "@isphub/shared";
+import { simplificarTrilha, type RastreadorConnector, type StatusRastreador, type TipoVeiculo } from "@isphub/shared";
 import { comConcorrenciaLimitada } from "../lib/limitador.js";
 import { prisma } from "../lib/prisma.js";
 import { buildRastreadorConnector } from "./rastreadorService.js";
@@ -174,6 +174,8 @@ export interface PosicaoNoMapa {
   veiculoId: string;
   placa: string;
   modelo: string;
+  /** Decide o pictograma do marcador — carro, moto, van, caminhao. */
+  tipo: TipoVeiculo;
   provedorNome: string | null;
   lat: number;
   lng: number;
@@ -197,7 +199,7 @@ export async function mapaAoVivo(where: Record<string, unknown> = {}): Promise<P
     select: {
       rastreadorId: true,
       rastreador: { select: { comunicando: true } },
-      veiculo: { select: { id: true, placa: true, modelo: true, provedor: { select: { nome: true } } } },
+      veiculo: { select: { id: true, placa: true, modelo: true, tipo: true, provedor: { select: { nome: true } } } },
     },
   });
   if (vinculos.length === 0) return [];
@@ -222,6 +224,7 @@ export async function mapaAoVivo(where: Record<string, unknown> = {}): Promise<P
       veiculoId: v.veiculo.id,
       placa: v.veiculo.placa,
       modelo: v.veiculo.modelo,
+      tipo: v.veiculo.tipo,
       provedorNome: v.veiculo.provedor?.nome ?? null,
       lat: p.lat,
       lng: p.lng,
