@@ -5,8 +5,10 @@ import { useQuery } from "@tanstack/react-query";
 import {
   OsPrioridade,
   OsStatus,
+  PAPEL_OCUPACAO_ROTULO,
   filtroDoDia,
   formatarDuracao,
+  formatarPlaca,
   jornadaPrecisaAtencao,
   type FilaItem,
   type MeuDiaResumo,
@@ -30,7 +32,8 @@ import { Avatar, useAvatarUri } from "@/features/chat/avatar";
 import { FilaCard } from "@/features/minhas-os/fila-card";
 import { ordenarSlaFirst } from "@/features/minhas-os/sla";
 import { abrirNoWaze } from "@/features/minhas-os/navegacao";
-import { useJornada, useRelogioServidor } from "@/features/jornada/api";
+import { useJornada, useMinhaViatura, useRelogioServidor } from "@/features/jornada/api";
+import { FolhaViatura, type EscolhaViatura } from "@/features/jornada/viatura";
 
 interface FilaResp {
   itens: FilaItem[];
@@ -85,8 +88,33 @@ export default function MinhasOs() {
    * A jornada emoldura o dia: antes de saber qual e a proxima parada, o tecnico
    * precisa saber se ja esta em servico. Por isso o card fica acima de tudo.
    */
-  const { query: jornadaQuery, iniciar, encerrar } = useJornada();
+  const { query: jornadaQuery, iniciar, encerrar, trocarViatura } = useJornada();
   const jornada = jornadaQuery.data?.jornada ?? null;
+
+  /*
+   * A folha de viatura serve aos DOIS momentos — abrir o turno e trocar de
+   * carro no meio dele. Um estado so, com o modo dentro, em vez de dois
+   * booleanos que podem ficar ligados ao mesmo tempo.
+   */
+  const [folha, setFolha] = useState<"iniciar" | "trocar" | null>(null);
+  const minhaViatura = useMinhaViatura();
+  const rotuloViatura = minhaViatura.data
+    ? `${formatarPlaca(minhaViatura.data.veiculoPlaca)} · ${PAPEL_OCUPACAO_ROTULO[minhaViatura.data.papel]}`
+    : null;
+
+  function aplicarViatura(escolha?: EscolhaViatura) {
+    setFolha(null);
+    /*
+     * Trocar so faz sentido com jornada aberta; sem ela, "confirmar" e iniciar.
+     * Decidir aqui, e nao na folha, mantem a folha burra — ela so devolve a
+     * escolha e nao precisa saber em que momento do dia foi aberta.
+     */
+    if (folha === "trocar") {
+      if (escolha) trocarViatura.mutate(escolha);
+      return;
+    }
+    iniciar.mutate(escolha);
+  }
   // Relogio do SERVIDOR: o aparelho pode estar desacertado, e "tempo trabalhado"
   // e justamente o numero que a pessoa confere.
   const agoraServidor = useRelogioServidor(jornadaQuery.data?.agoraServidor);
@@ -151,9 +179,27 @@ export default function MinhasOs() {
             tempo={tempoJornada}
             precisaAtencao={jornada ? jornadaPrecisaAtencao(jornada.inicioEm, agoraServidor) : false}
             temLocalizacao={!!jornada?.latInicio}
-            ocupado={iniciar.isPending || encerrar.isPending}
-            onIniciar={() => iniciar.mutate()}
+            ocupado={iniciar.isPending || encerrar.isPending || trocarViatura.isPending}
+            viatura={rotuloViatura}
+            /*
+             * Tocar "Iniciar" ABRE a folha em vez de bater a jornada direto. A
+             * troca e proposital: a viatura so pode ser declarada no comeco do
+             * turno com uma pergunta, e perguntar depois seria perguntar tarde.
+             * Quem foi a pe sai por "Sem veículo hoje", que fica em destaque.
+             */
+            onIniciar={() => setFolha("iniciar")}
             onEncerrar={confirmarEncerrar}
+            onTrocarViatura={jornada ? () => setFolha("trocar") : undefined}
+          />
+
+          <FolhaViatura
+            visivel={folha !== null}
+            titulo={folha === "trocar" ? "Trocar de viatura" : "Qual viatura hoje?"}
+            rotuloPular={folha === "trocar" ? "Continuar sem veículo" : "Sem veículo hoje"}
+            ocupado={iniciar.isPending || trocarViatura.isPending}
+            onFechar={() => setFolha(null)}
+            onEscolher={(escolha) => aplicarViatura(escolha)}
+            onSemVeiculo={() => aplicarViatura(undefined)}
           />
 
           {/* --- A única coisa acionável agora --- */}

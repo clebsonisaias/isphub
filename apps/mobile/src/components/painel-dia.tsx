@@ -348,8 +348,10 @@ export function CardJornada({
   precisaAtencao,
   temLocalizacao,
   ocupado,
+  viatura,
   onIniciar,
   onEncerrar,
+  onTrocarViatura,
 }: {
   /** "07:42" — nulo quando nao ha jornada aberta. */
   inicio: string | null;
@@ -358,8 +360,11 @@ export function CardJornada({
   precisaAtencao?: boolean;
   temLocalizacao?: boolean;
   ocupado?: boolean;
+  /** "HFX-3652 · motorista" — nulo quando o tecnico foi a pe. */
+  viatura?: string | null;
   onIniciar: () => void;
   onEncerrar: () => void;
+  onTrocarViatura?: () => void;
 }) {
   if (!inicio || !tempo) {
     return (
@@ -403,6 +408,26 @@ export function CardJornada({
               <Feather name="map-pin" size={12} color={colors.ink2} />
               <Text style={estilo.jorGeoTxt}>Localização registrada no início</Text>
             </View>
+          ) : null}
+
+          {/*
+            A viatura na MESMA sublinha da localizacao, e nao num bloco proprio:
+            as duas respondem "o que ficou registrado quando abri o turno".
+            Toca-la troca de carro sem encerrar a jornada — o caso do carro que
+            quebra no meio do dia.
+          */}
+          {onTrocarViatura ? (
+            <Pressable
+              onPress={onTrocarViatura}
+              disabled={ocupado}
+              accessibilityRole="button"
+              accessibilityLabel={viatura ? `Viatura ${viatura}. Tocar para trocar.` : "Declarar viatura"}
+              style={({ pressed }) => [estilo.jorGeo, pressed && { opacity: 0.7 }]}
+            >
+              <Feather name="truck" size={12} color={colors.ink2} />
+              <Text style={estilo.jorGeoTxt}>{viatura ?? "Sem viatura declarada"}</Text>
+              <Feather name="edit-2" size={11} color={colors.muted} />
+            </Pressable>
           ) : null}
         </View>
 

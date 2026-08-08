@@ -1,10 +1,39 @@
 import { useEffect, useRef, useState } from "react";
 import { Alert } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { JornadaResposta } from "@isphub/shared";
+import type { JornadaResposta, OrigemOcupacao, PapelOcupacao } from "@isphub/shared";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { obterGeoOuNada } from "@/features/localizacao";
+import type { EscolhaViatura } from "./viatura";
+
+/** A ocupacao aberta do proprio tecnico, como `GET /frota/minha-viatura` devolve. */
+export interface OcupacaoAtual {
+  id: string;
+  veiculoId: string;
+  veiculoPlaca: string;
+  veiculoModelo: string;
+  usuarioId: string;
+  usuarioNome: string;
+  papel: PapelOcupacao;
+  origem: OrigemOcupacao;
+  declaradoPorNome: string;
+  inicioEm: string;
+  fimEm: string | null;
+  odometroInicio: number | null;
+  odometroFim: number | null;
+}
+
+/**
+ * `JornadaResposta` + os campos que a rota acrescenta quando ha viatura.
+ *
+ * A resposta do servidor cresceu ADITIVAMENTE: quem nao conhece `ocupacao` e
+ * `avisos` continua funcionando. Aqui a gente passa a conhecer.
+ */
+interface RespostaComViatura extends JornadaResposta {
+  ocupacao?: OcupacaoAtual | null;
+  avisos?: { codigo: string; mensagem: string; usuarioId: string }[];
+}
 
 /**
  * Jornada do tecnico — iniciar/encerrar o turno.
@@ -49,13 +78,53 @@ export function useJornada() {
     void refetchMe();
   };
 
+  /*
+   * A ocupacao mudou: quem esta em cada viatura tambem mudou. Sem invalidar,
+   * a folha reabriria mostrando o carro como "livre" logo depois de a pessoa
+   * ter entrado nele.
+   */
+  const aoMudarComViatura = (r: RespostaComViatura) => {
+    aoMudar();
+    qc.invalidateQueries({ queryKey: ["frota"] });
+    /*
+     * Aviso do SERVIDOR, mostrado como veio. O texto ja e escrito pra quem le
+     * na rua ("Fulano já estava em outra viatura…"), e reescreve-lo aqui
+     * criaria duas versoes da mesma explicacao.
+     */
+    for (const a of r.avisos ?? []) Alert.alert("Viatura", a.mensagem);
+  };
+
   const iniciar = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (viatura?: EscolhaViatura) => {
       const geo = await obterGeoOuNada();
-      return apiFetch<JornadaResposta>("/jornada/iniciar", { method: "POST", token, body: geo ?? {} });
+      return apiFetch<RespostaComViatura>("/jornada/iniciar", {
+        method: "POST",
+        token,
+        body: { ...(geo ?? {}), ...(viatura ?? {}) },
+      });
     },
-    onSuccess: aoMudar,
+    onSuccess: aoMudarComViatura,
     onError: avisarFalha("iniciar a jornada"),
+  });
+
+  /**
+   * Trocar de viatura no MEIO do turno — sem encerrar a jornada.
+   *
+   * O caso real: o tecnico sai de manha na HFX-3652, o carro quebra, e as 13:30
+   * ele segue na NOC-4D34. Sem esta acao a unica saida seria encerrar e reabrir
+   * o turno, o que partiria a jornada em duas e estragaria o "tempo trabalhado".
+   */
+  const trocarViatura = useMutation({
+    mutationFn: async (viatura: EscolhaViatura) => {
+      const geo = await obterGeoOuNada();
+      return apiFetch<RespostaComViatura>("/jornada/veiculo", {
+        method: "PATCH",
+        token,
+        body: { ...(geo ?? {}), ...viatura },
+      });
+    },
+    onSuccess: aoMudarComViatura,
+    onError: avisarFalha("trocar de viatura"),
   });
 
   const encerrar = useMutation({
@@ -67,7 +136,23 @@ export function useJornada() {
     onError: avisarFalha("encerrar a jornada"),
   });
 
-  return { query, iniciar, encerrar };
+  return { query, iniciar, encerrar, trocarViatura };
+}
+
+/**
+ * A viatura em que EU estou agora.
+ *
+ * `GET /frota/minha-viatura` e `requireAuth` puro, sem papel — existe
+ * exatamente pra isto. O tecnico ve a PROPRIA viatura; `/frota/mapa` (a frota
+ * inteira) continua ADMIN/GESTOR.
+ */
+export function useMinhaViatura() {
+  const { token } = useAuth();
+  return useQuery({
+    queryKey: ["frota", "minha-viatura"],
+    enabled: !!token,
+    queryFn: () => apiFetch<OcupacaoAtual | null>("/frota/minha-viatura", { token }),
+  });
 }
 
 /**
