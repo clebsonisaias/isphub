@@ -34,6 +34,16 @@ async function tick() {
       try {
         const r = await coletarDeUmaConfig(c);
         gravadosNoTique += r.gravados;
+        /*
+         * Registra o RESULTADO, e nao so a falha — como o syncScheduler ja faz.
+         * Sem isto, "nao apareceu erro" era a unica evidencia disponivel, e ela
+         * nao distingue "coletou tudo" de "nao coletou nada": um rastreador sem
+         * veiculo vinculado, por exemplo, some do laco em silencio.
+         */
+        console.log(
+          `[rastreamento] ${r.consultados} rastreador(es) consultado(s), ${r.gravados} posicao(oes) nova(s)` +
+            (r.statusOk ? "" : " — status do fornecedor indisponivel"),
+        );
         if (r.erro) console.warn(`[rastreamento] config ${c.id}: ${r.erro}`);
       } catch (err) {
         // Uma credencial ruim nao pode calar as outras.
