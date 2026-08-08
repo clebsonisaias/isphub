@@ -20,21 +20,55 @@ import {
  * nunca ocupou — no mapa isso parece dado, nao parece falha.
  */
 
-const { rastreadorFindMany, rastreadorUpdate, posicaoCreateMany, configUpdate, configFindMany } = vi.hoisted(() => ({
+const {
+  rastreadorFindMany,
+  rastreadorUpdate,
+  posicaoCreateMany,
+  configUpdate,
+  configFindMany,
+  eventoCreateMany,
+  posicaoFindFirst,
+  viagemFindFirst,
+  viagemCreate,
+  viagemUpdate,
+  ocupacaoFindFirst,
+} = vi.hoisted(() => ({
   rastreadorFindMany: vi.fn(),
   rastreadorUpdate: vi.fn(),
   posicaoCreateMany: vi.fn(),
   configUpdate: vi.fn(),
   configFindMany: vi.fn(),
+  eventoCreateMany: vi.fn(),
+  posicaoFindFirst: vi.fn(),
+  viagemFindFirst: vi.fn(),
+  viagemCreate: vi.fn(),
+  viagemUpdate: vi.fn(),
+  ocupacaoFindFirst: vi.fn(),
 }));
 
 vi.mock("../lib/prisma.js", () => ({
   prisma: {
     rastreador: { findMany: rastreadorFindMany, update: rastreadorUpdate },
-    posicaoRastreador: { createMany: posicaoCreateMany },
+    posicaoRastreador: { createMany: posicaoCreateMany, findFirst: posicaoFindFirst },
     rastreadorConfig: { update: configUpdate, findMany: configFindMany },
+    eventoRastreador: { createMany: eventoCreateMany },
+    viagem: { findFirst: viagemFindFirst, create: viagemCreate, update: viagemUpdate },
+    ocupacaoVeiculo: { findFirst: ocupacaoFindFirst },
   },
 }));
+
+/** Um rastreador como o `select` da coleta o devolve — com o vinculo aberto. */
+function rastreadorNoBanco() {
+  return { id: "r-1", identificadorExterno: "496538", vinculos: [{ veiculoId: "v-1" }] };
+}
+
+/**
+ * A POSICAO anterior — de onde sai o estado com que a nova e comparada.
+ * `null` (o padrao) = nunca coletamos, e so ai a leitura vira descoberta.
+ */
+function posicaoAnterior(sensores: MapaSensores | null, velocidadeKmh: number | null = 0) {
+  return { sensores, velocidadeKmh };
+}
 
 const { coletarDeUmaConfig, configsVencidas } = await import("./rastreamentoService.js");
 
@@ -79,8 +113,14 @@ beforeEach(() => {
   vi.clearAllMocks();
   rastreadorUpdate.mockResolvedValue({});
   configUpdate.mockResolvedValue({});
-  posicaoCreateMany.mockResolvedValue({ count: 0 });
-  rastreadorFindMany.mockResolvedValue([{ id: "r-1", identificadorExterno: "496538" }]);
+  posicaoCreateMany.mockResolvedValue({ count: 1 });
+  eventoCreateMany.mockResolvedValue({ count: 0 });
+  posicaoFindFirst.mockResolvedValue(null);
+  viagemFindFirst.mockResolvedValue(null);
+  viagemCreate.mockResolvedValue({ id: "vg-1" });
+  viagemUpdate.mockResolvedValue({});
+  ocupacaoFindFirst.mockResolvedValue(null);
+  rastreadorFindMany.mockResolvedValue([rastreadorNoBanco()]);
 });
 
 describe("coletarDeUmaConfig", () => {
@@ -258,6 +298,183 @@ describe("coletarDeUmaConfig", () => {
       (c) => (c[0] as { data?: Record<string, unknown> })?.data?.dicionarioEm !== undefined,
     );
     expect(gravouDicionario).toBe(false);
+  });
+
+  it("deriva evento e ABRE viagem quando a ignicao liga", async () => {
+    await coletarDeUmaConfig(
+      CONFIG,
+      conector({
+        statusDeTodos: async () => ({ tipo: "lista", itens: [status("496538", { COMMUNICATION: "UP", ACC: "ON" })] }),
+        ultimaPosicao: async () => ({
+          tipo: "posicao",
+          lat: -5.86,
+          lng: -35.34,
+          registradoEm: "2026-08-08T02:49:42.000Z",
+          velocidadeKmh: 20,
+        }),
+      }),
+    );
+
+    const evento = (eventoCreateMany.mock.calls[0]![0] as { data: Record<string, unknown>[] }).data[0]!;
+    expect(evento.tipo).toBe("ignicao_ligada");
+    /*
+     * O `em` e o carimbo DO APARELHO, nunca `new Date()`.
+     *
+     * A chave natural do evento e (rastreadorId, tipo, em). Duas replicas
+     * derivam o MESMO evento do mesmo par de leituras — mas so concordam no
+     * `em` se ele vier do dispositivo. Com o relogio do servidor, cada replica
+     * gravaria um `em` diferente, o unique nao deduplicaria nada, e o sino
+     * tocaria duas vezes.
+     */
+    expect((evento.em as Date).toISOString()).toBe("2026-08-08T02:49:42.000Z");
+    expect(viagemCreate).toHaveBeenCalledTimes(1);
+    expect((viagemCreate.mock.calls[0]![0] as { data: Record<string, unknown> }).data.veiculoId).toBe("v-1");
+  });
+
+  it("aparelho que volta do offline NAO inventa ignicao ligada nem viagem", async () => {
+    /*
+     * O caso mais perigoso do modulo, e o mais comum: quando o rastreador cai, o
+     * fornecedor manda SO o COMMUNICATION, e o snapshot daquele minuto fica sem
+     * ACC. Na volta, um motor que nunca desligou pareceria "acabou de ligar" —
+     * alerta falso no sino e uma VIAGEM que o carro nao fez.
+     */
+    posicaoFindFirst.mockResolvedValue(posicaoAnterior({ COMMUNICATION: "DOWN" }));
+    await coletarDeUmaConfig(
+      CONFIG,
+      conector({
+        statusDeTodos: async () => ({ tipo: "lista", itens: [status("496538", { COMMUNICATION: "UP", ACC: "ON" })] }),
+        ultimaPosicao: async () => ({
+          tipo: "posicao",
+          lat: -5.86,
+          lng: -35.34,
+          registradoEm: "2026-08-08T02:49:42.000Z",
+          velocidadeKmh: 0,
+        }),
+      }),
+    );
+
+    const tipos = (eventoCreateMany.mock.calls[0]?.[0] as { data: Record<string, unknown>[] } | undefined)?.data.map(
+      (e) => e.tipo,
+    );
+    expect(tipos).toEqual(["voltou_online"]);
+    /*
+     * A VIAGEM, porem, ABRE — e esta certo. Evento responde "o que mudou" (nada
+     * mudou: nao sabiamos). Viagem responde "o motor esta ligado agora?" (esta).
+     * Sao perguntas diferentes e podem divergir sem contradicao.
+     */
+    expect(viagemCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("acumula na viagem ABERTA em vez de abrir outra", async () => {
+    viagemFindFirst.mockResolvedValue({
+      id: "vg-existente",
+      inicioEm: new Date("2026-08-08T02:00:00.000Z"),
+      latInicio: -5.85,
+      lngInicio: -35.34,
+      latFim: -5.85,
+      lngFim: -35.34,
+      ultimoEm: new Date("2026-08-08T02:40:00.000Z"),
+      ultimaVelocidadeKmh: 30,
+      distanciaMetros: 4000,
+      velocidadeMaxKmh: 60,
+      paradoComMotorLigadoSeg: 0,
+    });
+
+    await coletarDeUmaConfig(
+      CONFIG,
+      conector({
+        statusDeTodos: async () => ({
+          tipo: "lista",
+          itens: [status("496538", { COMMUNICATION: "UP", ACC: "ON" })],
+        }),
+        ultimaPosicao: async () => ({
+          tipo: "posicao",
+          lat: -5.86,
+          lng: -35.34,
+          registradoEm: "2026-08-08T02:49:42.000Z",
+          velocidadeKmh: 55,
+        }),
+      }),
+    );
+
+    expect(viagemCreate).not.toHaveBeenCalled();
+    const d = (viagemUpdate.mock.calls[0]![0] as { data: Record<string, unknown> }).data;
+    expect(d.distanciaMetros).toBeGreaterThan(4000);
+    expect(d.fimEm).toBeUndefined();
+  });
+
+  it("ignicao desligada FECHA a viagem aberta", async () => {
+    viagemFindFirst.mockResolvedValue({
+      id: "vg-existente",
+      inicioEm: new Date("2026-08-08T02:00:00.000Z"),
+      latInicio: -5.85,
+      lngInicio: -35.34,
+      latFim: -5.85,
+      lngFim: -35.34,
+      ultimoEm: new Date("2026-08-08T02:45:00.000Z"),
+      ultimaVelocidadeKmh: 10,
+      distanciaMetros: 4000,
+      velocidadeMaxKmh: 60,
+      paradoComMotorLigadoSeg: 0,
+    });
+
+    await coletarDeUmaConfig(
+      CONFIG,
+      conector({
+        statusDeTodos: async () => ({
+          tipo: "lista",
+          itens: [status("496538", { COMMUNICATION: "UP", ACC: "OFF" })],
+        }),
+        ultimaPosicao: async () => ({
+          tipo: "posicao",
+          lat: -5.86,
+          lng: -35.34,
+          registradoEm: "2026-08-08T02:49:42.000Z",
+          velocidadeKmh: 0,
+        }),
+      }),
+    );
+
+    const d = (viagemUpdate.mock.calls[0]![0] as { data: Record<string, unknown> }).data;
+    expect((d.fimEm as Date).toISOString()).toBe("2026-08-08T02:49:42.000Z");
+    expect(viagemCreate).not.toHaveBeenCalled();
+  });
+
+  it("excesso de velocidade so alerta ao CRUZAR o limite, nao a cada minuto", async () => {
+    /*
+     * A guarda de borda depende da velocidade ANTERIOR — e ela so existe na
+     * posicao, nao no cache do rastreador. Se o estado anterior chegar sem
+     * velocidade, `vAntes === null` libera a condicao e um carro a 118 km/h por
+     * dez minutos rende dez alertas identicos.
+     */
+    posicaoFindFirst.mockResolvedValue(posicaoAnterior({ COMMUNICATION: "UP", ACC: "ON" }, 118));
+    await coletarDeUmaConfig(
+      CONFIG,
+      conector({
+        statusDeTodos: async () => ({ tipo: "lista", itens: [status("496538", { COMMUNICATION: "UP", ACC: "ON" })] }),
+        ultimaPosicao: async () => ({
+          tipo: "posicao",
+          lat: -5.86,
+          lng: -35.34,
+          registradoEm: "2026-08-08T02:49:42.000Z",
+          velocidadeKmh: 120,
+        }),
+      }),
+    );
+    // Ja estava acima no ponto anterior: nao ha borda de subida, nao ha alerta.
+    expect(eventoCreateMany).not.toHaveBeenCalled();
+  });
+
+  it("posicao indeterminada nao deriva nada — nem evento, nem viagem", async () => {
+    await coletarDeUmaConfig(
+      CONFIG,
+      conector({
+        statusDeTodos: async () => ({ tipo: "lista", itens: [status("496538", { ACC: "ON" })] }),
+        ultimaPosicao: async () => ({ tipo: "indeterminado", motivo: "PTK 500" }),
+      }),
+    );
+    expect(eventoCreateMany).not.toHaveBeenCalled();
+    expect(viagemCreate).not.toHaveBeenCalled();
   });
 
   it("sem rastreador vinculado, nao gasta nem a chamada de status", async () => {

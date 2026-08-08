@@ -257,7 +257,9 @@ export interface EvidenciaResumo {
 export interface Notificacao {
   id: string;
   /** "mensagem" = chat generico; "mencao" = "@fulano" numa mensagem que cita este usuario. */
-  tipo: "atribuicao" | "sla_estourado" | "os_nova" | "mensagem" | "mencao";
+  /** `frota_alerta` cobre os quatro da frota — o QUE houve vai no texto, junto
+   * com a placa, porque `Notificacao` nao tem `veiculoId`. */
+  tipo: "atribuicao" | "sla_estourado" | "os_nova" | "mensagem" | "mencao" | "frota_alerta";
   mensagem: string;
   ordemServicoId?: string | null;
   lida: boolean;

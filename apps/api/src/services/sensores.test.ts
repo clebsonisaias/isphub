@@ -235,6 +235,24 @@ describe("derivarEventos", () => {
     expect(derivarEventos(m({ ACC: "ON", COMMUNICATION: "UP" }), m({ COMMUNICATION: "UP" }), OPCOES)).toEqual([]);
   });
 
+  it("sensor que VOLTOU depois de um minuto offline nao inventa transicao", () => {
+    /*
+     * O caso que mais assusta, e que acontece toda vez que o aparelho pisca:
+     * quando ele cai, o fornecedor manda SO o COMMUNICATION. O snapshot daquele
+     * minuto nao tem ACC nenhum. Na volta, um motor que ficou ligado o tempo
+     * todo apareceria como "acabou de ligar" — alerta falso no sino e uma
+     * VIAGEM que o carro nao fez.
+     */
+    const offline = m({ COMMUNICATION: "DOWN" });
+    const voltou = m({ COMMUNICATION: "UP", ACC: "ON", BAT: "12", CUT: "ON" });
+    expect(derivarEventos(offline, voltou, OPCOES).map((e) => e.tipo)).toEqual(["voltou_online"]);
+  });
+
+  it("mas na PRIMEIRA leitura o mesmo estado vira evento — e descoberta, nao ignorancia", () => {
+    const primeiro = derivarEventos(null, m({ COMMUNICATION: "UP", ACC: "ON", BAT: "12", CUT: "ON" }), OPCOES);
+    expect(primeiro.map((e) => e.tipo).sort()).toEqual(["bateria_baixa", "bloqueio_ativado", "ignicao_ligada"]);
+  });
+
   it("bateria: alerta ao CRUZAR o limite, e normaliza ao voltar", () => {
     expect(derivarEventos(m({ BAT: "20" }), m({ BAT: "14" }), OPCOES)).toEqual([
       { tipo: "bateria_baixa", detalhe: { pct: 14 } },

@@ -3,6 +3,7 @@ import { simplificarTrilha, type RastreadorConnector, type StatusRastreador, typ
 import { comConcorrenciaLimitada } from "../lib/limitador.js";
 import { prisma } from "../lib/prisma.js";
 import { buildRastreadorConnector } from "./rastreadorService.js";
+import { aplicarLeitura, estadoAnteriorDe, type LeituraNova } from "./frotaEventoService.js";
 
 /**
  * Coleta de posicoes — o corpo do tique, separado do cron pra ter teste.
@@ -40,6 +41,9 @@ export interface ResumoColeta {
   /** Quantos aparelhos tiveram o cadastro do fornecedor atualizado neste tique. */
   cadastrosAtualizados: number;
   dicionarioAtualizado: boolean;
+  eventos: number;
+  viagensAbertas: number;
+  viagensFechadas: number;
 }
 
 /**
@@ -101,7 +105,16 @@ async function rastreadoresParaColetar(provedorId: string | null) {
     // com justica em vez de sempre servir os mesmos.
     orderBy: [{ ultimaPosicaoEm: { sort: "asc", nulls: "first" } }],
     take: MAX_RASTREADORES_POR_TIQUE,
-    select: { id: true, identificadorExterno: true },
+    select: {
+      id: true,
+      identificadorExterno: true,
+      /*
+       * O VEICULO do vinculo vigente. `Viagem.veiculoId` e NOT NULL, e o filtro
+       * ja garante que existe pelo menos um vinculo aberto — trazer aqui evita
+       * uma consulta por rastreador dentro do laco.
+       */
+      vinculos: { where: { fimEm: null }, select: { veiculoId: true }, take: 1 },
+    },
   });
 }
 
@@ -118,6 +131,7 @@ export async function coletarDeUmaConfig(
     baseUrl: string;
     chaveCifrada: string;
     dicionarioEm?: Date | null;
+    limiteVelocidadeKmh?: number | null;
   },
   conector: RastreadorConnector = buildRastreadorConnector(config),
 ): Promise<ResumoColeta> {
@@ -130,6 +144,9 @@ export async function coletarDeUmaConfig(
     erro: null,
     cadastrosAtualizados: 0,
     dicionarioAtualizado: false,
+    eventos: 0,
+    viagensAbertas: 0,
+    viagensFechadas: 0,
   };
   if (rastreadores.length === 0) return resumo;
 
@@ -180,6 +197,15 @@ export async function coletarDeUmaConfig(
 
   const agora = new Date();
   const novas: Prisma.PosicaoRastreadorCreateManyInput[] = [];
+  /**
+   * As leituras que renderam ponto novo, guardadas para DEPOIS de gravar as
+   * posicoes.
+   *
+   * Derivar evento e viagem antes do `createMany` inverteria a ordem dos fatos:
+   * o sino poderia avisar "ignicao ligada" de um ponto que ainda nao existe na
+   * serie, e um erro no meio deixaria evento sem a posicao que o originou.
+   */
+  const paraDerivar: LeituraNova[] = [];
 
   for (const { rastreador, resultado } of posicoes) {
     const s = porId.get(rastreador.identificadorExterno);
@@ -230,6 +256,20 @@ export async function coletarDeUmaConfig(
       bloqueado: s?.bloqueado ?? null,
       sensores: s?.sensores ?? Prisma.DbNull,
     });
+
+    const veiculoId = rastreador.vinculos[0]?.veiculoId;
+    if (veiculoId) {
+      paraDerivar.push({
+        rastreadorId: rastreador.id,
+        veiculoId,
+        registradoEm: new Date(resultado.registradoEm),
+        lat: resultado.lat,
+        lng: resultado.lng,
+        velocidadeKmh: resultado.velocidadeKmh,
+        sensores: s?.sensores ?? {},
+        ignicao: s?.ignicao ?? null,
+      });
+    }
   }
 
   if (novas.length > 0) {
@@ -241,6 +281,34 @@ export async function coletarDeUmaConfig(
      */
     const r = await prisma.posicaoRastreador.createMany({ data: novas, skipDuplicates: true });
     resumo.gravados = r.count;
+
+    /*
+     * Evento e viagem so DEPOIS da posicao existir na serie — a ordem dos fatos
+     * importa: um evento "ignicao ligada" sem o ponto que o originou seria uma
+     * afirmacao sem lastro na tela de historico.
+     *
+     * Falha aqui NAO derruba o tique: a posicao ja esta gravada, que e o dado
+     * principal, e o proximo ponto reprocessa a partir do estado real.
+     */
+    for (const leitura of paraDerivar) {
+      try {
+        /*
+         * O anterior sai da POSICAO anterior, lida agora — depois de a nova ja
+         * estar gravada, e por isso a consulta usa `lt` do carimbo dela.
+         */
+        const anterior = await estadoAnteriorDe(leitura.rastreadorId, leitura.registradoEm);
+        const d = await aplicarLeitura(leitura, anterior, {
+          limiteVelocidadeKmh: config.limiteVelocidadeKmh ?? 100,
+        });
+        resumo.eventos += d.eventos;
+        resumo.viagensAbertas += d.viagensAbertas;
+        resumo.viagensFechadas += d.viagensFechadas;
+      } catch (err) {
+        // Um rastreador problematico nao pode calar os outros — mesma regra do
+        // laco de credenciais no scheduler.
+        console.error(`[rastreamento] derivacao falhou para ${leitura.rastreadorId}:`, err);
+      }
+    }
   }
 
   await prisma.rastreadorConfig.update({

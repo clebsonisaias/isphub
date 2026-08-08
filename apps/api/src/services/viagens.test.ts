@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { segmentarViagens, type PontoViagem } from "@isphub/shared";
+import { avancarViagem, segmentarViagens, type PontoViagem } from "@isphub/shared";
 
 /** Base em Macaiba/RN — onde a HFX-3652 opera de verdade. */
 const BASE = { lat: -5.8567, lng: -35.3536 };
@@ -131,6 +131,95 @@ describe("segmentarViagens", () => {
   it("respeita o limiar de parado configurado", () => {
     const pontos = [p(0, true, { kmh: 5 }), p(10, true, { dx: 0.001, kmh: 5 }), p(12, false, { dx: 0.001 })];
     expect(segmentarViagens(pontos).at(0)!.paradoComMotorLigadoSeg).toBe(0);
-    expect(segmentarViagens(pontos, { velocidadeParadoKmh: 8 }).at(0)!.paradoComMotorLigadoSeg).toBe(10 * 60);
+    /*
+     * 12 minutos, e nao 10: o trecho ate o ponto que DESLIGA a ignicao tambem
+     * conta. Durante ele o motor ainda estava ligado — so descobrimos que
+     * desligou no instante final.
+     *
+     * Este numero mudou quando `segmentarViagens` virou uma dobra de
+     * `avancarViagem`, e a mudanca corrigiu uma inconsistencia: o codigo
+     * anterior somava a DISTANCIA desse ultimo trecho e ignorava o TEMPO
+     * parado dele, porque o caso "ignicao desligada" tinha um caminho proprio.
+     * Com um passo unico, nao ha mais como os dois discordarem.
+     */
+    expect(segmentarViagens(pontos, { velocidadeParadoKmh: 8 }).at(0)!.paradoComMotorLigadoSeg).toBe(12 * 60);
+  });
+});
+
+describe("avancarViagem", () => {
+  /*
+   * O passo incremental e o que a COLETA usa — ela tem um ponto por vez, nunca
+   * a serie. Estes testes travam o contrato que o service vai consumir.
+   */
+  it("ignicao ligada sem nada aberto ABRE, e marca como nova", () => {
+    const r = avancarViagem(null, p(0, true));
+    expect(r.fechar).toBeNull();
+    expect(r.nova).toBe(true);
+    expect(r.aberta?.pontos).toBe(1);
+  });
+
+  it("ignicao desligada sem nada aberto nao faz nada", () => {
+    expect(avancarViagem(null, p(0, false))).toEqual({ fechar: null, aberta: null, nova: false });
+    expect(avancarViagem(null, p(0, null))).toEqual({ fechar: null, aberta: null, nova: false });
+  });
+
+  it("acumular NAO e nova — o service faz UPDATE, nao INSERT", () => {
+    const a = avancarViagem(null, p(0, true)).aberta!;
+    const r = avancarViagem(a, p(5, true, { dx: 0.01, kmh: 40 }));
+    expect(r.nova).toBe(false);
+    expect(r.fechar).toBeNull();
+    expect(r.aberta?.pontos).toBe(2);
+    expect(r.aberta?.velocidadeMaxKmh).toBe(40);
+  });
+
+  it("ignicao desligada FECHA e nao deixa nada aberto", () => {
+    const a = avancarViagem(null, p(0, true)).aberta!;
+    const r = avancarViagem(a, p(9, false, { dx: 0.02 }));
+    expect(r.aberta).toBeNull();
+    expect(r.fechar?.fimEm?.getUTCMinutes()).toBe(9);
+    expect(r.fechar?.distanciaMetros).toBeGreaterThan(1000);
+  });
+
+  it("buraco longo FECHA a antiga no ultimo ponto e ABRE outra no ponto novo", () => {
+    const a = avancarViagem(null, p(0, true)).aberta!;
+    const b = avancarViagem(a, p(5, true, { dx: 0.01 })).aberta!;
+    const r = avancarViagem(b, p(65, true, { dx: 0.5 }));
+    // A antiga morre onde foi vista pela ultima vez — nao no ponto de retorno,
+    // que criaria uma reta atravessando a cidade.
+    expect(r.fechar?.fimEm?.getUTCMinutes()).toBe(5);
+    expect(r.nova).toBe(true);
+    expect(r.aberta?.pontos).toBe(1);
+  });
+
+  it("buraco longo com ignicao desligada fecha sem abrir nada", () => {
+    const a = avancarViagem(null, p(0, true)).aberta!;
+    const r = avancarViagem(a, p(90, false, { dx: 0.5 }));
+    expect(r.fechar?.fimEm?.getUTCMinutes()).toBe(0);
+    expect(r.aberta).toBeNull();
+    expect(r.nova).toBe(false);
+  });
+
+  it("dobrar avancarViagem sobre a serie da o mesmo que segmentarViagens", () => {
+    // E o que garante que a coleta (incremental) e o relatorio (em lote) nunca
+    // discordem sobre o que e uma viagem.
+    const serie = [
+      p(0, true, { kmh: 10 }),
+      p(3, true, { dx: 0.01, kmh: 55 }),
+      p(6, false, { dx: 0.02 }),
+      p(20, true, { dx: 0.02 }),
+      p(24, null, { dx: 0.03, kmh: 30 }),
+      p(28, false, { dx: 0.04 }),
+    ];
+
+    const emLote = segmentarViagens(serie);
+    const dobrado: ReturnType<typeof segmentarViagens> = [];
+    let aberta = null as ReturnType<typeof avancarViagem>["aberta"];
+    for (const ponto of serie) {
+      const passo = avancarViagem(aberta, ponto);
+      if (passo.fechar) dobrado.push(passo.fechar);
+      aberta = passo.aberta;
+    }
+    expect(dobrado).toEqual(emLote);
+    expect(dobrado).toHaveLength(2);
   });
 });

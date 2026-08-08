@@ -1031,6 +1031,8 @@ model Lancamento {
   /**
    * /**
    * /**
+   * /**
+   * /**
    * /*
    * A TRAVA DE IDEMPOTENCIA da recorrencia, no banco.
    * O gerador pode rodar quantas vezes quiser: uma segunda tentativa de criar a
@@ -1523,15 +1525,6 @@ model Rastreador {
   temComandoCorte        Boolean   @default(false)
   instaladoEm            DateTime?
 
-  /// Travas de idempotencia do SINO, no padrao de `OrdemServico.slaNotificadoEm`.
-  ///
-  /// Sao COLUNA e nao memoria, e sao gravadas na MESMA transacao da notificacao:
-  /// escrever uma sem a outra ou repete o alerta para sempre, ou o perde para
-  /// sempre. Sem elas, bateria a 12% notifica a cada minuto ate a bateria acabar.
-  bateriaNotificadaEm  DateTime?
-  offlineNotificadoEm  DateTime?
-  bloqueioNotificadoEm DateTime?
-
   criadoEm DateTime @default(now())
 
   posicoes PosicaoRastreador[]
@@ -1690,8 +1683,19 @@ model Viagem {
 
   latInicio Float
   lngInicio Float
+  /// Enquanto a viagem esta ABERTA, "fim" quer dizer "ate agora": estes dois
+  /// acompanham o ultimo ponto visto, e sao o que permite somar a distancia do
+  /// proximo sem carregar a serie do dia.
   latFim    Float
   lngFim    Float
+
+  /// O carimbo e a velocidade do ULTIMO ponto — o resto do acumulador.
+  ///
+  /// A coleta recebe um ponto por minuto e nao tem o dia na mao: sem estes, nao
+  /// da pra calcular nem o intervalo (tempo parado) nem a distancia incremental.
+  /// Anulaveis so por serem aditivos; a coleta sempre os preenche.
+  ultimoEm            DateTime?
+  ultimaVelocidadeKmh Float?
 
   distanciaMetros         Int?
   velocidadeMaxKmh        Float?

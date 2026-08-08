@@ -381,9 +381,30 @@ export function derivarEventos(
   const eventos: EventoDerivado[] = [];
   const critica = opcoes.bateriaCriticaPct ?? 15;
 
+  /**
+   * "NUNCA vimos este aparelho" e "o aparelho nao contou ESTE sensor" sao coisas
+   * diferentes, e confundi-las fabrica eventos que nunca aconteceram.
+   *
+   * O caso e real e frequente: quando o rastreador fica offline, o fornecedor
+   * devolve SO o `COMMUNICATION` — os outros sensores somem da resposta. Na
+   * volta, um `ACC: ON` que nunca mudou apareceria como "ignicao ligada",
+   * porque o snapshot anterior (o do minuto offline) nao tinha ACC nenhum. Sai
+   * um alerta falso no sino e, pior, uma VIAGEM que o carro nao fez.
+   *
+   * Entao: sem snapshot anterior (aparelho novo) o valor de agora e uma
+   * DESCOBERTA e pode virar evento; com snapshot anterior mas sem o sensor, e
+   * IGNORANCIA — e ignorancia nao e transicao.
+   */
+  const primeiraLeitura = anterior === null;
+  function mudou<T>(antes: T | null, agora: T | null): boolean {
+    if (agora === null) return false;
+    if (antes === null) return primeiraLeitura;
+    return antes !== agora;
+  }
+
   const igAntes = anterior ? ignicao(anterior.mapa) : null;
   const igAgora = ignicao(atual.mapa);
-  if (igAgora !== null && igAgora !== igAntes) {
+  if (mudou(igAntes, igAgora)) {
     if (igAgora === "ligada") eventos.push({ tipo: "ignicao_ligada" });
     else if (igAgora === "desligada" && igAntes !== null) eventos.push({ tipo: "ignicao_desligada" });
     else if (igAgora === "anomalia") eventos.push({ tipo: "ignicao_anomalia" });
@@ -391,7 +412,7 @@ export function derivarEventos(
 
   const bloqAntes = anterior ? bloqueado(anterior.mapa) : null;
   const bloqAgora = bloqueado(atual.mapa);
-  if (bloqAgora !== null && bloqAgora !== bloqAntes) {
+  if (mudou(bloqAntes, bloqAgora)) {
     eventos.push({ tipo: bloqAgora ? "bloqueio_ativado" : "bloqueio_removido" });
   }
 
@@ -400,7 +421,10 @@ export function derivarEventos(
   if (batAgora !== null) {
     const baixaAgora = batAgora <= critica;
     const baixaAntes = batAntes !== null ? batAntes <= critica : null;
-    if (baixaAgora && baixaAntes !== true) {
+    // `baixaAntes === null` com snapshot anterior = o BAT nao veio naquele
+    // minuto. Nao da pra dizer que a bateria "caiu" — so que agora esta baixa.
+    const sabemosDoAntes = baixaAntes !== null || primeiraLeitura;
+    if (baixaAgora && baixaAntes !== true && sabemosDoAntes) {
       eventos.push({ tipo: "bateria_baixa", detalhe: { pct: batAgora } });
     } else if (!baixaAgora && baixaAntes === true) {
       eventos.push({ tipo: "bateria_normalizada", detalhe: { pct: batAgora } });

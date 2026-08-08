@@ -58,103 +58,170 @@ export interface OpcoesViagem {
 
 const PADRAO = { velocidadeParadoKmh: 3, intervaloMaximoMinutos: 30 };
 
-interface Acumulador {
-  inicio: PontoViagem;
-  ultimo: PontoViagem;
-  distancia: number;
-  velMax: number | null;
-  paradoSeg: number;
+/**
+ * O ACUMULADOR de uma viagem em curso — e, no banco, a propria linha `Viagem`
+ * com `fimEm IS NULL`.
+ *
+ * Que ele seja identico a linha aberta nao e coincidencia, e a razao de existir:
+ * a coleta recebe UM ponto por vez e nao tem a serie do dia na mao. Sem este
+ * formato, "o que e uma viagem" teria de ser escrito duas vezes — uma em lote
+ * (para relatorio) e outra incremental (para a coleta) — e as duas versoes
+ * divergiriam no primeiro caso de borda.
+ */
+export interface ViagemAberta {
+  inicioEm: Date;
+  latInicio: number;
+  lngInicio: number;
+  /** O ULTIMO ponto visto. E o que permite acumular o proximo sem a serie. */
+  ultimoEm: Date;
+  ultimaLat: number;
+  ultimaLng: number;
+  ultimaVelocidadeKmh: number | null;
+  distanciaMetros: number;
+  velocidadeMaxKmh: number | null;
+  paradoComMotorLigadoSeg: number;
   pontos: number;
 }
 
-function fechar(acc: Acumulador, fimEm: Date | null): Viagem {
+/**
+ * O efeito de UM ponto sobre o estado das viagens.
+ *
+ * Formato PLANO de proposito: uma uniao com `abrir | acumular | fechar |
+ * fechar_e_abrir` obrigaria o chamador a um `switch` que esquece um caso. Aqui
+ * todo ponto devolve a mesma forma, e cada campo responde uma pergunta:
+ *
+ *   `fechar`  — ha uma viagem para GRAVAR como encerrada agora?
+ *   `aberta`  — qual e o estado da viagem em curso DEPOIS deste ponto?
+ *   `nova`    — `aberta` e uma viagem que acabou de comecar (INSERT) ou a mesma
+ *               de antes, mais um ponto (UPDATE)?
+ */
+export interface PassoViagem {
+  fechar: Viagem | null;
+  aberta: ViagemAberta | null;
+  nova: boolean;
+}
+
+function abrir(p: PontoViagem): ViagemAberta {
   return {
-    inicioEm: acc.inicio.em,
+    inicioEm: p.em,
+    latInicio: p.lat,
+    lngInicio: p.lng,
+    ultimoEm: p.em,
+    ultimaLat: p.lat,
+    ultimaLng: p.lng,
+    ultimaVelocidadeKmh: p.velocidadeKmh,
+    distanciaMetros: 0,
+    velocidadeMaxKmh: p.velocidadeKmh,
+    paradoComMotorLigadoSeg: 0,
+    pontos: 1,
+  };
+}
+
+/** Encerra o acumulador. `fimEm` nulo = ainda em curso (so na leitura em lote). */
+function encerrar(a: ViagemAberta, fimEm: Date | null): Viagem {
+  return {
+    inicioEm: a.inicioEm,
     fimEm,
-    latInicio: acc.inicio.lat,
-    lngInicio: acc.inicio.lng,
-    latFim: acc.ultimo.lat,
-    lngFim: acc.ultimo.lng,
-    distanciaMetros: Math.round(acc.distancia),
-    velocidadeMaxKmh: acc.velMax,
-    paradoComMotorLigadoSeg: Math.round(acc.paradoSeg),
-    pontos: acc.pontos,
+    latInicio: a.latInicio,
+    lngInicio: a.lngInicio,
+    latFim: a.ultimaLat,
+    lngFim: a.ultimaLng,
+    distanciaMetros: Math.round(a.distanciaMetros),
+    velocidadeMaxKmh: a.velocidadeMaxKmh,
+    paradoComMotorLigadoSeg: Math.round(a.paradoComMotorLigadoSeg),
+    pontos: a.pontos,
+  };
+}
+
+function acumular(a: ViagemAberta, p: PontoViagem, paradoKmh: number): ViagemAberta {
+  const deltaSeg = (p.em.getTime() - a.ultimoEm.getTime()) / 1000;
+  /*
+   * Parado com motor ligado: o intervalo INTEIRO entre dois pontos lentos
+   * conta. Contar so o instante do ponto daria sempre zero — a amostragem e
+   * discreta, o desperdicio e continuo.
+   */
+  const paradoAgora = (p.velocidadeKmh ?? 0) <= paradoKmh && (a.ultimaVelocidadeKmh ?? 0) <= paradoKmh;
+  return {
+    ...a,
+    distanciaMetros: a.distanciaMetros + haversineMetros({ lat: a.ultimaLat, lng: a.ultimaLng }, p),
+    velocidadeMaxKmh:
+      p.velocidadeKmh != null && (a.velocidadeMaxKmh == null || p.velocidadeKmh > a.velocidadeMaxKmh)
+        ? p.velocidadeKmh
+        : a.velocidadeMaxKmh,
+    paradoComMotorLigadoSeg: a.paradoComMotorLigadoSeg + (paradoAgora ? deltaSeg : 0),
+    ultimoEm: p.em,
+    ultimaLat: p.lat,
+    ultimaLng: p.lng,
+    ultimaVelocidadeKmh: p.velocidadeKmh,
+    pontos: a.pontos + 1,
   };
 }
 
 /**
- * Divide a serie do dia em viagens.
+ * UM ponto, aplicado ao estado corrente. E a definicao unica de "viagem".
+ *
+ * `segmentarViagens` e um dobra desta funcao sobre a serie; a coleta a chama uma
+ * vez por ponto novo. As duas nao podem discordar porque sao a mesma regra.
+ */
+export function avancarViagem(
+  aberta: ViagemAberta | null,
+  p: PontoViagem,
+  opcoes: OpcoesViagem = {},
+): PassoViagem {
+  const paradoKmh = opcoes.velocidadeParadoKmh ?? PADRAO.velocidadeParadoKmh;
+  const gapMs = (opcoes.intervaloMaximoMinutos ?? PADRAO.intervaloMaximoMinutos) * 60_000;
+
+  /*
+   * Buraco longo na serie: a viagem antiga morre no ULTIMO ponto conhecido, e
+   * este ponto e tratado como se nao houvesse nada aberto. Sem o corte, um
+   * rastreador que sumiu as 10h e voltou as 16h produziria uma viagem de seis
+   * horas e uma reta atravessando a cidade.
+   */
+  if (aberta && p.em.getTime() - aberta.ultimoEm.getTime() > gapMs) {
+    const fechada = encerrar(aberta, aberta.ultimoEm);
+    return p.ignicao === true
+      ? { fechar: fechada, aberta: abrir(p), nova: true }
+      : { fechar: fechada, aberta: null, nova: false };
+  }
+
+  if (!aberta) {
+    // So a ignicao LIGADA abre viagem. `false` sem nada aberto nao cria viagem
+    // do nada; `null` (o aparelho nao contou) muito menos.
+    return p.ignicao === true ? { fechar: null, aberta: abrir(p), nova: true } : { fechar: null, aberta: null, nova: false };
+  }
+
+  if (p.ignicao === false) {
+    /*
+     * O ponto de ignicao desligada E o fim da viagem: e onde o carro parou de
+     * verdade. Fechar no ponto ANTERIOR perderia o ultimo trecho — que costuma
+     * ser exatamente a chegada no cliente.
+     */
+    return { fechar: encerrar(acumular(aberta, p, paradoKmh), p.em), aberta: null, nova: false };
+  }
+
+  // `true` acumula; `null` tambem — a posicao e valida, so nao decide nada
+  // sobre abrir ou fechar.
+  return { fechar: null, aberta: acumular(aberta, p, paradoKmh), nova: false };
+}
+
+/**
+ * Divide a serie do dia em viagens — uma DOBRA de `avancarViagem`.
  *
  * A serie precisa vir ORDENADA por tempo — e o que `trilha()` ja devolve.
  * Ordenar aqui dentro esconderia o erro de quem passou fora de ordem.
  */
 export function segmentarViagens(pontos: PontoViagem[], opcoes: OpcoesViagem = {}): Viagem[] {
-  const paradoKmh = opcoes.velocidadeParadoKmh ?? PADRAO.velocidadeParadoKmh;
-  const gapMs = (opcoes.intervaloMaximoMinutos ?? PADRAO.intervaloMaximoMinutos) * 60_000;
-
   const viagens: Viagem[] = [];
-  let acc: Acumulador | null = null;
+  let aberta: ViagemAberta | null = null;
 
   for (const p of pontos) {
-    if (acc) {
-      const deltaMs = p.em.getTime() - acc.ultimo.em.getTime();
-      if (deltaMs > gapMs) {
-        viagens.push(fechar(acc, acc.ultimo.em));
-        acc = null;
-      }
-    }
-
-    if (p.ignicao === true) {
-      if (!acc) {
-        acc = { inicio: p, ultimo: p, distancia: 0, velMax: p.velocidadeKmh, paradoSeg: 0, pontos: 1 };
-        continue;
-      }
-      const deltaSeg = (p.em.getTime() - acc.ultimo.em.getTime()) / 1000;
-      acc.distancia += haversineMetros(acc.ultimo, p);
-      /*
-       * Parado com motor ligado: o intervalo INTEIRO entre dois pontos lentos
-       * conta. Contar so o instante do ponto daria sempre zero — a amostragem e
-       * discreta, o desperdicio e continuo.
-       */
-      const vAtual = p.velocidadeKmh ?? 0;
-      const vAnterior = acc.ultimo.velocidadeKmh ?? 0;
-      if (vAtual <= paradoKmh && vAnterior <= paradoKmh) acc.paradoSeg += deltaSeg;
-      if (p.velocidadeKmh != null && (acc.velMax == null || p.velocidadeKmh > acc.velMax)) {
-        acc.velMax = p.velocidadeKmh;
-      }
-      acc.ultimo = p;
-      acc.pontos += 1;
-      continue;
-    }
-
-    if (p.ignicao === false && acc) {
-      /*
-       * O ponto de ignicao desligada E o fim da viagem: e onde o carro parou de
-       * verdade. Fechar no ponto ANTERIOR perderia o ultimo trecho — que
-       * costuma ser exatamente a chegada no cliente.
-       */
-      acc.distancia += haversineMetros(acc.ultimo, p);
-      acc.ultimo = p;
-      acc.pontos += 1;
-      viagens.push(fechar(acc, p.em));
-      acc = null;
-      continue;
-    }
-
-    // `ignicao === null` dentro de uma viagem: o ponto entra na trilha (a
-    // posicao e valida), mas nao decide nada sobre abrir ou fechar.
-    if (acc && p.ignicao === null) {
-      acc.distancia += haversineMetros(acc.ultimo, p);
-      if (p.velocidadeKmh != null && (acc.velMax == null || p.velocidadeKmh > acc.velMax)) {
-        acc.velMax = p.velocidadeKmh;
-      }
-      acc.ultimo = p;
-      acc.pontos += 1;
-    }
+    const passo = avancarViagem(aberta, p, opcoes);
+    if (passo.fechar) viagens.push(passo.fechar);
+    aberta = passo.aberta;
   }
 
   // Viagem ainda aberta fica com `fimEm: null` — e o carro que esta rodando
   // agora. Carimbar o ultimo ponto como fim mentiria dizendo que ja chegou.
-  if (acc) viagens.push(fechar(acc, null));
+  if (aberta) viagens.push(encerrar(aberta, null));
   return viagens;
 }
