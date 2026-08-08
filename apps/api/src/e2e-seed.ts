@@ -19,6 +19,15 @@ export const E2E_GESTOR_SENHA = "e2e-senha-123";
 export const E2E_TECNICO_EMAIL = "e2e-tecnico@isphub.test";
 /** Nome exibido na secao "Despacho" da fila — usado pelo spec do filtro. */
 export const E2E_TECNICO_NOME = "E2E Tecnico";
+/**
+ * SEGUNDO tecnico — existe por causa da frota.
+ *
+ * "N tecnicos na mesma viatura" e o coracao do modulo de ocupacao, e com um
+ * tecnico so nao da pra exercitar: `GET /frota/colegas` exclui a propria pessoa,
+ * entao a lista viria vazia e o Caso 1 (Joao e Pedro juntos) ficaria sem teste.
+ */
+export const E2E_TECNICO2_EMAIL = "e2e-tecnico2@isphub.test";
+export const E2E_TECNICO2_NOME = "E2E Tecnico Dois";
 export const E2E_PROVEDOR_NOME = "E2E Provider";
 export const E2E_SGP_PORT = 4569;
 
@@ -93,6 +102,12 @@ async function main() {
     where: { email: E2E_TECNICO_EMAIL },
     create: { nome: E2E_TECNICO_NOME, email: E2E_TECNICO_EMAIL, senhaHash: senhaTecnicoHash, role: UserRole.TECNICO },
     update: { nome: E2E_TECNICO_NOME, senhaHash: senhaTecnicoHash, role: UserRole.TECNICO, ativo: true },
+  });
+
+  await prisma.usuario.upsert({
+    where: { email: E2E_TECNICO2_EMAIL },
+    create: { nome: E2E_TECNICO2_NOME, email: E2E_TECNICO2_EMAIL, senhaHash: senhaTecnicoHash, role: UserRole.TECNICO },
+    update: { nome: E2E_TECNICO2_NOME, senhaHash: senhaTecnicoHash, role: UserRole.TECNICO, ativo: true },
   });
 
   let provedor = await prisma.provedor.findFirst({ where: { nome: E2E_PROVEDOR_NOME } });

@@ -31,7 +31,8 @@ import { veiculosApi, type VeiculoFrota, type VeiculoInput } from "@/lib/veiculo
 import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
 import { cn } from "@/lib/utils";
-import { Plus, Truck } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Map as MapIcon, Plus, Truck } from "lucide-react";
 
 /**
  * FROTA — cadastro de veiculos.
@@ -114,10 +115,18 @@ export function FrotaVeiculosPage() {
               </h1>
               <p className="text-sm text-muted-foreground">Veículos da operação e dos provedores.</p>
             </div>
-            <Button onClick={() => setCriando(true)}>
-              <Plus className="size-4" aria-hidden />
-              Novo veículo
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" asChild>
+                <Link to="/frota/mapa">
+                  <MapIcon className="size-4" aria-hidden />
+                  Ver no mapa
+                </Link>
+              </Button>
+              <Button onClick={() => setCriando(true)}>
+                <Plus className="size-4" aria-hidden />
+                Novo veículo
+              </Button>
+            </div>
           </header>
 
           <Input

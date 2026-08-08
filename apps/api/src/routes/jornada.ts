@@ -1,9 +1,16 @@
 import { Router } from "express";
 import { z } from "zod";
-import { UserRole, type JornadaResposta, type TecnicoEmJornada } from "@isphub/shared";
+import { PAPEIS_OCUPACAO, UserRole, type JornadaResposta, type TecnicoEmJornada } from "@isphub/shared";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
-import { encerrarJornada, iniciarJornada, jornadaAtual, jornadasAtivas } from "../services/jornadaService.js";
+import {
+  encerrarJornada,
+  iniciarJornada,
+  jornadaAtual,
+  jornadasAtivas,
+  trocarViatura,
+  type ResultadoJornada,
+} from "../services/jornadaService.js";
 
 /**
  * Jornada do tecnico — marcador operacional de turno.
@@ -39,6 +46,30 @@ function resposta(jornada: JornadaResposta["jornada"]): JornadaResposta {
   return { jornada, agoraServidor: new Date().toISOString() };
 }
 
+/**
+ * Resposta com viatura. Cresce ADITIVAMENTE sobre `JornadaResposta` — o app e a
+ * web que ainda nao conhecem `ocupacao`/`avisos` continuam compilando e
+ * funcionando, so ignoram os campos novos.
+ */
+function respostaComViatura(r: ResultadoJornada) {
+  return { ...resposta(r.jornada), ocupacao: r.ocupacao, avisos: r.avisos };
+}
+
+/**
+ * Viatura na abertura do turno. TODOS os campos opcionais: quem foi a pe abre
+ * a jornada igual — mesma regra do geo.
+ */
+const viaturaSchema = z.object({
+  veiculoId: z.string().uuid().nullish(),
+  papel: z.enum(PAPEIS_OCUPACAO).optional(),
+  odometro: z.number().int().min(0).max(9_999_999).nullish(),
+  // Teto de 6: e um carro. Array sem teto e amplificacao de escrita.
+  colegas: z
+    .array(z.object({ usuarioId: z.string().uuid(), papel: z.enum(PAPEIS_OCUPACAO).default("passageiro") }))
+    .max(6)
+    .optional(),
+});
+
 jornadaRouter.get(
   "/atual",
   asyncHandler(async (req, res) => {
@@ -49,8 +80,26 @@ jornadaRouter.get(
 jornadaRouter.post(
   "/iniciar",
   asyncHandler(async (req, res) => {
-    const geo = geoSchema.parse(req.body ?? {});
-    res.json(resposta(await iniciarJornada(req.user!.sub, geo)));
+    const corpo = req.body ?? {};
+    const geo = geoSchema.parse(corpo);
+    const viatura = viaturaSchema.parse(corpo);
+    res.json(respostaComViatura(await iniciarJornada(req.user!.sub, geo, viatura)));
+  }),
+);
+
+/**
+ * Troca de viatura no MEIO do turno — o tecnico que muda de carro as 13:30.
+ *
+ * A jornada nao e tocada; o que muda e a ocupacao. O historico fica com dois
+ * trechos em vez de o segundo sobrescrever o primeiro.
+ */
+jornadaRouter.patch(
+  "/veiculo",
+  asyncHandler(async (req, res) => {
+    const corpo = req.body ?? {};
+    const geo = geoSchema.parse(corpo);
+    const viatura = viaturaSchema.parse(corpo);
+    res.json(respostaComViatura(await trocarViatura(req.user!.sub, geo, viatura)));
   }),
 );
 

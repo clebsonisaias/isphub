@@ -4,6 +4,7 @@ import { prisma } from "./lib/prisma.js";
 import { startSyncScheduler } from "./jobs/syncScheduler.js";
 import { startSlaAlertScheduler } from "./jobs/slaAlertScheduler.js";
 import { startOsNovaAlertScheduler } from "./jobs/osNovaAlertScheduler.js";
+import { startRastreamentoScheduler } from "./jobs/rastreamentoScheduler.js";
 import { startRecorrenciaScheduler } from "./jobs/recorrenciaScheduler.js";
 import { fecharTodasConexoes } from "./services/realtimeHub.js";
 
@@ -15,6 +16,7 @@ const server = app.listen(env.PORT, () => {
   startSlaAlertScheduler();
   startOsNovaAlertScheduler();
   startRecorrenciaScheduler();
+  startRastreamentoScheduler();
 });
 
 /**

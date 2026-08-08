@@ -1,10 +1,14 @@
 import { Router } from "express";
 import { z } from "zod";
-import { STATUS_VEICULO, TIPOS_VEICULO, UserRole } from "@isphub/shared";
+import { STATUS_VEICULO, TIPOS_VEICULO, UserRole, diaBrasileiro } from "@isphub/shared";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { escopoVeiculoWhere, podeAcessarVeiculo } from "../services/escopoService.js";
 import * as veiculos from "../services/veiculoService.js";
+import * as ocupacao from "../services/ocupacaoService.js";
+import * as rastreadores from "../services/rastreadorService.js";
+import * as rastreamento from "../services/rastreamentoService.js";
+import { prisma } from "../lib/prisma.js";
 
 /**
  * Modulo Frota — o angulo OPERACIONAL do veiculo.
@@ -84,4 +88,228 @@ frotaRouter.patch(
     await assertAcesso(req, req.params.id);
     res.json(await veiculos.editar(req.params.id, editarSchema.parse(req.body)));
   }),
+);
+
+// ---------------------------------------------------------------------------
+// OCUPACAO — quem esta em qual viatura
+// ---------------------------------------------------------------------------
+
+/**
+ * Colegas pro seletor do app.
+ *
+ * Rota NOVA em vez de afrouxar `GET /tecnicos`, que e `requireRole(ADMIN,
+ * GESTOR)` com o comentario explicito de que "um usuario tecnico nunca precisa
+ * da lista dos outros tecnicos". O seletor de acompanhantes contradiz aquilo
+ * num caso especifico — entao abre-se um caso especifico, e nao a guarda toda.
+ * Devolve so o minimo pra desenhar a linha.
+ */
+frotaRouter.get(
+  "/colegas",
+  requireRole(UserRole.ADMIN, UserRole.GESTOR, UserRole.TECNICO),
+  asyncHandler(async (req, res) => {
+    const linhas = await prisma.usuario.findMany({
+      where: { role: UserRole.TECNICO, ativo: true, id: { not: req.user!.sub } },
+      orderBy: { nome: "asc" },
+      select: { id: true, nome: true, nomeExibicao: true, temFoto: true, fotoVersao: true },
+    });
+    res.json(linhas);
+  }),
+);
+
+/** Viaturas disponiveis + quem ja esta em cada uma — o app pergunta antes de decidir. */
+frotaRouter.get(
+  "/veiculos-para-jornada",
+  requireRole(UserRole.ADMIN, UserRole.GESTOR, UserRole.TECNICO),
+  asyncHandler(async (req, res) => {
+    const lista = await veiculos.listar(escopoVeiculoWhere(req.user!));
+    const abertas = await ocupacao.ocupantesAbertos(lista.map((v) => v.id));
+    res.json(
+      lista.map((v) => ({
+        ...v,
+        ocupantes: abertas
+          .filter((o) => o.veiculoId === v.id)
+          .map((o) => ({ usuarioId: o.usuarioId, nome: o.usuarioNome, papel: o.papel })),
+      })),
+    );
+  }),
+);
+
+/** A viatura em que EU estou — o app do tecnico ve so a dele, nunca a dos colegas. */
+frotaRouter.get(
+  "/minha-viatura",
+  asyncHandler(async (req, res) => {
+    res.json(await ocupacao.ocupacaoAtual(req.user!.sub));
+  }),
+);
+
+frotaRouter.get(
+  "/ocupacoes/abertas",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (_req, res) => {
+    res.json(await ocupacao.ocupantesAbertos());
+  }),
+);
+
+frotaRouter.patch(
+  "/ocupacoes/:id/encerrar",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    res.json(await ocupacao.encerrarPorAjuste(req.params.id));
+  }),
+);
+
+const instanteSchema = z.object({ em: z.string().datetime().optional() });
+
+/** "Quem estava na HFX3652 as 14:30?" */
+frotaRouter.get(
+  "/veiculos/:id/ocupantes",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    await assertAcesso(req, req.params.id);
+    const { em } = instanteSchema.parse(req.query);
+    res.json(await ocupacao.ocupantesEm(req.params.id, em ? new Date(em) : new Date()));
+  }),
+);
+
+/** "Qual veiculo o Joao usava as 15:00?" */
+frotaRouter.get(
+  "/tecnicos/:usuarioId/veiculo",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    const { em } = instanteSchema.parse(req.query);
+    res.json(await ocupacao.veiculoDe(req.params.usuarioId, em ? new Date(em) : new Date()));
+  }),
+);
+
+/** "Qual veiculo fez a OS #12345?" — LISTA, porque podem ter sido dois. */
+frotaRouter.get(
+  "/ordens-servico/:osId/veiculos",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    res.json(await ocupacao.veiculosDaOs(req.params.osId));
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// RASTREAMENTO
+// ---------------------------------------------------------------------------
+
+frotaRouter.get(
+  "/mapa",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    const posicoes = await rastreamento.mapaAoVivo(escopoVeiculoWhere(req.user!));
+    const abertas = await ocupacao.ocupantesAbertos(posicoes.map((p) => p.veiculoId));
+    res.json({
+      // `agoraServidor` acompanha: a IDADE da posicao e o que decide se o gestor
+      // pode confiar no pino, e medi-la com o relogio do navegador daria numero
+      // diferente em cada maquina. Mesmo padrao da jornada.
+      agoraServidor: new Date().toISOString(),
+      veiculos: posicoes.map((p) => ({
+        ...p,
+        ocupantes: abertas.filter((o) => o.veiculoId === p.veiculoId).map((o) => o.usuarioNome),
+      })),
+    });
+  }),
+);
+
+const trilhaSchema = z.object({
+  de: z.string().datetime().optional(),
+  ate: z.string().datetime().optional(),
+  precisao: z.enum(["alta", "media"]).optional(),
+});
+
+/** O PERCURSO do veiculo num intervalo. */
+frotaRouter.get(
+  "/veiculos/:id/trilha",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    await assertAcesso(req, req.params.id);
+    const q = trilhaSchema.parse(req.query);
+    const { inicio, fim } = diaBrasileiro(new Date());
+    res.json(
+      await rastreamento.trilha(
+        req.params.id,
+        q.de ? new Date(q.de) : inicio,
+        q.ate ? new Date(q.ate) : fim,
+        q.precisao ?? "media",
+      ),
+    );
+  }),
+);
+
+frotaRouter.get(
+  "/rastreadores",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (_req, res) => res.json(await rastreadores.listarRastreadores())),
+);
+
+const rastreadorSchema = z.object({
+  identificadorExterno: z.string().trim().min(1).max(60),
+  apelido: z.string().trim().max(60).nullish(),
+  provedorId: z.string().uuid().nullish(),
+});
+
+frotaRouter.post(
+  "/rastreadores",
+  requireRole(UserRole.ADMIN),
+  asyncHandler(async (req, res) => {
+    res.status(201).json(await rastreadores.criarRastreador(rastreadorSchema.parse(req.body)));
+  }),
+);
+
+frotaRouter.post(
+  "/rastreadores/:id/vincular",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    const { veiculoId } = z.object({ veiculoId: z.string().uuid() }).parse(req.body);
+    res.json(await rastreadores.vincular(req.params.id, veiculoId, req.user!.sub));
+  }),
+);
+
+frotaRouter.post(
+  "/rastreadores/:id/desvincular",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    await rastreadores.desvincular(req.params.id);
+    res.status(204).end();
+  }),
+);
+
+frotaRouter.get(
+  "/rastreadores/:id/vinculos",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => res.json(await rastreadores.historicoVinculos(req.params.id))),
+);
+
+// ---------------------------------------------------------------------------
+// CREDENCIAL DO FORNECEDOR — ADMIN apenas
+// ---------------------------------------------------------------------------
+
+frotaRouter.get(
+  "/config",
+  requireRole(UserRole.ADMIN),
+  asyncHandler(async (_req, res) => res.json(await rastreadores.obterConfig(null))),
+);
+
+frotaRouter.put(
+  "/config",
+  requireRole(UserRole.ADMIN),
+  asyncHandler(async (req, res) => {
+    const dados = z
+      .object({
+        chave: z.string().trim().min(8),
+        baseUrl: z.string().trim().url().optional(),
+        intervaloPollingSegundos: z.number().int().min(30).max(3600).optional(),
+        ativo: z.boolean().optional(),
+      })
+      .parse(req.body);
+    res.json(await rastreadores.salvarConfig({ ...dados, provedorId: null }));
+  }),
+);
+
+frotaRouter.post(
+  "/config/testar",
+  requireRole(UserRole.ADMIN),
+  asyncHandler(async (_req, res) => res.json(await rastreadores.testarConfig(null))),
 );

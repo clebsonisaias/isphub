@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
+import { MapContainer, Marker, Popup } from "react-leaflet";
+import { AjustarLimites, BRASIL_CENTER, CamadaOsm } from "@/components/mapa/base";
 import type { FilaItem, Provedor } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
 import { AnimatedPage } from "@/components/AnimatedPage";
@@ -115,20 +116,7 @@ function pinIcon(cor: string, retirada = false, contratoIrregular = false) {
   return L.divIcon({ className: "", html: caixa, iconSize: [44, 44], iconAnchor: [22, 22] });
 }
 
-const BRASIL_CENTER: [number, number] = [-15.78, -47.93];
 
-function AjustarLimites({ pontos }: { pontos: [number, number][] }) {
-  const map = useMap();
-  useEffect(() => {
-    if (pontos.length === 0) return;
-    if (pontos.length === 1) {
-      map.setView(pontos[0], 13);
-      return;
-    }
-    map.fitBounds(L.latLngBounds(pontos), { padding: [40, 40] });
-  }, [pontos, map]);
-  return null;
-}
 
 export function MapaPage() {
   const { usuario } = useAuth();
@@ -286,10 +274,7 @@ export function MapaPage() {
       ) : (
         <div className="overflow-hidden rounded-xl border border-border" style={{ height: "70vh" }}>
           <MapContainer center={BRASIL_CENTER} zoom={4} style={{ height: "100%", width: "100%" }}>
-            <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
+            <CamadaOsm />
             <AjustarLimites pontos={pontos} />
             {itens.map((item) => (
               <Marker

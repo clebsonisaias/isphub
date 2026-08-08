@@ -10,17 +10,32 @@ import { StatusPreset } from "@isphub/shared";
  * corrida acontece de verdade e o banco recusa) e o acoplamento com o status.
  */
 
-const { jornadaFindFirst, jornadaCreate, jornadaUpdate, jornadaFindMany, usuarioUpdate, $transaction } = vi.hoisted(
-  () => ({
-    jornadaFindFirst: vi.fn(),
-    jornadaCreate: vi.fn(),
-    jornadaUpdate: vi.fn(),
-    jornadaFindMany: vi.fn(),
-    usuarioUpdate: vi.fn(),
-    $transaction: vi.fn(),
-  }),
-);
+const {
+  jornadaFindFirst,
+  jornadaCreate,
+  jornadaUpdate,
+  jornadaFindMany,
+  usuarioUpdate,
+  ocupacaoFindFirst,
+  ocupacaoUpdate,
+  $transaction,
+} = vi.hoisted(() => ({
+  jornadaFindFirst: vi.fn(),
+  jornadaCreate: vi.fn(),
+  jornadaUpdate: vi.fn(),
+  jornadaFindMany: vi.fn(),
+  usuarioUpdate: vi.fn(),
+  ocupacaoFindFirst: vi.fn(),
+  ocupacaoUpdate: vi.fn(),
+  $transaction: vi.fn(),
+}));
 
+/*
+ * `ocupacaoVeiculo` entra no duble porque encerrar a jornada agora fecha a
+ * ocupacao junto — ninguem continua "dentro da viatura" depois de bater a
+ * saida. Sem isto o teste falha em `findFirst` de undefined, que e ruido, nao
+ * regressao.
+ */
 vi.mock("../lib/prisma.js", () => ({
   prisma: {
     jornadaTecnico: {
@@ -30,11 +45,15 @@ vi.mock("../lib/prisma.js", () => ({
       findMany: jornadaFindMany,
     },
     usuario: { update: usuarioUpdate },
+    ocupacaoVeiculo: { findFirst: ocupacaoFindFirst, update: ocupacaoUpdate },
     $transaction,
   },
 }));
 
 const { iniciarJornada, encerrarJornada, jornadaAtual, jornadasAtivas } = await import("./jornadaService.js");
+
+/** O duble do prisma, pra passar como `tx` na forma em callback. */
+const { prisma: prismaDuble } = await import("../lib/prisma.js");
 
 const USUARIO = "tec-1";
 const INICIO = new Date("2026-08-07T10:00:00.000Z");
@@ -54,7 +73,17 @@ function linha(over: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  $transaction.mockImplementation(async (ops: Promise<unknown>[]) => Promise.all(ops));
+  /*
+   * O `$transaction` do Prisma tem DUAS formas: array (o iniciar usa) e
+   * callback (o encerrar passou a usar, porque precisa de logica condicional).
+   * O duble atende as duas — senao o teste falharia com "function is not
+   * iterable", que nao diz nada sobre o comportamento.
+   */
+  $transaction.mockImplementation(async (arg: unknown) =>
+    typeof arg === "function" ? (arg as (tx: unknown) => unknown)(prismaDuble) : Promise.all(arg as Promise<unknown>[]),
+  );
+  // Sem ocupacao aberta e o caso padrao: o tecnico que foi a pe.
+  ocupacaoFindFirst.mockResolvedValue(null);
   jornadaCreate.mockResolvedValue(linha());
   jornadaUpdate.mockResolvedValue(linha({ fimEm: new Date("2026-08-07T18:00:00.000Z") }));
   usuarioUpdate.mockResolvedValue({});
@@ -64,7 +93,7 @@ describe("iniciarJornada", () => {
   it("sem jornada aberta, cria uma e poe o tecnico como Disponivel", async () => {
     jornadaFindFirst.mockResolvedValue(null);
 
-    const j = await iniciarJornada(USUARIO);
+    const j = (await iniciarJornada(USUARIO)).jornada;
 
     expect(j.id).toBe("j-1");
     expect(j.inicioEm).toBe(INICIO.toISOString());
@@ -91,7 +120,7 @@ describe("iniciarJornada", () => {
     // a responder, entao a pessoa toca de novo.
     jornadaFindFirst.mockResolvedValue(linha());
 
-    const j = await iniciarJornada(USUARIO);
+    const j = (await iniciarJornada(USUARIO)).jornada;
 
     expect(j.id).toBe("j-1");
     expect(jornadaCreate).not.toHaveBeenCalled();
@@ -108,7 +137,7 @@ describe("iniciarJornada", () => {
     jornadaFindFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(linha({ id: "j-vencedora" }));
     $transaction.mockRejectedValueOnce(Object.assign(new Error("unique"), { code: "P2002" }));
 
-    const j = await iniciarJornada(USUARIO);
+    const j = (await iniciarJornada(USUARIO)).jornada;
 
     expect(j.id).toBe("j-vencedora");
   });

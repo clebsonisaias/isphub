@@ -5,14 +5,34 @@
  * a fronteira: trocar de fornecedor e escrever outro conector, sem tocar em rota
  * nem em componente.
  *
- * O primeiro (e hoje unico) fornecedor e a PlataformaTK, cujo contrato foi
- * extraido de uma integracao em producao, nao suposto:
+ * O primeiro (e hoje unico) fornecedor e a PlataformaTK. O contrato abaixo foi
+ * CONFERIDO contra a API de producao, nao copiado de outra integracao — e ainda
+ * bem, porque a integracao de referencia le o status errado (ver abaixo):
  *
  *   Authorization: AuthDevice <chave>
- *   GET /trackers/status                                   -> lote (o UNICO)
+ *
+ *   GET /trackers/status            -> [{ trackerId: number, statuses: [{name, status}] }]
+ *        nomes vistos: COMMUNICATION (UP|DOWN), TRACKING (ON|OFF),
+ *        MOVEMENT (MOVING|STOPPED), ACC (ON|OFF = ignicao),
+ *        CUT (OFF = corte de motor), BAT ("100" = bateria %).
+ *        ⚠️ Rastreador offline reporta SO o COMMUNICATION — os outros SOMEM.
+ *           Por isso cada campo e tri-estado: ausente = nao sabemos.
+ *
  *   GET /trackers/{id}/last-location
+ *        -> { trackerId, latitude, longitude, time, lastCommunication, speed }
+ *        `time` e o carimbo DO APARELHO (a verdade); `lastCommunication` e
+ *        quando o servidor recebeu.
+ *
  *   GET /trackers/{id}/history/{ini}[/{fim}]?distance=&accuracy=
  *   GET /trackers/{id}/day-summary/{data}[/{fim}]
+ *
+ * Codigos: rastreador inexistente devolve **400**, nao 404; sem chave, 401.
+ *
+ * ⚠️ O ERRO DA INTEGRACAO DE REFERENCIA, que nao repetimos: ela le
+ * `s.status.COMMUNICATION`, como se `status` fosse um objeto indexado por nome.
+ * O campo real chama-se `statuses` e e um ARRAY de `{name, status}`. Resultado:
+ * la, `online` e `gpsOk` sao SEMPRE falsos, e ninguem percebeu porque falso e um
+ * valor plausivel pra um carro parado.
  *
  * Tres fatos do fornecedor que atravessam o desenho inteiro: nao ha webhook (e
  * polling), so o status vem em lote (posicao e uma chamada por rastreador), e a
@@ -46,13 +66,22 @@ export type ResultadoPosicao =
 
 export interface StatusRastreador {
   identificadorExterno: string;
-  /** COMMUNICATION === "UP". `null` = o campo nao veio; nao afirme. */
+  /**
+   * Todos tri-estado, e isso NAO e zelo excessivo: um rastreador offline
+   * reporta so o COMMUNICATION, e os demais campos simplesmente nao vem.
+   * `false` diria "o GPS esta sem fix"; `null` diz "nao sabemos" — que e a
+   * verdade, e a diferenca decide se o mapa apaga um carro ou o mostra velho.
+   */
+  /** COMMUNICATION === "UP" — o aparelho fala com o servidor. */
   comunicando: boolean | null;
   /** TRACKING === "ON" — o GPS tem fix. */
   rastreando: boolean | null;
   /** MOVEMENT === "MOVING". */
   movendo: boolean | null;
-  velocidadeKmh: number | null;
+  /** ACC === "ON" — ignicao ligada. */
+  ignicao: boolean | null;
+  /** BAT em porcentagem. */
+  bateriaPct: number | null;
 }
 
 export type ResultadoStatus =
