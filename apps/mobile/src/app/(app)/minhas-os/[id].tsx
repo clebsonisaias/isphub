@@ -10,6 +10,7 @@ import { apiFetch } from "@/lib/api";
 import { Button, Card, Field, Muted, Pill, Screen, SectionLabel, Title, type PillTone } from "@/components/ui";
 import { colors, font, space } from "@/theme/tokens";
 import { useAcoesOs } from "@/features/minhas-os/acoes";
+import { abrirNoWaze } from "@/features/minhas-os/navegacao";
 import { AcaoContratoStatus } from "@/features/minhas-os/acao-contrato-status";
 import { ConexaoStatus } from "@/features/minhas-os/conexao-status";
 import { FichaSgpComoChegar, FichaSgpConexao, FichaSgpContrato, useFichaSgp } from "@/features/minhas-os/ficha-sgp";
@@ -84,14 +85,7 @@ export default function DetalheOs() {
   }
 
   function abrirMapa() {
-    if (!os) return;
-    const url =
-      os.endereco?.lat != null && os.endereco?.lng != null
-        ? `https://www.google.com/maps/search/?api=1&query=${os.endereco?.lat},${os.endereco?.lng}`
-        : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-            [os.endereco?.logradouro, os.endereco?.numero, os.endereco?.cidade].filter(Boolean).join(" "),
-          )}`;
-    Linking.openURL(url);
+    if (os) abrirNoWaze(os.endereco);
   }
 
   const endereco = os?.endereco?.logradouro
@@ -154,7 +148,7 @@ export default function DetalheOs() {
                 </View>
               </View>
               <Button
-                label="Abrir no mapa"
+                label="Abrir no Waze"
                 variant="secondary"
                 size="sm"
                 icon={<Feather name="navigation" size={14} color={colors.brandInk} />}

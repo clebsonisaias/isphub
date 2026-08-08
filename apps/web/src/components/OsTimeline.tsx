@@ -4,7 +4,7 @@ import { ordensServicoApi } from "@/lib/filaApi";
 import { ApiError } from "@/lib/apiClient";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ErrorState";
-import { UserPlus, RefreshCw, MessageSquare, Camera, Pencil, FileSignature, type LucideIcon } from "lucide-react";
+import { UserPlus, RefreshCw, MessageSquare, Camera, Pencil, FileSignature, MapPin, type LucideIcon } from "lucide-react";
 
 const ICONE_POR_TIPO: Record<OsEvento["tipo"], LucideIcon> = {
   atribuicao: UserPlus,
@@ -74,8 +74,28 @@ export function OsTimeline({ ordemServicoId }: { ordemServicoId: string }) {
             </span>
             <div className="min-w-0 flex-1">
               <p className="text-sm text-foreground">{e.descricao}</p>
-              <p className="text-xs text-muted-foreground">
-                {e.autorNome ?? "Sistema"} · {new Date(e.criadoEm).toLocaleString("pt-BR")}
+              <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                <span>
+                  {e.autorNome ?? "Sistema"} · {new Date(e.criadoEm).toLocaleString("pt-BR")}
+                </span>
+                {/*
+                  Onde o tecnico estava quando registrou isto. Sem o link o dado
+                  ficaria gravado e invisivel, que na pratica e o mesmo que nao
+                  ter — a pergunta que ele responde ("de onde ele disse que
+                  chegou?") so se responde abrindo o mapa.
+                */}
+                {e.lat != null && e.lng != null ? (
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${e.lat},${e.lng}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-0.5 font-medium text-primary hover:underline"
+                    title={`Registrado em ${e.lat}, ${e.lng}`}
+                  >
+                    <MapPin className="size-3" aria-hidden />
+                    onde
+                  </a>
+                ) : null}
               </p>
             </div>
           </div>

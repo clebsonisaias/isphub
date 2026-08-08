@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { OsStatus, UserRole, ehCodigoStatusContrato, type CodigoStatusContrato } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
+import { geoSchema } from "../lib/geo.js";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { podeAcessarOs } from "../services/escopoService.js";
@@ -64,20 +65,25 @@ ordensServicoRouter.post(
   requireRole(...acoesRoles),
   asyncHandler(async (req, res) => {
     await assertAcesso(req, req.params.id);
-    const os = await writeback.marcarACaminho(req.params.id, req.user!.sub);
+    // O corpo era IGNORADO (rota sem schema). Agora carrega a posicao de onde o
+    // tecnico disse que saiu — opcional, ver lib/geo.ts.
+    const geo = geoSchema.parse(req.body ?? {});
+    const os = await writeback.marcarACaminho(req.params.id, req.user!.sub, geo);
     res.json(os);
   }),
 );
 
-const statusSchema = z.object({ status: z.nativeEnum(OsStatus) });
+// `.merge` com o geo: a mudanca de status carrega de ONDE ela foi feita —
+// "chegou" (em execucao) e "concluiu" sao dois dos tres momentos que interessam.
+const statusSchema = z.object({ status: z.nativeEnum(OsStatus) }).merge(geoSchema);
 
 ordensServicoRouter.patch(
   "/:id/status",
   requireRole(...acoesRoles),
   asyncHandler(async (req, res) => {
     await assertAcesso(req, req.params.id);
-    const { status } = statusSchema.parse(req.body);
-    const os = await writeback.mudarStatus(req.params.id, status, req.user!.sub);
+    const { status, ...geo } = statusSchema.parse(req.body);
+    const os = await writeback.mudarStatus(req.params.id, status, req.user!.sub, geo);
     res.json(os);
   }),
 );
@@ -147,11 +153,18 @@ ordensServicoRouter.get(
       orderBy: { criadoEm: "desc" },
     });
     res.json(
+      /*
+       * Projecao campo a campo — lista de permissao, nao de exclusao. Campo
+       * novo no modelo que nao seja acrescentado AQUI simplesmente nao chega
+       * na tela, sem erro nenhum em lugar nenhum.
+       */
       eventos.map((e) => ({
         id: e.id,
         tipo: e.tipo,
         autorNome: e.autor?.nome ?? null,
         descricao: e.descricao,
+        lat: e.lat,
+        lng: e.lng,
         criadoEm: e.criadoEm,
       })),
     );

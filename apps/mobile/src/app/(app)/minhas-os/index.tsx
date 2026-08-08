@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "expo-router";
-import { ActivityIndicator, Alert, Linking, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import {
   OsPrioridade,
@@ -29,6 +29,7 @@ import { colors, font, space } from "@/theme/tokens";
 import { Avatar, useAvatarUri } from "@/features/chat/avatar";
 import { FilaCard } from "@/features/minhas-os/fila-card";
 import { ordenarSlaFirst } from "@/features/minhas-os/sla";
+import { abrirNoWaze } from "@/features/minhas-os/navegacao";
 import { useJornada, useRelogioServidor } from "@/features/jornada/api";
 
 interface FilaResp {
@@ -126,19 +127,6 @@ export default function MinhasOs() {
     ]);
   }
 
-  function abrirMapa(os: FilaItem) {
-    const { lat, lng } = os.endereco ?? {};
-    const destino =
-      lat != null && lng != null
-        ? `${lat},${lng}`
-        : encodeURIComponent(
-            [os.endereco?.logradouro, os.endereco?.numero, os.endereco?.bairro, os.endereco?.cidade]
-              .filter(Boolean)
-              .join(" "),
-          );
-    void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${destino}`);
-  }
-
   return (
     <Screen style={{ paddingHorizontal: 0 }}>
       <ScrollView
@@ -181,8 +169,8 @@ export default function MinhasOs() {
               horario={proxima.dataAgendamento ? `Agendada para ${hora(proxima.dataAgendamento)}` : null}
               prioridadeAlta={proxima.prioridade === OsPrioridade.ALTA}
               onVer={() => router.push(`/minhas-os/${proxima.id}`)}
-              onIniciar={() => abrirMapa(proxima)}
-              acaoLabel="Abrir no mapa"
+              onIniciar={() => abrirNoWaze(proxima.endereco)}
+              acaoLabel="Abrir no Waze"
             />
           ) : (
             <Card>

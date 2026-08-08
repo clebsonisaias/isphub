@@ -235,6 +235,9 @@ export interface OsEvento {
   autorNome?: string | null;
   descricao: string;
   criadoEm: string;
+  /** Onde o tecnico estava. Nulo quando a permissao foi negada. */
+  lat?: number | null;
+  lng?: number | null;
 }
 
 /**

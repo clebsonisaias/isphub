@@ -3,6 +3,7 @@ import { Alert } from "react-native";
 import type { CodigoStatusContrato, OsStatus } from "@isphub/shared";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { obterGeoOuNada } from "@/features/localizacao";
 
 /**
  * Acoes de write-back da OS (via API ISPhub — nunca direto no SGP). Toda mutation
@@ -31,15 +32,31 @@ export function useAcoesOs(osId: string) {
     qc.invalidateQueries({ queryKey: ["fila"] });
   };
 
+  /*
+   * As acoes de campo carimbam ONDE o tecnico estava — vira a trilha da OS
+   * (de onde saiu, de onde chegou, de onde concluiu). Best-effort: sem
+   * permissao ou sem sinal, a acao acontece do mesmo jeito, com posicao nula.
+   */
   const marcarACaminho = useMutation({
-    mutationFn: () => apiFetch<void>(`/ordens-servico/${osId}/acaminho`, { method: "POST", token }),
+    mutationFn: async () =>
+      apiFetch<void>(`/ordens-servico/${osId}/acaminho`, {
+        method: "POST",
+        token,
+        body: (await obterGeoOuNada()) ?? {},
+      }),
     onSuccess: aoMudar,
     onError: avisarFalha("marcar a caminho"),
   });
 
   const mudarStatus = useMutation({
-    mutationFn: (status: OsStatus) =>
-      apiFetch<void>(`/ordens-servico/${osId}/status`, { method: "PATCH", token, body: { status } }),
+    mutationFn: async (status: OsStatus) =>
+      apiFetch<void>(`/ordens-servico/${osId}/status`, {
+        method: "PATCH",
+        token,
+        // "Em execucao" = chegou; "Concluida" = terminou. Sao dois dos tres
+        // momentos que a trilha registra (o terceiro e o "a caminho" acima).
+        body: { status, ...((await obterGeoOuNada()) ?? {}) },
+      }),
     onSuccess: aoMudar,
     onError: avisarFalha("mudar o status da OS"),
   });

@@ -14,6 +14,7 @@ import {
   type RealtimeEventoTipo,
 } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
+import { parGeo, type Geo } from "../lib/geo.js";
 import { HttpError } from "../middleware/errorHandler.js";
 import { buildConnector } from "./erpConnectorService.js";
 import { SgpError } from "../connectors/sgp.js";
@@ -37,8 +38,17 @@ function notificarTecnico(tecnicoId: string | null, tipo: RealtimeEventoTipo, os
  * routes/ordensServico.ts GET /:id/eventos).
  */
 
-function evento(ordemServicoId: string, tipo: OsEventoTipo, autorId: string, descricao: string) {
-  return prisma.osEvento.create({ data: { ordemServicoId, tipo, autorId, descricao } });
+function evento(
+  ordemServicoId: string,
+  tipo: OsEventoTipo,
+  autorId: string,
+  descricao: string,
+  geo?: Geo,
+) {
+  // A coordenada entra no EVENTO (nao na OS) porque o que interessa e o rastro:
+  // de onde ele disse que saiu, de onde disse que chegou, de onde terminou. Na
+  // OS so caberia a ultima.
+  return prisma.osEvento.create({ data: { ordemServicoId, tipo, autorId, descricao, ...parGeo(geo) } });
 }
 
 /**
@@ -114,7 +124,7 @@ async function loadOsWithConnector(ordemServicoId: string) {
   return { os, connector };
 }
 
-export async function marcarACaminho(ordemServicoId: string, autorId: string) {
+export async function marcarACaminho(ordemServicoId: string, autorId: string, geo?: Geo) {
   const { os, connector } = await loadOsWithConnector(ordemServicoId);
   await chamarSgp(() => connector.setOnTheWay(os.sgpOsId));
 
@@ -126,13 +136,18 @@ export async function marcarACaminho(ordemServicoId: string, autorId: string) {
       where: { id: os.id },
       data: { status: OsStatus.EM_DESLOCAMENTO, sincronizadoEm: new Date(), statusAlteradoEm: new Date() },
     }),
-    evento(os.id, "status", autorId, "Marcado como a caminho"),
+    evento(os.id, "status", autorId, "Marcado como a caminho", geo),
   ]);
   notificarTecnico(osAtualizada.tecnicoId, "os-alterada", os.id);
   return osAtualizada;
 }
 
-export async function mudarStatus(ordemServicoId: string, novoStatus: OsStatus, autorId: string) {
+export async function mudarStatus(
+  ordemServicoId: string,
+  novoStatus: OsStatus,
+  autorId: string,
+  geo?: Geo,
+) {
   const { os, connector } = await loadOsWithConnector(ordemServicoId);
 
   if (novoStatus === OsStatus.EM_DESLOCAMENTO) {
@@ -156,7 +171,7 @@ export async function mudarStatus(ordemServicoId: string, novoStatus: OsStatus, 
       where: { id: os.id },
       data: { status: novoStatus, sincronizadoEm: new Date(), statusAlteradoEm: new Date() },
     }),
-    evento(os.id, "status", autorId, descricao),
+    evento(os.id, "status", autorId, descricao, geo),
   ]);
   notificarTecnico(osAtualizada.tecnicoId, "os-alterada", os.id);
   return osAtualizada;

@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { JornadaResposta } from "@isphub/shared";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { obterLocalizacaoAtual } from "@/features/chat/media";
+import { obterGeoOuNada } from "@/features/localizacao";
 
 /**
  * Jornada do tecnico — iniciar/encerrar o turno.
@@ -20,21 +20,6 @@ function avisarFalha(acao: string) {
     const detalhe = erro instanceof Error ? erro.message : "Verifique a conexão e tente de novo.";
     Alert.alert(`Não foi possível ${acao}`, detalhe);
   };
-}
-
-/**
- * Pega a posicao SEM travar a acao.
- *
- * Localizacao aqui e complemento — se a permissao estiver negada ou o GPS
- * demorar, o turno comeca do mesmo jeito. Bloquear o inicio do dia de trabalho
- * por causa de um dado acessorio seria trocar o principal pelo secundario.
- */
-async function geoOuNada(): Promise<{ lat: number; lng: number } | null> {
-  try {
-    return await obterLocalizacaoAtual();
-  } catch {
-    return null;
-  }
 }
 
 export function useJornada() {
@@ -66,7 +51,7 @@ export function useJornada() {
 
   const iniciar = useMutation({
     mutationFn: async () => {
-      const geo = await geoOuNada();
+      const geo = await obterGeoOuNada();
       return apiFetch<JornadaResposta>("/jornada/iniciar", { method: "POST", token, body: geo ?? {} });
     },
     onSuccess: aoMudar,
@@ -75,7 +60,7 @@ export function useJornada() {
 
   const encerrar = useMutation({
     mutationFn: async () => {
-      const geo = await geoOuNada();
+      const geo = await obterGeoOuNada();
       return apiFetch<JornadaResposta>("/jornada/encerrar", { method: "POST", token, body: geo ?? {} });
     },
     onSuccess: aoMudar,

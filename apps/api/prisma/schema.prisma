@@ -494,6 +494,15 @@ model OsEvento {
   autorId        String?
   autor          Usuario?     @relation(fields: [autorId], references: [id], onDelete: SetNull)
   descricao      String
+  /// Onde o tecnico estava quando isto aconteceu. Nulavel e best-effort: se a
+  /// permissao de localizacao estiver negada, a acao (marcar a caminho,
+  /// concluir) acontece do mesmo jeito — a posicao e complemento, nao requisito.
+  ///
+  /// Mora no EVENTO e nao na OrdemServico de proposito: na OS so caberia a
+  /// ultima posicao, e o que interessa e o rastro — de onde ele disse que saiu,
+  /// de onde disse que chegou, de onde disse que terminou.
+  lat            Float?
+  lng            Float?
   criadoEm       DateTime     @default(now())
 
   @@index([ordemServicoId, criadoEm])

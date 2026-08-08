@@ -140,3 +140,57 @@ describe("anotacao — mesmo isolamento", () => {
     expect(buildConnector).not.toHaveBeenCalledWith(CONFIG_X);
   });
 });
+
+describe("carimbo de localizacao no evento", () => {
+  /*
+   * Onde o tecnico estava quando disse que saiu / chegou / concluiu.
+   *
+   * A coordenada vai no EVENTO, nao na OS: na OS so caberia a ultima posicao, e
+   * o que tem valor e o rastro. Estes testes travam as duas pontas — a posicao
+   * chega quando existe, e a AUSENCIA dela nao derruba a acao (que e o caso que
+   * acontece de verdade, com a permissao negada).
+   */
+
+  it("grava a coordenada no evento quando ela vem", async () => {
+    await marcarACaminho("os-prov-x", "autor-1", { lat: -5.79, lng: -35.2 });
+
+    expect(osEventoCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ lat: -5.79, lng: -35.2 }) }),
+    );
+  });
+
+  it("SEM coordenada a acao acontece igual, com lat/lng nulos", async () => {
+    /*
+     * O caso comum: permissao negada, GPS sem sinal dentro do predio, aparelho
+     * em modo aviao. Marcar a caminho nao pode depender disso — se dependesse,
+     * o tecnico ficaria travado na porta do cliente.
+     */
+    await marcarACaminho("os-prov-x", "autor-1");
+
+    expect(osEventoCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ lat: null, lng: null }) }),
+    );
+  });
+
+  it("metade de coordenada vira NADA, nao um pino no oceano", async () => {
+    /*
+     * `lat` sem `lng` nao aponta pra lugar nenhum. Gravar so uma das duas
+     * colocaria um pino em longitude 0 — no golfo da Guine — e no mapa isso
+     * parece dado real, nao dado faltando.
+     */
+    await marcarACaminho("os-prov-x", "autor-1", { lat: -5.79 });
+
+    expect(osEventoCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ lat: null, lng: null }) }),
+    );
+  });
+
+  it("coordenada ZERO e coordenada valida", async () => {
+    // `0` e falsy: um `if (lat && lng)` descartaria o meridiano de Greenwich.
+    await marcarACaminho("os-prov-x", "autor-1", { lat: 0, lng: 0 });
+
+    expect(osEventoCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ lat: 0, lng: 0 }) }),
+    );
+  });
+});
