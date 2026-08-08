@@ -3,7 +3,9 @@ import {
   competenciaDe,
   consumoPorAbastecimento,
   deCentavos,
+  normalizarPlaca,
   paraCentavos,
+  placaValida,
   sinalDoMovimento,
   type MovimentoCartaoTipo,
   type TipoCombustivel,
@@ -59,8 +61,17 @@ export async function listarVeiculos() {
 }
 
 export async function criarVeiculo(args: { placa: string; modelo: string; ano?: number | null }) {
-  const placa = args.placa.trim().toUpperCase().replace(/\s+/g, "");
-  if (placa.length < 5) throw new HttpError(400, "Placa invalida");
+  /*
+   * A normalizacao mora em @isphub/shared e e a UNICA dona da regra. Antes,
+   * daqui saia `toUpperCase()` + tira espaco, mas NAO tirava hifen — entao
+   * "ABC-1234" e "ABC1234" viravam dois veiculos, e o rastreador ficava
+   * vinculado a so um deles. A migracao 20260808030000 normalizou o que ja
+   * existia; isto impede que volte a acontecer.
+   */
+  const placa = normalizarPlaca(args.placa);
+  if (!placaValida(placa)) {
+    throw new HttpError(400, "Placa invalida — use AAA1234 ou ABC1D23 (Mercosul)");
+  }
   const existente = await prisma.veiculo.findUnique({ where: { placa } });
   if (existente) throw new HttpError(409, "Ja existe um veiculo com essa placa");
   return prisma.veiculo.create({

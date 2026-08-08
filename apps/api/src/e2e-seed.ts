@@ -1,3 +1,4 @@
+import { OrigemOcupacao } from "@prisma/client";
 import { MODULO_CATALOGO, UserRole } from "@isphub/shared";
 import { prisma } from "./lib/prisma.js";
 import { hashPassword } from "./services/authService.js";
@@ -20,6 +21,53 @@ export const E2E_TECNICO_EMAIL = "e2e-tecnico@isphub.test";
 export const E2E_TECNICO_NOME = "E2E Tecnico";
 export const E2E_PROVEDOR_NOME = "E2E Provider";
 export const E2E_SGP_PORT = 4569;
+
+/**
+ * Prova COMPORTAMENTAL dos indices parciais da frota.
+ *
+ * A migracao 20260808030000 tem uma prova ESTRUTURAL (o indice existe, e com o
+ * `WHERE`). Esta aqui e a outra metade: o banco REALMENTE recusa? Um `if` no
+ * service nao e prova de nada — a regra tem de estar no banco, porque a corrida
+ * entre dois toques simultaneos passa por cima de qualquer checagem em
+ * aplicacao.
+ *
+ * Roda a cada rodada de e2e, contra banco de verdade, em milissegundos. Se um
+ * `prisma migrate diff` futuro derrubar os indices parciais (ele VAI propor
+ * isso — o Prisma nao expressa `WHERE` em indice), o seed falha aqui, alto, em
+ * vez de a suite passar verde com "quem estava no carro" virando palpite.
+ *
+ * Desfaz tudo o que cria.
+ */
+async function provarIndicesDaFrota(tecnicoId: string) {
+  const sufixo = `${Date.now()}`.slice(-4);
+  const [a, b] = await Promise.all([
+    prisma.veiculo.create({ data: { placa: `ZZA${sufixo}`, modelo: "Prova A" }, select: { id: true } }),
+    prisma.veiculo.create({ data: { placa: `ZZB${sufixo}`, modelo: "Prova B" }, select: { id: true } }),
+  ]);
+
+  const base = { usuarioId: tecnicoId, origem: OrigemOcupacao.jornada, declaradoPorId: tecnicoId };
+  try {
+    await prisma.ocupacaoVeiculo.create({ data: { ...base, veiculoId: a.id } });
+
+    let recusou = false;
+    try {
+      await prisma.ocupacaoVeiculo.create({ data: { ...base, veiculoId: b.id } });
+    } catch (e) {
+      recusou = (e as { code?: string })?.code === "P2002";
+    }
+    if (!recusou) {
+      throw new Error(
+        "REGRESSAO: o banco aceitou DUAS ocupacoes abertas pro mesmo tecnico. " +
+          "O indice parcial ocupacoes_veiculo_uma_aberta_por_usuario sumiu — " +
+          '"quem estava no carro" virou palpite.',
+      );
+    }
+    console.log("  frota: indice parcial de ocupacao provado (o banco recusa o 2o carro)");
+  } finally {
+    await prisma.ocupacaoVeiculo.deleteMany({ where: { veiculoId: { in: [a.id, b.id] } } });
+    await prisma.veiculo.deleteMany({ where: { id: { in: [a.id, b.id] } } });
+  }
+}
 
 async function main() {
   const senhaAdminHash = await hashPassword(E2E_ADMIN_SENHA);
@@ -331,6 +379,7 @@ async function main() {
    * recusaria a insercao na segunda rodada — e o seed falharia inteiro, nao so
    * este trecho.
    */
+  await prisma.ocupacaoVeiculo.deleteMany({});
   await prisma.jornadaTecnico.deleteMany({});
   await prisma.jornadaTecnico.create({
     data: {
@@ -340,6 +389,8 @@ async function main() {
       inicioEm: new Date(Date.now() - 2 * 60 * 60_000),
     },
   });
+
+  await provarIndicesDaFrota(tecnico.id);
 
   await prisma.lancamentoEvento.deleteMany({});
   const { count: lancDescartados } = await prisma.lancamento.deleteMany({});

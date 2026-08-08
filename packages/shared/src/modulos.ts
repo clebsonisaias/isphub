@@ -20,6 +20,7 @@ export const MODULO_IDS = [
   "chat", // conversa interna (DM, grupo, thread por OS, avisos)
   "chat-clientes", // caixa de entrada omnichannel de WhatsApp (Meta/Evolution) com clientes
   "financeiro", // contas a pagar/receber DA HUBISP (web apenas — sem tela no app do tecnico)
+  "frota", // veiculo, quem esta nele agora (ocupacao por periodo) e onde ele esta (GPS)
 ] as const;
 
 export type ModuloId = (typeof MODULO_IDS)[number];
@@ -93,6 +94,27 @@ export const MODULO_CATALOGO: Record<ModuloId, ModuloMeta> = {
    * tecnico. Existe so na web.
    */
   financeiro: { id: "financeiro", nome: "Financeiro", icone: "wallet", core: false, ativoPadrao: true, ordemPadrao: 70, rolesPadrao: [UserRole.ADMIN] },
+  /*
+   * Veiculo, ocupacao (quem esta nele AGORA e quem esteve) e rastreamento GPS.
+   *
+   * `ativoPadrao: true` pelo mesmo criterio que o financeiro documenta acima: o
+   * teste da casa e "precisa de configuracao externa pra servir pra alguma
+   * coisa?". `chat-clientes` e `provisionamento` nascem desligados porque sem
+   * canal/OLT cadastrados a tela nao faz nada. Frota nao: cadastrar veiculo e
+   * declarar ocupacao funcionam assim que a tela abre. So o MAPA depende da
+   * chave do rastreador, e ele degrada sozinho ("sem rastreador vinculado") em
+   * vez de quebrar.
+   *
+   * PROVEDOR fica de FORA na fase 1 de proposito. Veiculo de provedor existe no
+   * modelo (`Veiculo.provedorId`), mas a posicao de uma viatura mostra a um ISP
+   * quando o concorrente foi atendido — as telas escopadas pra ele sao fase
+   * posterior. Escopo de DADO e `escopoVeiculoWhere`, nao esta lista.
+   *
+   * Sem entrada em ROTAS_MODULO (apps/mobile): o app do tecnico nao ganha aba
+   * de frota. Ele declara a viatura DENTRO da jornada, que ja e core — um lugar
+   * so pra um gesto so.
+   */
+  frota: { id: "frota", nome: "Frota", icone: "truck", core: false, ativoPadrao: true, ordemPadrao: 80, rolesPadrao: [UserRole.ADMIN, UserRole.GESTOR] },
 };
 
 /** Modulo ja resolvido para um usuario (o que `GET /config` devolve). */
@@ -131,7 +153,24 @@ export type RealtimeEventoTipo =
   | "chat-digitando"
   | "chat-conversa"
   | "cliente-chat-mensagem"
-  | "cliente-chat-conversa";
+  | "cliente-chat-conversa"
+  /*
+   * FROTA. Os dois sao SINAL DE INVALIDACAO — "refaz a tua busca" —, nunca
+   * carga de dados. Repare que nao ha lat/lng em RealtimeEvento, e isso e
+   * deliberado:
+   *
+   * (a) o hub e best-effort e NAO tem buffer de replay (ver realtimeHub.ts).
+   *     Um evento com coordenada que se perde deixa o mapa velho E plausivel —
+   *     pior que um mapa que sabe que esta velho;
+   * (b) seria uma segunda fonte de posicao, pra divergir da primeira.
+   *
+   * `posicao-veiculo` sai COALESCIDO (um por tique de coleta, sem `veiculoId`):
+   * carga de tamanho constante independente do tamanho da frota, e nenhum id de
+   * veiculo pulverizado via `emitParaTodos` pra quem nao pode ver frota — cada
+   * cliente refaz a busca pelo proprio endpoint, ja escopado.
+   */
+  | "posicao-veiculo"
+  | "ocupacao-alterada";
 
 export interface RealtimeEvento {
   tipo: RealtimeEventoTipo;

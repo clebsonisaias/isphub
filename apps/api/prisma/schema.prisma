@@ -64,6 +64,12 @@ model Provedor {
   recorrencias  Recorrencia[]
   parcelamentos Parcelamento[]
 
+  /// Frota: aqui `provedorId` VOLTA a ser particao multi-tenant (diferente dos
+  /// tres acima) — so que NULAVEL, porque existe frota da propria operacao.
+  veiculos          Veiculo[]
+  rastreadores      Rastreador[]
+  rastreadorConfigs RastreadorConfig[]
+
   @@map("provedores")
 }
 
@@ -233,6 +239,10 @@ model OrdemServico {
   notificacoes Notificacao[]
   /// Thread de chat da OS — no maximo 1 por OS (ver Conversa.ordemServicoId @unique).
   conversa     Conversa?
+  /// Ocupacoes abertas ESPECIFICAMENTE pra esta OS — o caso raro. O normal e
+  /// descobrir o veiculo cruzando a janela de execucao com as ocupacoes do
+  /// tecnico; ver `veiculosDaOs`.
+  ocupacoes    OcupacaoVeiculo[]
 
   @@unique([provedorId, sgpOsId])
   @@index([provedorId, status])
@@ -320,6 +330,13 @@ model Usuario {
   cartoesCombustivel   CartaoCombustivel[] @relation("CartoesCombustivel")
   lancamentoEventos    LancamentoEvento[]  @relation("LancamentoEventos")
   jornadas             JornadaTecnico[]
+
+  /// Frota. As duas primeiras sao papeis DIFERENTES na mesma tabela: em quais
+  /// veiculos esta pessoa esteve, e quais ocupacoes ela DECLAROU (dela ou de um
+  /// colega). Sem separar, "quem me pos nesse carro?" nao teria resposta.
+  ocupacoesVeiculo    OcupacaoVeiculo[]   @relation("OcupacoesVeiculo")
+  ocupacoesDeclaradas OcupacaoVeiculo[]   @relation("OcupacoesDeclaradas")
+  vinculosRastreador  VinculoRastreador[] @relation("VinculosRastreador")
 
   @@map("usuarios")
 }
@@ -461,6 +478,11 @@ model JornadaTecnico {
   lngInicio Float?
   latFim    Float?
   lngFim    Float?
+
+  /// A viatura declarada ao abrir o turno. Pode ser mais de uma: trocar de
+  /// carro no meio do dia fecha uma ocupacao e abre outra, ambas da MESMA
+  /// jornada — e as duas ficam no historico, em vez de a segunda sobrescrever.
+  ocupacoes OcupacaoVeiculo[]
 
   @@index([usuarioId, inicioEm])
   @@map("jornadas_tecnico")
@@ -1007,6 +1029,7 @@ model Lancamento {
   /// Cobre exatamente a consulta de vencidos (status=pendente AND vencimento <
   /// hoje), que e o preco de derivar "atrasado" em vez de grava-lo.
   /**
+   * /**
    * /*
    * A TRAVA DE IDEMPOTENCIA da recorrencia, no banco.
    * O gerador pode rodar quantas vezes quiser: uma segunda tentativa de criar a
@@ -1160,19 +1183,68 @@ enum TipoCombustivel {
   eletrico
 }
 
+enum TipoVeiculo {
+  carro
+  moto
+  van
+  caminhao
+  utilitario
+}
+
+enum StatusVeiculo {
+  ativo
+  manutencao
+  inativo
+}
+
 model Veiculo {
-  id       String   @id @default(uuid())
-  placa    String   @unique
-  modelo   String   @db.VarChar(80)
-  ano      Int?
-  /// Odometro do ultimo abastecimento registrado — cache de leitura, sempre
-  /// recalculavel a partir de Abastecimento. Existe so pra lista nao precisar
-  /// de subconsulta; a VERDADE sao os abastecimentos.
+  id String @id @default(uuid())
+
+  /// NULO = frota da PROPRIA operacao ISPhub (carro que atende varios
+  /// provedores). Preenchido = carro daquele ISP.
+  ///
+  /// Nulo aqui NAO e "desconhecido", e um fato — mesma semantica de
+  /// `Usuario.provedorId`. Ver `escopoVeiculoWhere`.
+  provedorId String?
+  provedor   Provedor? @relation(fields: [provedorId], references: [id], onDelete: SetNull)
+
+  /// SEMPRE na forma canonica: maiuscula, so [A-Z0-9]. "abc-1234" e "ABC1234"
+  /// sao A MESMA placa — `normalizarPlaca()` em @isphub/shared e a unica dona
+  /// dessa regra, e roda antes de todo INSERT/UPDATE.
+  ///
+  /// Unico GLOBAL, e nao por provedor: placa e unica no mundo real (Denatran).
+  /// `@@unique([provedorId, placa])` seria pior — o Postgres trata NULL como
+  /// distinto, entao N carros da propria operacao poderiam ter a mesma placa.
+  placa  String        @unique
+  modelo String        @db.VarChar(80)
+  marca  String?       @db.VarChar(60)
+  ano    Int?
+  cor    String?       @db.VarChar(30)
+  tipo   TipoVeiculo   @default(carro)
+  status StatusVeiculo @default(ativo)
+
+  /// Odometro corrente, em km. Cache de LEITURA: a verdade e o maior entre o
+  /// ultimo Abastecimento.km e o ultimo OcupacaoVeiculo.odometroFim. So sobe
+  /// (ver `odometroMonotonico`), senao um digito a menos zera o historico.
+  odometroKm Int?
+  renavam    String? @db.VarChar(11)
+  chassi     String? @db.VarChar(17)
+
+  /// NAO existe coluna "em uso". Quem esta no veiculo agora e DERIVADO de haver
+  /// ocupacao aberta. Guardar isso seria repetir o `current_driver_id` do ERP
+  /// de referencia: uma coluna mutavel unica, sem historico, em que um
+  /// abastecimento do mes passado resolve pro motorista de HOJE.
+  ///
+  /// `ativo` continua existindo porque /financeiro/frota le e escreve nele.
+  /// `status` e a fonte rica; o service mantem `ativo = (status != inativo)`.
   ativo    Boolean  @default(true)
   criadoEm DateTime @default(now())
 
   abastecimentos Abastecimento[]
+  ocupacoes      OcupacaoVeiculo[]
+  vinculos       VinculoRastreador[]
 
+  @@index([provedorId, status])
   @@map("veiculos")
 }
 
@@ -1260,4 +1332,237 @@ model MovimentoCartao {
 
   @@index([cartaoId, data])
   @@map("movimentos_cartao")
+}
+
+// ---------------------------------------------------------------------------
+// FROTA — OCUPACAO E RASTREAMENTO
+// ---------------------------------------------------------------------------
+
+enum PapelOcupacao {
+  motorista
+  passageiro
+}
+
+/// De onde veio a afirmacao "fulano esta neste carro" — e o PESO dela.
+///
+/// `ajuste` > `jornada` > `declaracao`. A pessoa sabe melhor que o colega onde
+/// ela esta; e o gestor, corrigindo depois com a informacao toda, sabe melhor
+/// que os dois. Ver `decidirOcupacao` em @isphub/shared, que e onde a regra
+/// mora (pura e testada).
+enum OrigemOcupacao {
+  /// Um COLEGA declarou que esta pessoa estava junto. A mais fraca.
+  declaracao
+  /// A propria pessoa declarou, ao abrir ou alterar a jornada dela.
+  jornada
+  /// Correcao manual de admin/gestor. Vence as duas.
+  ajuste
+}
+
+enum EncerramentoOcupacao {
+  jornada
+  troca_veiculo
+  ajuste
+}
+
+/// Quem estava em qual veiculo, QUANDO. Uma linha por PESSOA por periodo.
+///
+/// Nao ha cabecalho com participantes, de proposito. Tres razoes:
+///
+/// (a) o passageiro pode descer no meio do trajeto enquanto o motorista segue —
+///     com cabecalho, a linha do participante precisaria do proprio periodo de
+///     qualquer jeito, e o cabecalho so acrescentaria um caminho de escrita;
+/// (b) o indice parcial "uma ocupacao aberta POR TECNICO" — que e a resposta
+///     inteira de "quem vence" — so e expressavel na linha por pessoa;
+/// (c) estar junto e DERIVADO de intervalos que se sobrepoem no mesmo veiculo,
+///     que e a verdade. Um `grupoId` registraria quem foi DECLARADO junto, um
+///     fato mais fraco, livre pra discordar dos intervalos.
+///
+/// A origem tinha `tecnico_veiculo_dia` com PK so em `agente_id`: a atribuicao
+/// de hoje SOBRESCREVIA a de ontem, entao nao havia historico nenhum — e o
+/// `veiculo_id` sem FK, entao a que existia podia apontar pra nada.
+model OcupacaoVeiculo {
+  id        String  @id @default(uuid())
+  veiculoId String
+  veiculo   Veiculo @relation(fields: [veiculoId], references: [id], onDelete: Restrict)
+  usuarioId String
+  usuario   Usuario @relation("OcupacoesVeiculo", fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  inicioEm DateTime  @default(now())
+  /// Nulo = ocupacao ABERTA. E o que os indices parciais observam.
+  ///
+  /// O intervalo e SEMIABERTO `[inicioEm, fimEm)` em toda consulta: numa troca
+  /// de viatura as 13:30 em ponto, com intervalo fechado dos dois lados a
+  /// pessoa estaria nos DOIS carros.
+  fimEm    DateTime?
+
+  papel  PapelOcupacao  @default(motorista)
+  origem OrigemOcupacao
+
+  /// Quem afirmou. Igual a `usuarioId` quando foi auto-declaracao. E o que
+  /// torna "quem me pos nesse carro?" uma pergunta respondivel.
+  declaradoPorId String
+  declaradoPor   Usuario               @relation("OcupacoesDeclaradas", fields: [declaradoPorId], references: [id], onDelete: Restrict)
+  encerradoPor   EncerramentoOcupacao?
+
+  /// A jornada que abriu esta ocupacao. Nulo em ajuste manual.
+  jornadaId String?
+  jornada   JornadaTecnico? @relation(fields: [jornadaId], references: [id], onDelete: SetNull)
+
+  /// OS pra qual esta ocupacao foi aberta ESPECIFICAMENTE. NULO E O NORMAL —
+  /// uma ocupacao de turno atende varias OS.
+  ///
+  /// Nao e a resposta primaria de "que carro fez a OS X": aquela e DERIVADA do
+  /// cruzamento da janela de execucao da OS com as ocupacoes do tecnico dela.
+  /// Este campo so vence quando alguem afirmou.
+  ordemServicoId String?
+  ordemServico   OrdemServico? @relation(fields: [ordemServicoId], references: [id], onDelete: SetNull)
+
+  odometroInicio Int?
+  odometroFim    Int?
+  latInicio      Float?
+  lngInicio      Float?
+  latFim         Float?
+  lngFim         Float?
+  observacao     String?  @db.VarChar(200)
+  criadoEm       DateTime @default(now())
+
+  @@index([veiculoId, inicioEm])
+  @@index([usuarioId, inicioEm])
+  @@index([jornadaId])
+  @@index([ordemServicoId])
+  @@map("ocupacoes_veiculo")
+}
+
+enum RastreadorFornecedor {
+  plataformatk
+}
+
+/// O rastreador e uma COISA, nao uma coluna do veiculo.
+///
+/// (a) o aparelho sobrevive ao carro — vendeu o carro, o rastreador vai pro
+///     proximo; (b) comunicando/rastreando sao saude do APARELHO, nao do carro;
+/// (c) a serie de posicoes precisa sobreviver a troca de associacao.
+///
+/// A origem guardava `fleet_vehicles.ptk_tracker_id` — uma coluna que APAGA
+/// toda associacao anterior no instante em que muda.
+model Rastreador {
+  id String @id @default(uuid())
+
+  /// Mesma regra hibrida do Veiculo: nulo = conta da propria operacao ISPhub.
+  provedorId String?
+  provedor   Provedor? @relation(fields: [provedorId], references: [id], onDelete: SetNull)
+
+  fornecedor RastreadorFornecedor @default(plataformatk)
+
+  /// O id do rastreador NO FORNECEDOR (ex.: "496538"). String, e nao Int: e
+  /// identificador externo, e fazer aritmetica com ele nunca faz sentido.
+  identificadorExterno String  @db.VarChar(60)
+  apelido              String? @db.VarChar(60)
+  ativo                Boolean @default(true)
+
+  /// Caches de leitura, recomputaveis a partir de PosicaoRastreador.
+  /// Tri-estado: nulo = a consulta falhou, nao sabemos. Nao afirme.
+  ultimaPosicaoEm DateTime?
+  ultimoStatusEm  DateTime?
+  comunicando     Boolean?
+  rastreando      Boolean?
+
+  criadoEm DateTime @default(now())
+
+  posicoes PosicaoRastreador[]
+  vinculos VinculoRastreador[]
+
+  @@unique([fornecedor, identificadorExterno])
+  @@index([provedorId, ativo])
+  @@map("rastreadores")
+}
+
+/// Associacao veiculo<->rastreador POR PERIODO.
+///
+/// Trocar o rastreador de carro nao pode apagar de onde o carro esteve com o
+/// anterior. `onDelete: Restrict` nos dois lados de proposito: apagar um
+/// veiculo nao pode apagar por onde ele andou. Veiculo se aposenta com
+/// `status = inativo`, nunca com DELETE.
+model VinculoRastreador {
+  id           String     @id @default(uuid())
+  veiculoId    String
+  veiculo      Veiculo    @relation(fields: [veiculoId], references: [id], onDelete: Restrict)
+  rastreadorId String
+  rastreador   Rastreador @relation(fields: [rastreadorId], references: [id], onDelete: Restrict)
+
+  inicioEm DateTime  @default(now())
+  /// Nulo = vinculo VIGENTE. Os dois indices parciais observam isto.
+  fimEm    DateTime?
+
+  criadoPorId String?
+  criadoPor   Usuario? @relation("VinculosRastreador", fields: [criadoPorId], references: [id], onDelete: SetNull)
+  observacao  String?  @db.VarChar(200)
+
+  @@index([veiculoId, inicioEm])
+  @@index([rastreadorId, inicioEm])
+  @@map("vinculos_rastreador")
+}
+
+/// Serie de posicoes.
+///
+/// Pendura no RASTREADOR, nao no veiculo: o ponto e um fato do APARELHO, e a
+/// associacao com o carro muda ao longo do tempo. Gravar `veiculoId` aqui
+/// congelaria uma associacao que ainda vai mudar; a atribuicao acontece na
+/// LEITURA, cruzando `registradoEm` com o vinculo vigente naquele instante.
+model PosicaoRastreador {
+  id           String     @id @default(uuid())
+  rastreadorId String
+  rastreador   Rastreador @relation(fields: [rastreadorId], references: [id], onDelete: Cascade)
+
+  /// O carimbo DO RASTREADOR (`time` da PTK) — e a verdade, e a chave natural.
+  registradoEm  DateTime
+  lat           Float
+  lng           Float
+  velocidadeKmh Float?
+
+  /// Tri-estado: nulo = a consulta de status falhou, nao sabemos.
+  /// Mesma disciplina de `ResultadoStatusOs`: "ausente" e "indeterminado" nao
+  /// podem ser o mesmo valor.
+  movendo     Boolean?
+  comunicando Boolean?
+  rastreando  Boolean?
+
+  /// Quando NOS buscamos. Nunca entra em chave nenhuma — cada replica tem o
+  /// seu, e usa-lo na unicidade dobraria a tabela a cada replica.
+  coletadoEm DateTime @default(now())
+
+  @@unique([rastreadorId, registradoEm])
+  @@map("posicoes_rastreador")
+}
+
+/// Credencial do fornecedor de rastreamento, cifrada (AES-256-GCM, lib/crypto).
+///
+/// Modelo SEPARADO de ErpConfig, e nao um valor novo em ErpTipo. Nao e
+/// preferencia: `jobs/syncScheduler.ts` faz
+/// `erpConfig.findMany({ where: { ativo: true } })` SEM filtrar `tipo` e chama
+/// `syncProvedor()` — uma linha PLATAFORMATK ali faria o sync do SGP disparar
+/// no intervalo do rastreador. E `buildConnector` devolve `ErpConnector`, uma
+/// interface de ~15 metodos que a PTK nao implementa.
+model RastreadorConfig {
+  id         String    @id @default(uuid())
+  /// Nulo = a conta da propria operacao ISPhub.
+  provedorId String?
+  provedor   Provedor? @relation(fields: [provedorId], references: [id], onDelete: Cascade)
+
+  fornecedor   RastreadorFornecedor @default(plataformatk)
+  baseUrl      String               @default("https://api.plataformatk.com.br")
+  /// "<iv_b64>:<tag_b64>:<ct_b64>". Nunca sai em claro por rota nenhuma.
+  chaveCifrada String
+
+  intervaloPollingSegundos Int     @default(60)
+  ativo                    Boolean @default(true)
+
+  ultimaColetaEm       DateTime?
+  ultimaColetaOk       Boolean?
+  ultimaColetaMensagem String?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@map("rastreador_configs")
 }

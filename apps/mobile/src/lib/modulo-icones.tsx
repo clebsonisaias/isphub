@@ -28,6 +28,9 @@ const ICONE_MODULO: Record<ModuloId, { familia: "feather" | "mci"; nome: string 
    * mobile, o typecheck ja cobrou o icone em vez de quebrar em runtime.
    */
   financeiro: { familia: "mci", nome: "wallet-outline" },
+  /* Mesma situacao do financeiro: sem tela no app (fora de ROTAS_MODULO). O
+   * tecnico declara a viatura DENTRO da jornada, que ja e core. */
+  frota: { familia: "mci", nome: "truck-outline" },
 };
 
 export function ModuloIcon({ id, color, size }: { id: ModuloId; color: ColorValue; size: number }) {
