@@ -6,6 +6,7 @@ import {
   COBERTURA_MINIMA_PCT,
   avaliarDivergencia,
   coberturaPct,
+  diaDeDataCivil,
   diasDoIntervalo,
   formatarCustoPorKm,
   horaBrasileira,
@@ -41,6 +42,19 @@ describe("o dia brasileiro", () => {
   it("a hora do pico é a hora de quem dirige, não a do servidor", () => {
     // 07:00 em Natal = 10:00 UTC. Em UTC o pico da manha apareceria as 10h.
     expect(horaBrasileira(new Date("2026-08-08T10:00:00.000Z"))).toBe(7);
+  });
+
+  it("uma DATA CIVIL não é um instante — e converter a segunda regra na primeira erra o dia", () => {
+    /*
+     * `Abastecimento.data` chega como "2026-05-18" do formulario e o Prisma
+     * grava meia-noite UTC. Tratar isso como instante devolveria 17/05 (21h em
+     * Natal), e o abastecimento de segunda passaria a nao ter viagem nenhuma —
+     * porque as viagens continuam na segunda. Dez falsos positivos entraram no
+     * bloco de auditoria exatamente assim.
+     */
+    const dataDoFormulario = new Date("2026-05-18T00:00:00.000Z");
+    expect(diaDeDataCivil(dataDoFormulario)).toBe("2026-05-18");
+    expect(chaveDiaBrasileiro(dataDoFormulario)).toBe("2026-05-17");
   });
 
   it("o intervalo inclui os dias VAZIOS", () => {

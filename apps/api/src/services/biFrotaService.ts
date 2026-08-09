@@ -3,11 +3,18 @@ import {
   avaliarDivergencia,
   chaveDiaBrasileiro,
   coberturaPct,
+  COBERTURA_MINIMA_PCT,
   consumoPorAbastecimento,
   custoPorKm,
+  diaDeDataCivil,
   diasDoIntervalo,
   precoMedioLitro,
   razaoOdometroGps,
+  type BiAuditoria,
+  type BiCusto,
+  type BiUso,
+  type LinhaVeiculo,
+  type Rastreamento,
   type VereditoDivergencia,
 } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
@@ -39,98 +46,6 @@ import { prisma } from "../lib/prisma.js";
  *    `responsavelId` ou valor de abastecimento individual sai daqui: o razao
  *    contabil continua atras do `requireRole(ADMIN)` de `/financeiro`.
  */
-
-// ---------------------------------------------------------------------------
-// Tipos de saida
-// ---------------------------------------------------------------------------
-
-/**
- * O que o rastreador sabe deste veiculo no periodo — uma UNIAO, nao campos
- * opcionais.
- *
- * E a protecao mais importante da tela. Com campos opcionais, `kmGps ?? 0`
- * apareceria em algum lugar no primeiro dia, e a metade da frota que nao tem
- * rastreador passaria a "nao rodar" em vez de "nao sabemos".
- */
-export type Rastreamento =
-  | { tipo: "sem_rastreador" }
-  | { tipo: "sem_movimento"; coberturaPct: number | null }
-  | {
-      tipo: "medido";
-      kmGps: number;
-      viagens: number;
-      /** Viagens cuja distancia nao foi calculada — sem isto o total mente. */
-      viagensSemDistancia: number;
-      ociosoSeg: number;
-      velocidadeMaxKmh: number | null;
-      coberturaPct: number | null;
-    };
-
-export interface LinhaVeiculo {
-  veiculoId: string;
-  placa: string;
-  modelo: string;
-  provedorNome: string | null;
-  /**
-   * SO isto, e nao o estado de movimento: este endpoint nao consulta `Viagem`, e
-   * afirmar "sem movimento" sem ter olhado seria inventar. Quem responde
-   * movimento e cobertura e `/frota/bi/uso`.
-   */
-  temRastreador: boolean;
-  /** Delta do odometro entre o primeiro e o ultimo abastecimento do periodo. */
-  kmOdometro: number | null;
-  abastecimentos: number;
-  litros: string | null;
-  /** Combustivel + qualquer lancamento com `veiculoId`. Sempre string. */
-  gastoTotal: string;
-  gastoCombustivel: string;
-  /** R$/km sobre o odometro — `null` sem odometro no periodo. */
-  custoPorKm: string | null;
-  /** km/l pelo metodo tanque-cheio. `null` com menos de dois cheios. */
-  kmPorLitro: number | null;
-}
-
-export interface BiCusto {
-  de: string;
-  ate: string;
-  resumo: {
-    veiculos: number;
-    comRastreador: number;
-    gastoTotal: string;
-    gastoCombustivel: string;
-    litros: string;
-    precoMedioLitro: string | null;
-  };
-  veiculos: LinhaVeiculo[];
-  porPosto: { posto: string; litros: string; gasto: string; precoMedio: string | null }[];
-}
-
-export interface BiUso {
-  de: string;
-  ate: string;
-  resumo: { kmGps: number; viagens: number; ociosoSeg: number; veiculosSemUso: number };
-  serie: { dia: string; kmGps: number; viagens: number }[];
-  veiculos: { veiculoId: string; placa: string; rastreamento: Rastreamento }[];
-  /** Excesso de velocidade por veiculo. `veiculoId` nulo entra em linha propria. */
-  excessos: { veiculoId: string | null; placa: string | null; ocorrencias: number }[];
-}
-
-export interface BiAuditoria {
-  de: string;
-  ate: string;
-  divergencias: {
-    veiculoId: string;
-    placa: string;
-    veredito: VereditoDivergencia;
-    kmOdometro: number | null;
-    kmGps: number | null;
-    coberturaPct: number | null;
-  }[];
-  /** Sinais que NAO dependem de GPS — valem para a frota inteira. */
-  abastecimentoSemRodagem: { veiculoId: string; placa: string; data: string; litros: string }[];
-  viagensSemOcupacao: { veiculoId: string; placa: string; viagens: number }[];
-  rastreadoresMudos: { veiculoId: string | null; placa: string | null; desde: string | null }[];
-}
 
 // ---------------------------------------------------------------------------
 // Ajudantes
@@ -388,13 +303,16 @@ export async function uso(escopo: Record<string, unknown>, de: Date, ate: Date):
    * volume de hoje sao centenas de linhas, e usar SQL aqui duplicaria a regra
    * de fuso em dois lugares que discordariam tres dias por ano.
    */
-  const porDia = new Map<string, { kmGps: number; viagens: number }>();
-  for (const d of diasDoIntervalo(de, ate)) porDia.set(d, { kmGps: 0, viagens: 0 });
+  // Acumula METROS INTEIROS e arredonda so na saida: somar quilometros
+  // fracionados por noventa dias acumula erro de ponto flutuante num numero que
+  // o leitor confere contra o total.
+  const porDia = new Map<string, { metros: number; viagens: number }>();
+  for (const d of diasDoIntervalo(de, ate)) porDia.set(d, { metros: 0, viagens: 0 });
   for (const t of viagens) {
     const chave = chaveDiaBrasileiro(t.inicioEm);
     const atual = porDia.get(chave);
     if (!atual) continue;
-    atual.kmGps += (t.distanciaMetros ?? 0) / 1000;
+    atual.metros += t.distanciaMetros ?? 0;
     atual.viagens += 1;
   }
 
@@ -407,7 +325,7 @@ export async function uso(escopo: Record<string, unknown>, de: Date, ate: Date):
       ociosoSeg: viagens.reduce((s, t) => s + (t.paradoComMotorLigadoSeg ?? 0), 0),
       veiculosSemUso: linhas.filter((l) => l.rastreamento.tipo === "sem_movimento").length,
     },
-    serie: [...porDia.entries()].map(([dia, v]) => ({ dia, kmGps: Math.round(v.kmGps), viagens: v.viagens })),
+    serie: [...porDia.entries()].map(([dia, v]) => ({ dia, kmGps: Math.round(v.metros / 1000), viagens: v.viagens })),
     veiculos: linhas,
     excessos: excessosBrutos
       .map((e) => ({
@@ -474,6 +392,8 @@ export async function auditoria(escopo: Record<string, unknown>, de: Date, ate: 
    * Cada intervalo vira uma razao; a mais recente e o que se avalia, e as
    * anteriores sao a BASE — a historia do proprio veiculo.
    */
+  /** Cobertura de cada veiculo, para os OUTROS sinais poderem se calar tambem. */
+  const coberturaPorVeiculo = new Map<string, number | null>();
   const divergencias: BiAuditoria["divergencias"] = [];
   for (const v of veiculos) {
     if (v.vinculos.length === 0) continue;
@@ -482,6 +402,7 @@ export async function auditoria(escopo: Record<string, unknown>, de: Date, ate: 
       minutosCegos(eventos.filter((e) => e.veiculoId === v.id), de, ate),
       (ate.getTime() - de.getTime()) / 60_000,
     );
+    coberturaPorVeiculo.set(v.id, cobertura);
 
     const razoes: (number | null)[] = [];
     for (let i = 1; i < meus.length; i += 1) {
@@ -518,19 +439,31 @@ export async function auditoria(escopo: Record<string, unknown>, de: Date, ate: 
   }
 
   /*
-   * Abastecimento em dia SEM viagem nenhuma. Nao depende de GPS para o
-   * diagnostico ser util, mas so faz sentido onde HA rastreador — sem ele,
-   * "nao houve viagem" e "nao sabemos" seriam a mesma coisa.
+   * Abastecimento em dia SEM viagem nenhuma.
+   *
+   * Duas condicoes, e a segunda custou um falso positivo pra ficar clara: nao
+   * basta TER rastreador, o rastreador precisa ter ENXERGADO. Com o aparelho
+   * apagado metade do periodo, "nenhuma viagem naquele dia" quer dizer "estava
+   * cego", nao "o carro nao rodou" — e o veiculo cego do seed sozinho ocupava
+   * sete das dez linhas, empurrando os casos reais pra fora do recorte.
+   *
+   * O sinal continua valendo so onde ha rastreador: sem ele, "nao houve viagem"
+   * e "nao sabemos" sao indistinguiveis.
    */
-  const comRastreador = new Set(veiculos.filter((v) => v.vinculos.length > 0).map((v) => v.id));
+  const comRastreador = new Set(
+    veiculos
+      .filter((v) => v.vinculos.length > 0)
+      .filter((v) => (coberturaPorVeiculo.get(v.id) ?? 0) >= COBERTURA_MINIMA_PCT)
+      .map((v) => v.id),
+  );
   const diasComViagem = new Set(viagens.map((t) => `${t.veiculoId}|${chaveDiaBrasileiro(t.inicioEm)}`));
   const abastecimentoSemRodagem = abastecimentos
     .filter((a) => comRastreador.has(a.veiculoId))
-    .filter((a) => !diasComViagem.has(`${a.veiculoId}|${chaveDiaBrasileiro(a.data)}`))
+    .filter((a) => !diasComViagem.has(`${a.veiculoId}|${diaDeDataCivil(a.data)}`))
     .map((a) => ({
       veiculoId: a.veiculoId,
       placa: placaPorId.get(a.veiculoId) ?? "—",
-      data: chaveDiaBrasileiro(a.data),
+      data: diaDeDataCivil(a.data),
       litros: Number(a.litros).toFixed(3),
     }));
 

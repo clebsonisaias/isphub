@@ -21,6 +21,7 @@ import { FinanceiroParceladosPage } from "@/pages/FinanceiroParceladosPage";
 import { FinanceiroProvisoesPage } from "@/pages/FinanceiroProvisoesPage";
 import { FinanceiroFrotaPage } from "@/pages/FinanceiroFrotaPage";
 import { FrotaVeiculosPage } from "@/pages/FrotaVeiculosPage";
+import { FrotaBiPage } from "@/pages/FrotaBiPage";
 import { FrotaMapaPage } from "@/pages/FrotaMapaPage";
 import { VeiculoPage } from "@/pages/VeiculoPage";
 import { ChatPage } from "@/pages/ChatPage";
@@ -168,6 +169,14 @@ function App() {
                   element={
                     <RequireAuth roles={[UserRole.ADMIN, UserRole.GESTOR]}>
                       <FrotaMapaPage />
+                    </RequireAuth>
+                  }
+                />
+                <Route
+                  path="/frota/bi"
+                  element={
+                    <RequireAuth roles={[UserRole.ADMIN, UserRole.GESTOR]}>
+                      <FrotaBiPage />
                     </RequireAuth>
                   }
                 />

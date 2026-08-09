@@ -74,7 +74,14 @@ const PERFIS: Perfil[] = [
    * metade do periodo cego. Se a tela acusar este, ela esta errada.
    */
   { placa: "BID4D44", modelo: "Fiat Strada", comRastreador: true, consumoAlvo: 11.0, kmPorDia: 100, caso: "rastreador_cego" },
-  { placa: "BIE5E55", modelo: "Chevrolet Onix", comRastreador: false, consumoAlvo: 13.1, kmPorDia: 80, caso: "abastece_sem_rodar" },
+  /*
+   * COM rastreador, e isso e o ponto: o sinal "abasteceu e nao rodou" so pode
+   * ser emitido onde ha aparelho enxergando — sem ele, "nenhuma viagem" e "nao
+   * sabemos" sao a mesma frase. Plantado num veiculo sem rastreador, este caso
+   * nunca chegaria ao bloco de auditoria, e a fatia inteira passaria verde sem
+   * nunca ter exercitado o que ela existe para provar.
+   */
+  { placa: "BIE5E55", modelo: "Chevrolet Onix", comRastreador: true, consumoAlvo: 13.1, kmPorDia: 80, caso: "abastece_sem_rodar" },
   { placa: "BIF6F66", modelo: "Fiat Fiorino", comRastreador: false, consumoAlvo: 10.5, kmPorDia: 0, caso: "ocioso" },
 ];
 
@@ -173,7 +180,19 @@ async function main(): Promise<void> {
       const dia = new Date(AGORA.getTime() - d * 86400_000);
       if (!diaUtil(dia) || perfil.kmPorDia === 0) continue;
 
-      const kmDoDia = Math.round(perfil.kmPorDia * entre(0.6, 1.4));
+      /*
+       * O dia em que o carro abastece e NAO sai. E o caso plantado: o
+       * combustivel entra, o odometro nao anda e o rastreador — que esta ligado
+       * e enxergando — nao registra viagem nenhuma.
+       */
+      /*
+       * `% 11` e nao `% 7`: com passo de sete dias, TODO dia escolhido cai no
+       * mesmo dia da semana que hoje — e se hoje for sabado ou domingo, o
+       * `diaUtil` acima descarta todos, e o caso plantado nunca acontece. Foi o
+       * que aconteceu: o bloco de auditoria passou verde com zero ocorrencias.
+       */
+      const abasteceParado = perfil.caso === "abastece_sem_rodar" && d % 11 === 0;
+      const kmDoDia = abasteceParado ? 0 : Math.round(perfil.kmPorDia * entre(0.6, 1.4));
       /*
        * O ODOMETRO e sempre a verdade fisica: e o que o carro andou. O GPS e
        * uma MEDIDA dele, e cada caso distorce essa medida de um jeito.
@@ -182,7 +201,14 @@ async function main(): Promise<void> {
       kmDesdeCheio += kmDoDia;
 
       // ---- abastecimento ---------------------------------------------------
-      const precisaAbastecer = kmDesdeCheio >= 400 || (perfil.caso === "abastece_sem_rodar" && d % 7 === 0);
+      /*
+       * `kmDesdeCheio > 0` no ramo parado nao e detalhe: `Abastecimento` tem
+       * `@@unique([veiculoId, km])`, a guarda contra o mesmo odometro lancado
+       * duas vezes. Se o dia parado cair logo depois de um abastecimento, o
+       * odometro nao andou e o insert colide — a constraint esta certa, e o
+       * seed e que estava pedindo algo que a operacao real nao aceita.
+       */
+      const precisaAbastecer = kmDesdeCheio >= 400 || (abasteceParado && kmDesdeCheio > 0);
       if (precisaAbastecer) {
         const litros = Math.max(5, kmDesdeCheio / perfil.consumoAlvo - litrosDesdeCheio);
         const precoLitro = entre(5.5, 6.4);
@@ -249,6 +275,14 @@ async function main(): Promise<void> {
         }
         continue;
       }
+
+      /*
+       * O carro nao saiu — e o rastreador ESTAVA ligado, enxergando. Sem este
+       * `continue`, o seed gravaria viagens de zero metro, e o sinal "abasteceu
+       * e nao rodou" nunca dispararia: "houve viagem" e verdadeiro mesmo com
+       * distancia zero.
+       */
+      if (kmDoDia === 0) continue;
 
       const saidas = inteiroEntre(2, 5);
       for (let s = 0; s < saidas; s += 1) {
@@ -345,7 +379,10 @@ async function main(): Promise<void> {
   );
   console.log("[seed-bi] casos plantados: divergencia (BIC3C33), rastreador cego (BID4D44),");
   console.log("[seed-bi]                  abastece sem rodar (BIE5E55), ocioso (BIF6F66),");
-  console.log("[seed-bi]                  e dois SEM rastreador — a tela tem de dizer isso.");
+  const semRastreador = PERFIS.filter((p) => !p.comRastreador).length;
+  // Contado, e nao escrito na mao: o numero ja mentiu uma vez, quando um perfil
+  // ganhou rastreador e a mensagem continuou dizendo "dois".
+  console.log(`[seed-bi]                  e ${semRastreador} SEM rastreador — a tela tem de dizer isso.`);
 }
 
 main()

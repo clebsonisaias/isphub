@@ -22,6 +22,7 @@ import {
   Map,
   LayoutGrid,
   BarChart3,
+  Gauge,
   Settings,
   PackageX,
   Router,
@@ -118,6 +119,22 @@ const NAV_ITEMS: {
     to: "/frota",
     label: "Frota",
     icon: Truck,
+    ocultoPara: [UserRole.PROVEDOR, UserRole.TECNICO],
+    modulo: "frota",
+  },
+  /*
+   * O BI e item PROPRIO e nao um botao dentro de /frota: quem abre "Frota"
+   * quer saber onde a viatura esta agora; quem abre isto quer saber quanto ela
+   * custou no trimestre. Duas perguntas, dois destinos — escondido atras de um
+   * link interno, o segundo simplesmente nao seria encontrado.
+   */
+  {
+    to: "/frota/bi",
+    label: "Frota em números",
+    labelCurto: "Números",
+    // `Gauge` e nao `BarChart3`: o Dashboard ja usa BarChart3, e dois itens do
+    // mesmo menu com o mesmo icone anulam o icone como pista.
+    icon: Gauge,
     ocultoPara: [UserRole.PROVEDOR, UserRole.TECNICO],
     modulo: "frota",
   },

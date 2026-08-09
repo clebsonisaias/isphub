@@ -362,8 +362,17 @@ const periodoBiSchema = z
     provedorId: z.string().uuid().optional(),
   })
   .transform((v) => {
-    const ate = v.ate ? new Date(`${v.ate}T23:59:59.999Z`) : new Date();
-    const de = v.de ? new Date(`${v.de}T00:00:00.000Z`) : new Date(ate.getTime() - 89 * 24 * 60 * 60_000);
+    /*
+     * `-03:00` e nao `Z`. O usuario digita "12/05" pensando no dia dele; com
+     * sufixo `Z` a janela abriria as 21h do dia 11 em Natal, e a serie por dia
+     * (que agrupa pelo dia BRASILEIRO) rotulava a primeira coluna como 11/05
+     * enquanto o filtro logo acima dizia 12/05. Offset fixo porque o Brasil
+     * aboliu o horario de verao em 2019 — mesma constante de `dia.ts`.
+     */
+    const ate = v.ate ? new Date(`${v.ate}T23:59:59.999-03:00`) : new Date();
+    const de = v.de
+      ? new Date(`${v.de}T00:00:00.000-03:00`)
+      : new Date(ate.getTime() - 89 * 24 * 60 * 60_000);
     return { de, ate, provedorId: v.provedorId };
   })
   .refine((v) => v.de <= v.ate, { message: "O início do período não pode ser depois do fim." });

@@ -42,6 +42,23 @@ export function chaveDiaBrasileiro(instante: Date): string {
 }
 
 /**
+ * O dia de uma DATA CIVIL — um campo que ja e "AAAA-MM-DD" e virou `Date`.
+ *
+ * Par obrigatorio de `chaveDiaBrasileiro`, e a distincao nao e preciosismo:
+ * `Abastecimento.data` chega como string do formulario e o Prisma a grava a
+ * meia-noite UTC. Convertida "para o fuso brasileiro", ela vira 21h do dia
+ * ANTERIOR — e o abastecimento de terca passa a nao ter viagem nenhuma, porque
+ * as viagens continuam na terca. Foi assim que dez falsos positivos entraram no
+ * bloco de auditoria.
+ *
+ * Regra: `chaveDiaBrasileiro` para INSTANTES (quando algo aconteceu);
+ * `diaDeDataCivil` para DATAS (que dia alguem escreveu no formulario).
+ */
+export function diaDeDataCivil(data: Date): string {
+  return data.toISOString().slice(0, 10);
+}
+
+/**
  * A hora do dia (0–23) no fuso brasileiro.
  *
  * Alimenta o perfil "a que horas a frota sai". Em UTC, o pico das 7h da manha
@@ -305,3 +322,99 @@ export const MOTIVO_SEM_DADO_ROTULO: Record<MotivoSemDado, string> = {
   sem_abastecimento: "sem abastecimento no período",
   sem_movimento: "não rodou",
 };
+
+// ---------------------------------------------------------------------------
+// O CONTRATO DOS TRES ENDPOINTS
+//
+// Mora aqui, e nao no service, porque a tela consome exatamente estes tipos: em
+// `apps/api` o web nao alcanca, e a alternativa seria redigitar a forma no
+// cliente — que e como um campo some de um lado e continua sendo lido do outro.
+// ---------------------------------------------------------------------------
+
+/**
+ * O que o rastreador sabe deste veiculo no periodo — uma UNIAO, nao campos
+ * opcionais.
+ *
+ * E a protecao mais importante da tela. Com campos opcionais, `kmGps ?? 0`
+ * apareceria em algum lugar no primeiro dia, e a metade da frota que nao tem
+ * rastreador passaria a "nao rodar" em vez de "nao sabemos".
+ */
+export type Rastreamento =
+  | { tipo: "sem_rastreador" }
+  | { tipo: "sem_movimento"; coberturaPct: number | null }
+  | {
+      tipo: "medido";
+      kmGps: number;
+      viagens: number;
+      /** Viagens cuja distancia nao foi calculada — sem isto o total mente. */
+      viagensSemDistancia: number;
+      ociosoSeg: number;
+      velocidadeMaxKmh: number | null;
+      coberturaPct: number | null;
+    };
+
+export interface LinhaVeiculo {
+  veiculoId: string;
+  placa: string;
+  modelo: string;
+  provedorNome: string | null;
+  /**
+   * SO isto, e nao o estado de movimento: este endpoint nao consulta `Viagem`, e
+   * afirmar "sem movimento" sem ter olhado seria inventar. Quem responde
+   * movimento e cobertura e `/frota/bi/uso`.
+   */
+  temRastreador: boolean;
+  /** Delta do odometro entre o primeiro e o ultimo abastecimento do periodo. */
+  kmOdometro: number | null;
+  abastecimentos: number;
+  litros: string | null;
+  /** Combustivel + qualquer lancamento com `veiculoId`. Sempre string. */
+  gastoTotal: string;
+  gastoCombustivel: string;
+  /** R$/km sobre o odometro — `null` sem odometro no periodo. */
+  custoPorKm: string | null;
+  /** km/l pelo metodo tanque-cheio. `null` com menos de dois cheios. */
+  kmPorLitro: number | null;
+}
+
+export interface BiCusto {
+  de: string;
+  ate: string;
+  resumo: {
+    veiculos: number;
+    comRastreador: number;
+    gastoTotal: string;
+    gastoCombustivel: string;
+    litros: string;
+    precoMedioLitro: string | null;
+  };
+  veiculos: LinhaVeiculo[];
+  porPosto: { posto: string; litros: string; gasto: string; precoMedio: string | null }[];
+}
+
+export interface BiUso {
+  de: string;
+  ate: string;
+  resumo: { kmGps: number; viagens: number; ociosoSeg: number; veiculosSemUso: number };
+  serie: { dia: string; kmGps: number; viagens: number }[];
+  veiculos: { veiculoId: string; placa: string; rastreamento: Rastreamento }[];
+  /** Excesso de velocidade por veiculo. `veiculoId` nulo entra em linha propria. */
+  excessos: { veiculoId: string | null; placa: string | null; ocorrencias: number }[];
+}
+
+export interface BiAuditoria {
+  de: string;
+  ate: string;
+  divergencias: {
+    veiculoId: string;
+    placa: string;
+    veredito: VereditoDivergencia;
+    kmOdometro: number | null;
+    kmGps: number | null;
+    coberturaPct: number | null;
+  }[];
+  /** Sinais que NAO dependem de GPS — valem para a frota inteira. */
+  abastecimentoSemRodagem: { veiculoId: string; placa: string; data: string; litros: string }[];
+  viagensSemOcupacao: { veiculoId: string; placa: string; viagens: number }[];
+  rastreadoresMudos: { veiculoId: string | null; placa: string | null; desde: string | null }[];
+}
