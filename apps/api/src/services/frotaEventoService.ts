@@ -59,20 +59,39 @@ export interface EstadoAnterior {
  * um ponto consigo mesmo nunca produz transicao.
  */
 export async function estadoAnteriorDe(rastreadorId: string, antesDe: Date): Promise<EstadoAnterior> {
-  const p = await prisma.posicaoRastreador.findFirst({
+  /*
+   * Traz mais de uma porque as duas perguntas tem respostas DIFERENTES:
+   *
+   *   velocidade -> a do ponto IMEDIATAMENTE anterior. A guarda do excesso e
+   *                 "acabou de cruzar o limite", e isso e sobre o vizinho.
+   *   sensores   -> a ultima fotografia que REALMENTE trouxe sensores.
+   *
+   * Quando o `/trackers/status` do fornecedor cai, a posicao daquele minuto e
+   * gravada com `sensores` nulo. Usar so o vizinho imediato faria uma queda do
+   * endpoint de status apagar a memoria do aparelho e perder a transicao para
+   * sempre — o carro que foi bloqueado durante a queda nunca geraria alerta.
+   * Pular as fotografias vazias custa alguns bytes e resolve a classe inteira.
+   */
+  const anteriores = await prisma.posicaoRastreador.findMany({
     where: { rastreadorId, registradoEm: { lt: antesDe } },
     orderBy: { registradoEm: "desc" },
+    take: 10,
     select: { sensores: true, velocidadeKmh: true },
   });
-  if (!p) return { sensores: null, velocidadeKmh: null };
-  /*
-   * Posicao anterior SEM sensores (o status do fornecedor falhou naquele
-   * minuto) vira mapa VAZIO, e nao `null`. A diferenca decide tudo: `null`
-   * significaria "primeira leitura" e liberaria eventos de descoberta; o mapa
-   * vazio significa "havia fotografia, mas nao sabemos o que ela dizia" — e
-   * ignorancia nao gera transicao nenhuma.
-   */
-  return { sensores: comoMapaSensores(p.sensores) ?? {}, velocidadeKmh: p.velocidadeKmh };
+  if (anteriores.length === 0) return { sensores: null, velocidadeKmh: null };
+
+  const comSensores = anteriores.find((p) => comoMapaSensores(p.sensores) !== null);
+  return {
+    /*
+     * Mapa VAZIO, e nao `null`, quando nenhuma das ultimas fotografias trouxe
+     * sensores. A diferenca decide tudo: `null` significaria "primeira leitura"
+     * e liberaria eventos de descoberta; o mapa vazio significa "havia
+     * fotografia, mas nao sabemos o que ela dizia" — e ignorancia nao gera
+     * transicao nenhuma.
+     */
+    sensores: comSensores ? (comoMapaSensores(comSensores.sensores) ?? {}) : {},
+    velocidadeKmh: anteriores[0]!.velocidadeKmh,
+  };
 }
 
 export interface ResultadoDerivacao {
@@ -216,6 +235,7 @@ export async function aplicarLeitura(
     where: { veiculoId: leitura.veiculoId, fimEm: null },
     select: {
       id: true,
+      rastreadorId: true,
       inicioEm: true,
       latInicio: true,
       lngInicio: true,
@@ -237,9 +257,45 @@ export async function aplicarLeitura(
     velocidadeKmh: leitura.velocidadeKmh,
   };
 
-  const passo = avancarViagem(abertaNoBanco ? comoViagemAberta(abertaNoBanco) : null, ponto);
+  /*
+   * A viagem aberta e achada por `veiculoId` (o indice parcial e por veiculo),
+   * entao ela pode nao ter relacao com ESTE ponto. Sao dois casos, e a resposta
+   * certa para cada um e DIFERENTE:
+   *
+   * (a) OUTRO APARELHO. Trocaram o rastreador do veiculo sem encerrar a viagem.
+   *     A distancia do aparelho novo continuaria a conta do antigo — e o trecho
+   *     entre a ultima posicao de um e a primeira do outro viraria uma reta que
+   *     ninguem percorreu. A viagem antiga pertence ao passado: fecha no proprio
+   *     ultimo ponto conhecido, e este ponto abre uma nova.
+   *
+   * (b) PONTO NAO MAIS NOVO — repetido (o mesmo fix chegando duas vezes) ou
+   *     atrasado (reprocessamento). Aqui a viagem esta OTIMA; o ponto e que nao
+   *     acrescenta nada. Fechar seria destruir dado bom por causa de dado velho:
+   *     um simples ponto repetido partiria a viagem em duas. So se ignora.
+   */
+  const outroAparelho = abertaNoBanco !== null && abertaNoBanco.rastreadorId !== leitura.rastreadorId;
+  const naoAcrescenta =
+    abertaNoBanco !== null &&
+    !outroAparelho &&
+    leitura.registradoEm.getTime() <= (abertaNoBanco.ultimoEm ?? abertaNoBanco.inicioEm).getTime();
 
-  if (passo.fechar && abertaNoBanco) {
+  if (abertaNoBanco && outroAparelho) {
+    const fim = abertaNoBanco.ultimoEm ?? abertaNoBanco.inicioEm;
+    await prisma.viagem.updateMany({
+      where: { id: abertaNoBanco.id, fimEm: null },
+      data: { fimEm: fim, ultimoEm: fim },
+    });
+    r.viagensFechadas += 1;
+  }
+
+  // Ponto que nao acrescenta: os EVENTOS ja foram derivados acima (a chave
+  // natural cuida da repeticao); a viagem simplesmente nao se move.
+  if (naoAcrescenta) return r;
+
+  const aproveitavel = abertaNoBanco !== null && !outroAparelho;
+  const passo = avancarViagem(aproveitavel && abertaNoBanco ? comoViagemAberta(abertaNoBanco) : null, ponto);
+
+  if (passo.fechar && abertaNoBanco && aproveitavel) {
     /*
      * `updateMany` com `fimEm: null` no WHERE, e nao `update` por id.
      *
@@ -294,7 +350,7 @@ export async function aplicarLeitura(
     } catch (e) {
       if (!ehCorrida(e)) throw e;
     }
-  } else if (passo.aberta && abertaNoBanco) {
+  } else if (passo.aberta && abertaNoBanco && aproveitavel) {
     // Mesmo compare-and-swap da hora de fechar: acumular numa viagem que a
     // outra replica ja fechou a reabriria com numeros parciais.
     await prisma.viagem.updateMany({

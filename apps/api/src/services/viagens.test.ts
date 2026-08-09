@@ -143,6 +143,26 @@ describe("segmentarViagens", () => {
     expect(segmentarViagens(pontos, { velocidadeParadoKmh: 8 }).at(0)!.paradoComMotorLigadoSeg).toBe(10 * 60);
   });
 
+  it("velocidade DESCONHECIDA nao conta como parado", () => {
+    /*
+     * Ha modelo de rastreador que nao manda `speed`. Com `?? 0`, "nao sei" virava
+     * "imovel" e a viagem INTEIRA de um carro a 80 km/h contava como parada com o
+     * motor ligado — alerta falso e relatorio de combustivel envenenado.
+     */
+    const semVelocidade = [
+      { lat: BASE.lat, lng: BASE.lng, em: new Date(Date.UTC(2026, 7, 8, 11, 0)), ignicao: true, velocidadeKmh: null },
+      {
+        lat: BASE.lat,
+        lng: BASE.lng + 0.05,
+        em: new Date(Date.UTC(2026, 7, 8, 11, 20)),
+        ignicao: true,
+        velocidadeKmh: null,
+      },
+      { lat: BASE.lat, lng: BASE.lng + 0.1, em: new Date(Date.UTC(2026, 7, 8, 11, 40)), ignicao: false, velocidadeKmh: null },
+    ];
+    expect(segmentarViagens(semVelocidade).at(0)!.paradoComMotorLigadoSeg).toBe(0);
+  });
+
   it("ignicao desconhecida nao acumula tempo de MOTOR LIGADO", () => {
     /*
      * O aparelho parou de mandar ACC, ou o sensor esta em `anomalia`. O carro

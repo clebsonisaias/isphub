@@ -147,7 +147,23 @@ function acumular(a: ViagemAberta, p: PontoViagem, paradoKmh: number): ViagemAbe
    * "motor ligado a toa" e dispararia um alerta que ninguem mediu.
    */
   const paradoAgora =
-    p.ignicao === true && (p.velocidadeKmh ?? 0) <= paradoKmh && (a.ultimaVelocidadeKmh ?? 0) <= paradoKmh;
+    p.ignicao === true &&
+    /*
+     * Velocidade DESCONHECIDA nao conta como parado.
+     *
+     * `?? 0` transformaria "o aparelho nao reportou `speed`" em "o carro estava
+     * imovel" — e ha modelo de rastreador que simplesmente nao manda esse campo.
+     * Com ele, um carro a 80 km/h na BR-304 acumularia a viagem inteira como
+     * "parado com o motor ligado", disparando o alerta e envenenando o relatorio
+     * de combustivel de alguem.
+     *
+     * E a mesma distincao que a linha de cima faz com a ignicao, e que
+     * `derivarEventos` faz com os sensores: ignorancia nao e um valor.
+     */
+    p.velocidadeKmh !== null &&
+    a.ultimaVelocidadeKmh !== null &&
+    p.velocidadeKmh <= paradoKmh &&
+    a.ultimaVelocidadeKmh <= paradoKmh;
   return {
     ...a,
     distanciaMetros: a.distanciaMetros + haversineMetros({ lat: a.ultimaLat, lng: a.ultimaLng }, p),
