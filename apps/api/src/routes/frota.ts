@@ -8,6 +8,7 @@ import * as veiculos from "../services/veiculoService.js";
 import * as ocupacao from "../services/ocupacaoService.js";
 import * as rastreadores from "../services/rastreadorService.js";
 import * as rastreamento from "../services/rastreamentoService.js";
+import * as bi from "../services/biFrotaService.js";
 import { prisma } from "../lib/prisma.js";
 
 /**
@@ -334,5 +335,62 @@ frotaRouter.get(
     const fim = ate ? new Date(ate) : new Date();
     const inicio = de ? new Date(de) : new Date(fim.getTime() - 24 * 60 * 60_000);
     res.json(await rastreamento.diaDoVeiculo(req.params.id, inicio, fim));
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// BI DA FROTA
+// ---------------------------------------------------------------------------
+
+/**
+ * Os tres endpoints do BI.
+ *
+ * Moram AQUI, e nao em `/financeiro`, por uma razao de desenho: o gestor precisa
+ * de custo para decidir sobre a frota, mas `/financeiro/*` inteiro e ADMIN-only
+ * e essa guarda protege o razao contabil, nao so o combustivel. A saida e a
+ * distincao certa — o gestor ve a METRICA agregada ("R$ 1,82/km"), e continua
+ * sem ver lancamento, cartao ou saldo.
+ *
+ * Tres magros e nao um gordo: cada bloco tem custo e modo de falha proprios, a
+ * tela carrega os tres em paralelo e renderiza 2 de 3 se um cair. Um payload
+ * unico tambem esconderia qual pedaco ficou caro quando o p95 subir.
+ */
+const periodoBiSchema = z
+  .object({
+    de: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    ate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    provedorId: z.string().uuid().optional(),
+  })
+  .transform((v) => {
+    const ate = v.ate ? new Date(`${v.ate}T23:59:59.999Z`) : new Date();
+    const de = v.de ? new Date(`${v.de}T00:00:00.000Z`) : new Date(ate.getTime() - 89 * 24 * 60 * 60_000);
+    return { de, ate, provedorId: v.provedorId };
+  })
+  .refine((v) => v.de <= v.ate, { message: "O início do período não pode ser depois do fim." });
+
+frotaRouter.get(
+  "/bi/custo",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    const { de, ate, provedorId } = periodoBiSchema.parse(req.query);
+    res.json(await bi.custo(escopoVeiculoWhere(req.user!, provedorId), de, ate));
+  }),
+);
+
+frotaRouter.get(
+  "/bi/uso",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    const { de, ate, provedorId } = periodoBiSchema.parse(req.query);
+    res.json(await bi.uso(escopoVeiculoWhere(req.user!, provedorId), de, ate));
+  }),
+);
+
+frotaRouter.get(
+  "/bi/auditoria",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    const { de, ate, provedorId } = periodoBiSchema.parse(req.query);
+    res.json(await bi.auditoria(escopoVeiculoWhere(req.user!, provedorId), de, ate));
   }),
 );

@@ -151,6 +151,16 @@ describe("veredito da divergência", () => {
     }
   });
 
+  it("rastreador cego sem NENHUMA viagem culpa a cobertura, não a falta de medida", () => {
+    /*
+     * O caso que o seed revelou: com o aparelho mudo, o GPS soma zero e a razao
+     * vem `null`. As duas explicacoes cabem — mas so uma diz o que fazer.
+     * "Sem medida" manda procurar odometro; "ficou cego" manda olhar o aparelho.
+     */
+    const v = avaliarDivergencia({ razao: null, cobertura: 51, historico: historicoBom });
+    expect(v).toEqual({ tipo: "sem_base", motivo: "cobertura_baixa" });
+  });
+
   it("sem medida nenhuma, sem_base — nunca 1,0 implícito", () => {
     expect(avaliarDivergencia({ razao: null, cobertura: 100, historico: historicoBom })).toEqual({
       tipo: "sem_base",

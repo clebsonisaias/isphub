@@ -182,10 +182,17 @@ export function avaliarDivergencia(args: {
   cobertura: number | null;
   historico: (number | null)[];
 }): VereditoDivergencia {
-  if (args.razao === null) return { tipo: "sem_base", motivo: "sem_medida" };
+  /*
+   * A cobertura e testada ANTES da razao, e a ordem nao e estilo: quando o
+   * aparelho fica cego, o GPS soma zero e a razao vem `null` — ou seja, a falta
+   * de medida E a cegueira. Testar `razao` primeiro devolveria "sem medida",
+   * que manda o leitor procurar um odometro que ele ja tem, em vez de mandar
+   * consertar o rastreador, que e o que resolve.
+   */
   if (args.cobertura === null || args.cobertura < COBERTURA_MINIMA_PCT) {
     return { tipo: "sem_base", motivo: "cobertura_baixa" };
   }
+  if (args.razao === null) return { tipo: "sem_base", motivo: "sem_medida" };
   const base = mediana(args.historico, MINIMO_HISTORICO);
   if (base === null || base <= 0) return { tipo: "sem_base", motivo: "sem_historico" };
 

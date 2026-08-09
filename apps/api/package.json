@@ -13,7 +13,8 @@
     "prisma:deploy": "prisma migrate deploy",
     "seed": "tsx src/seed.ts",
     "seed:e2e": "tsx src/e2e-seed.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "seed:bi": "tsx src/seed-bi.ts"
   },
   "dependencies": {
     "@isphub/shared": "*",
