@@ -136,11 +136,18 @@ function encerrar(a: ViagemAberta, fimEm: Date | null): Viagem {
 function acumular(a: ViagemAberta, p: PontoViagem, paradoKmh: number): ViagemAberta {
   const deltaSeg = (p.em.getTime() - a.ultimoEm.getTime()) / 1000;
   /*
-   * Parado com motor ligado: o intervalo INTEIRO entre dois pontos lentos
+   * Parado com motor LIGADO: o intervalo INTEIRO entre dois pontos lentos
    * conta. Contar so o instante do ponto daria sempre zero — a amostragem e
    * discreta, o desperdicio e continuo.
+   *
+   * `p.ignicao === true` no criterio, e nao so a velocidade: o nome do campo
+   * afirma que o motor esta ligado, e com `ignicao` desconhecida (o aparelho nao
+   * contou) ou em `anomalia` (o sensor esta com defeito) nao sabemos disso. Sem
+   * esta condicao, um carro parado com o sensor quebrado acumularia horas de
+   * "motor ligado a toa" e dispararia um alerta que ninguem mediu.
    */
-  const paradoAgora = (p.velocidadeKmh ?? 0) <= paradoKmh && (a.ultimaVelocidadeKmh ?? 0) <= paradoKmh;
+  const paradoAgora =
+    p.ignicao === true && (p.velocidadeKmh ?? 0) <= paradoKmh && (a.ultimaVelocidadeKmh ?? 0) <= paradoKmh;
   return {
     ...a,
     distanciaMetros: a.distanciaMetros + haversineMetros({ lat: a.ultimaLat, lng: a.ultimaLng }, p),

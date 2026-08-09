@@ -71,6 +71,10 @@ export interface VeiculoNoMapa {
   registradoEm: string;
   movendo: boolean | null;
   comunicando: boolean | null;
+  /** Tri-estado em todos: `null` = o aparelho nao contou, e nao "esta desligado". */
+  ignicao: "ligada" | "desligada" | "anomalia" | null;
+  bateriaPct: number | null;
+  bloqueado: boolean | null;
   rastreadorId: string;
   ocupantes: string[];
 }
@@ -130,6 +134,17 @@ export const frotaMapaApi = {
 
   ocupantesEm: (veiculoId: string, em?: string) =>
     api.get<OcupacaoLinha[]>(`/frota/veiculos/${veiculoId}/ocupantes${em ? `?em=${encodeURIComponent(em)}` : ""}`),
+
+  /**
+   * "Qual viatura fez a OS X?" — LISTA, porque podem ter sido duas: o carro que
+   * quebrou de manha e o que terminou o dia.
+   *
+   * ADMIN/GESTOR: quem chamar sem o gate leva 403 na propria OS.
+   */
+  veiculosDaOs: (osId: string) =>
+    api.get<{ veiculoId: string; veiculoPlaca: string; usuarioNome: string }[]>(
+      `/frota/ordens-servico/${osId}/veiculos`,
+    ),
 
   rastreadores: () => api.get<RastreadorLinha[]>("/frota/rastreadores"),
 

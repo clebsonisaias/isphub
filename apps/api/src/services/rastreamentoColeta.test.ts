@@ -30,7 +30,7 @@ const {
   posicaoFindFirst,
   viagemFindFirst,
   viagemCreate,
-  viagemUpdate,
+  viagemUpdateMany,
   ocupacaoFindFirst,
 } = vi.hoisted(() => ({
   rastreadorFindMany: vi.fn(),
@@ -42,7 +42,7 @@ const {
   posicaoFindFirst: vi.fn(),
   viagemFindFirst: vi.fn(),
   viagemCreate: vi.fn(),
-  viagemUpdate: vi.fn(),
+  viagemUpdateMany: vi.fn(),
   ocupacaoFindFirst: vi.fn(),
 }));
 
@@ -52,7 +52,7 @@ vi.mock("../lib/prisma.js", () => ({
     posicaoRastreador: { createMany: posicaoCreateMany, findFirst: posicaoFindFirst },
     rastreadorConfig: { update: configUpdate, findMany: configFindMany },
     eventoRastreador: { createMany: eventoCreateMany },
-    viagem: { findFirst: viagemFindFirst, create: viagemCreate, update: viagemUpdate },
+    viagem: { findFirst: viagemFindFirst, create: viagemCreate, updateMany: viagemUpdateMany },
     ocupacaoVeiculo: { findFirst: ocupacaoFindFirst },
   },
 }));
@@ -118,7 +118,7 @@ beforeEach(() => {
   posicaoFindFirst.mockResolvedValue(null);
   viagemFindFirst.mockResolvedValue(null);
   viagemCreate.mockResolvedValue({ id: "vg-1" });
-  viagemUpdate.mockResolvedValue({});
+  viagemUpdateMany.mockResolvedValue({ count: 1 });
   ocupacaoFindFirst.mockResolvedValue(null);
   rastreadorFindMany.mockResolvedValue([rastreadorNoBanco()]);
 });
@@ -398,7 +398,7 @@ describe("coletarDeUmaConfig", () => {
     );
 
     expect(viagemCreate).not.toHaveBeenCalled();
-    const d = (viagemUpdate.mock.calls[0]![0] as { data: Record<string, unknown> }).data;
+    const d = (viagemUpdateMany.mock.calls[0]![0] as { data: Record<string, unknown> }).data;
     expect(d.distanciaMetros).toBeGreaterThan(4000);
     expect(d.fimEm).toBeUndefined();
   });
@@ -435,7 +435,7 @@ describe("coletarDeUmaConfig", () => {
       }),
     );
 
-    const d = (viagemUpdate.mock.calls[0]![0] as { data: Record<string, unknown> }).data;
+    const d = (viagemUpdateMany.mock.calls[0]![0] as { data: Record<string, unknown> }).data;
     expect((d.fimEm as Date).toISOString()).toBe("2026-08-08T02:49:42.000Z");
     expect(viagemCreate).not.toHaveBeenCalled();
   });

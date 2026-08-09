@@ -9,11 +9,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ErrorState";
 import { AjustarLimites, BRASIL_CENTER, CamadaOsm } from "@/components/mapa/base";
 import { veiculoIcon } from "@/components/mapa/veiculoIcon";
+import { ChipsVeiculo } from "@/components/mapa/chipsVeiculo";
 import { frotaMapaApi, type PontoTrilha, type VeiculoNoMapa } from "@/lib/veiculosApi";
 import { ApiError } from "@/lib/apiClient";
 import { useRealtime } from "@/lib/realtime";
 import { cn } from "@/lib/utils";
-import { RefreshCw, Route, Truck } from "lucide-react";
+import { ChevronRight, RefreshCw, Route, Truck } from "lucide-react";
+import { Link } from "react-router-dom";
 
 /**
  * MAPA DA FROTA — onde as viaturas estao agora, e por onde passaram.
@@ -94,6 +96,9 @@ export function FrotaMapaPage() {
   const linhaTrilha: [number, number][] = trilha.map((p) => [p.lat, p.lng]);
   const emMovimento = (veiculos ?? []).filter((v) => v.movendo).length;
   const semComunicacao = (veiculos ?? []).filter((v) => v.comunicando === false).length;
+  // Bloqueado e o unico estado que muda o que o gestor FAZ agora — por isso
+  // sobe pro cabecalho, junto com "sem comunicacao".
+  const bloqueados = (veiculos ?? []).filter((v) => v.bloqueado === true).length;
 
   return (
     <AppShell>
@@ -109,7 +114,8 @@ export function FrotaMapaPage() {
                 {veiculos === null
                   ? "Carregando…"
                   : `${veiculos.length} com rastreador · ${emMovimento} em movimento` +
-                    (semComunicacao > 0 ? ` · ${semComunicacao} sem comunicação` : "")}
+                    (semComunicacao > 0 ? ` · ${semComunicacao} sem comunicação` : "") +
+                    (bloqueados > 0 ? ` · ${bloqueados} bloqueado${bloqueados > 1 ? "s" : ""}` : "")}
               </p>
             </div>
             <Button variant="ghost" onClick={() => void carregar()} aria-label="Atualizar agora">
@@ -170,11 +176,19 @@ export function FrotaMapaPage() {
                             {v.velocidadeKmh != null ? `${Math.round(v.velocidadeKmh)} km/h` : "—"} ·{" "}
                             {idadeDaPosicao(v.registradoEm, agoraServidor)}
                           </p>
+                          <ChipsVeiculo ignicao={v.ignicao} bateriaPct={v.bateriaPct} bloqueado={v.bloqueado} />
                           {v.ocupantes.length > 0 ? (
                             <p className="text-xs">Com: {v.ocupantes.join(", ")}</p>
                           ) : (
                             <p className="text-xs">Ninguém declarado a bordo</p>
                           )}
+                          <Link
+                            to={`/frota/veiculos/${v.veiculoId}`}
+                            className="mt-1 inline-flex items-center gap-0.5 text-xs font-medium text-primary hover:underline"
+                          >
+                            Sensores e viagens
+                            <ChevronRight className="size-3" aria-hidden />
+                          </Link>
                         </Popup>
                       </Marker>
                     );
@@ -217,6 +231,12 @@ export function FrotaMapaPage() {
                           {idadeDaPosicao(v.registradoEm, agoraServidor)}
                           {v.comunicando === false ? " · sem comunicação" : ""}
                         </p>
+                        <ChipsVeiculo
+                          ignicao={v.ignicao}
+                          bateriaPct={v.bateriaPct}
+                          bloqueado={v.bloqueado}
+                          compacto
+                        />
                         {v.ocupantes.length > 0 ? (
                           <p className="truncate text-xs text-muted-foreground">{v.ocupantes.join(", ")}</p>
                         ) : null}

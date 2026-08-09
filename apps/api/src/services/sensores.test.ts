@@ -158,12 +158,27 @@ describe("dicionario do fornecedor", () => {
     expect(severidadeSensor(DICIONARIO_PTK, "SUNTECH_INPUT_TWO", "TRUE")).toBe("success");
   });
 
-  it("valor que o fornecedor nao descreve fica sem cor e mostra o cru", () => {
+  it("valor que o fornecedor nao descreve fica SEM COR — nao inventamos severidade", () => {
     // `CUT` documenta so o `ON`. O `OFF` de todo dia nao tem descricao.
     expect(severidadeSensor(DICIONARIO_PTK, "CUT", "OFF")).toBeNull();
-    expect(resumoSensor(DICIONARIO_PTK, "CUT", "OFF")).toBe("OFF");
     expect(severidadeSensor(DICIONARIO_PTK, "CUT", "ON")).toBe("danger");
     expect(resumoSensor(DICIONARIO_PTK, "CUT", "ON")).toBe("Bloqueado");
+  });
+
+  it("mas o TEXTO desses buracos e preenchido, senao a tela fala em jargao", () => {
+    /*
+     * Sem isto, o painel de um gestor brasileiro exibe "BLOQUEIO: OFF" e
+     * "MOVIMENTAÇÃO: UNDEFINED" — os dois valores que o rastreador real reporta
+     * o dia inteiro e que o dicionario deles simplesmente nao descreve.
+     */
+    expect(resumoSensor(DICIONARIO_PTK, "CUT", "OFF")).toBe("Desbloqueado");
+    expect(resumoSensor(DICIONARIO_PTK, "MOVEMENT", "UNDEFINED")).toBe("Não informado");
+  });
+
+  it("o complemento NUNCA passa por cima do fornecedor", () => {
+    // `MOVEMENT: MOVING` e descrito por eles; a palavra tem de continuar sendo a
+    // deles, senao a tela diz uma coisa e o suporte do fornecedor, outra.
+    expect(resumoSensor(DICIONARIO_PTK, "MOVEMENT", "MOVING")).toBe("Em movimento");
   });
 
   it("ignicao desligada NAO e problema para o fornecedor", () => {

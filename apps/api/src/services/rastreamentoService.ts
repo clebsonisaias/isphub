@@ -1,9 +1,17 @@
 import { Prisma } from "@prisma/client";
-import { simplificarTrilha, type RastreadorConnector, type StatusRastreador, type TipoVeiculo } from "@isphub/shared";
+import {
+  sensoresParaExibir,
+  simplificarTrilha,
+  type DicionarioSensores,
+  type EventoRastreadorTipo,
+  type RastreadorConnector,
+  type StatusRastreador,
+  type TipoVeiculo,
+} from "@isphub/shared";
 import { comConcorrenciaLimitada } from "../lib/limitador.js";
 import { prisma } from "../lib/prisma.js";
 import { buildRastreadorConnector } from "./rastreadorService.js";
-import { aplicarLeitura, estadoAnteriorDe, type LeituraNova } from "./frotaEventoService.js";
+import { aplicarLeitura, comoMapaSensores, estadoAnteriorDe, type LeituraNova } from "./frotaEventoService.js";
 
 /**
  * Coleta de posicoes — o corpo do tique, separado do cron pra ter teste.
@@ -344,6 +352,10 @@ export interface PosicaoNoMapa {
   registradoEm: string;
   movendo: boolean | null;
   comunicando: boolean | null;
+  /** Os tres de primeira classe, para os chips do mapa. */
+  ignicao: "ligada" | "desligada" | "anomalia" | null;
+  bateriaPct: number | null;
+  bloqueado: boolean | null;
   rastreadorId: string;
 }
 
@@ -359,7 +371,7 @@ export async function mapaAoVivo(where: Record<string, unknown> = {}): Promise<P
     where: { fimEm: null, veiculo: where },
     select: {
       rastreadorId: true,
-      rastreador: { select: { comunicando: true } },
+      rastreador: { select: { comunicando: true, ignicao: true, bateriaPct: true, bloqueado: true } },
       veiculo: { select: { id: true, placa: true, modelo: true, tipo: true, provedor: { select: { nome: true } } } },
     },
   });
@@ -370,7 +382,17 @@ export async function mapaAoVivo(where: Record<string, unknown> = {}): Promise<P
       prisma.posicaoRastreador.findFirst({
         where: { rastreadorId: v.rastreadorId },
         orderBy: { registradoEm: "desc" },
-        select: { lat: true, lng: true, velocidadeKmh: true, registradoEm: true, movendo: true, comunicando: true },
+        select: {
+          lat: true,
+          lng: true,
+          velocidadeKmh: true,
+          registradoEm: true,
+          movendo: true,
+          comunicando: true,
+          ignicao: true,
+          bateriaPct: true,
+          bloqueado: true,
+        },
       }),
     ),
   );
@@ -393,6 +415,15 @@ export async function mapaAoVivo(where: Record<string, unknown> = {}): Promise<P
       registradoEm: p.registradoEm.toISOString(),
       movendo: p.movendo,
       comunicando: p.comunicando ?? v.rastreador.comunicando,
+      /*
+       * A POSICAO primeiro, o rastreador como reserva. A posicao e a fotografia
+       * daquele instante; o rastreador e o estado corrente, que pode ser mais
+       * novo (o aparelho fala sem mandar fix novo). Preferir a posicao mantem o
+       * chip coerente com a coordenada e a idade exibidas ao lado dele.
+       */
+      ignicao: p.ignicao ?? v.rastreador.ignicao,
+      bateriaPct: p.bateriaPct ?? v.rastreador.bateriaPct,
+      bloqueado: p.bloqueado ?? v.rastreador.bloqueado,
       rastreadorId: v.rastreadorId,
     });
   });
@@ -445,4 +476,146 @@ export async function trilha(
 
   // 5 m mantem curva de esquina; 25 m e o suficiente pra desenhar o trajeto.
   return simplificarTrilha(pontos, precisao === "alta" ? 5 : 25);
+}
+
+
+// ---------------------------------------------------------------------------
+// O DIA DE UM VEICULO
+// ---------------------------------------------------------------------------
+
+export interface SensorNaTela {
+  nome: string;
+  rotulo: string;
+  valor: string;
+  resumo: string;
+  severidade: "success" | "warning" | "danger" | null;
+  icone: string | null;
+}
+
+export interface ViagemNaTela {
+  id: string;
+  inicioEm: string;
+  fimEm: string | null;
+  distanciaMetros: number | null;
+  velocidadeMaxKmh: number | null;
+  paradoComMotorLigadoSeg: number | null;
+  motorista: string | null;
+}
+
+export interface EventoNaTela {
+  id: string;
+  tipo: EventoRastreadorTipo;
+  em: string;
+  detalhe: unknown;
+}
+
+export interface DiaDoVeiculo {
+  agoraServidor: string;
+  rastreador: {
+    identificadorExterno: string;
+    apelido: string | null;
+    modeloFornecedor: string | null;
+    nomeFornecedor: string | null;
+    intervaloFornecedorSeg: number | null;
+    /**
+     * Se o APARELHO aceita corte de motor. Informativo: o ISPhub nao envia
+     * comando nenhum — quem bloqueia e a plataforma do fornecedor, que ja tem o
+     * controle e a responsabilidade.
+     */
+    temComandoCorte: boolean;
+    instaladoEm: string | null;
+    ultimaPosicaoEm: string | null;
+  } | null;
+  /** TODOS os sensores, ja rotulados pelo dicionario do fornecedor. */
+  sensores: SensorNaTela[];
+  viagens: ViagemNaTela[];
+  eventos: EventoNaTela[];
+}
+
+export async function diaDoVeiculo(veiculoId: string, de: Date, ate: Date): Promise<DiaDoVeiculo> {
+  const vinculo = await prisma.vinculoRastreador.findFirst({
+    where: { veiculoId, fimEm: null },
+    select: {
+      rastreador: {
+        select: {
+          id: true,
+          provedorId: true,
+          identificadorExterno: true,
+          apelido: true,
+          modeloFornecedor: true,
+          nomeFornecedor: true,
+          intervaloFornecedorSeg: true,
+          temComandoCorte: true,
+          instaladoEm: true,
+          ultimaPosicaoEm: true,
+          sensores: true,
+        },
+      },
+    },
+  });
+
+  const [viagens, eventos] = await Promise.all([
+    prisma.viagem.findMany({
+      where: { veiculoId, inicioEm: { gte: de, lte: ate } },
+      orderBy: { inicioEm: "desc" },
+      select: {
+        id: true,
+        inicioEm: true,
+        fimEm: true,
+        distanciaMetros: true,
+        velocidadeMaxKmh: true,
+        paradoComMotorLigadoSeg: true,
+        ocupacao: { select: { usuario: { select: { nome: true, nomeExibicao: true } } } },
+      },
+    }),
+    prisma.eventoRastreador.findMany({
+      where: { veiculoId, em: { gte: de, lte: ate } },
+      orderBy: { em: "desc" },
+      take: 200,
+      select: { id: true, tipo: true, em: true, detalhe: true },
+    }),
+  ]);
+
+  const r = vinculo?.rastreador ?? null;
+  let sensores: SensorNaTela[] = [];
+  if (r) {
+    /*
+     * O dicionario vem da credencial DAQUELE provedor — cada conta do fornecedor
+     * pode publicar sensores diferentes. Buscar o de outro provedor rotularia o
+     * aparelho com o vocabulario errado.
+     */
+    const config = await prisma.rastreadorConfig.findFirst({
+      where: { provedorId: r.provedorId },
+      select: { dicionarioSensores: true },
+    });
+    const mapa = comoMapaSensores(r.sensores) ?? {};
+    sensores = sensoresParaExibir(mapa, (config?.dicionarioSensores ?? null) as DicionarioSensores | null);
+  }
+
+  return {
+    agoraServidor: new Date().toISOString(),
+    rastreador: r
+      ? {
+          identificadorExterno: r.identificadorExterno,
+          apelido: r.apelido,
+          modeloFornecedor: r.modeloFornecedor,
+          nomeFornecedor: r.nomeFornecedor,
+          intervaloFornecedorSeg: r.intervaloFornecedorSeg,
+          temComandoCorte: r.temComandoCorte,
+          instaladoEm: r.instaladoEm?.toISOString() ?? null,
+          ultimaPosicaoEm: r.ultimaPosicaoEm?.toISOString() ?? null,
+        }
+      : null,
+    sensores,
+    viagens: viagens.map((v) => ({
+      id: v.id,
+      inicioEm: v.inicioEm.toISOString(),
+      fimEm: v.fimEm?.toISOString() ?? null,
+      distanciaMetros: v.distanciaMetros,
+      velocidadeMaxKmh: v.velocidadeMaxKmh,
+      paradoComMotorLigadoSeg: v.paradoComMotorLigadoSeg,
+      motorista: v.ocupacao ? (v.ocupacao.usuario.nomeExibicao || v.ocupacao.usuario.nome) : null,
+    })),
+    eventos: eventos.map((e) => ({ id: e.id, tipo: e.tipo, em: e.em.toISOString(), detalhe: e.detalhe })),
+  };
 }

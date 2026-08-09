@@ -250,6 +250,27 @@ function normalizarSeveridade(s: string): Severidade | null {
 }
 
 /**
+ * BURACOS do dicionario do fornecedor, preenchidos por nos.
+ *
+ * Nao e traducao nem substituicao: e complemento. O dicionario real descreve
+ * `CUT: ON` ("Bloqueado") e **nao descreve `CUT: OFF`** — que e o valor que o
+ * aparelho reporta o dia inteiro. `MOVEMENT` documenta so `MOVING`, e o
+ * rastreador responde `UNDEFINED`. Sem isto, a tela de um gestor brasileiro
+ * exibe "BLOQUEIO: OFF" e "MOVIMENTAÇÃO: UNDEFINED".
+ *
+ * A regra que mantem isto honesto: **so entra em acao quando o fornecedor nao
+ * disse nada**. Onde eles descrevem, a palavra e deles — senao a tela diria uma
+ * coisa e o suporte do fornecedor, outra.
+ */
+const COMPLEMENTO_PT: Record<string, Record<string, string>> = {
+  [SENSOR.BLOQUEIO]: { OFF: "Desbloqueado", FALSE: "Desbloqueado" },
+  [SENSOR.MOVIMENTO]: { STOPPED: "Parado", UNDEFINED: "Não informado", FALSE: "Parado" },
+  [SENSOR.IGNICAO]: { UNDEFINED: "Não informado" },
+  [SENSOR.COMUNICACAO]: { UNDEFINED: "Não informado" },
+  [SENSOR.GPS]: { UNDEFINED: "Não informado" },
+};
+
+/**
  * Texto curto do valor ("Conectado à internet", "Bloqueado", "14%", "100%").
  *
  * Para `NUMBER`, a faixa nao traz `summary` — traz a UNIDADE. Entao o texto e
@@ -265,6 +286,8 @@ export function resumoSensor(
   const d = acharValor(dic?.[nome], valor);
   if (d?.summary) return d.summary;
   if (d?.unit && comoNumero(valor) !== null) return `${valor}${d.unit}`;
+  const nosso = COMPLEMENTO_PT[nome]?.[valor.toUpperCase()];
+  if (nosso) return nosso;
   return valor;
 }
 

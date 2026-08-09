@@ -132,17 +132,31 @@ describe("segmentarViagens", () => {
     const pontos = [p(0, true, { kmh: 5 }), p(10, true, { dx: 0.001, kmh: 5 }), p(12, false, { dx: 0.001 })];
     expect(segmentarViagens(pontos).at(0)!.paradoComMotorLigadoSeg).toBe(0);
     /*
-     * 12 minutos, e nao 10: o trecho ate o ponto que DESLIGA a ignicao tambem
-     * conta. Durante ele o motor ainda estava ligado — so descobrimos que
-     * desligou no instante final.
+     * 10 minutos, e nao 12: o trecho que termina no ponto de ignicao DESLIGADA
+     * nao conta.
      *
-     * Este numero mudou quando `segmentarViagens` virou uma dobra de
-     * `avancarViagem`, e a mudanca corrigiu uma inconsistencia: o codigo
-     * anterior somava a DISTANCIA desse ultimo trecho e ignorava o TEMPO
-     * parado dele, porque o caso "ignicao desligada" tinha um caminho proprio.
-     * Com um passo unico, nao ha mais como os dois discordarem.
+     * O nome do campo afirma que o motor estava ligado, e nesse trecho nao
+     * sabemos: o motorista pode ter desligado no primeiro segundo dele. Contar
+     * o que nao se mediu e exatamente o defeito que este modulo evita em toda
+     * parte — e o numero aqui vira combustivel cobrado de alguem.
      */
-    expect(segmentarViagens(pontos, { velocidadeParadoKmh: 8 }).at(0)!.paradoComMotorLigadoSeg).toBe(12 * 60);
+    expect(segmentarViagens(pontos, { velocidadeParadoKmh: 8 }).at(0)!.paradoComMotorLigadoSeg).toBe(10 * 60);
+  });
+
+  it("ignicao desconhecida nao acumula tempo de MOTOR LIGADO", () => {
+    /*
+     * O aparelho parou de mandar ACC, ou o sensor esta em `anomalia`. O carro
+     * pode estar imovel, mas afirmar "parado com o motor ligado" seria inventar
+     * o unico fato que o alerta existe para reportar — e, sem isto, um sensor
+     * quebrado acumularia horas de desperdicio que nunca houve.
+     */
+    const v = segmentarViagens([
+      p(0, true, { kmh: 0 }),
+      p(10, null, { kmh: 0 }),
+      p(20, null, { kmh: 0 }),
+      p(25, false, { kmh: 0 }),
+    ]);
+    expect(v[0]!.paradoComMotorLigadoSeg).toBe(0);
   });
 });
 

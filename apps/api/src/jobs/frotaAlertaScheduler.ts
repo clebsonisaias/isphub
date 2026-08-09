@@ -37,6 +37,16 @@ let tickEmAndamento = false;
 const JANELA_MAX_MS = 24 * 60 * 60_000;
 
 /**
+ * Ha quanto tempo o aparelho precisa estar mudo para o offline valer aviso.
+ *
+ * A regra nao pode morar na CRIACAO do evento: `derivarEventos` grava
+ * `ficou_offline` em toda transicao UP->DOWN, e um rastreador que pisca por um
+ * minuto faz isso o dia inteiro. O evento e util no historico do veiculo; o que
+ * as 6h decidem e se ele merece interromper alguem.
+ */
+const OFFLINE_MS = 6 * 60 * 60_000;
+
+/**
  * Teto por tique. Uma frota que volta do offline gera muitos eventos de uma vez;
  * o excedente vai nos proximos minutos em vez de virar 200 linhas no sino.
  */
@@ -49,6 +59,11 @@ const MAX_POR_TICK = 30;
  * materia-prima da linha do tempo, nao um aviso. `voltou_online` e
  * `bateria_normalizada` sao boas noticias: aparecem no historico do veiculo,
  * mas nao tocam o sino. Alerta que toca demais e alerta que ninguem le.
+ */
+/*
+ * `excesso_velocidade` fica de FORA por decisao de produto: o limite serve para
+ * marcar a infracao no historico do veiculo, nao para tocar o sino a cada
+ * ultrapassagem. Os quatro abaixo foram os escolhidos.
  */
 const ALERTAVEIS: EventoRastreadorTipo[] = [
   "bateria_baixa",
@@ -89,23 +104,37 @@ async function tick() {
      * varrer o estado. Detectar antes faz o que acabou de ser detectado sair no
      * MESMO tique, em vez de esperar mais cinco minutos.
      */
-    await detectarEventosPorDuracao();
+    try {
+      await detectarEventosPorDuracao();
+    } catch (err) {
+      // Detectar e drenar sao independentes: uma falha ao criar o evento de
+      // ociosidade nao pode impedir que os alertas JA pendentes saiam.
+      console.error("[frota-alerta-scheduler] falha ao detectar eventos por duracao:", err);
+    }
 
     const pendentes = await prisma.eventoRastreador.findMany({
       where: {
         notificadoEm: null,
         tipo: { in: ALERTAVEIS },
-        em: { gte: new Date(Date.now() - JANELA_MAX_MS) },
+        /*
+         * A janela olha `criadoEm` (QUANDO GRAVAMOS), e nao `em` (quando o fato
+         * aconteceu no aparelho). Os dois divergem de propositio: `em` e ancorado
+         * no relogio do dispositivo e pode ser bem anterior. Filtrar por `em`
+         * descartaria para sempre justamente os eventos de um aparelho que ficou
+         * dias fora — que sao os que mais importam.
+         */
+        criadoEm: { gte: new Date(Date.now() - JANELA_MAX_MS) },
       },
       // Mais antigo primeiro: com o teto por tique, a fila drena em ordem de
       // chegada em vez de deixar sempre a mesma sobra pra tras.
-      orderBy: { em: "asc" },
+      orderBy: { criadoEm: "asc" },
       take: MAX_POR_TICK,
       select: {
         id: true,
         tipo: true,
         detalhe: true,
         veiculo: { select: { placa: true } },
+        rastreador: { select: { comunicando: true, ultimaPosicaoEm: true } },
       },
     });
     if (pendentes.length === 0) return;
@@ -123,19 +152,50 @@ async function tick() {
     // e ele nunca mais voltaria.
     if (gestores.length === 0) return;
 
+    const agora = Date.now();
     for (const ev of pendentes) {
+      /*
+       * A REGRA DAS 6H, aplicada aqui e nao na criacao.
+       *
+       * O evento nasce na transicao UP->DOWN, que acontece a cada piscada. Aqui
+       * a pergunta e outra: o aparelho CONTINUA mudo, e ha tempo suficiente? Se
+       * ja voltou, o apagao foi um susto e nao vale o sino — mas o evento fica
+       * carimbado como notificado, para nao ser reavaliado para sempre.
+       */
+      if (ev.tipo === "ficou_offline") {
+        const ultima = ev.rastreador.ultimaPosicaoEm?.getTime() ?? 0;
+        const aindaMudo = ev.rastreador.comunicando === false && agora - ultima >= OFFLINE_MS;
+        if (!aindaMudo) {
+          await prisma.eventoRastreador.updateMany({
+            where: { id: ev.id, notificadoEm: null },
+            data: { notificadoEm: new Date() },
+          });
+          continue;
+        }
+      }
+
       const texto = mensagem(ev.tipo, ev.veiculo?.placa ?? null, ev.detalhe);
       /*
-       * Trava e notificacao na MESMA transacao. Separar significa, nas palavras
-       * do proprio schema, "ou repete o aviso pra sempre, ou perde o aviso pra
-       * sempre".
+       * Trava e notificacao na MESMA transacao, e a trava e um COMPARE-AND-SWAP.
+       *
+       * `updateMany` com `notificadoEm: null` no WHERE, em vez de `update` por
+       * id: com duas replicas, as duas leem o mesmo evento pendente e as duas
+       * chegariam aqui. Quem perde a corrida encontra `count === 0` e desiste —
+       * sem isso, o gestor recebe o mesmo aviso duas vezes.
+       *
+       * Separar as duas escritas significaria, nas palavras do proprio schema,
+       * "ou repete o aviso pra sempre, ou perde o aviso pra sempre".
        */
-      await prisma.$transaction([
-        prisma.eventoRastreador.update({ where: { id: ev.id }, data: { notificadoEm: new Date() } }),
-        prisma.notificacao.createMany({
+      await prisma.$transaction(async (tx) => {
+        const trava = await tx.eventoRastreador.updateMany({
+          where: { id: ev.id, notificadoEm: null },
+          data: { notificadoEm: new Date() },
+        });
+        if (trava.count === 0) return;
+        await tx.notificacao.createMany({
           data: gestores.map((g) => ({ usuarioId: g.id, tipo: "frota_alerta", mensagem: texto })),
-        }),
-      ]);
+        });
+      });
     }
   } catch (err) {
     console.error("[frota-alerta-scheduler] falha no tick:", err);
@@ -143,6 +203,9 @@ async function tick() {
     tickEmAndamento = false;
   }
 }
+
+/** Exposto so pro teste — mesmo padrao de `osNovaAlertScheduler`. */
+export const __tickParaTeste = tick;
 
 export function startFrotaAlertaScheduler() {
   cron.schedule("*/5 * * * *", () => {

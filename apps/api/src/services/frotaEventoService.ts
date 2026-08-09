@@ -240,8 +240,17 @@ export async function aplicarLeitura(
   const passo = avancarViagem(abertaNoBanco ? comoViagemAberta(abertaNoBanco) : null, ponto);
 
   if (passo.fechar && abertaNoBanco) {
-    await prisma.viagem.update({
-      where: { id: abertaNoBanco.id },
+    /*
+     * `updateMany` com `fimEm: null` no WHERE, e nao `update` por id.
+     *
+     * Com duas replicas, as duas leem a mesma viagem aberta e as duas calculam
+     * um fechamento. Um `update` por id sempre vence e SOBRESCREVE o que a outra
+     * ja gravou — inclusive com um `fimEm` diferente. O predicado transforma
+     * isso num compare-and-swap: quem chega depois nao encontra linha aberta e
+     * nao escreve nada.
+     */
+    await prisma.viagem.updateMany({
+      where: { id: abertaNoBanco.id, fimEm: null },
       data: {
         fimEm: passo.fechar.fimEm,
         latFim: passo.fechar.latFim,
@@ -286,8 +295,10 @@ export async function aplicarLeitura(
       if (!ehCorrida(e)) throw e;
     }
   } else if (passo.aberta && abertaNoBanco) {
-    await prisma.viagem.update({
-      where: { id: abertaNoBanco.id },
+    // Mesmo compare-and-swap da hora de fechar: acumular numa viagem que a
+    // outra replica ja fechou a reabriria com numeros parciais.
+    await prisma.viagem.updateMany({
+      where: { id: abertaNoBanco.id, fimEm: null },
       data: {
         latFim: passo.aberta.ultimaLat,
         lngFim: passo.aberta.ultimaLng,
@@ -330,46 +341,21 @@ export async function aplicarLeitura(
  * Com isso a chave natural `(rastreadorId, tipo, em)` recusa a repeticao no
  * banco, que e o unico lugar onde duas replicas concordam.
  */
-const OFFLINE_MS = 6 * 60 * 60_000;
 const PARADO_MOTOR_LIGADO_SEG = 10 * 60;
 
-export async function detectarEventosPorDuracao(agora = new Date()): Promise<number> {
+export async function detectarEventosPorDuracao(): Promise<number> {
   let criados = 0;
 
-  const mudos = await prisma.rastreador.findMany({
-    where: {
-      ativo: true,
-      comunicando: false,
-      OR: [{ ultimaPosicaoEm: null }, { ultimaPosicaoEm: { lt: new Date(agora.getTime() - OFFLINE_MS) } }],
-      vinculos: { some: { fimEm: null } },
-    },
-    select: {
-      id: true,
-      criadoEm: true,
-      ultimaPosicaoEm: true,
-      vinculos: { where: { fimEm: null }, select: { veiculoId: true }, take: 1 },
-    },
-  });
-
-  for (const r of mudos) {
-    // Sem nenhuma posicao na vida, o cadastro e a unica ancora estavel que
-    // existe — e ainda assim e estavel, que e o que a chave natural precisa.
-    const em = r.ultimaPosicaoEm ?? r.criadoEm;
-    const n = await prisma.eventoRastreador.createMany({
-      data: [
-        {
-          rastreadorId: r.id,
-          veiculoId: r.vinculos[0]?.veiculoId ?? null,
-          tipo: "ficou_offline",
-          em,
-          detalhe: { desde: em.toISOString() },
-        },
-      ],
-      skipDuplicates: true,
-    });
-    criados += n.count;
-  }
-
+  /*
+   * O OFFLINE nao esta aqui — e um caso instrutivo.
+   *
+   * Ele ja nasce em `derivarEventos`, na transicao UP->DOWN. Detectar de novo
+   * por duracao criaria um SEGUNDO evento do mesmo apagao, e com um `em`
+   * diferente: dois avisos do mesmo fato. A regra das 6h, entao, nao mora na
+   * criacao — mora no DRENO, que so notifica se o aparelho continuar mudo. O
+   * evento fica no historico do veiculo de qualquer jeito; o que as 6h decidem
+   * e se ele merece tocar o sino.
+   */
   const ociosas = await prisma.viagem.findMany({
     where: { fimEm: null, paradoComMotorLigadoSeg: { gte: PARADO_MOTOR_LIGADO_SEG } },
     select: { id: true, rastreadorId: true, veiculoId: true, inicioEm: true, paradoComMotorLigadoSeg: true, latFim: true, lngFim: true },

@@ -4,6 +4,7 @@ import {
   OS_STATUS_ABERTOS,
   OsStatus,
   UserRole,
+  formatarPlaca,
   type DetalhesTecnicos,
   type Endereco,
   type FilaItem,
@@ -12,6 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
+import { frotaMapaApi } from "@/lib/veiculosApi";
 import { ProvedorBadge } from "@/components/ProvedorBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { SlaBadge } from "@/components/SlaBadge";
@@ -64,6 +66,23 @@ export function OrdemServicoDetailDialog({
       .then(setTecnicos)
       .catch(() => {});
   }, [podeDespachar]);
+
+  /*
+   * Qual VIATURA fez esta OS — derivado do cruzamento da janela de execucao com
+   * as ocupacoes do tecnico. E LISTA porque podem ter sido duas: o carro que
+   * quebrou de manha e o que terminou o dia.
+   *
+   * O gate `podeDespachar` nao e zelo: `GET /frota/ordens-servico/:id/veiculos`
+   * e ADMIN/GESTOR, e sem ele o tecnico tomaria 403 ao abrir a PROPRIA OS.
+   */
+  const [viaturas, setViaturas] = useState<{ veiculoId: string; veiculoPlaca: string; usuarioNome: string }[]>([]);
+  useEffect(() => {
+    if (!podeDespachar) return;
+    frotaMapaApi
+      .veiculosDaOs(os.id)
+      .then(setViaturas)
+      .catch(() => {});
+  }, [podeDespachar, os.id]);
 
   function marcarMudanca() {
     setHouveMudanca(true);
@@ -185,6 +204,12 @@ export function OrdemServicoDetailDialog({
             <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
               <Info label="Contrato" value={os.contratoId} />
               <Info label="Técnico" value={os.tecnicoNome} />
+              {podeDespachar && viaturas.length > 0 ? (
+                <Info
+                  label={viaturas.length > 1 ? "Viaturas" : "Viatura"}
+                  value={[...new Set(viaturas.map((v) => formatarPlaca(v.veiculoPlaca)))].join(" · ")}
+                />
+              ) : null}
               <Info label="Designado no SGP" value={os.tecnicoSgpNome} />
               <Info
                 label="Endereço"

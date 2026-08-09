@@ -313,3 +313,26 @@ frotaRouter.post(
   requireRole(UserRole.ADMIN),
   asyncHandler(async (_req, res) => res.json(await rastreadores.testarConfig(null))),
 );
+
+/**
+ * O DIA de um veiculo — sensores, viagens e eventos, num pedido so.
+ *
+ * Junta as tres fontes NO SERVIDOR, e nao em tres chamadas da tela, por tres
+ * razoes que valem individualmente: o corte do dia tem de ser o mesmo
+ * `diaBrasileiro` para todas; a serie de posicao e volume e nao pode trafegar
+ * inteira; e o painel de sensores depende do DICIONARIO do fornecedor, que mora
+ * na credencial cifrada e nunca sai daqui.
+ */
+frotaRouter.get(
+  "/veiculos/:id/dia",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    await assertAcesso(req, req.params.id);
+    const { de, ate } = z
+      .object({ de: z.string().datetime().optional(), ate: z.string().datetime().optional() })
+      .parse(req.query);
+    const fim = ate ? new Date(ate) : new Date();
+    const inicio = de ? new Date(de) : new Date(fim.getTime() - 24 * 60 * 60_000);
+    res.json(await rastreamento.diaDoVeiculo(req.params.id, inicio, fim));
+  }),
+);
