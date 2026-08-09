@@ -143,6 +143,74 @@ describe("segmentarViagens", () => {
     expect(segmentarViagens(pontos, { velocidadeParadoKmh: 8 }).at(0)!.paradoComMotorLigadoSeg).toBe(10 * 60);
   });
 
+  it("o TREMOR do GPS parado nao vira distancia percorrida", () => {
+    /*
+     * Um receptor parado oscila 5 a 15 m por leitura. Somando toda haversine,
+     * meia hora de motor ligado parado acumulava centenas de metros que ninguem
+     * andou — e concentrado justamente nos veiculos que o painel de ociosidade
+     * quer flagrar.
+     *
+     * ~9 m em latitude (0,00008 grau) esta dentro do ruido; 30 pontos assim
+     * somariam ~270 m sem o piso.
+     */
+    const tremendo: PontoViagem[] = [{ lat: BASE.lat, lng: BASE.lng, em: new Date(Date.UTC(2026, 7, 8, 11, 0)), ignicao: true, velocidadeKmh: 0 }];
+    for (let i = 1; i <= 30; i += 1) {
+      tremendo.push({
+        lat: BASE.lat + (i % 2 === 0 ? 0.00008 : -0.00008),
+        lng: BASE.lng,
+        em: new Date(Date.UTC(2026, 7, 8, 11, i)),
+        ignicao: true,
+        velocidadeKmh: 0,
+      });
+    }
+    tremendo.push({ lat: BASE.lat, lng: BASE.lng, em: new Date(Date.UTC(2026, 7, 8, 11, 31)), ignicao: false, velocidadeKmh: 0 });
+
+    const v = segmentarViagens(tremendo).at(0)!;
+    expect(v.distanciaMetros).toBe(0);
+    /*
+     * O tempo, esse sim, foi medido: 30 minutos. Nao 31 — o trecho que termina
+     * no ponto de ignicao DESLIGADA nao conta, porque nao sabemos em que
+     * instante dele o motorista girou a chave.
+     */
+    expect(v.paradoComMotorLigadoSeg).toBe(30 * 60);
+  });
+
+  it("mas o movimento de verdade continua contando inteiro", () => {
+    // ~1,1 km entre pontos: muito acima do piso, nada e descartado.
+    const v = segmentarViagens([
+      p(0, true, { kmh: 60 }),
+      p(1, true, { dx: 0.01, kmh: 60 }),
+      p(2, true, { dx: 0.02, kmh: 60 }),
+      p(3, false, { dx: 0.03 }),
+    ]).at(0)!;
+    expect(v.distanciaMetros).toBeGreaterThan(3000);
+  });
+
+  it("a ancora nao anda com o ruido — mil tremores nao teleportam o carro", () => {
+    /*
+     * Se o piso fosse de DESCARTE (ignora o trecho, mas move a referencia), o
+     * carro "chegaria" longe sem nenhum trecho contado. Com ancora, o
+     * deslocamento acumulado desde o ultimo ponto valido e que decide.
+     */
+    const arrastando: PontoViagem[] = [{ lat: BASE.lat, lng: BASE.lng, em: new Date(Date.UTC(2026, 7, 8, 11, 0)), ignicao: true, velocidadeKmh: 2 }];
+    // 20 passos de ~11 m cada, todos abaixo do piso, mas somando ~220 m.
+    for (let i = 1; i <= 20; i += 1) {
+      arrastando.push({
+        lat: BASE.lat + i * 0.0001,
+        lng: BASE.lng,
+        em: new Date(Date.UTC(2026, 7, 8, 11, i)),
+        ignicao: true,
+        velocidadeKmh: 2,
+      });
+    }
+    const v = segmentarViagens(arrastando).at(0)!;
+    // A ancora fica parada ate o deslocamento vencer 25 m, e ai conta o trecho
+    // inteiro desde ela — o total bate com o deslocamento real, sem inventar
+    // nem perder.
+    expect(v.distanciaMetros).toBeGreaterThan(180);
+    expect(v.distanciaMetros).toBeLessThan(240);
+  });
+
   it("velocidade DESCONHECIDA nao conta como parado", () => {
     /*
      * Ha modelo de rastreador que nao manda `speed`. Com `?? 0`, "nao sei" virava

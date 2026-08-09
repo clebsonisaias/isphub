@@ -983,6 +983,21 @@ model Lancamento {
   categoriaId String?
   categoria   CategoriaFinanceira? @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
 
+  /// A que VEICULO esta despesa pertence — manutencao, pneu, seguro, IPVA,
+  /// multa, pedagio.
+  ///
+  /// Opcional porque a maioria dos lancamentos nao e de veiculo (mensalidade,
+  /// folha, internet); obrigatorio, forcaria um veiculo falso em toda despesa.
+  ///
+  /// `SetNull` e nao `Cascade`: aposentar o carro nao pode apagar a despesa que
+  /// a empresa de fato teve. O historico financeiro sobrevive ao veiculo.
+  ///
+  /// Combustivel continua chegando por `Abastecimento.lancamentoId` (1:1). O BI
+  /// soma os dois caminhos sem contar duas vezes, porque o abastecimento aponta
+  /// para o lancamento, e nao o contrario.
+  veiculoId String?
+  veiculo   Veiculo? @relation(fields: [veiculoId], references: [id], onDelete: SetNull)
+
   observacao String? @db.VarChar(500)
 
   /// Numero da nota fiscal, boleto ou contrato. E por ele que se concilia com o
@@ -1026,29 +1041,24 @@ model Lancamento {
 
   eventos LancamentoEvento[]
 
-  /// Cobre exatamente a consulta de vencidos (status=pendente AND vencimento <
-  /// hoje), que e o preco de derivar "atrasado" em vez de grava-lo.
-  /**
-   * /**
-   * /**
-   * /**
-   * /**
-   * /*
-   * A TRAVA DE IDEMPOTENCIA da recorrencia, no banco.
-   * O gerador pode rodar quantas vezes quiser: uma segunda tentativa de criar a
-   * ocorrencia do mesmo vencimento bate aqui. E a diferenca entre este modelo e
-   * o do ERP de origem, cujo botao de sincronizar inseria sem verificar nada —
-   * cada clique criava um conjunto completo novo, e o proprio changelog deles
-   * registra "tres chamadas seguidas deixam 12 lancamentos, nao 36" como
-   * CORRECAO. Garantir isso em JavaScript e garantir ate o primeiro retry.
-   */
+  /// A TRAVA DE IDEMPOTENCIA da recorrencia, no banco.
+  ///
+  /// O gerador pode rodar quantas vezes quiser: uma segunda tentativa de criar a
+  /// ocorrencia do mesmo vencimento bate aqui. E a diferenca entre este modelo e
+  /// o do ERP de origem, cujo botao de sincronizar inseria sem verificar nada —
+  /// cada clique criava um conjunto completo novo, e o proprio changelog deles
+  /// registra "tres chamadas seguidas deixam 12 lancamentos, nao 36" como
+  /// CORRECAO. Garantir isso em JavaScript e garantir ate o primeiro retry.
   @@unique([recorrenciaId, vencimento])
   /// Mesma logica da recorrencia: gerar duas vezes nao cria a parcela 2 duas vezes.
   @@unique([parcelamentoId, numeroParcela])
+  /// Cobre exatamente a consulta de vencidos (status=pendente AND vencimento <
+  /// hoje), que e o preco de derivar "atrasado" em vez de grava-lo.
   @@index([status, vencimento])
   @@index([tipo, competencia])
   @@index([provedorId])
   @@index([ehServico])
+  @@index([veiculoId, competencia])
   @@map("lancamentos")
 }
 
@@ -1248,6 +1258,7 @@ model Veiculo {
   vinculos       VinculoRastreador[]
   eventos        EventoRastreador[]
   viagens        Viagem[]
+  lancamentos    Lancamento[]
 
   @@index([provedorId, status])
   @@map("veiculos")

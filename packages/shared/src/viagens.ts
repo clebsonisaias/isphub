@@ -59,6 +59,14 @@ export interface OpcoesViagem {
 const PADRAO = { velocidadeParadoKmh: 3, intervaloMaximoMinutos: 30 };
 
 /**
+ * Piso de deslocamento entre duas amostras para o trecho contar como percurso.
+ *
+ * Abaixo disto e ruido do receptor, nao movimento. Ver o comentario em
+ * `acumular`, onde ele e aplicado como ancora.
+ */
+const PISO_DESLOCAMENTO_M = 25;
+
+/**
  * O ACUMULADOR de uma viagem em curso — e, no banco, a propria linha `Viagem`
  * com `fimEm IS NULL`.
  *
@@ -164,17 +172,41 @@ function acumular(a: ViagemAberta, p: PontoViagem, paradoKmh: number): ViagemAbe
     a.ultimaVelocidadeKmh !== null &&
     p.velocidadeKmh <= paradoKmh &&
     a.ultimaVelocidadeKmh <= paradoKmh;
+  /*
+   * DISTANCIA INVENTADA PELO TREMOR DO GPS.
+   *
+   * Um receptor parado nao devolve sempre a mesma coordenada: ele oscila 5 a 15
+   * metros a cada leitura. Somando toda haversine sem piso, um carro parado 30
+   * minutos com o motor ligado acumula ate meio quilometro que ninguem
+   * percorreu — e o pior e ONDE isso se concentra: exatamente nos veiculos que
+   * ficam muito parados, que sao os que o painel de ociosidade quer flagrar. O
+   * numero errado apareceria justamente no caso em que alguem vai agir.
+   *
+   * O piso e de ANCORA, e nao de descarte: enquanto o deslocamento nao vence o
+   * ruido, a referencia NAO se move. Sem isso, mil tremores de 15 m seriam mil
+   * descartes — mas a ancora andaria junto, e o carro "chegaria" longe sem que
+   * nenhum trecho tenha sido contado. E a mesma tecnica de `segmentarParadas`,
+   * que ancora a parada em vez de comparar pontos consecutivos.
+   *
+   * 25 m e o mesmo valor da decimacao de trilha em precisao media: acima do
+   * ruido do GPS e muito abaixo do que um carro anda entre duas amostras (a
+   * 5 km/h, o mais lento que ainda e transito, sao 83 m por minuto).
+   */
+  const trecho = haversineMetros({ lat: a.ultimaLat, lng: a.ultimaLng }, p);
+  const andouDeVerdade = trecho >= PISO_DESLOCAMENTO_M;
+
   return {
     ...a,
-    distanciaMetros: a.distanciaMetros + haversineMetros({ lat: a.ultimaLat, lng: a.ultimaLng }, p),
+    distanciaMetros: a.distanciaMetros + (andouDeVerdade ? trecho : 0),
     velocidadeMaxKmh:
       p.velocidadeKmh != null && (a.velocidadeMaxKmh == null || p.velocidadeKmh > a.velocidadeMaxKmh)
         ? p.velocidadeKmh
         : a.velocidadeMaxKmh,
     paradoComMotorLigadoSeg: a.paradoComMotorLigadoSeg + (paradoAgora ? deltaSeg : 0),
     ultimoEm: p.em,
-    ultimaLat: p.lat,
-    ultimaLng: p.lng,
+    // A ancora so anda quando o deslocamento venceu o ruido.
+    ultimaLat: andouDeVerdade ? p.lat : a.ultimaLat,
+    ultimaLng: andouDeVerdade ? p.lng : a.ultimaLng,
     ultimaVelocidadeKmh: p.velocidadeKmh,
     pontos: a.pontos + 1,
   };

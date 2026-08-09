@@ -16,4 +16,5 @@ export * from "./geodesia.js";
 export * from "./rastreamento.js";
 export * from "./sensores.js";
 export * from "./viagens.js";
+export * from "./bi.js";
 export * from "./linhaDoTempo.js";
