@@ -38,17 +38,45 @@ function notificarTecnico(tecnicoId: string | null, tipo: RealtimeEventoTipo, os
  * routes/ordensServico.ts GET /:id/eventos).
  */
 
+/**
+ * A transicao de status, ESTRUTURADA — o par que acompanha a frase.
+ *
+ * `de` e opcional porque nem toda transicao conhece a origem: "Marcado como a
+ * caminho" nunca a registrou. Nulo la quer dizer "nao sabemos", e nao "veio de
+ * aberta" — e a diferenca importa pro BI, que conta transicoes.
+ */
+interface Transicao {
+  de?: OsStatus;
+  para: OsStatus;
+}
+
 function evento(
   ordemServicoId: string,
   tipo: OsEventoTipo,
   autorId: string,
   descricao: string,
   geo?: Geo,
+  transicao?: Transicao,
 ) {
   // A coordenada entra no EVENTO (nao na OS) porque o que interessa e o rastro:
   // de onde ele disse que saiu, de onde disse que chegou, de onde terminou. Na
   // OS so caberia a ultima.
-  return prisma.osEvento.create({ data: { ordemServicoId, tipo, autorId, descricao, ...parGeo(geo) } });
+  //
+  // `statusDe`/`statusPara` acompanham a descricao em vez de substitui-la: a
+  // frase e o que a timeline mostra ao tecnico, e as colunas sao o que o BI
+  // consulta. Derivar uma da outra na leitura era o que fazia "quantas OS
+  // fecharam hoje" depender de casar string em portugues.
+  return prisma.osEvento.create({
+    data: {
+      ordemServicoId,
+      tipo,
+      autorId,
+      descricao,
+      ...parGeo(geo),
+      statusDe: transicao?.de ?? null,
+      statusPara: transicao?.para ?? null,
+    },
+  });
 }
 
 /**
@@ -136,7 +164,11 @@ export async function marcarACaminho(ordemServicoId: string, autorId: string, ge
       where: { id: os.id },
       data: { status: OsStatus.EM_DESLOCAMENTO, sincronizadoEm: new Date(), statusAlteradoEm: new Date() },
     }),
-    evento(os.id, "status", autorId, "Marcado como a caminho", geo),
+    evento(os.id, "status", autorId, "Marcado como a caminho", geo, {
+      // A origem E conhecida aqui — e o status que a OS tinha ate esta linha.
+      de: os.status as OsStatus,
+      para: OsStatus.EM_DESLOCAMENTO,
+    }),
   ]);
   notificarTecnico(osAtualizada.tecnicoId, "os-alterada", os.id);
   return osAtualizada;
@@ -171,7 +203,7 @@ export async function mudarStatus(
       where: { id: os.id },
       data: { status: novoStatus, sincronizadoEm: new Date(), statusAlteradoEm: new Date() },
     }),
-    evento(os.id, "status", autorId, descricao, geo),
+    evento(os.id, "status", autorId, descricao, geo, { de: os.status as OsStatus, para: novoStatus }),
   ]);
   notificarTecnico(osAtualizada.tecnicoId, "os-alterada", os.id);
   return osAtualizada;

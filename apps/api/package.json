@@ -14,7 +14,8 @@
     "seed": "tsx src/seed.ts",
     "seed:e2e": "tsx src/e2e-seed.ts",
     "test": "vitest run",
-    "seed:bi": "tsx src/seed-bi.ts"
+    "seed:bi": "tsx src/seed-bi.ts",
+    "seed:prod": "tsx src/seed-produtividade.ts"
   },
   "dependencies": {
     "@isphub/shared": "*",

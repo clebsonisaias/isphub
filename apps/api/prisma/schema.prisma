@@ -525,9 +525,28 @@ model OsEvento {
   /// de onde disse que chegou, de onde disse que terminou.
   lat            Float?
   lng            Float?
+  /// De onde e pra onde o status foi — ESTRUTURADO, e nao so dentro da frase.
+  ///
+  /// A `descricao` ("Status alterado: A caminho → Concluida") sempre teve os
+  /// dois, mas como texto em portugues montado a partir de rotulos de tela.
+  /// Perguntar "quantas OS fecharam hoje, e quem fechou" contra aquilo obriga a
+  /// um `LIKE '%Concluida%'` — que passa a mentir no dia em que alguem corrigir
+  /// o acento de um rotulo, sem erro nenhum, so com o numero errado. Um BI de
+  /// PRODUTIVIDADE mede pessoas; ele nao pode depender de casar string.
+  ///
+  /// `statusDe` e nulo quando a transicao nao tinha origem conhecida (o evento
+  /// "Marcado como a caminho" nunca a registrou); ambos sao nulos nos eventos
+  /// que nao sao de status, e nos antigos que o backfill nao conseguiu ler —
+  /// nulo aqui quer dizer "nao sabemos", nunca "nao mudou".
+  statusDe       OsStatus?
+  statusPara     OsStatus?
   criadoEm       DateTime     @default(now())
 
   @@index([ordemServicoId, criadoEm])
+  /// A consulta do BI de produtividade: "todo fechamento no periodo".
+  /// `autorId` entra no indice porque a distincao entre fechou-pelo-app e
+  /// fechou-no-SGP (autor nulo) e lida em toda linha do resultado.
+  @@index([statusPara, criadoEm, autorId])
   @@map("os_eventos")
 }
 

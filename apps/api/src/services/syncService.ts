@@ -637,7 +637,17 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
           // Registra o MOTIVO: sem isto, a OS muda de status e ninguem sabe
           // por que — parece que alguem mexeu sem avisar.
           prisma.osEvento.create({
-            data: { ordemServicoId: os.id, tipo: "status", descricao: decisao.descricao },
+            data: {
+              ordemServicoId: os.id,
+              tipo: "status",
+              descricao: decisao.descricao,
+              // SEM `autorId`, e isso nao e omissao: foi o SGP que encerrou, nao
+              // uma pessoa daqui. O BI de produtividade le exatamente essa
+              // ausencia como "fechou por fora do app" — atribuir a alguem
+              // seria creditar a um tecnico um trabalho que ninguem registrou.
+              statusDe: os.status,
+              statusPara: decisao.status,
+            },
           }),
         ]);
         mexidas.push({ id: os.id, tecnicoId: os.tecnicoId });

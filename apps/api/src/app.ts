@@ -28,6 +28,7 @@ import { canaisWhatsappRouter } from "./routes/canaisWhatsapp.js";
 import { smtpRouter } from "./routes/smtp.js";
 import { diagnosticoRouter } from "./routes/diagnostico.js";
 import { jornadaRouter } from "./routes/jornada.js";
+import { produtividadeRouter } from "./routes/produtividade.js";
 import { frotaRouter } from "./routes/frota.js";
 import { webhooksWhatsappRouter } from "./routes/webhooksWhatsapp.js";
 import { clienteChatRouter } from "./routes/clienteChat.js";
@@ -106,6 +107,7 @@ export function createApp() {
   app.use("/admin/smtp", smtpRouter);
   app.use("/admin/diagnostico", diagnosticoRouter);
   app.use("/jornada", jornadaRouter);
+  app.use("/produtividade", produtividadeRouter);
   app.use("/chat-clientes", clienteChatRouter);
   app.use("/provedores/:provedorId/erp-config", erpConfigRouter);
   app.use("/provedores/:provedorId/tipos-os", tiposOsRouter);
