@@ -33,6 +33,7 @@ import {
   MessageSquareText,
   MoreHorizontal,
   Wallet,
+  Trophy,
   Truck,
 } from "lucide-react";
 
@@ -108,6 +109,18 @@ const NAV_ITEMS: {
     labelCurto: "ONU",
     icon: Router,
     ocultoPara: [UserRole.TECNICO],
+  },
+  /*
+   * Produtividade da equipe. PROVEDOR nao ve: a equipe e da HubISP, e o
+   * desempenho dela nao e informacao de cliente. TECNICO tambem nao — ver a
+   * rota em App.tsx.
+   */
+  {
+    to: "/produtividade",
+    label: "Produtividade",
+    labelCurto: "Equipe",
+    icon: Trophy,
+    ocultoPara: [UserRole.PROVEDOR, UserRole.TECNICO],
   },
   /*
    * Frota. PROVEDOR fica de fora: a posicao de uma viatura conta a um ISP

@@ -8,9 +8,12 @@ import {
   pesoDoTipo,
   pontuar,
   type Acompanhamento,
+  type BiProdutividade,
+  type ComoFechou,
   type ConcluidaDoTecnico,
   type Expediente,
-  type Pontuacao,
+  type LinhaTecnico,
+  type PesoTipo,
 } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 
@@ -43,57 +46,6 @@ import { prisma } from "../lib/prisma.js";
  *    UTC empurraria todo fechamento entre 21h e a meia-noite pro dia seguinte,
  *    e "quantas OS fecharam hoje" e a primeira pergunta da tela.
  */
-
-// ---------------------------------------------------------------------------
-// Tipos de saida
-// ---------------------------------------------------------------------------
-
-/** Como a OS chegou ao estado de concluida — quem, de fato, apertou. */
-export interface ComoFechou {
-  /** O proprio tecnico atribuido, pelo app. E o caminho que deixa rastro completo. */
-  eleMesmo: number;
-  /** Outra pessoa do ISPhub (tipicamente o gestor, pelo painel). */
-  outroUsuario: number;
-  /** Apareceu fechada na varredura do SGP — ninguem daqui registrou. */
-  peloSgp: number;
-}
-
-export interface LinhaTecnico {
-  usuarioId: string | null;
-  nome: string;
-  pontuacao: Pontuacao;
-  comoFechou: ComoFechou;
-  /** Quantos fechamentos caem em cada ramo — as chaves sao os ramos da uniao. */
-  acompanhamento: Record<Acompanhamento["tipo"], number>;
-  expediente: Record<Expediente["tipo"], number>;
-  /** Mediana do tempo entre "a caminho" e o fechamento. `null` sem amostra. */
-  duracaoMedianaMin: number | null;
-}
-
-export interface PesoTipo {
-  tipoOsId: string | null;
-  nome: string;
-  peso: number | null;
-  amostras: number;
-  medianaMin: number | null;
-}
-
-export interface BiProdutividade {
-  de: string;
-  ate: string;
-  resumo: {
-    concluidas: number;
-    pontos: number;
-    tecnicosAtivos: number;
-    /** Mediana geral de duracao — a referencia de todos os pesos. */
-    medianaGeralMin: number | null;
-    /** Falso enquanto algum tipo entrou sem peso medido. */
-    calibrado: boolean;
-  };
-  serie: { dia: string; concluidas: number; pontos: number }[];
-  tecnicos: LinhaTecnico[];
-  pesos: PesoTipo[];
-}
 
 // ---------------------------------------------------------------------------
 

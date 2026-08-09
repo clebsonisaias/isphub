@@ -198,3 +198,58 @@ export const EXPEDIENTE_ROTULO: Record<Expediente["tipo"], string> = {
   fora: "fora da jornada",
   nao_registrou: "sem jornada registrada",
 };
+
+// ---------------------------------------------------------------------------
+// O CONTRATO DO ENDPOINT
+//
+// Mora aqui, e nao no service, porque a tela consome exatamente estes tipos —
+// em `apps/api` o web nao alcanca, e redigitar a forma no cliente e como um
+// campo some de um lado e continua sendo lido do outro.
+// ---------------------------------------------------------------------------
+
+/** Como a OS chegou ao estado de concluida — quem, de fato, apertou. */
+export interface ComoFechou {
+  /** O proprio tecnico atribuido, pelo app. E o caminho que deixa rastro completo. */
+  eleMesmo: number;
+  /** Outra pessoa do ISPhub (tipicamente o gestor, pelo painel). */
+  outroUsuario: number;
+  /** Apareceu fechada na varredura do SGP — ninguem daqui registrou. */
+  peloSgp: number;
+}
+
+export interface LinhaTecnico {
+  usuarioId: string | null;
+  nome: string;
+  pontuacao: Pontuacao;
+  comoFechou: ComoFechou;
+  /** Quantos fechamentos caem em cada ramo — as chaves sao os ramos da uniao. */
+  acompanhamento: Record<Acompanhamento["tipo"], number>;
+  expediente: Record<Expediente["tipo"], number>;
+  /** Mediana do tempo entre "a caminho" e o fechamento. `null` sem amostra. */
+  duracaoMedianaMin: number | null;
+}
+
+export interface PesoTipo {
+  tipoOsId: string | null;
+  nome: string;
+  peso: number | null;
+  amostras: number;
+  medianaMin: number | null;
+}
+
+export interface BiProdutividade {
+  de: string;
+  ate: string;
+  resumo: {
+    concluidas: number;
+    pontos: number;
+    tecnicosAtivos: number;
+    /** Mediana geral de duracao — a referencia de todos os pesos. */
+    medianaGeralMin: number | null;
+    /** Falso enquanto algum tipo entrou sem peso medido. */
+    calibrado: boolean;
+  };
+  serie: { dia: string; concluidas: number; pontos: number }[];
+  tecnicos: LinhaTecnico[];
+  pesos: PesoTipo[];
+}

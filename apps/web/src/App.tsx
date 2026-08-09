@@ -22,6 +22,7 @@ import { FinanceiroProvisoesPage } from "@/pages/FinanceiroProvisoesPage";
 import { FinanceiroFrotaPage } from "@/pages/FinanceiroFrotaPage";
 import { FrotaVeiculosPage } from "@/pages/FrotaVeiculosPage";
 import { FrotaBiPage } from "@/pages/FrotaBiPage";
+import { ProdutividadePage } from "@/pages/ProdutividadePage";
 import { FrotaMapaPage } from "@/pages/FrotaMapaPage";
 import { VeiculoPage } from "@/pages/VeiculoPage";
 import { ChatPage } from "@/pages/ChatPage";
@@ -156,6 +157,20 @@ function App() {
                   aquela arvore inteira e ADMIN-only por desenho, e quem despacha
                   precisa saber quais viaturas existem.
                 */}
+                {/*
+                  Produtividade — ADMIN e GESTOR. TECNICO fica de fora: um
+                  ranking em que cada um ve a propria posicao contra a dos
+                  colegas muda o que as pessoas fazem, e essa e uma decisao de
+                  gestao, nao de codigo.
+                */}
+                <Route
+                  path="/produtividade"
+                  element={
+                    <RequireAuth roles={[UserRole.ADMIN, UserRole.GESTOR]}>
+                      <ProdutividadePage />
+                    </RequireAuth>
+                  }
+                />
                 <Route
                   path="/frota"
                   element={
