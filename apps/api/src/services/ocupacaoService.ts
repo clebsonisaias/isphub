@@ -1,4 +1,5 @@
 import {
+  rotuloVeiculo,
   decidirOcupacao,
   type OrigemOcupacao,
   type PapelOcupacao,
@@ -38,7 +39,7 @@ const SELECT = {
   declaradoPorId: true,
   odometroInicio: true,
   odometroFim: true,
-  veiculo: { select: { placa: true, modelo: true } },
+  veiculo: { select: { placa: true, apelido: true, modelo: true } },
   usuario: { select: { nome: true, nomeExibicao: true } },
   declaradoPor: { select: { nome: true, nomeExibicao: true } },
 } satisfies Prisma.OcupacaoVeiculoSelect;
@@ -49,6 +50,8 @@ export interface OcupacaoPublic {
   id: string;
   veiculoId: string;
   veiculoPlaca: string;
+  /** `"C011 · RGI4H16"`. Placa sozinha nao diz a ninguem QUAL carro e. */
+  veiculoRotulo: string;
   veiculoModelo: string;
   usuarioId: string;
   usuarioNome: string;
@@ -66,6 +69,7 @@ export function serializar(o: Linha): OcupacaoPublic {
     id: o.id,
     veiculoId: o.veiculoId,
     veiculoPlaca: o.veiculo.placa,
+    veiculoRotulo: rotuloVeiculo(o.veiculo.placa, o.veiculo.apelido),
     veiculoModelo: o.veiculo.modelo,
     usuarioId: o.usuarioId,
     usuarioNome: o.usuario.nomeExibicao || o.usuario.nome,

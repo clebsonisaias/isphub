@@ -1,4 +1,5 @@
 import {
+  rotuloVeiculo,
   formatarPlaca,
   normalizarPlaca,
   odometroMonotonico,
@@ -25,6 +26,16 @@ export interface VeiculoPublicFrota {
   placa: string;
   /** Com hifen no formato antigo — so exibicao. */
   placaFormatada: string;
+  /** Como a operacao CHAMA o carro. Nulo e o normal. */
+  apelido: string | null;
+  /**
+   * `"C011 · RGI4H16"` — o que TODA tela mostra.
+   *
+   * Montado no servidor pra que mapa, lista, BI e app digam a mesma coisa: duas
+   * montagens divergem no dia em que uma delas acrescenta o modelo, e ai o
+   * mesmo carro passa a ter dois nomes dependendo de onde se olha.
+   */
+  rotulo: string;
   modelo: string;
   marca: string | null;
   ano: number | null;
@@ -42,6 +53,7 @@ export interface VeiculoPublicFrota {
 const SELECT = {
   id: true,
   placa: true,
+  apelido: true,
   modelo: true,
   marca: true,
   ano: true,
@@ -63,6 +75,8 @@ function serializar(v: Linha): VeiculoPublicFrota {
     id: v.id,
     placa: v.placa,
     placaFormatada: formatarPlaca(v.placa),
+    apelido: v.apelido,
+    rotulo: rotuloVeiculo(v.placa, v.apelido),
     modelo: v.modelo,
     marca: v.marca,
     ano: v.ano,
@@ -109,6 +123,8 @@ export async function obter(id: string): Promise<Linha | null> {
 
 export interface CriarArgs {
   placa: string;
+  /** Como a operacao chama o carro ("C011"). */
+  apelido?: string | null;
   modelo: string;
   marca?: string | null;
   ano?: number | null;
@@ -132,6 +148,9 @@ export async function criar(args: CriarArgs): Promise<VeiculoPublicFrota> {
     const criado = await prisma.veiculo.create({
       data: {
         placa,
+        // Vazio vira NULO, e nao string vazia: `rotuloVeiculo` distingue os
+        // dois, e `""` produziria um separador orfao antes da placa.
+        apelido: args.apelido?.trim() || null,
         modelo: args.modelo.trim(),
         marca: args.marca?.trim() || null,
         ano: args.ano ?? null,
@@ -162,6 +181,7 @@ export async function editar(id: string, args: EditarArgs): Promise<VeiculoPubli
   if (!atual) throw new HttpError(404, "Veiculo nao encontrado");
 
   const data: Prisma.VeiculoUpdateInput = {};
+  if (args.apelido !== undefined) data.apelido = args.apelido?.trim() || null;
   if (args.modelo !== undefined) data.modelo = args.modelo.trim();
   if (args.marca !== undefined) data.marca = args.marca?.trim() || null;
   if (args.ano !== undefined) data.ano = args.ano ?? null;

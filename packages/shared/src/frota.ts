@@ -53,6 +53,49 @@ export function formatarPlaca(canonica: string): string {
 }
 
 /**
+ * Como o carro aparece pra quem opera: `"C011 · RGI4H16"`.
+ *
+ * Uma funcao so, e nao cada tela montando a sua, porque o mapa, a lista, o BI e
+ * o app precisam dizer a MESMA coisa — duas montagens divergem no dia em que
+ * alguem acrescenta o modelo em uma delas, e ai o mesmo carro tem dois nomes
+ * dependendo de onde se olha.
+ *
+ * A PLACA nunca sai: ela e a identidade legal e a chave de busca. O apelido
+ * vem na frente porque e o que o olho procura primeiro — num mapa com quatro
+ * pontos ninguem lembra qual e RGI4H16, mas todo mundo sabe qual e o C011.
+ *
+ * Sem apelido devolve so a placa formatada, sem separador orfao.
+ */
+export function rotuloVeiculo(placaCanonica: string, apelido: string | null | undefined): string {
+  const p = formatarPlaca(placaCanonica);
+  const a = apelido?.trim();
+  return a ? `${a} · ${p}` : p;
+}
+
+/**
+ * O APELIDO escondido no nome que o aparelho tem na plataforma do fornecedor.
+ *
+ * De `"C011 - RGI4H16"` sai `"C011"`; de `"C003 - FIAT UNO - HFX 3652"` sai
+ * `"C003 FIAT UNO"`. E o inverso de `placaNoApelido`: tira o que e placa e
+ * devolve o resto, que e justamente como a operacao chama o carro.
+ *
+ * `null` quando nao sobra nada — um aparelho chamado so `"RGI4H16"` nao tem
+ * apelido, tem placa.
+ */
+export function apelidoNoNomeDoAparelho(nome: string | null | undefined): string | null {
+  if (!nome) return null;
+  const pedacos = nome.split(/[^A-Za-z0-9]+/).filter((p) => p.length > 0);
+  const janela = janelaDaPlaca(nome);
+  const restantes = janela
+    ? [...pedacos.slice(0, janela.de), ...pedacos.slice(janela.ate + 1)]
+    : pedacos;
+  const resto = restantes.join(" ").trim();
+  return resto ? resto.slice(0, 40) : null;
+}
+
+
+
+/**
  * A placa escondida no APELIDO que o aparelho tem na plataforma do fornecedor.
  *
  * Os nomes vem assim: `"C011 - RGI4H16"`, `"Meu carro"`, `"C013-DWO2H41"`. Quem
@@ -67,23 +110,44 @@ export function formatarPlaca(canonica: string): string {
  * decidir no lugar de quem sabe.
  */
 export function placaNoApelido(apelido: string | null | undefined): string | null {
-  if (!apelido) return null;
-  const candidatos = [
-    // Os pedacos, para `"C011 - RGI4H16"`.
-    ...apelido.split(/[^A-Za-z0-9]+/),
-    /*
-     * E o nome INTEIRO, para `"HFX-3652"` — a placa antiga escrita com o hifen
-     * de leitura quebra em dois pedacos que, sozinhos, nao sao placa nenhuma.
-     * Sem esta linha, justamente o formato mais comum no Brasil ficava de fora.
-     */
-    apelido,
-  ]
-    .map(normalizarPlaca)
-    .filter((p) => p.length > 0 && placaValida(p));
-  // `new Set` porque `"RGI4H16 - RGI4H16"` e repeticao, nao ambiguidade.
-  const unicos = [...new Set(candidatos)];
-  return unicos.length === 1 ? unicos[0]! : null;
+  return janelaDaPlaca(apelido)?.placa ?? null;
 }
+
+/**
+ * A placa e ONDE ela esta, em pedacos — a base das duas funcoes acima.
+ *
+ * Varre janelas CONTIGUAS de pedacos porque a placa nem sempre e um pedaco so:
+ * `"C003 - FIAT UNO - HFX 3652"` quebra em cinco, e nem `"HFX"` nem `"3652"`
+ * sao placa isolados. Sem juntar vizinhos, o formato antigo escrito com espaco
+ * — o mais comum no Brasil — nao seria reconhecido em lugar nenhum.
+ *
+ * Duas placas DIFERENTES no mesmo nome devolve `null`: e ambiguidade, e
+ * escolher uma seria decidir no lugar de quem sabe.
+ */
+function janelaDaPlaca(
+  apelido: string | null | undefined,
+): { placa: string; de: number; ate: number } | null {
+  if (!apelido) return null;
+  const pedacos = apelido.split(/[^A-Za-z0-9]+/).filter((p) => p.length > 0);
+
+  const achados: { placa: string; de: number; ate: number }[] = [];
+  for (let i = 0; i < pedacos.length; i += 1) {
+    let junto = "";
+    for (let j = i; j < pedacos.length; j += 1) {
+      junto += normalizarPlaca(pedacos[j]!);
+      if (junto.length > 7) break;
+      if (placaValida(junto)) {
+        achados.push({ placa: junto, de: i, ate: j });
+        break;
+      }
+    }
+  }
+
+  const distintas = [...new Set(achados.map((a) => a.placa))];
+  return distintas.length === 1 ? achados[0]! : null;
+}
+
+
 
 // ---------------------------------------------------------------------------
 // ODOMETRO

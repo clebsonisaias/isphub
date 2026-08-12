@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MapContainer, Marker, Polyline, Popup, CircleMarker } from "react-leaflet";
-import { EMOJI_VEICULO, formatarPlaca, idadeDaPosicao, posicaoVelha } from "@isphub/shared";
+import { EMOJI_VEICULO, idadeDaPosicao, posicaoVelha } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
 import { AnimatedPage } from "@/components/AnimatedPage";
 import { Button } from "@/components/ui/button";
@@ -169,7 +169,7 @@ export function FrotaMapaPage() {
                             <span className="mr-1" aria-hidden>
                               {EMOJI_VEICULO[v.tipo]}
                             </span>
-                            {formatarPlaca(v.placa)}
+                            {v.rotulo}
                           </p>
                           <p className="text-xs">{v.modelo}</p>
                           <p className="text-xs">
@@ -214,7 +214,7 @@ export function FrotaMapaPage() {
                             <span className="mr-1" aria-hidden>
                               {EMOJI_VEICULO[v.tipo]}
                             </span>
-                            {formatarPlaca(v.placa)}
+                            {v.rotulo}
                           </span>
                           {/* Ícone + texto, nunca só cor — quem não distingue
                               verde de cinza precisa do mesmo aviso. */}

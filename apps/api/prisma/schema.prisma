@@ -1248,6 +1248,16 @@ model Veiculo {
   /// `@@unique([provedorId, placa])` seria pior — o Postgres trata NULL como
   /// distinto, entao N carros da propria operacao poderiam ter a mesma placa.
   placa  String        @unique
+  /// Como a operacao CHAMA este carro no dia a dia — "C011", "Suporte 1".
+  ///
+  /// Placa identifica; apelido RECONHECE. Num mapa com quatro pontos, ninguem
+  /// lembra que RGI4H16 e o carro do plantao — e a propria plataforma do
+  /// rastreador ja batiza os aparelhos assim ("C011 - RGI4H16"), porque quem
+  /// opera precisa disso.
+  ///
+  /// Nulo e o normal: o campo e conveniencia, e um carro sem apelido continua
+  /// perfeitamente identificado pela placa.
+  apelido String?       @db.VarChar(40)
   modelo String        @db.VarChar(80)
   marca  String?       @db.VarChar(60)
   ano    Int?

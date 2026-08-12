@@ -4,7 +4,6 @@ import {
   OS_STATUS_ABERTOS,
   OsStatus,
   UserRole,
-  formatarPlaca,
   type DetalhesTecnicos,
   type Endereco,
   type FilaItem,
@@ -75,7 +74,7 @@ export function OrdemServicoDetailDialog({
    * O gate `podeDespachar` nao e zelo: `GET /frota/ordens-servico/:id/veiculos`
    * e ADMIN/GESTOR, e sem ele o tecnico tomaria 403 ao abrir a PROPRIA OS.
    */
-  const [viaturas, setViaturas] = useState<{ veiculoId: string; veiculoPlaca: string; usuarioNome: string }[]>([]);
+  const [viaturas, setViaturas] = useState<{ veiculoId: string; veiculoPlaca: string; veiculoRotulo: string; usuarioNome: string }[]>([]);
   useEffect(() => {
     if (!podeDespachar) return;
     frotaMapaApi
@@ -207,7 +206,7 @@ export function OrdemServicoDetailDialog({
               {podeDespachar && viaturas.length > 0 ? (
                 <Info
                   label={viaturas.length > 1 ? "Viaturas" : "Viatura"}
-                  value={[...new Set(viaturas.map((v) => formatarPlaca(v.veiculoPlaca)))].join(" · ")}
+                  value={[...new Set(viaturas.map((v) => v.veiculoRotulo))].join(" · ")}
                 />
               ) : null}
               <Info label="Designado no SGP" value={os.tecnicoSgpNome} />

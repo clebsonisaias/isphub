@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import {
   formatarCustoPorKm,
   formatarMoeda,
-  formatarPlaca,
   litrosOciosos,
   paraCentavos,
   SEM_BASE_MOTIVO_ROTULO,
@@ -312,7 +311,7 @@ function BlocoComportamento({ uso, carregando }: { uso: BiUso | null; carregando
                 <li key={e.veiculoId ?? `sem-${i}`} className="flex items-center justify-between gap-3 text-sm">
                   <span className="min-w-0 truncate">
                     {e.placa ? (
-                      formatarPlaca(e.placa)
+                      e.placa
                     ) : (
                       /* Rastreador sem vinculo vigente: a ocorrencia existe e o
                          carro nao — some-la seria perder o sinal. */
@@ -382,7 +381,7 @@ function BlocoAuditoria({ auditoria, carregando }: { auditoria: BiAuditoria | nu
                   <li key={d.veiculoId} className="rounded-md border border-warning/40 bg-warning/5 p-3 text-sm">
                     <div className="flex flex-wrap items-baseline justify-between gap-2">
                       <Link to={`/frota/veiculos/${d.veiculoId}`} className="font-medium hover:underline">
-                        {formatarPlaca(d.placa)}
+                        {d.placa}
                       </Link>
                       <span className="tabular-nums text-xs text-muted-foreground">
                         cobertura do rastreador {d.coberturaPct ?? "—"}%
@@ -469,7 +468,7 @@ function BlocoAuditoria({ auditoria, carregando }: { auditoria: BiAuditoria | nu
             <ul className="mt-2 flex flex-col gap-1.5 text-sm">
               {semBase.map((d) => (
                 <li key={d.veiculoId} className="flex flex-wrap items-baseline justify-between gap-2">
-                  <span>{formatarPlaca(d.placa)}</span>
+                  <span>{d.placa}</span>
                   <span className="text-xs text-muted-foreground">
                     {d.veredito.tipo === "sem_base" && SEM_BASE_MOTIVO_ROTULO[d.veredito.motivo]}
                   </span>
@@ -497,7 +496,7 @@ function ListaSimples({
           <li key={i.id} className="flex flex-wrap items-baseline justify-between gap-2">
             {i.veiculoId ? (
               <Link to={`/frota/veiculos/${i.veiculoId}`} className="hover:underline">
-                {formatarPlaca(i.placa)}
+                {i.placa}
               </Link>
             ) : (
               <span className="text-muted-foreground">{i.placa}</span>
@@ -557,7 +556,7 @@ function RankingGasto({ custo }: { custo: BiCusto }) {
         vazio="Nenhuma despesa lançada com veículo no período."
         itens={visiveis.map((v) => ({
           id: v.veiculoId,
-          rotulo: formatarPlaca(v.placa),
+          rotulo: v.placa,
           valor: v.gastoTotal,
           detalhe: detalheGasto(v),
         }))}
@@ -712,7 +711,7 @@ function TabelaCusto({ veiculos, uso }: { veiculos: LinhaVeiculo[]; uso: BiUso |
               <tr key={v.veiculoId} className="border-b border-border/50">
                 <td className="px-4 py-2">
                   <Link to={`/frota/veiculos/${v.veiculoId}`} className="font-medium hover:underline">
-                    {formatarPlaca(v.placa)}
+                    {v.placa}
                   </Link>
                   <span className="ml-2 text-xs text-muted-foreground">{v.modelo}</span>
                 </td>

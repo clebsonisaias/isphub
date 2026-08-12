@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Feather from "@expo/vector-icons/Feather";
 import { useQuery } from "@tanstack/react-query";
-import { EMOJI_VEICULO, formatarPlaca, type PapelOcupacao, type TipoVeiculo } from "@isphub/shared";
+import { EMOJI_VEICULO, type PapelOcupacao, type TipoVeiculo } from "@isphub/shared";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { colors, font, radius, space } from "@/theme/tokens";
@@ -42,6 +42,8 @@ export interface VeiculoParaJornada {
   id: string;
   placa: string;
   placaFormatada: string;
+  /** `"C011 · RGI4H16"` — do servidor, igual ao da web. */
+  rotulo: string;
   modelo: string;
   tipo: TipoVeiculo;
   ocupantes: OcupanteResumo[];
@@ -171,14 +173,14 @@ export function FolhaViatura({
                   onPress={() => escolher(v)}
                   accessibilityRole="button"
                   accessibilityState={{ selected: ativo }}
-                  accessibilityLabel={`Viatura ${v.placaFormatada}, ${v.modelo}${
+                  accessibilityLabel={`Viatura ${v.rotulo}, ${v.modelo}${
                     v.ocupantes.length > 0 ? `, com ${v.ocupantes.map((o) => o.nome).join(", ")}` : ", livre"
                   }`}
                   style={({ pressed }) => [e.item, ativo && e.itemAtivo, pressed && { opacity: 0.85 }]}
                 >
                   <Text style={e.emoji}>{EMOJI_VEICULO[v.tipo]}</Text>
                   <View style={e.itemTexto}>
-                    <Text style={[e.placa, ativo && { color: colors.brandInk }]}>{formatarPlaca(v.placa)}</Text>
+                    <Text style={[e.placa, ativo && { color: colors.brandInk }]}>{v.rotulo}</Text>
                     <Text style={e.modelo} numberOfLines={1}>
                       {v.modelo}
                     </Text>
@@ -218,7 +220,7 @@ export function FolhaViatura({
             */}
             <Text style={e.escolhido} numberOfLines={1}>
               <Text aria-hidden>{EMOJI_VEICULO[veiculo.tipo]} </Text>
-              {formatarPlaca(veiculo.placa)} · {veiculo.modelo}
+              {veiculo.rotulo} · {veiculo.modelo}
             </Text>
 
             {/* A PERGUNTA: entrar junto ou assumir. */}

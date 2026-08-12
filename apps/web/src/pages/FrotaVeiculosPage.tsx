@@ -183,7 +183,7 @@ export function FrotaVeiculosPage() {
                       <p className="flex flex-wrap items-center gap-2">
                         {/* tabular-nums: a placa e alfanumerica de largura fixa —
                             sem isso a coluna dança entre linhas. */}
-                        <span className="font-semibold tabular-nums">{v.placaFormatada}</span>
+                        <span className="font-semibold tabular-nums">{v.rotulo}</span>
                         <Badge status={v.status} />
                       </p>
                       <p className="truncate text-sm text-muted-foreground">
@@ -252,6 +252,7 @@ function DialogVeiculo({
   const [cor, setCor] = useState("");
   const [tipo, setTipo] = useState<TipoVeiculo>("carro");
   const [status, setStatus] = useState<StatusVeiculo>("ativo");
+  const [apelido, setApelido] = useState("");
   const [odometro, setOdometro] = useState("");
   const [salvando, setSalvando] = useState(false);
 
@@ -260,6 +261,7 @@ function DialogVeiculo({
   useEffect(() => {
     if (!aberto) return;
     setPlaca(veiculo?.placaFormatada ?? "");
+    setApelido(veiculo?.apelido ?? "");
     setModelo(veiculo?.modelo ?? "");
     setMarca(veiculo?.marca ?? "");
     setAno(veiculo?.ano ? String(veiculo.ano) : "");
@@ -277,6 +279,7 @@ function DialogVeiculo({
     setSalvando(true);
     try {
       const dados: VeiculoInput = {
+        apelido: apelido.trim() || null,
         modelo: modelo.trim(),
         marca: marca.trim() || null,
         ano: ano.trim() ? Number(ano) : null,
@@ -286,7 +289,7 @@ function DialogVeiculo({
       };
       if (veiculo) {
         await veiculosApi.editar(veiculo.id, { ...dados, status });
-        onSalvo(`${veiculo.placaFormatada} atualizado`);
+        onSalvo(`${veiculo.rotulo} atualizado`);
       } else {
         await veiculosApi.criar({ ...dados, placa: placaCanonica });
         onSalvo(`${formatarPlaca(placaCanonica)} cadastrado`);
@@ -302,7 +305,7 @@ function DialogVeiculo({
     <Dialog open={aberto} onOpenChange={(o) => !o && onFechar()}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>{veiculo ? `Editar ${veiculo.placaFormatada}` : "Novo veículo"}</DialogTitle>
+          <DialogTitle>{veiculo ? `Editar ${veiculo.rotulo}` : "Novo veículo"}</DialogTitle>
           <DialogDescription>
             {veiculo
               ? "A placa não muda: ela identifica o veículo no histórico inteiro."
@@ -337,6 +340,20 @@ function DialogVeiculo({
             <Label htmlFor="marca">Marca</Label>
             <Input id="marca" value={marca} onChange={(e) => setMarca(e.target.value)} placeholder="Fiat" />
           </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="apelido">Apelido</Label>
+            <Input
+              id="apelido"
+              value={apelido}
+              onChange={(e) => setApelido(e.target.value)}
+              placeholder="C011"
+              maxLength={40}
+            />
+            <p className="text-xs text-muted-foreground">
+              Como a equipe chama este carro. Aparece na frente da placa no mapa e nas listas.
+            </p>
+          </div>
+
           <div className="space-y-1.5">
             <Label htmlFor="modelo">Modelo</Label>
             <Input id="modelo" value={modelo} onChange={(e) => setModelo(e.target.value)} placeholder="Uno" />

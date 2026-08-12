@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  apelidoNoNomeDoAparelho,
   placaNoApelido,
+  rotuloVeiculo,
   decidirOcupacao,
   formatarPlaca,
   normalizarPlaca,
@@ -35,6 +37,38 @@ describe("normalizarPlaca", () => {
   });
 });
 
+describe("rótulo do veículo", () => {
+  it("apelido na frente, placa sempre junto", () => {
+    /*
+     * O apelido vem primeiro porque e o que o olho procura — num mapa com
+     * quatro pontos ninguem lembra qual e RGI4H16, mas todo mundo sabe qual e o
+     * C011. A placa nunca sai: e a identidade legal e a chave de busca.
+     */
+    expect(rotuloVeiculo("RGI4H16", "C011")).toBe("C011 · RGI4H16");
+    expect(rotuloVeiculo("HFX3652", "C003")).toBe("C003 · HFX-3652");
+  });
+
+  it("sem apelido é só a placa — nunca um separador órfão", () => {
+    expect(rotuloVeiculo("RGI4H16", null)).toBe("RGI4H16");
+    expect(rotuloVeiculo("HFX3652", "   ")).toBe("HFX-3652");
+  });
+});
+
+describe("apelido escondido no nome do aparelho", () => {
+  it("tira a placa e devolve como a operação chama o carro", () => {
+    expect(apelidoNoNomeDoAparelho("C011 - RGI4H16")).toBe("C011");
+    expect(apelidoNoNomeDoAparelho("C003 - FIAT UNO - HFX 3652")).toBe("C003 FIAT UNO");
+  });
+
+  it("nome que é só placa não tem apelido nenhum", () => {
+    // Inclusive a placa antiga com hifen, que quebra em dois pedacos e
+    // sobraria como se fosse apelido.
+    expect(apelidoNoNomeDoAparelho("RGI4H16")).toBeNull();
+    expect(apelidoNoNomeDoAparelho("HFX-3652")).toBeNull();
+    expect(apelidoNoNomeDoAparelho(null)).toBeNull();
+  });
+});
+
 describe("placa escondida no apelido do aparelho", () => {
   it("acha a placa no nome que o fornecedor usa", () => {
     // Os nomes reais da conta vem assim.
@@ -54,6 +88,15 @@ describe("placa escondida no apelido do aparelho", () => {
     expect(placaNoApelido("C011")).toBeNull();
     expect(placaNoApelido("")).toBeNull();
     expect(placaNoApelido(null)).toBeNull();
+  });
+
+  it("acha a placa QUEBRADA em pedaços — o formato mais comum no Brasil", () => {
+    /*
+     * `"C003 - FIAT UNO - HFX 3652"` quebra em cinco, e nem "HFX" nem "3652"
+     * sao placa isolados. Sem juntar vizinhos, a placa antiga escrita com
+     * espaco nao seria reconhecida em lugar nenhum — e ela e a mais comum.
+     */
+    expect(placaNoApelido("C003 - FIAT UNO - HFX 3652")).toBe("HFX3652");
   });
 
   it("DUAS placas no mesmo nome é ambiguidade — ninguém escolhe por você", () => {

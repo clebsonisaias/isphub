@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import {
+  rotuloVeiculo,
   sensoresParaExibir,
   simplificarTrilha,
   type DicionarioSensores,
@@ -358,6 +359,8 @@ export async function configsVencidas(agora: Date) {
 export interface PosicaoNoMapa {
   veiculoId: string;
   placa: string;
+  /** `"C011 · RGI4H16"` — como o carro aparece pra quem opera. */
+  rotulo: string;
   modelo: string;
   /** Decide o pictograma do marcador — carro, moto, van, caminhao. */
   tipo: TipoVeiculo;
@@ -388,7 +391,9 @@ export async function mapaAoVivo(where: Record<string, unknown> = {}): Promise<P
     select: {
       rastreadorId: true,
       rastreador: { select: { comunicando: true, ignicao: true, bateriaPct: true, bloqueado: true } },
-      veiculo: { select: { id: true, placa: true, modelo: true, tipo: true, provedor: { select: { nome: true } } } },
+      veiculo: {
+        select: { id: true, placa: true, apelido: true, modelo: true, tipo: true, provedor: { select: { nome: true } } },
+      },
     },
   });
   if (vinculos.length === 0) return [];
@@ -422,6 +427,9 @@ export async function mapaAoVivo(where: Record<string, unknown> = {}): Promise<P
     saida.push({
       veiculoId: v.veiculo.id,
       placa: v.veiculo.placa,
+      // O rotulo vem PRONTO do servidor, e nao montado em cada tela: e o que
+      // faz o mapa, a lista e o app chamarem o mesmo carro do mesmo jeito.
+      rotulo: rotuloVeiculo(v.veiculo.placa, v.veiculo.apelido),
       modelo: v.veiculo.modelo,
       tipo: v.veiculo.tipo,
       provedorNome: v.veiculo.provedor?.nome ?? null,

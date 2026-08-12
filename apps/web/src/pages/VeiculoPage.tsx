@@ -4,7 +4,6 @@ import {
   EMOJI_VEICULO,
   EVENTO_RASTREADOR_ROTULO,
   formatarDistancia,
-  formatarPlaca,
   idadeDaPosicao,
   type EventoRastreadorTipo,
 } from "@isphub/shared";
@@ -151,7 +150,7 @@ export function VeiculoPage() {
               {veiculo ? (
                 <>
                   <span aria-hidden>{EMOJI_VEICULO[veiculo.tipo]}</span>
-                  {formatarPlaca(veiculo.placa)}
+                  {veiculo.rotulo}
                   <span className="text-base font-normal text-muted-foreground">{veiculo.modelo}</span>
                 </>
               ) : (

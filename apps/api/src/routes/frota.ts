@@ -29,6 +29,8 @@ frotaRouter.use(requireAuth);
 const rolesLeitura = [UserRole.ADMIN, UserRole.GESTOR] as const;
 
 const veiculoBase = {
+  // Como a operacao chama o carro ("C011"). Nulo e o normal.
+  apelido: z.string().trim().max(40).nullish(),
   modelo: z.string().trim().min(1).max(80),
   marca: z.string().trim().max(60).nullish(),
   ano: z.number().int().min(1900).max(2100).nullish(),

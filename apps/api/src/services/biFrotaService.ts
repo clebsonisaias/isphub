@@ -4,6 +4,7 @@ import {
   chaveDiaBrasileiro,
   coberturaPct,
   COBERTURA_MINIMA_PCT,
+  rotuloVeiculo,
   dormindo,
   consumoPorAbastecimento,
   custoPorKm,
@@ -98,6 +99,7 @@ async function veiculosDoEscopo(escopo: Record<string, unknown>) {
     select: {
       id: true,
       placa: true,
+      apelido: true,
       modelo: true,
       provedor: { select: { nome: true } },
       vinculos: { where: { fimEm: null }, select: { rastreadorId: true }, take: 1 },
@@ -175,7 +177,7 @@ export async function custo(escopo: Record<string, unknown>, de: Date, ate: Date
 
     linhas.push({
       veiculoId: v.id,
-      placa: v.placa,
+      placa: rotuloVeiculo(v.placa, v.apelido),
       modelo: v.modelo,
       provedorNome: v.provedor?.nome ?? null,
       temRastreador: v.vinculos.length > 0,
@@ -262,7 +264,13 @@ export async function uso(escopo: Record<string, unknown>, de: Date, ate: Date):
   ]);
 
   const semDistPorId = new Map(semDistancia.map((s) => [s.veiculoId, s._count._all]));
-  const placaPorId = new Map(veiculos.map((v) => [v.id, v.placa]));
+  /*
+   * O ROTULO ("C011 · RGI4H16"), e nao a placa crua — o campo se chama `placa`
+   * por historia, mas o que ele carrega e o que a tela MOSTRA. Montar aqui
+   * evita cada bloco do BI inventar a propria juncao, e a tela nao reformata em
+   * cima (ela imprime como veio).
+   */
+  const placaPorId = new Map(veiculos.map((v) => [v.id, rotuloVeiculo(v.placa, v.apelido)]));
 
   const linhas = veiculos.map((v) => {
     if (v.vinculos.length === 0) {
@@ -276,13 +284,13 @@ export async function uso(escopo: Record<string, unknown>, de: Date, ate: Date):
     if (minhas.length === 0) {
       return {
         veiculoId: v.id,
-        placa: v.placa,
+        placa: rotuloVeiculo(v.placa, v.apelido),
         rastreamento: { tipo: "sem_movimento", coberturaPct: cobertura } as Rastreamento,
       };
     }
     return {
       veiculoId: v.id,
-      placa: v.placa,
+      placa: rotuloVeiculo(v.placa, v.apelido),
       rastreamento: {
         tipo: "medido",
         kmGps: Math.round(minhas.reduce((s, t) => s + (t.distanciaMetros ?? 0), 0) / 1000),
@@ -390,7 +398,13 @@ export async function auditoria(escopo: Record<string, unknown>, de: Date, ate: 
     }),
   ]);
 
-  const placaPorId = new Map(veiculos.map((v) => [v.id, v.placa]));
+  /*
+   * O ROTULO ("C011 · RGI4H16"), e nao a placa crua — o campo se chama `placa`
+   * por historia, mas o que ele carrega e o que a tela MOSTRA. Montar aqui
+   * evita cada bloco do BI inventar a propria juncao, e a tela nao reformata em
+   * cima (ela imprime como veio).
+   */
+  const placaPorId = new Map(veiculos.map((v) => [v.id, rotuloVeiculo(v.placa, v.apelido)]));
 
   /*
    * A DIVERGENCIA, por INTERVALO DE ABASTECIMENTO — e nao pelo periodo inteiro.
@@ -435,7 +449,7 @@ export async function auditoria(escopo: Record<string, unknown>, de: Date, ate: 
 
     divergencias.push({
       veiculoId: v.id,
-      placa: v.placa,
+      placa: rotuloVeiculo(v.placa, v.apelido),
       veredito: avaliarDivergencia({ razao: atual, cobertura, historico }),
       kmOdometro: ultimoIni && ultimoFim ? ultimoFim.km - ultimoIni.km : null,
       kmGps:

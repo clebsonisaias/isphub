@@ -20,6 +20,10 @@ export interface VeiculoFrota {
   placa: string;
   /** Com hifen no formato antigo. Use SEMPRE este pra exibir. */
   placaFormatada: string;
+  /** Como a operacao chama o carro ("C011"). */
+  apelido: string | null;
+  /** `"C011 · RGI4H16"` — montado no SERVIDOR, pra toda tela dizer o mesmo. */
+  rotulo: string;
   modelo: string;
   marca: string | null;
   ano: number | null;
@@ -36,6 +40,7 @@ export interface VeiculoFrota {
 
 export interface VeiculoInput {
   placa?: string;
+  apelido?: string | null;
   modelo?: string;
   marca?: string | null;
   ano?: number | null;
@@ -62,6 +67,8 @@ export const veiculosApi = {
 export interface VeiculoNoMapa {
   veiculoId: string;
   placa: string;
+  /// `"C011 · RGI4H16"` — montado no SERVIDOR.
+  rotulo: string;
   modelo: string;
   tipo: TipoVeiculo;
   provedorNome: string | null;
@@ -142,7 +149,7 @@ export const frotaMapaApi = {
    * ADMIN/GESTOR: quem chamar sem o gate leva 403 na propria OS.
    */
   veiculosDaOs: (osId: string) =>
-    api.get<{ veiculoId: string; veiculoPlaca: string; usuarioNome: string }[]>(
+    api.get<{ veiculoId: string; veiculoPlaca: string; veiculoRotulo: string; usuarioNome: string }[]>(
       `/frota/ordens-servico/${osId}/veiculos`,
     ),
 
