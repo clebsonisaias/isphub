@@ -32,7 +32,9 @@ import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
 import { cn } from "@/lib/utils";
 import { Link } from "react-router-dom";
-import { Map as MapIcon, Plus, Truck } from "lucide-react";
+import { Download, KeyRound, Map as MapIcon, Plus, Truck } from "lucide-react";
+import { ImportarRastreadoresDialog } from "@/components/frota/ImportarRastreadoresDialog";
+import { CredencialRastreamentoDialog } from "@/components/frota/CredencialRastreamentoDialog";
 
 /**
  * FROTA — cadastro de veiculos.
@@ -74,6 +76,8 @@ export function FrotaVeiculosPage() {
   const [busca, setBusca] = useState("");
   const [editando, setEditando] = useState<VeiculoFrota | null>(null);
   const [criando, setCriando] = useState(false);
+  const [importando, setImportando] = useState(false);
+  const [credencial, setCredencial] = useState(false);
 
   const carregar = useCallback(async () => {
     setErro(null);
@@ -121,6 +125,19 @@ export function FrotaVeiculosPage() {
                   <MapIcon className="size-4" aria-hidden />
                   Ver no mapa
                 </Link>
+              </Button>
+              {/*
+                Importar fica ao lado de "Novo veículo" porque e a MESMA
+                intencao — pôr carro na frota — por outro caminho: um a um na
+                mão, ou de uma vez a partir de quem ja tem aparelho instalado.
+              */}
+              <Button variant="ghost" onClick={() => setCredencial(true)}>
+                <KeyRound className="size-4" aria-hidden />
+                Credencial
+              </Button>
+              <Button variant="ghost" onClick={() => setImportando(true)}>
+                <Download className="size-4" aria-hidden />
+                Importar da PlataformaTK
               </Button>
               <Button onClick={() => setCriando(true)}>
                 <Plus className="size-4" aria-hidden />
@@ -205,6 +222,12 @@ export function FrotaVeiculosPage() {
           setEditando(null);
           void carregar();
         }}
+      />
+      <CredencialRastreamentoDialog aberto={credencial} aoFechar={() => setCredencial(false)} />
+      <ImportarRastreadoresDialog
+        aberto={importando}
+        aoFechar={() => setImportando(false)}
+        aoImportar={() => void carregar()}
       />
     </AppShell>
   );

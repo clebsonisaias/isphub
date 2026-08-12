@@ -52,6 +52,39 @@ export function formatarPlaca(canonica: string): string {
   return PLACA_ANTIGA.test(canonica) ? `${canonica.slice(0, 3)}-${canonica.slice(3)}` : canonica;
 }
 
+/**
+ * A placa escondida no APELIDO que o aparelho tem na plataforma do fornecedor.
+ *
+ * Os nomes vem assim: `"C011 - RGI4H16"`, `"Meu carro"`, `"C013-DWO2H41"`. Quem
+ * batizou nao seguiu contrato nenhum, entao isto e um PALPITE — e por ser
+ * palpite devolve `null` em vez de forcar: uma placa errada aqui nao produz um
+ * cadastro feio, produz um rastreador vinculado ao carro de outra pessoa, e
+ * dali em diante o mapa, as viagens e o custo por quilometro ficam todos
+ * atribuidos ao veiculo errado.
+ *
+ * Quebra o nome em pedacos e aceita SO se exatamente um deles for uma placa
+ * valida. Dois candidatos = ambiguo = `null`, porque escolher um dos dois seria
+ * decidir no lugar de quem sabe.
+ */
+export function placaNoApelido(apelido: string | null | undefined): string | null {
+  if (!apelido) return null;
+  const candidatos = [
+    // Os pedacos, para `"C011 - RGI4H16"`.
+    ...apelido.split(/[^A-Za-z0-9]+/),
+    /*
+     * E o nome INTEIRO, para `"HFX-3652"` — a placa antiga escrita com o hifen
+     * de leitura quebra em dois pedacos que, sozinhos, nao sao placa nenhuma.
+     * Sem esta linha, justamente o formato mais comum no Brasil ficava de fora.
+     */
+    apelido,
+  ]
+    .map(normalizarPlaca)
+    .filter((p) => p.length > 0 && placaValida(p));
+  // `new Set` porque `"RGI4H16 - RGI4H16"` e repeticao, nao ambiguidade.
+  const unicos = [...new Set(candidatos)];
+  return unicos.length === 1 ? unicos[0]! : null;
+}
+
 // ---------------------------------------------------------------------------
 // ODOMETRO
 // ---------------------------------------------------------------------------

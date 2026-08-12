@@ -155,4 +155,53 @@ export const frotaMapaApi = {
     api.post<{ id: string }>(`/frota/rastreadores/${rastreadorId}/vincular`, { veiculoId }),
 
   desvincular: (rastreadorId: string) => api.post<void>(`/frota/rastreadores/${rastreadorId}/desvincular`, {}),
+
+  /**
+   * O que a conta do fornecedor tem e o ISPhub ainda nao.
+   *
+   * A chave de API e vinculada a UMA conta: trocar a chave troca a frota que o
+   * sistema enxerga por inteiro. Sem isto, o gestor teria de abrir o portal do
+   * fornecedor e copiar identificador por identificador.
+   */
+  disponiveis: () => api.get<RastreadorDisponivel[]>("/frota/rastreadores/disponiveis"),
+
+  importar: (itens: { identificadorExterno: string; placa: string; modelo?: string | null }[]) =>
+    api.post<ResultadoImportacao[]>("/frota/rastreadores/importar", { itens }),
 };
+
+export interface CredencialRastreamento {
+  id: string;
+  baseUrl: string;
+  /** Mascarada NO SERVIDOR. A chave inteira nunca sai de la. */
+  chaveMascarada: string;
+  intervaloPollingSegundos: number;
+  ativo: boolean;
+  ultimaColetaEm: string | null;
+  ultimaColetaOk: boolean | null;
+  ultimaColetaMensagem: string | null;
+}
+
+export const credencialRastreamentoApi = {
+  obter: () => api.get<CredencialRastreamento | null>("/frota/config"),
+  salvar: (chave: string) => api.put<CredencialRastreamento>("/frota/config", { chave }),
+  testar: () => api.post<{ ok: boolean; mensagem?: string }>("/frota/config/testar", {}),
+};
+
+export interface RastreadorDisponivel {
+  identificadorExterno: string;
+  nome: string | null;
+  modelo: string | null;
+  intervaloSegundos: number | null;
+  temComandoCorte: boolean;
+  instaladoEm: string | null;
+  /** Palpite do servidor a partir do apelido. A tela PEDE confirmacao. */
+  placaSugerida: string | null;
+  veiculoExistenteId: string | null;
+}
+
+export interface ResultadoImportacao {
+  identificadorExterno: string;
+  placa: string;
+  veiculoCriado: boolean;
+  rastreadorId: string;
+}

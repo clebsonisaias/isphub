@@ -245,6 +245,50 @@ frotaRouter.get(
   asyncHandler(async (_req, res) => res.json(await rastreadores.listarRastreadores())),
 );
 
+/**
+ * O que a conta do fornecedor tem e o ISPhub ainda nao.
+ *
+ * ADMIN, e nao GESTOR: importar cria VEICULO, que e cadastro-mestre. E leitura
+ * pura — quem grava e o POST abaixo, com as placas confirmadas.
+ */
+frotaRouter.get(
+  "/rastreadores/disponiveis",
+  requireRole(UserRole.ADMIN),
+  asyncHandler(async (req, res) => {
+    const { provedorId } = z.object({ provedorId: z.string().uuid().nullish() }).parse(req.query);
+    res.json(await rastreadores.listarDisponiveis(provedorId ?? null));
+  }),
+);
+
+const importacaoSchema = z.object({
+  provedorId: z.string().uuid().nullish(),
+  itens: z
+    .array(
+      z.object({
+        identificadorExterno: z.string().trim().min(1).max(60),
+        /*
+         * A placa vem do CORPO porque quem confirma e o gestor. O palpite do
+         * apelido do aparelho serve pra PREENCHER o campo na tela, nunca pra
+         * gravar sozinho: errar aqui nao produz um cadastro feio, produz um
+         * rastreador vinculado ao carro de outra pessoa.
+         */
+        placa: z.string().trim().min(1).max(10),
+        modelo: z.string().trim().max(80).nullish(),
+      }),
+    )
+    .min(1)
+    .max(50),
+});
+
+frotaRouter.post(
+  "/rastreadores/importar",
+  requireRole(UserRole.ADMIN),
+  asyncHandler(async (req, res) => {
+    const { itens, provedorId } = importacaoSchema.parse(req.body);
+    res.status(201).json(await rastreadores.importarDoFornecedor(itens, provedorId ?? null, req.user!.sub));
+  }),
+);
+
 const rastreadorSchema = z.object({
   identificadorExterno: z.string().trim().min(1).max(60),
   apelido: z.string().trim().max(60).nullish(),

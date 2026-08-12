@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  placaNoApelido,
   decidirOcupacao,
   formatarPlaca,
   normalizarPlaca,
@@ -31,6 +32,36 @@ describe("normalizarPlaca", () => {
 
   it("normaliza tambem a placa Mercosul", () => {
     expect(normalizarPlaca("noc-4d34")).toBe("NOC4D34");
+  });
+});
+
+describe("placa escondida no apelido do aparelho", () => {
+  it("acha a placa no nome que o fornecedor usa", () => {
+    // Os nomes reais da conta vem assim.
+    expect(placaNoApelido("C011 - RGI4H16")).toBe("RGI4H16");
+    expect(placaNoApelido("C013-DWO2H41")).toBe("DWO2H41");
+    expect(placaNoApelido("HFX-3652")).toBe("HFX3652");
+  });
+
+  it("nome sem placa devolve null, e nao um palpite", () => {
+    /*
+     * O apelido nao segue contrato nenhum — quem batizou o aparelho escreveu o
+     * que quis. Forcar uma placa daqui nao produz um cadastro feio: produz um
+     * rastreador vinculado ao carro de outra pessoa, e dali em diante o mapa, as
+     * viagens e o custo por quilometro ficam todos no veiculo errado.
+     */
+    expect(placaNoApelido("Meu carro")).toBeNull();
+    expect(placaNoApelido("C011")).toBeNull();
+    expect(placaNoApelido("")).toBeNull();
+    expect(placaNoApelido(null)).toBeNull();
+  });
+
+  it("DUAS placas no mesmo nome é ambiguidade — ninguém escolhe por você", () => {
+    expect(placaNoApelido("RGI4H16 reserva do QGJ4A90")).toBeNull();
+  });
+
+  it("a mesma placa repetida não é ambiguidade", () => {
+    expect(placaNoApelido("RGI4H16 - RGI4H16")).toBe("RGI4H16");
   });
 });
 

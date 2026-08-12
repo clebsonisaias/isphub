@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { RastreadorConnector, RastreadorFornecedor } from "@isphub/shared";
 import type { Prisma } from "@prisma/client";
+import { normalizarPlaca, placaNoApelido, placaValida } from "@isphub/shared";
 import { createPlataformaTkConnector } from "../connectors/plataformatk.js";
 import { decrypt, encrypt, maskToken } from "../lib/crypto.js";
 import { prisma } from "../lib/prisma.js";
@@ -223,4 +224,157 @@ export async function historicoVinculos(rastreadorId: string) {
     veiculoPlaca: l.veiculo.placa,
     veiculoModelo: l.veiculo.modelo,
   }));
+}
+
+// ---------------------------------------------------------------------------
+// IMPORTAR DA CONTA DO FORNECEDOR
+// ---------------------------------------------------------------------------
+
+/**
+ * O que existe na conta do fornecedor e ainda NAO esta cadastrado aqui.
+ *
+ * Existe porque a chave de API e vinculada a UMA conta ("A chave de API e
+ * vinculada exclusivamente a uma conta especifica e so tem acesso aos
+ * rastreadores dessa conta", diz a documentacao deles). Trocar a chave troca a
+ * frota inteira que o ISPhub enxerga — e sem esta tela o gestor teria de
+ * descobrir os identificadores no portal do fornecedor e digitar um por um.
+ *
+ * SO LEITURA. Quem decide o que entra e o gestor, pela mesma razao que
+ * `sincronizarCadastro` nao cria nada sozinho: a conta pode ter aparelho que
+ * nao e nosso, e importar tudo encheria a frota de carro alheio.
+ */
+export interface RastreadorDisponivel {
+  identificadorExterno: string;
+  nome: string | null;
+  modelo: string | null;
+  intervaloSegundos: number | null;
+  temComandoCorte: boolean;
+  instaladoEm: string | null;
+  /** Palpite a partir do nome. `null` = a tela pede a placa. */
+  placaSugerida: string | null;
+  /** Ja existe um veiculo com essa placa? Entao e vincular, nao criar. */
+  veiculoExistenteId: string | null;
+}
+
+export async function listarDisponiveis(provedorId: string | null): Promise<RastreadorDisponivel[]> {
+  /*
+   * A config CRUA, com a chave cifrada — `obterConfig` devolve mascarada, que e
+   * o certo pra tela e inutil pra falar com o fornecedor.
+   */
+  const config = await prisma.rastreadorConfig.findFirst({
+    where: { provedorId, fornecedor: "plataformatk", ativo: true },
+    select: { fornecedor: true, baseUrl: true, chaveCifrada: true },
+  });
+  if (!config) throw new HttpError(409, "Nenhuma credencial de rastreamento ativa para este escopo");
+
+  const conector = buildRastreadorConnector(config);
+  const r = await conector.cadastroDeTodos();
+  if (r.tipo !== "lista") {
+    throw new HttpError(502, `O fornecedor nao devolveu o cadastro: ${r.motivo}`);
+  }
+
+  const jaTemos = new Set(
+    (await prisma.rastreador.findMany({ select: { identificadorExterno: true } })).map(
+      (x) => x.identificadorExterno,
+    ),
+  );
+
+  const novos = r.itens.filter((c) => !jaTemos.has(c.identificadorExterno));
+  const placas = novos.map((c) => placaNoApelido(c.nome)).filter((p): p is string => p !== null);
+  const veiculosPorPlaca = new Map(
+    (
+      await prisma.veiculo.findMany({ where: { placa: { in: placas } }, select: { id: true, placa: true } })
+    ).map((v) => [v.placa, v.id]),
+  );
+
+  return novos.map((c) => {
+    const placa = placaNoApelido(c.nome);
+    return {
+      identificadorExterno: c.identificadorExterno,
+      nome: c.nome,
+      modelo: c.modelo,
+      intervaloSegundos: c.intervaloSegundos,
+      temComandoCorte: c.temComandoCorte,
+      instaladoEm: c.instaladoEm,
+      placaSugerida: placa,
+      veiculoExistenteId: placa ? (veiculosPorPlaca.get(placa) ?? null) : null,
+    };
+  });
+}
+
+export interface ItemImportacao {
+  identificadorExterno: string;
+  /** A placa CONFIRMADA pelo gestor — nao a sugerida. */
+  placa: string;
+  modelo?: string | null;
+}
+
+export interface ResultadoImportacao {
+  identificadorExterno: string;
+  placa: string;
+  veiculoCriado: boolean;
+  rastreadorId: string;
+}
+
+/**
+ * Cria rastreador + veiculo (se preciso) e vincula os dois.
+ *
+ * A placa vem do CORPO, e nao do palpite: `placaNoApelido` sugere na tela, o
+ * gestor confirma, e e a confirmacao que grava. Um palpite aceito em silencio
+ * aqui vincularia o aparelho ao carro de outra pessoa — e dali em diante o
+ * mapa, as viagens e o custo por quilometro ficariam todos no veiculo errado.
+ *
+ * Item a item, e nao numa transacao unica: se o terceiro falhar, os dois
+ * primeiros ficam importados. Uma transacao unica desfaria tudo e obrigaria o
+ * gestor a adivinhar qual dos itens era o problema.
+ */
+export async function importarDoFornecedor(
+  itens: ItemImportacao[],
+  provedorId: string | null,
+  criadoPorId: string,
+): Promise<ResultadoImportacao[]> {
+  const feitos: ResultadoImportacao[] = [];
+
+  for (const item of itens) {
+    const placa = normalizarPlaca(item.placa);
+    if (!placaValida(placa)) throw new HttpError(400, `Placa invalida: ${item.placa}`);
+
+    const existente = await prisma.veiculo.findUnique({ where: { placa }, select: { id: true } });
+    // O flag e sobre o VEICULO ter nascido agora — e o que a tela usa pra dizer
+    // "3 importados, 2 carros novos". Media pelo vinculo, ele respondia outra
+    // pergunta e mentia em todo carro que ja existia sem rastreador.
+    const veiculoCriado = existente === null;
+    const veiculo =
+      existente ??
+      (await prisma.veiculo.create({
+        data: {
+          placa,
+          // "A informar" e melhor que o apelido do APARELHO: `"C011 - RGI4H16"`
+          // e o nome do rastreador, nao o modelo do carro, e grava-lo ali daria
+          // ao campo uma cara de preenchido que dispensaria alguem de corrigir.
+          modelo: item.modelo?.trim() || "A informar",
+          tipo: "carro",
+          status: "ativo",
+          ativo: true,
+          provedorId,
+        },
+        select: { id: true },
+      }));
+
+    const rastreador = await criarRastreador({
+      identificadorExterno: item.identificadorExterno,
+      apelido: item.modelo ?? null,
+      provedorId,
+    });
+    await vincular(rastreador.id, veiculo.id, criadoPorId);
+
+    feitos.push({
+      identificadorExterno: item.identificadorExterno,
+      placa,
+      veiculoCriado,
+      rastreadorId: rastreador.id,
+    });
+  }
+
+  return feitos;
 }
