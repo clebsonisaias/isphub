@@ -369,7 +369,13 @@ export async function auditoria(escopo: Record<string, unknown>, de: Date, ate: 
         vinculos: { some: { fimEm: null, veiculoId: { in: ids } } },
         OR: [{ ultimaPosicaoEm: null }, { ultimaPosicaoEm: { lt: new Date(Date.now() - OFFLINE_MUDO_MS) } }],
       },
-      select: { ultimaPosicaoEm: true, vinculos: { where: { fimEm: null }, select: { veiculoId: true }, take: 1 } },
+      select: {
+        ultimaPosicaoEm: true,
+        // O segundo relogio. Sem ele, "sem energia" e "sem sinal de satelite"
+        // eram a mesma linha — e so o segundo deixa o carro rodando invisivel.
+        ultimaComunicacaoEm: true,
+        vinculos: { where: { fimEm: null }, select: { veiculoId: true }, take: 1 },
+      },
     }),
     prisma.viagem.groupBy({
       by: ["veiculoId"],
@@ -486,10 +492,31 @@ export async function auditoria(escopo: Record<string, unknown>, de: Date, ate: 
         viagens: s._count._all,
       }))
       .sort((a, b) => b.viagens - a.viagens),
-    rastreadoresMudos: mudos.map((r) => ({
-      veiculoId: r.vinculos[0]?.veiculoId ?? null,
-      placa: r.vinculos[0] ? (placaPorId.get(r.vinculos[0].veiculoId) ?? null) : null,
-      desde: r.ultimaPosicaoEm?.toISOString() ?? null,
-    })),
+    rastreadoresMudos: mudos.map((r) => {
+      /*
+       * O RADIO fresco com o GPS velho e o caso que passava despercebido: o
+       * aparelho comunica, o sensor COMMUNICATION segue `UP`, nenhum
+       * `ficou_offline` dispara — e mesmo assim ha um carro rodando que o mapa
+       * mostra parado na ultima coordenada que ele conseguiu.
+       */
+      const motivo =
+        r.ultimaPosicaoEm === null
+          ? "nunca_reportou"
+          : r.ultimaComunicacaoEm === null
+            ? // Sem leitura do radio nao da pra separar cego de calado. Chutar
+              // "calado" seria afirmar que o aparelho esta morto com base na
+              // ausencia de um campo que talvez nunca tenha sido coletado.
+              "indeterminado"
+            : r.ultimaComunicacaoEm.getTime() >= Date.now() - OFFLINE_MUDO_MS
+              ? "cego"
+              : "calado";
+      return {
+        veiculoId: r.vinculos[0]?.veiculoId ?? null,
+        placa: r.vinculos[0] ? (placaPorId.get(r.vinculos[0].veiculoId) ?? null) : null,
+        desde: r.ultimaPosicaoEm?.toISOString() ?? null,
+        motivo,
+        comunicouEm: r.ultimaComunicacaoEm?.toISOString() ?? null,
+      } satisfies BiAuditoria["rastreadoresMudos"][number];
+    }),
   };
 }

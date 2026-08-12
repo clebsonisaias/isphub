@@ -234,7 +234,23 @@ export async function coletarDeUmaConfig(
         bateriaPct: s ? s.bateriaPct : undefined,
         bloqueado: s ? s.bloqueado : undefined,
         sensores: s ? s.sensores : undefined,
-        ...(resultado.tipo === "posicao" ? { ultimaPosicaoEm: new Date(resultado.registradoEm) } : {}),
+        ...(resultado.tipo === "posicao"
+          ? {
+              ultimaPosicaoEm: new Date(resultado.registradoEm),
+              /*
+               * Os DOIS relogios, e nao um so. `registradoEm` e quando o
+               * aparelho conseguiu coordenada; `comunicouEm` e quando ele falou
+               * com o servidor. Um rastreador em garagem mantem o segundo vivo
+               * e congela o primeiro — o COMMUNICATION segue `UP`, nenhum
+               * `ficou_offline` dispara, e o mapa mostra o carro num lugar onde
+               * ele nao esta mais.
+               *
+               * Condicional para nao APAGAR o valor bom quando o fornecedor
+               * omite o campo: `undefined` faz o Prisma nao tocar na coluna.
+               */
+              ...(resultado.comunicouEm ? { ultimaComunicacaoEm: new Date(resultado.comunicouEm) } : {}),
+            }
+          : {}),
       },
     });
 

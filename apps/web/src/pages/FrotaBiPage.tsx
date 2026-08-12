@@ -436,7 +436,7 @@ function BlocoAuditoria({ auditoria, carregando }: { auditoria: BiAuditoria | nu
 
         {auditoria.rastreadoresMudos.length > 0 && (
           <section>
-            <h3 className="mb-2 text-sm font-medium">Rastreador calado</h3>
+            <h3 className="mb-2 text-sm font-medium">Rastreador sem posição nova</h3>
             <p className="mb-2 text-xs text-muted-foreground">
               Enquanto estiver assim, o número de GPS deste carro está incompleto — e é isso, e não o
               motorista, que explica qualquer divergência dele.
@@ -446,7 +446,9 @@ function BlocoAuditoria({ auditoria, carregando }: { auditoria: BiAuditoria | nu
                 id: r.veiculoId ?? `mudo-${i}`,
                 veiculoId: r.veiculoId,
                 placa: r.placa ?? "sem veículo vinculado",
-                direita: r.desde ? `desde ${new Date(r.desde).toLocaleString("pt-BR")}` : "nunca reportou",
+                direita: `${MOTIVO_MUDO[r.motivo]}${
+                  r.desde ? ` · desde ${new Date(r.desde).toLocaleString("pt-BR")}` : ""
+                }`,
               }))}
               total={auditoria.rastreadoresMudos.length}
             />
@@ -510,6 +512,21 @@ function ListaSimples({
     </>
   );
 }
+
+/**
+ * Cada motivo pede uma ACAO diferente, e por isso vira texto e nao icone.
+ *
+ * "Falando, mas sem GPS" e o unico dos tres que descreve um carro possivelmente
+ * EM MOVIMENTO — o aparelho comunica, nenhum alerta de offline dispara, e o
+ * mapa mostra o veiculo parado na ultima coordenada. Quem le precisa saber que
+ * este e diferente de "sem energia".
+ */
+const MOTIVO_MUDO: Record<BiAuditoria["rastreadoresMudos"][number]["motivo"], string> = {
+  cego: "falando, mas sem sinal de GPS",
+  calado: "sem comunicação nenhuma",
+  nunca_reportou: "nunca reportou posição",
+  indeterminado: "sem leitura do rádio ainda",
+};
 
 /** Quantas barras cabem antes de o ranking virar lista. */
 const TETO_RANKING = 12;

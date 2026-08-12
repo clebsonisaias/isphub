@@ -148,6 +148,7 @@ describe("coletarDeUmaConfig", () => {
           lng: -35.34,
           registradoEm: "2026-08-08T02:49:42.000Z",
           velocidadeKmh: 0,
+          comunicouEm: null,
         }),
       }),
     );
@@ -189,6 +190,7 @@ describe("coletarDeUmaConfig", () => {
           lng: 2,
           registradoEm: "2026-08-08T02:00:00.000Z",
           velocidadeKmh: null,
+          comunicouEm: null,
         }),
       }),
     );
@@ -216,6 +218,7 @@ describe("coletarDeUmaConfig", () => {
           lng: -35.34,
           registradoEm: "2026-08-08T02:49:42.000Z",
           velocidadeKmh: 42,
+          comunicouEm: null,
         }),
       }),
     );
@@ -244,6 +247,7 @@ describe("coletarDeUmaConfig", () => {
           lng: 2,
           registradoEm: "2026-08-08T03:00:00.000Z",
           velocidadeKmh: null,
+          comunicouEm: null,
         }),
       }),
     );
@@ -266,6 +270,7 @@ describe("coletarDeUmaConfig", () => {
           lng: 2,
           registradoEm: "2026-08-08T03:00:00.000Z",
           velocidadeKmh: null,
+          comunicouEm: null,
         }),
       }),
     );
@@ -311,6 +316,7 @@ describe("coletarDeUmaConfig", () => {
           lng: -35.34,
           registradoEm: "2026-08-08T02:49:42.000Z",
           velocidadeKmh: 20,
+          comunicouEm: null,
         }),
       }),
     );
@@ -349,6 +355,7 @@ describe("coletarDeUmaConfig", () => {
           lng: -35.34,
           registradoEm: "2026-08-08T02:49:42.000Z",
           velocidadeKmh: 0,
+          comunicouEm: null,
         }),
       }),
     );
@@ -394,6 +401,7 @@ describe("coletarDeUmaConfig", () => {
           lng: -35.34,
           registradoEm: "2026-08-08T02:49:42.000Z",
           velocidadeKmh: 55,
+          comunicouEm: null,
         }),
       }),
     );
@@ -433,6 +441,7 @@ describe("coletarDeUmaConfig", () => {
           lng: -35.34,
           registradoEm: "2026-08-08T02:49:42.000Z",
           velocidadeKmh: 0,
+          comunicouEm: null,
         }),
       }),
     );
@@ -460,6 +469,7 @@ describe("coletarDeUmaConfig", () => {
           lng: -35.34,
           registradoEm: "2026-08-08T02:49:42.000Z",
           velocidadeKmh: 120,
+          comunicouEm: null,
         }),
       }),
     );
@@ -500,6 +510,7 @@ describe("coletarDeUmaConfig", () => {
           // ANTES do `ultimoEm` da viagem aberta.
           registradoEm: "2026-08-08T02:49:42.000Z",
           velocidadeKmh: 55,
+          comunicouEm: null,
         }),
       }),
     );
@@ -541,6 +552,7 @@ describe("coletarDeUmaConfig", () => {
           lng: -35.34,
           registradoEm: "2026-08-08T02:49:42.000Z",
           velocidadeKmh: 55,
+          comunicouEm: null,
         }),
       }),
     );

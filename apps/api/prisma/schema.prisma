@@ -1531,6 +1531,19 @@ model Rastreador {
   /// Caches de leitura, recomputaveis a partir de PosicaoRastreador.
   /// Tri-estado: nulo = a consulta falhou, nao sabemos. Nao afirme.
   ultimaPosicaoEm DateTime?
+  /// Quando o APARELHO falou com o servidor do fornecedor pela ultima vez
+  /// (`lastCommunication` do `last-location`) — outro relogio, e nao um
+  /// sinonimo de `ultimaPosicaoEm`.
+  ///
+  /// A distancia entre os dois e um diagnostico que nenhum outro campo da. Um
+  /// rastreador em garagem, sob laje ou com a antena arrancada CONTINUA
+  /// comunicando: o sensor COMMUNICATION segue `UP`, nenhum `ficou_offline`
+  /// dispara, e o aparelho repete a ultima coordenada que conseguiu. O mapa
+  /// entao mostra o carro parado num lugar onde ele nao esta mais — e a
+  /// auditoria da frota, que mede cobertura pelos eventos de offline, nao ve
+  /// buraco nenhum. Com os dois relogios, "esta calado" e "esta falando mas
+  /// cego" deixam de ser a mesma coisa.
+  ultimaComunicacaoEm DateTime?
   ultimoStatusEm  DateTime?
   comunicando     Boolean?
   rastreando      Boolean?

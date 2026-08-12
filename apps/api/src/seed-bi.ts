@@ -160,7 +160,19 @@ async function main(): Promise<void> {
           modeloFornecedor: "CRX",
           intervaloFornecedorSeg: 30,
           temComandoCorte: true,
-          ultimaPosicaoEm: AGORA,
+          /*
+           * O RADIO, separado do GPS — e os dois casos que a auditoria precisa
+           * saber distinguir. O `rastreador_cego` fica com posicao velha e
+           * radio FRESCO: e o aparelho que comunica sem enxergar (garagem,
+           * antena), o unico caso em que ha um carro possivelmente rodando que
+           * o mapa mostra parado. Os demais ficam com os dois em dia.
+           */
+          ...(perfil.caso === "rastreador_cego"
+            ? {
+                ultimaPosicaoEm: new Date(AGORA.getTime() - 12 * 3600_000),
+                ultimaComunicacaoEm: AGORA,
+              }
+            : { ultimaPosicaoEm: AGORA, ultimaComunicacaoEm: AGORA }),
         },
       });
       rastreadorId = r.id;

@@ -416,5 +416,29 @@ export interface BiAuditoria {
   /** Sinais que NAO dependem de GPS — valem para a frota inteira. */
   abastecimentoSemRodagem: { veiculoId: string; placa: string; data: string; litros: string }[];
   viagensSemOcupacao: { veiculoId: string; placa: string; viagens: number }[];
-  rastreadoresMudos: { veiculoId: string | null; placa: string | null; desde: string | null }[];
+  rastreadoresMudos: {
+    veiculoId: string | null;
+    placa: string | null;
+    desde: string | null;
+    /**
+     * POR QUE ele esta mudo — e a diferenca decide quem vai consertar o que.
+     *
+     * - `calado`: nem radio nem GPS. Aparelho sem energia, chip sem saldo,
+     *   fusivel. O carro pode estar em qualquer lugar.
+     * - `cego`: o radio FALA e o GPS nao. Garagem, laje, antena arrancada — e o
+     *   caso perigoso, porque nenhum `ficou_offline` dispara (o sensor
+     *   COMMUNICATION segue `UP`) e o mapa continua mostrando o carro na ultima
+     *   coordenada, como se estivesse parado ali.
+     * - `nunca_reportou`: aparelho novo, ou vinculado ao veiculo errado.
+     * - `indeterminado`: nao ha leitura do radio ainda (a coluna nasceu depois
+     *   deste aparelho). NAO e "calado" — dizer "sem comunicacao" com base na
+     *   ausencia de um campo seria afirmar exatamente o que nao se sabe, que e
+     *   o erro que o resto deste modulo existe para evitar.
+     *
+     * Antes de o `lastCommunication` ser lido, os quatro eram a mesma linha.
+     */
+    motivo: "calado" | "cego" | "nunca_reportou" | "indeterminado";
+    /** Quando o RADIO falou pela ultima vez. `null` = nunca, ou ainda nao coletado. */
+    comunicouEm: string | null;
+  }[];
 }

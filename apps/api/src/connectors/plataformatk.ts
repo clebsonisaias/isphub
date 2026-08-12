@@ -62,6 +62,28 @@ function dorme(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/**
+ * A data no formato que a PlataformaTK de fato aceita: `2019-01-15T061100Z`,
+ * COMPACTO, sem os dois-pontos.
+ *
+ * Nao e capricho, e a diferenca entre a rota existir ou nao. `encodeURIComponent`
+ * de um ISO normal produz `2026-08-08T00%3A00%3A00Z`, e o roteador deles nao
+ * casa com isso — devolve **404**, que se le como "esse rastreador nao tem
+ * historico". Com a forma compacta a rota CASA, e ai o servidor deles responde
+ * **500**. Foi o que confundiu o diagnostico por duas sessoes: 404 parecia dado
+ * ausente quando era URL errada, e a URL certa revela o problema verdadeiro, que
+ * e do outro lado.
+ *
+ * O formato sai do unico exemplo executavel da documentacao do fornecedor:
+ *   /trackers/81688/history/2019-01-15T061100Z?distance=200&accuracy=medium
+ */
+export function dataCompactaPtk(iso: string): string {
+  // Os hifens da DATA ficam; so os dois-pontos da HORA saem. Conferido contra a
+  // API de producao: `2026-08-11T000000Z` casa (500), `20260811T000000Z` nao
+  // (404). Os milissegundos tambem precisam sair — `toISOString()` os inclui.
+  return iso.replace(/\.\d+/, "").replace(/(T\d{2}):(\d{2}):(\d{2})/, "$1$2$3");
+}
+
 export function createPlataformaTkConnector(creds: RastreadorCredenciais): RastreadorConnector {
   const base = creds.baseUrl.replace(/\/+$/, "");
 
@@ -243,6 +265,7 @@ export function createPlataformaTkConnector(creds: RastreadorCredenciais): Rastr
           longitude?: unknown;
           time?: unknown;
           speed?: unknown;
+          lastCommunication?: unknown;
         } | null;
 
         // Corpo vazio: o fornecedor respondeu e nao tem posicao. Prova positiva.
@@ -259,12 +282,22 @@ export function createPlataformaTkConnector(creds: RastreadorCredenciais): Rastr
           return { tipo: "indeterminado", motivo: "PTK: last-location sem `time` valido" };
         }
 
+        /*
+         * `lastCommunication` e OUTRO relogio, e nao um sinonimo de `time`: ele
+         * diz quando o aparelho falou, `time` diz quando ele conseguiu
+         * coordenada. Um rastreador em garagem mantem o radio vivo e repete a
+         * ultima posicao — o mapa mostra o carro num lugar onde ele nao esta, e
+         * nenhum `ficou_offline` dispara porque o COMMUNICATION segue UP.
+         */
+        const comunicou = typeof d.lastCommunication === "string" ? Date.parse(d.lastCommunication) : Number.NaN;
+
         return {
           tipo: "posicao",
           lat,
           lng,
           registradoEm: new Date(em).toISOString(),
           velocidadeKmh: comoNumero(d.speed),
+          comunicouEm: Number.isNaN(comunicou) ? null : new Date(comunicou).toISOString(),
         };
       } catch (e) {
         return { tipo: "indeterminado", motivo: motivo(e) };
@@ -274,10 +307,10 @@ export function createPlataformaTkConnector(creds: RastreadorCredenciais): Rastr
     async historico(id, inicioIso, fimIso, opcoes): Promise<ResultadoHistorico> {
       const distancia = opcoes?.distanciaM ?? 100;
       const precisao = opcoes?.precisao ?? "medium";
-      const trecho = fimIso ? `/${encodeURIComponent(fimIso)}` : "";
+      const trecho = fimIso ? `/${dataCompactaPtk(fimIso)}` : "";
       try {
         const d = await buscar(
-          `/trackers/${encodeURIComponent(id)}/history/${encodeURIComponent(inicioIso)}${trecho}` +
+          `/trackers/${encodeURIComponent(id)}/history/${dataCompactaPtk(inicioIso)}${trecho}` +
             `?distance=${distancia}&accuracy=${precisao}`,
         );
         if (!Array.isArray(d)) return { tipo: "trecho", pontos: [] };
@@ -304,7 +337,7 @@ export function createPlataformaTkConnector(creds: RastreadorCredenciais): Rastr
     async resumoDeDias(id, dataInicio, dataFim): Promise<ResultadoResumoDia> {
       const trecho = dataFim ? `/${encodeURIComponent(dataFim)}` : "";
       try {
-        const d = await buscar(`/trackers/${encodeURIComponent(id)}/day-summary/${encodeURIComponent(dataInicio)}${trecho}`);
+        const d = await buscar(`/trackers/${encodeURIComponent(id)}/day-summary/${dataInicio}${trecho}`);
         const lista = Array.isArray(d) ? d : d ? [d] : [];
         return {
           tipo: "resumo",

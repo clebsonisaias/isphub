@@ -1,0 +1,16 @@
+-- Rastreador: o relogio do RADIO, separado do relogio do GPS.
+--
+-- `ultimaPosicaoEm` sempre guardou o `time` do `last-location` — quando o
+-- aparelho conseguiu COORDENADA. O mesmo endpoint devolve `lastCommunication`,
+-- que e quando ele FALOU com o servidor, e nos nunca lemos esse campo.
+--
+-- A distancia entre os dois e um diagnostico que nenhum outro campo da. Um
+-- rastreador em garagem, sob laje ou com a antena arrancada continua
+-- comunicando normalmente: o sensor COMMUNICATION segue `UP`, nenhum
+-- `ficou_offline` dispara, e o aparelho repete a ultima coordenada que
+-- conseguiu. O mapa mostra o carro parado onde ele nao esta mais, e a auditoria
+-- da frota — que mede cobertura pelos eventos de offline — nao ve buraco algum.
+--
+-- Aditivo e NULO nos existentes: nulo aqui e "ainda nao coletamos", nao
+-- "nunca comunicou". A proxima coleta preenche.
+ALTER TABLE "rastreadores" ADD COLUMN "ultimaComunicacaoEm" TIMESTAMP(3);

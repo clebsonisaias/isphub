@@ -61,7 +61,29 @@ export interface RastreadorCredenciais {
  * `indeterminado` NUNCA justifica gravar nada.
  */
 export type ResultadoPosicao =
-  | { tipo: "posicao"; lat: number; lng: number; registradoEm: string; velocidadeKmh: number | null }
+  | {
+      tipo: "posicao";
+      lat: number;
+      lng: number;
+      /** Quando a COORDENADA foi obtida (`time`). */
+      registradoEm: string;
+      velocidadeKmh: number | null;
+      /**
+       * Quando o aparelho falou com o servidor pela ultima vez
+       * (`lastCommunication`) — INDEPENDENTE de ter conseguido posicao.
+       *
+       * Sao dois relogios distintos, e a distancia entre eles e um diagnostico
+       * que nenhum outro campo da: o radio pode estar vivo e o GPS mudo. Um
+       * aparelho em garagem, com antena arrancada ou sob laje comunica
+       * normalmente e continua mandando a MESMA coordenada velha — o mapa
+       * mostra o carro parado num lugar onde ele nao esta mais, e nenhum
+       * `ficou_offline` dispara, porque o COMMUNICATION segue UP.
+       *
+       * `null` quando o fornecedor nao mandou o campo: nulo aqui e "nao
+       * sabemos", e nao "nunca comunicou".
+       */
+      comunicouEm: string | null;
+    }
   /** Prova positiva: o fornecedor respondeu, este rastreador nunca reportou. */
   | { tipo: "sem_posicao" }
   | { tipo: "indeterminado"; motivo: string };
