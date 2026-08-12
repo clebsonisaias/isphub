@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  dormindo,
   bateriaPct,
   bloqueado,
   comunicando,
@@ -111,6 +112,25 @@ describe("leitura tri-estado", () => {
     expect(bateriaPct({ BAT: "" })).toBeNull();
     expect(bateriaPct({ BAT: "n/a" })).toBeNull();
     expect(bateriaPct({ BAT: "14.6" })).toBe(15);
+  });
+});
+
+describe("modo de economia", () => {
+  it("aparelho dormindo NÃO é aparelho quebrado", () => {
+    /*
+     * O `SLEEP` existe para uma NEGACAO. Sem ele, um rastreador em modo de
+     * economia — que para de reportar por desenho — entra na auditoria da frota
+     * como "sem comunicacao", e alguem e mandado olhar um carro cujo aparelho
+     * esta funcionando exatamente como foi configurado.
+     */
+    expect(dormindo({ SLEEP: "SLEEP" })).toBe(true);
+  });
+
+  it("a chave ausente é o acordado — ela não tem par", () => {
+    // O dicionario do fornecedor define `SLEEP` e mais nenhum valor: nao existe
+    // um "AWAKE" pra comparar, entao a ausencia E a resposta.
+    expect(dormindo({ COMMUNICATION: "UP", TRACKING: "ON" })).toBe(false);
+    expect(dormindo({})).toBe(false);
   });
 });
 

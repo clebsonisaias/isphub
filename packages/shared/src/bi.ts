@@ -429,6 +429,9 @@ export interface BiAuditoria {
      *   caso perigoso, porque nenhum `ficou_offline` dispara (o sensor
      *   COMMUNICATION segue `UP`) e o mapa continua mostrando o carro na ultima
      *   coordenada, como se estivesse parado ali.
+     * - `dormindo`: modo de economia LIGADO. O silencio e por desenho, nao
+     *   defeito — mandar alguem olhar o carro por isto e desperdicio, e acusar
+     *   o aparelho e injusto com ele.
      * - `nunca_reportou`: aparelho novo, ou vinculado ao veiculo errado.
      * - `indeterminado`: nao ha leitura do radio ainda (a coluna nasceu depois
      *   deste aparelho). NAO e "calado" — dizer "sem comunicacao" com base na
@@ -437,7 +440,7 @@ export interface BiAuditoria {
      *
      * Antes de o `lastCommunication` ser lido, os quatro eram a mesma linha.
      */
-    motivo: "calado" | "cego" | "nunca_reportou" | "indeterminado";
+    motivo: "calado" | "cego" | "dormindo" | "nunca_reportou" | "indeterminado";
     /** Quando o RADIO falou pela ultima vez. `null` = nunca, ou ainda nao coletado. */
     comunicouEm: string | null;
   }[];

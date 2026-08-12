@@ -4,6 +4,7 @@ import {
   chaveDiaBrasileiro,
   coberturaPct,
   COBERTURA_MINIMA_PCT,
+  dormindo,
   consumoPorAbastecimento,
   custoPorKm,
   diaDeDataCivil,
@@ -18,6 +19,9 @@ import {
   type VereditoDivergencia,
 } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
+// Reusado, e nao reescrito: a conversao do `Json` cru do fornecedor num mapa
+// tolerante ja existe e ja e usada pela coleta.
+import { comoMapaSensores } from "./frotaEventoService.js";
 
 /**
  * BI DA FROTA — custo, uso e o que nao bate.
@@ -374,6 +378,8 @@ export async function auditoria(escopo: Record<string, unknown>, de: Date, ate: 
         // O segundo relogio. Sem ele, "sem energia" e "sem sinal de satelite"
         // eram a mesma linha — e so o segundo deixa o carro rodando invisivel.
         ultimaComunicacaoEm: true,
+        // O mapa cru: e nele que mora o `SLEEP`, que explica silencio esperado.
+        sensores: true,
         vinculos: { where: { fimEm: null }, select: { veiculoId: true }, take: 1 },
       },
     }),
@@ -499,8 +505,16 @@ export async function auditoria(escopo: Record<string, unknown>, de: Date, ate: 
        * `ficou_offline` dispara — e mesmo assim ha um carro rodando que o mapa
        * mostra parado na ultima coordenada que ele conseguiu.
        */
-      const motivo =
-        r.ultimaPosicaoEm === null
+      /*
+       * O SLEEP vem PRIMEIRO, antes de qualquer juizo sobre radio ou GPS: um
+       * aparelho em modo de economia para de reportar por DESENHO. Sem esta
+       * verificacao ele entraria como "sem comunicacao", e alguem seria mandado
+       * olhar um carro cujo rastreador esta funcionando exatamente como
+       * configurado.
+       */
+      const motivo = dormindo(comoMapaSensores(r.sensores) ?? {})
+        ? "dormindo"
+        : r.ultimaPosicaoEm === null
           ? "nunca_reportou"
           : r.ultimaComunicacaoEm === null
             ? // Sem leitura do radio nao da pra separar cego de calado. Chutar

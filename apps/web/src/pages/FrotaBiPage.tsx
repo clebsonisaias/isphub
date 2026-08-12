@@ -524,6 +524,7 @@ function ListaSimples({
 const MOTIVO_MUDO: Record<BiAuditoria["rastreadoresMudos"][number]["motivo"], string> = {
   cego: "falando, mas sem sinal de GPS",
   calado: "sem comunicação nenhuma",
+  dormindo: "em modo de economia (silêncio esperado)",
   nunca_reportou: "nunca reportou posição",
   indeterminado: "sem leitura do rádio ainda",
 };

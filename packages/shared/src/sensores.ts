@@ -41,6 +41,15 @@ export const SENSOR = {
   IGNICAO: "ACC",
   BLOQUEIO: "CUT",
   BATERIA: "BAT",
+  /**
+   * Modo de economia do aparelho. Presente = ele DORMIU de proposito.
+   *
+   * Nao tem leitura booleana propria porque nao tem estado contrario: o
+   * dicionario do fornecedor define um valor so (`SLEEP`), e a ausencia da chave
+   * e o "acordado". O que importa dele e negativo — explicar um silencio que,
+   * sem esta chave, a auditoria classificaria como aparelho com defeito.
+   */
+  SLEEP: "SLEEP",
 } as const;
 
 export function lerSensores(statuses: StatusBruto[] | null | undefined): MapaSensores {
@@ -109,6 +118,22 @@ export function ignicao(m: MapaSensores): Ignicao {
   if (u === "ON" || u === "TRUE") return "ligada";
   if (u === "OFF" || u === "FALSE") return "desligada";
   return null;
+}
+
+/**
+ * O aparelho esta dormindo de proposito?
+ *
+ * Existe para uma NEGACAO, e nao para um painel: sem isto, um rastreador em modo
+ * de economia — que para de reportar por desenho — entra na auditoria da frota
+ * como "sem comunicacao", ou seja, acusado de defeito. Economia de bateria e
+ * silencio esperado; hardware quebrado e outra coisa, e quem le a lista precisa
+ * poder distinguir antes de mandar alguem olhar o carro.
+ *
+ * A chave nao tem par: o dicionario do fornecedor define o valor `SLEEP` e mais
+ * nenhum. Ausente = acordado.
+ */
+export function dormindo(m: MapaSensores): boolean {
+  return m[SENSOR.SLEEP] != null;
 }
 
 export function bateriaPct(m: MapaSensores): number | null {
