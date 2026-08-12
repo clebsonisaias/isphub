@@ -3,6 +3,7 @@ import { UserRole } from "@isphub/shared";
 import { prisma } from "./lib/prisma.js";
 import { encrypt } from "./lib/crypto.js";
 import { hashPassword } from "./services/authService.js";
+import { importarDoFornecedor } from "./services/rastreadorService.js";
 
 /**
  * Seed minimo: garante que exista um usuario admin para o primeiro acesso.
@@ -57,7 +58,27 @@ async function semearCredencialRastreador() {
     select: { id: true },
   });
   if (existente) {
-    console.log("[frota] credencial de rastreamento ja configurada. Nada a fazer.");
+    /*
+     * A REGRA CONTINUA SENDO NAO SOBRESCREVER — a variavel e o ponto de
+     * partida, nao a autoridade. `PLATAFORMATK_KEY_APLICAR` e a excecao, e ela
+     * existe porque a chave do fornecedor E POR CONTA: quando a operacao troca
+     * de conta, alguem precisa conseguir trocar a chave sem ter acesso ao
+     * banco, e ate aqui o unico caminho era a tela (que exige login de admin).
+     *
+     * Deliberadamente uma variavel SEPARADA, e nao "atualiza quando mudar":
+     * assim um deploy comum nunca reverte uma chave que um admin trocou pela
+     * tela. Quem liga isto esta declarando a intencao, e o log registra.
+     * Desligue depois de aplicar.
+     */
+    if (process.env.PLATAFORMATK_KEY_APLICAR !== "1") {
+      console.log("[frota] credencial de rastreamento ja configurada. Nada a fazer.");
+      return;
+    }
+    await prisma.rastreadorConfig.update({
+      where: { id: existente.id },
+      data: { chaveCifrada: encrypt(chave), ultimaColetaOk: null, ultimaColetaMensagem: null },
+    });
+    console.log("[frota] credencial SOBRESCRITA por PLATAFORMATK_KEY_APLICAR=1. Desligue a variavel.");
     return;
   }
 
@@ -67,8 +88,75 @@ async function semearCredencialRastreador() {
   console.log("[frota] credencial de rastreamento criada a partir de PLATAFORMATK_KEY (cifrada).");
 }
 
+/**
+ * Importa rastreadores DECLARADOS numa variavel de ambiente.
+ *
+ * Formato: `FROTA_IMPORTAR="537969:RGI4H16,538305:QGJ4A90"` — o id do aparelho
+ * no fornecedor e a PLACA do carro, confirmada por quem escreveu.
+ *
+ * Existe pela mesma razao da chave: quando a operacao troca de conta no
+ * fornecedor, a frota inteira que o ISPhub enxerga muda, e cadastrar aparelho
+ * por aparelho exige uma sessao de admin no painel. A variavel e a mesma
+ * declaracao que a tela faria — com a diferenca de ficar registrada na
+ * configuracao do ambiente, onde da pra auditar depois.
+ *
+ * A PLACA vem escrita, e nao adivinhada do apelido do aparelho: e a mesma regra
+ * da tela de importacao. Um palpite aceito em silencio vincularia o rastreador
+ * ao carro de outra pessoa, e dali em diante o mapa, as viagens e o custo por
+ * quilometro ficariam todos no veiculo errado.
+ *
+ * IDEMPOTENTE: aparelho ja cadastrado e pulado. Rodar de novo nao duplica nada.
+ */
+async function importarFrotaDeclarada() {
+  const bruto = process.env.FROTA_IMPORTAR?.trim();
+  if (!bruto) return;
+
+  const itens = bruto
+    .split(",")
+    .map((par) => par.trim())
+    .filter(Boolean)
+    .map((par) => {
+      const [id, placa] = par.split(":").map((x) => x?.trim() ?? "");
+      return { identificadorExterno: id, placa };
+    })
+    .filter((x) => x.identificadorExterno && x.placa);
+
+  if (itens.length === 0) {
+    console.warn(`[frota] FROTA_IMPORTAR nao tem par valido ("id:PLACA"): ${bruto}`);
+    return;
+  }
+
+  // O autor do vinculo. FK obrigatoria — sem admin nao ha o que registrar.
+  const admin = await prisma.usuario.findFirst({ where: { role: UserRole.ADMIN }, select: { id: true } });
+  if (!admin) {
+    console.warn("[frota] FROTA_IMPORTAR ignorada: nenhum admin cadastrado para assinar o vinculo.");
+    return;
+  }
+
+  const jaTemos = new Set(
+    (await prisma.rastreador.findMany({ select: { identificadorExterno: true } })).map(
+      (x) => x.identificadorExterno,
+    ),
+  );
+  const novos = itens.filter((x) => !jaTemos.has(x.identificadorExterno));
+  if (novos.length === 0) {
+    console.log("[frota] FROTA_IMPORTAR: todos os aparelhos declarados ja estao cadastrados.");
+    return;
+  }
+
+  const feitos = await importarDoFornecedor(novos, null, admin.id);
+  for (const f of feitos) {
+    console.log(
+      `[frota] importado ${f.identificadorExterno} -> ${f.placa}` +
+        (f.veiculoCriado ? " (veiculo criado; complete marca/modelo/ano)" : " (vinculado a veiculo existente)"),
+    );
+  }
+  console.log("[frota] FROTA_IMPORTAR aplicada. Desligue a variavel para nao repetir a leitura.");
+}
+
 main()
   .then(semearCredencialRastreador)
+  .then(importarFrotaDeclarada)
   .catch((err) => {
     console.error("Falha ao rodar o seed:", err);
     process.exitCode = 1;
