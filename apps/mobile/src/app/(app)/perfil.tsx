@@ -11,6 +11,7 @@ import { escolherFoto } from "@/features/chat/media";
 import { comprimirAvatar } from "@/features/perfil/media";
 import { atualizarPerfil, atualizarStatus, enviarFoto, removerFoto } from "@/features/perfil/api";
 import { StatusPicker } from "@/features/perfil/status-picker";
+import { CartaoMinhaLinha } from "@/features/linha-movel/cartao";
 import { Button, Card, Field, Hero, Muted, Screen } from "@/components/ui";
 import { colors, font, space } from "@/theme/tokens";
 
@@ -157,6 +158,14 @@ export default function Perfil() {
           }
         />
         <Muted style={{ marginTop: -space.sm }}>{enviandoFoto ? "Enviando foto…" : usuario.email}</Muted>
+
+        {/*
+          Primeiro cartao da tela, acima do que o tecnico edita: e a unica
+          informacao daqui que ele CONSULTA em campo — quanto de dado sobrou —
+          e a que ele nao tinha como saber de outro jeito. Some sozinho quando a
+          integracao nao esta configurada.
+        */}
+        <CartaoMinhaLinha />
 
         <Card style={{ gap: space.md }}>
           <Text style={{ fontSize: font.size.sm, fontWeight: font.weight.medium as "600", color: colors.ink2 }}>Status</Text>

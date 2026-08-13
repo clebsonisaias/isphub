@@ -23,7 +23,10 @@ import { usuariosApi, provedoresApi } from "@/lib/adminApi";
 import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
-import { Plus, Pencil, KeyRound } from "lucide-react";
+import { Plus, Pencil, KeyRound, Smartphone } from "lucide-react";
+
+import { VincularLinhaDialog } from "@/components/linha-movel/VincularLinhaDialog";
+import { CredencialLinhaMovelDialog } from "@/components/linha-movel/CredencialLinhaMovelDialog";
 
 function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
@@ -38,6 +41,9 @@ export function UsuariosPage() {
   const [dialogAberto, setDialogAberto] = useState(false);
   const [editando, setEditando] = useState<UsuarioPublic | null>(null);
   const [senhaAlvo, setSenhaAlvo] = useState<UsuarioPublic | null>(null);
+  /** Vínculo do chip corporativo — o CPF é digitado ali e não é guardado. */
+  const [linhaAlvo, setLinhaAlvo] = useState<UsuarioPublic | null>(null);
+  const [credencialAberta, setCredencialAberta] = useState(false);
 
   async function carregar() {
     setCarregando(true);
@@ -92,9 +98,14 @@ export function UsuariosPage() {
             Administradores, gestores, técnicos (login próprio — cada um vê só as OS atribuídas a ele) e provedores.
           </p>
         </div>
-        <Button variant="brand" onClick={abrirNovo}>
-          <Plus /> Novo usuário
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setCredencialAberta(true)}>
+            <Smartphone className="size-4" /> Telefonia móvel
+          </Button>
+          <Button variant="brand" onClick={abrirNovo}>
+            <Plus /> Novo usuário
+          </Button>
+        </div>
       </div>
 
       {carregando ? (
@@ -128,6 +139,14 @@ export function UsuariosPage() {
                   disabled={u.id === eu?.id}
                   title={u.id === eu?.id ? "Você não pode desativar sua própria conta" : "Ativo"}
                 />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setLinhaAlvo(u)}
+                  title="Linha móvel (chip corporativo)"
+                >
+                  <Smartphone className="size-4" />
+                </Button>
                 <Button variant="ghost" size="icon" onClick={() => setSenhaAlvo(u)} title="Redefinir senha">
                   <KeyRound className="size-4" />
                 </Button>
@@ -151,6 +170,11 @@ export function UsuariosPage() {
         }}
       />
       <RedefinirSenhaDialog usuario={senhaAlvo} onClose={() => setSenhaAlvo(null)} />
+      <VincularLinhaDialog usuario={linhaAlvo} onFechar={() => setLinhaAlvo(null)} />
+      <CredencialLinhaMovelDialog
+        aberto={credencialAberta}
+        aoFechar={() => setCredencialAberta(false)}
+      />
       </AnimatedPage>
     </AppShell>
   );

@@ -304,6 +304,28 @@ model Usuario {
   /// uso pessoal (perfil), nao de identidade de marca/badge cross-cutting.
   corDestaque     String? @db.VarChar(7)
 
+  /// Ponteiro para a linha movel corporativa (chip CITmax/Brazmovel) deste
+  /// usuario. Preenchido pelo ADMIN, no cadastro.
+  ///
+  /// **E o `lineId` da operadora, NAO o CPF, e isso e deliberado.** O CPF e a
+  /// unica porta para DESCOBRIR a linha (`GET /customer/cpf/{cpf}`; as
+  /// listagens gerais nao servem a este uso), mas nao e necessario para
+  /// CONSULTA-LA — `/line/{id}` basta. Entao o admin digita o CPF uma vez, na
+  /// tela de vinculo, e o que fica guardado e so este ponteiro opaco.
+  ///
+  /// Guardar o CPF cifrado teria custado tres coisas, todas evitadas aqui:
+  ///  - `encrypt()` usa IV aleatorio, entao o mesmo CPF cifra diferente a cada
+  ///    vez e um `@unique` NAO detectaria duplicata nenhuma;
+  ///  - um digito errado no cadastro produziria uma tela que FUNCIONA, com a
+  ///    linha de um estranho, indefinidamente e em silencio — com o lineId o
+  ///    erro aparece na hora do vinculo, com um humano olhando;
+  ///  - seria a primeira PII de funcionario em repouso no sistema (LGPD).
+  ///
+  /// Contrapartida aceita: trocar de chip nao se auto-corrige — a consulta passa
+  /// a dar "linha nao encontrada" e o admin revincula. Falhar visivelmente num
+  /// evento raro e melhor que acertar por acaso todo dia.
+  brazmovelLineId String? @unique
+
   ordensServico OrdemServico[]
   atribuicoes   Atribuicao[]
   eventos       OsEvento[]
@@ -1808,4 +1830,36 @@ model RastreadorConfig {
   atualizadoEm DateTime @updatedAt
 
   @@map("rastreador_configs")
+}
+
+/// Credencial da Brazmovel — a telefonia movel corporativa da CITmax.
+///
+/// **Uma so para a operacao inteira**, sem `provedorId`. O `RastreadorConfig`
+/// acima tem a coluna e ela nunca foi exercitada (a unica rota que grava passa
+/// sempre `provedorId: null`); aqui a dimensao nem existe de verdade: os
+/// tecnicos sao funcionarios da propria operacao, e o contrato com a operadora e
+/// da CITmax. Copiar a generalidade seria replicar codigo morto.
+///
+/// O token e do PARCEIRO e vale para a base INTEIRA da operadora — por isso ele
+/// nunca sai por rota nenhuma, nem mascarado, e quem decide o que cada usuario
+/// pode ver e a rota, nunca o conector.
+model BrazmovelConfig {
+  id String @id @default(uuid())
+
+  baseUrl String @default("https://api.brazmovel.com.br/v1")
+  /// "<iv_b64>:<tag_b64>:<ct_b64>" (AES-256-GCM, ver lib/crypto.ts).
+  tokenCifrado String
+  ativo        Boolean @default(true)
+
+  ultimoTesteEm DateTime?
+  ultimoTesteOk Boolean?
+  /// Guarda o status HTTP observado junto da mensagem: daqui a seis meses, a
+  /// diferenca entre "401" e "timeout" e a diferenca entre 5 minutos e 2 horas
+  /// de investigacao.
+  ultimoTesteMensagem String?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@map("brazmovel_configs")
 }

@@ -19,3 +19,4 @@ export * from "./viagens.js";
 export * from "./bi.js";
 export * from "./produtividade.js";
 export * from "./linhaDoTempo.js";
+export * from "./linhaMovel.js";

@@ -30,6 +30,7 @@ import { diagnosticoRouter } from "./routes/diagnostico.js";
 import { jornadaRouter } from "./routes/jornada.js";
 import { produtividadeRouter } from "./routes/produtividade.js";
 import { frotaRouter } from "./routes/frota.js";
+import { linhaMovelRouter } from "./routes/linhaMovel.js";
 import { webhooksWhatsappRouter } from "./routes/webhooksWhatsapp.js";
 import { clienteChatRouter } from "./routes/clienteChat.js";
 
@@ -119,6 +120,7 @@ export function createApp() {
   app.use("/dashboard", dashboardRouter);
   app.use("/financeiro", financeiroRouter);
   app.use("/frota", frotaRouter);
+  app.use("/linha-movel", linhaMovelRouter);
 
   app.use((_req, res) => {
     res.status(404).json({ error: "Rota nao encontrada" });
