@@ -39,6 +39,27 @@ Fase 3  EAS Build de produção  (um APK, uma migração)
 
 ---
 
+# Fase 0 — Infraestrutura de teste no `apps/mobile`
+
+**`apps/mobile` não tem teste nenhum:** zero arquivos, zero runner, nenhum script
+`test` no `package.json`. Só `apps/api` tem vitest (48 arquivos); os 19 da
+`apps/web` são Playwright e2e. As verificações que as fases seguintes pedem não
+são executáveis hoje.
+
+Escolhido: **vitest, restrito a lógica pura** — mesmo runner que a API já usa, o
+que evita introduzir um segundo vocabulário de teste no monorepo. Cobre outbox,
+gating e o guarda de tamanho. `AsyncStorage` e `NetInfo` entram como fakes em
+memória.
+
+Descartado: `jest-expo` + `@testing-library/react-native`, que permitiria testar
+componentes. É bem mais setup, mais lento, e nada do que estas fases entregam
+precisa de render para ser bem testado — a lógica de risco é toda pura.
+
+Consequência aceita: **componentes não são testados automaticamente.** A
+verificação de tela continua sendo no aparelho.
+
+---
+
 # Fase 1 — Fechar o vazamento do sistema de módulos
 
 ## Problema
@@ -50,12 +71,28 @@ construído não vire tab morta. A regra funciona na direção que ela cobre.
 O inverso escapou. Duas features recentes chegaram à tela **por fora** do motor
 de módulos:
 
+**Correção de 2026-08-20:** a primeira versão desta seção acusava `frota` de
+vazamento. Estava errado, em dois níveis.
+
+Primeiro, a ausência de `frota` em `ROTAS_MODULO` é **deliberada e documentada**
+no próprio catálogo (`packages/shared/src/modulos.ts`): *"o app do tecnico nao
+ganha aba de frota. Ele declara a viatura DENTRO da jornada, que ja e core — um
+lugar so pra um gesto so."* Eu li a ausência e não li o comentário ao lado.
+
+Segundo, e mais grave: **gatear `FolhaViatura` em `useModuloHabilitado("frota")`
+esconderia a viatura de todo técnico.** `frota.rolesPadrao` é
+`[ADMIN, GESTOR]` — sem `TECNICO` — e o `/config` filtra por papel
+(`apps/api/src/services/moduloService.ts:50`:
+`if (!isCore(id) && !roles.includes(role)) continue;`). O técnico nunca recebe
+`frota`, então o gate removeria uma funcionalidade em uso.
+
+Sobra **um** caso real:
+
 | feature | sintoma |
 |---|---|
-| `frota` | é um `ModuloId`, mas não está em `ROTAS_MODULO`. `FolhaViatura` renderiza em `minhas-os/index.tsx:195` **sem nenhuma checagem de `useModulos`** — desligar `frota` no admin não desliga nada. |
-| `linha-movel` | não é `ModuloId`. `CartaoMinhaLinha` renderiza em `perfil.tsx:168`, fora do alcance de qualquer toggle. |
+| `linha-movel` | não é `ModuloId`. `CartaoMinhaLinha` renderiza em `perfil.tsx:168`, fora do alcance de qualquer toggle — e sem nenhuma decisão documentada que justifique. |
 
-O efeito é pior do que "toggle inerte": o admin vê um interruptor que mente.
+O efeito é um interruptor que não existe para algo que deveria tê-lo.
 
 ## Causa
 
@@ -73,21 +110,24 @@ renderiza um pedaço de UI dentro de outra tela simplesmente não perguntou.
 2. **`packages/shared/src/modulos.ts`** — promover `linha-movel` a `ModuloId`,
    com entrada em `MODULO_CATALOGO` (`core: false`, `rolesPadrao: [TECNICO]`).
    Não é core: o app funciona sem ele.
-3. **`minhas-os/index.tsx`** — envolver `FolhaViatura` e o rótulo de viatura em
-   `useModuloHabilitado("frota")`.
-4. **`perfil.tsx`** — envolver `CartaoMinhaLinha` em `useModuloHabilitado("linha-movel")`.
+3. **`perfil.tsx`** — envolver `CartaoMinhaLinha` em `useModuloHabilitado("linha-movel")`.
+4. **`minhas-os/index.tsx`** — **não** gatear `FolhaViatura`. Acrescentar um
+   comentário explicando que declarar viatura é gesto da jornada (core), que o
+   técnico não recebe `frota` no `/config`, e que o toggle de `frota` governa o
+   módulo da web. Sem isso, a próxima pessoa a auditar repete meu erro.
 
-`ROTAS_MODULO` **não** ganha entradas novas: `frota` e `linha-movel` são seções
-dentro de outras telas, não tabs. Esse é justamente o caso que o registro não
-cobria.
+`ROTAS_MODULO` **não** ganha entradas novas: `linha-movel` é seção dentro do
+perfil, não tab.
 
 ## Verificação
 
-- Teste que, com o módulo desligado no `/config`, a seção não renderiza — um por
-  módulo (`frota`, `linha-movel`).
-- Teste que a guarda de core continua valendo: `minhas-os` presente mesmo com
-  `/config` devolvendo lista vazia (comportamento já existente em
-  `primeiroNaoVazio`, não pode regredir).
+- Teste de `useModuloHabilitado`: devolve `true` para módulo presente na lista,
+  `false` para ausente, e `true` para core mesmo com lista vazia (a garantia de
+  `primeiroNaoVazio` não pode regredir).
+- Teste que `linha-movel` promovido aparece em `MODULO_CATALOGO` com
+  `core: false` e `TECNICO` entre as `rolesPadrao` — sem isso o técnico não
+  receberia o módulo e o cartão sumiria, que é exatamente o erro cometido na
+  primeira versão deste spec com `frota`.
 
 ---
 
@@ -102,9 +142,18 @@ local dos bytes:
 
 | rota | o que faz |
 |---|---|
-| `POST /ordens-servico/:id/evidencias` | corpo `{ dados: <base64>, legenda? }`; 201 com a lista atualizada |
+| `POST /ordens-servico/:id/evidencias` | corpo `{ dados: <base64>, mimeType, legenda? }`; 201 com a lista atualizada |
 | `GET /ordens-servico/:id/evidencias` | lista os anexos da OS |
 | `GET /ordens-servico/:id/evidencias/:anexoId/arquivo` | devolve os bytes |
+
+`mimeType` é **obrigatório** (`z.enum(["image/jpeg","image/png","image/webp"])`,
+`ordensServico.ts:180`) — a rota só o valida, não o repassa ao SGP, mas omitir
+derruba a requisição em 400. `comprimirImagem` já devolve `"image/jpeg"`.
+
+A listagem devolve `EvidenciaResumo` (`packages/shared/src/types.ts:249`):
+`{ id, descricao?, usuario?, arquivo? }` — **sem URL de miniatura e sem
+mimeType**. Então cada foto exibida exige um `baixarAnexoAutenticado` da rota de
+arquivo; não dá para alimentar um `<Image source={{uri}}>` direto da listagem.
 
 Falta só o lado do celular.
 
@@ -348,9 +397,13 @@ com `api.isphub.net.br`) e tirar uma foto de evidência numa OS real.
 - Os módulos `rota`, `assinatura` e `retiradas` — não têm tela **nem backend
   dedicado**; são projetos próprios.
 - Tela de caixa de notificações (hoje só o `push-hook.ts` está ligado).
-- O deploy do ISPhub no Coolify novo (`170.82.252.195`): as portas 80/443 estão
-  bloqueadas por firewall, o que não se resolve pela API do Coolify. Adiado a
-  pedido do usuário.
+- O deploy do ISPhub no Coolify novo (`170.82.252.195`) — **concluído em
+  2026-08-20**, fora do escopo deste spec mas relevante porque a Fase 3 depende
+  dele: `painel/api.isphub.net.br` estão no ar no servidor novo, com certificado
+  Let's Encrypt válido até 18/11/2026. A NetGo havia bloqueado as portas 80/443
+  para tráfego externo e liberou após chamado. Enquanto durou, a Fase 3 estava
+  impedida — o APK assaria uma URL inalcançável do 4G do técnico. **Não está
+  mais.**
 
 ## Riscos e pontos de atenção
 
