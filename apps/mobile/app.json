@@ -97,6 +97,13 @@
         "projectId": "43324a7a-92e3-42d7-8dbb-fd10f6bd7e2e"
       }
     },
-    "owner": "clebsonisaias"
+    "owner": "clebsonisaias",
+    "updates": {
+      "url": "https://u.expo.dev/43324a7a-92e3-42d7-8dbb-fd10f6bd7e2e",
+      "fallbackToCacheTimeout": 10000
+    },
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    }
   }
 }
