@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useQuery } from "@tanstack/react-query";
-import { MODULOS_CORE, MODULO_CATALOGO, type AppConfig, type ModuloHabilitado } from "@isphub/shared";
+import { MODULOS_CORE, MODULO_CATALOGO, type AppConfig, type ModuloHabilitado, type ModuloId } from "@isphub/shared";
 import { apiFetch } from "./api";
 import { useAuth } from "./auth";
+import { moduloHabilitado } from "./modulos";
 
 const CACHE_KEY = "isphub_config";
 
@@ -56,4 +57,16 @@ export function useModulos(): { modulos: ModuloHabilitado[]; carregando: boolean
   const modulos = primeiroNaoVazio(query.data?.modulos, cache?.modulos, CORE_FALLBACK);
   const offline = !query.data && (query.isError || !token);
   return { modulos, carregando: (query.isLoading && !cache) || !cacheLido, offline };
+}
+
+/**
+ * "Esse modulo esta ligado?", versao hook, pra uso em tela. Existe porque sem
+ * ela cada tela repete `modulos.some(...)` na mao — foi assim que `linha-movel`
+ * acabou renderizando sem gate nenhum.
+ *
+ * O predicado em si mora em `./modulos` (puro, testavel sem nativo).
+ */
+export function useModuloHabilitado(id: ModuloId): boolean {
+  const { modulos } = useModulos();
+  return moduloHabilitado(modulos, id);
 }
