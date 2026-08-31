@@ -7,9 +7,10 @@ const semRegistros: ModuloConfigRow[] = [];
 describe("montarModulosHabilitados", () => {
   it("banco vazio: devolve os modulos ligados no lancamento pro tecnico, ordenados", () => {
     const ids = montarModulosHabilitados(semRegistros, UserRole.TECNICO).map((m) => m.id);
-    // Nucleo enxuto: minhas-os (core) + conexao + evidencias + rota + notificacoes + chat.
-    // assinatura, provisionamento e retiradas nascem desligados (ativoPadrao=false).
-    expect(ids).toEqual(["minhas-os", "conexao", "evidencias", "rota", "notificacoes", "chat"]);
+    // Nucleo enxuto: minhas-os (core) + conexao + evidencias + rota + notificacoes
+    // + chat + linha-movel. assinatura, provisionamento e retiradas nascem
+    // desligados (ativoPadrao=false), e frota nao tem TECNICO em rolesPadrao.
+    expect(ids).toEqual(["minhas-os", "conexao", "evidencias", "rota", "notificacoes", "chat", "linha-movel"]);
   });
 
   it("core (minhas-os) aparece SEMPRE — nem um registro ativo=false o desliga", () => {
