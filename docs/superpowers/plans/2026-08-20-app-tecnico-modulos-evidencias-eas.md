@@ -64,13 +64,13 @@ O predicado é **separado do hook** de propósito. Hook exige renderizador; pred
   - `moduloHabilitado(modulos: ModuloHabilitado[], id: ModuloId): boolean`
   - `useModuloHabilitado(id: ModuloId): boolean`
 
-- [ ] **Step 1: Instalar o vitest**
+- [x] **Step 1: Instalar o vitest**
 
 ```bash
 cd apps/mobile && npm install -D vitest@^3.2.4
 ```
 
-- [ ] **Step 2: Criar a config do vitest**
+- [x] **Step 2: Criar a config do vitest**
 
 Cria `apps/mobile/vitest.config.ts`:
 
@@ -97,7 +97,7 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 3: Adicionar o script de teste**
+- [x] **Step 3: Adicionar o script de teste**
 
 Em `apps/mobile/package.json`, dentro de `"scripts"`, acrescentar:
 
@@ -105,7 +105,7 @@ Em `apps/mobile/package.json`, dentro de `"scripts"`, acrescentar:
     "test": "vitest run"
 ```
 
-- [ ] **Step 4: Escrever o teste que falha**
+- [x] **Step 4: Escrever o teste que falha**
 
 Cria `apps/mobile/src/lib/modulos.test.ts`:
 
@@ -141,7 +141,7 @@ describe("moduloHabilitado", () => {
 });
 ```
 
-- [ ] **Step 5: Rodar o teste e confirmar que falha**
+- [x] **Step 5: Rodar o teste e confirmar que falha**
 
 ```bash
 cd apps/mobile && npm test
@@ -149,7 +149,7 @@ cd apps/mobile && npm test
 
 Esperado: FAIL — `moduloHabilitado` não é exportado por `./config`.
 
-- [ ] **Step 6: Implementar o predicado e o hook**
+- [x] **Step 6: Implementar o predicado e o hook**
 
 Em `apps/mobile/src/lib/config.tsx`, acrescentar `MODULOS_CORE` ao import existente de `@isphub/shared` (já está lá) e `type ModuloId`:
 
@@ -183,7 +183,7 @@ export function useModuloHabilitado(id: ModuloId): boolean {
 }
 ```
 
-- [ ] **Step 7: Rodar o teste e confirmar que passa**
+- [x] **Step 7: Rodar o teste e confirmar que passa**
 
 ```bash
 cd apps/mobile && npm test
@@ -191,7 +191,7 @@ cd apps/mobile && npm test
 
 Esperado: PASS, 4 testes.
 
-- [ ] **Step 8: Typecheck**
+- [x] **Step 8: Typecheck**
 
 ```bash
 cd apps/mobile && npm run typecheck
@@ -199,7 +199,7 @@ cd apps/mobile && npm run typecheck
 
 Esperado: sem erros.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add apps/mobile/package.json apps/mobile/vitest.config.ts apps/mobile/src/lib/config.tsx apps/mobile/src/lib/modulos.test.ts package-lock.json
@@ -230,7 +230,7 @@ nao. Ele tambem honra o core sozinho: /config vazio nao pode derrubar a fila."
 - Consumes: `useModuloHabilitado` (Task 1)
 - Produces: `"linha-movel"` como membro de `MODULO_IDS` e chave de `MODULO_CATALOGO`
 
-- [ ] **Step 1: Acrescentar `linha-movel` à união fechada**
+- [x] **Step 1: Acrescentar `linha-movel` à união fechada**
 
 Em `packages/shared/src/modulos.ts`, dentro de `MODULO_IDS`, logo após a linha de `"chat-clientes"`:
 
@@ -238,7 +238,7 @@ Em `packages/shared/src/modulos.ts`, dentro de `MODULO_IDS`, logo após a linha 
   "linha-movel", // chip CITmax do proprio tecnico (consulta de consumo e plano)
 ```
 
-- [ ] **Step 2: Acrescentar a entrada no catálogo**
+- [x] **Step 2: Acrescentar a entrada no catálogo**
 
 Em `MODULO_CATALOGO`, antes da entrada `frota`:
 
@@ -259,7 +259,7 @@ Em `MODULO_CATALOGO`, antes da entrada `frota`:
   "linha-movel": { id: "linha-movel", nome: "Minha linha", icone: "smartphone", core: false, ativoPadrao: true, ordemPadrao: 75, rolesPadrao: [UserRole.ADMIN, UserRole.GESTOR, UserRole.TECNICO] },
 ```
 
-- [ ] **Step 3: Rebuildar o shared e rodar o typecheck do monorepo**
+- [x] **Step 3: Rebuildar o shared e rodar o typecheck do monorepo**
 
 ```bash
 cd /Users/clebson/Documents/github/isphub && npm run build:shared && npm run typecheck
@@ -267,7 +267,7 @@ cd /Users/clebson/Documents/github/isphub && npm run build:shared && npm run typ
 
 Esperado: sem erros. Se algum ponto de `apps/api` ou `apps/web` exigir tratamento exaustivo de `ModuloId`, o compilador aponta — corrigir seguindo o padrão do vizinho antes de seguir.
 
-- [ ] **Step 4: Gatear o cartão no perfil**
+- [x] **Step 4: Gatear o cartão no perfil**
 
 Em `apps/mobile/src/app/(app)/perfil.tsx`, trocar o import da linha 8:
 
@@ -287,7 +287,7 @@ E na linha 168, trocar `<CartaoMinhaLinha />` por:
         {temLinhaMovel && <CartaoMinhaLinha />}
 ```
 
-- [ ] **Step 5: Documentar por que `FolhaViatura` NÃO é gateado**
+- [x] **Step 5: Documentar por que `FolhaViatura` NÃO é gateado**
 
 Em `apps/mobile/src/app/(app)/minhas-os/index.tsx`, imediatamente acima do `<FolhaViatura` (por volta da linha 195):
 
@@ -304,7 +304,7 @@ Em `apps/mobile/src/app/(app)/minhas-os/index.tsx`, imediatamente acima do `<Fol
           */}
 ```
 
-- [ ] **Step 6: DRY nos dois gates inline do detalhe da OS**
+- [x] **Step 6: DRY nos dois gates inline do detalhe da OS**
 
 Em `apps/mobile/src/app/(app)/minhas-os/[id].tsx`, trocar o import da linha 8:
 
@@ -327,7 +327,7 @@ por:
   const temChat = useModuloHabilitado("chat");
 ```
 
-- [ ] **Step 7: Typecheck e testes**
+- [x] **Step 7: Typecheck e testes**
 
 ```bash
 cd apps/mobile && npm run typecheck && npm test
@@ -335,7 +335,7 @@ cd apps/mobile && npm run typecheck && npm test
 
 Esperado: sem erros; 4 testes passando.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add packages/shared/src/modulos.ts apps/mobile/src/app apps/mobile/src/lib
@@ -386,7 +386,7 @@ A fila espelha `features/chat/outbox.ts`, com duas diferenças: agrupa por `osId
 > mock que existiria só para contornar um acoplamento desnecessário. Lógica pura
 > em arquivo sem imports testa sem cerimônia nenhuma.
 
-- [ ] **Step 1: Escrever o teste da guarda de tamanho**
+- [x] **Step 1: Escrever o teste da guarda de tamanho**
 
 Cria `apps/mobile/src/features/evidencias/limites.test.ts`:
 
@@ -424,7 +424,7 @@ describe("cabeNoLimite", () => {
 });
 ```
 
-- [ ] **Step 2: Rodar e confirmar que falha**
+- [x] **Step 2: Rodar e confirmar que falha**
 
 ```bash
 cd apps/mobile && npm test
@@ -432,7 +432,7 @@ cd apps/mobile && npm test
 
 Esperado: FAIL — módulo `./limites` não existe.
 
-- [ ] **Step 3: Implementar os limites (arquivo puro, sem imports)**
+- [x] **Step 3: Implementar os limites (arquivo puro, sem imports)**
 
 Cria `apps/mobile/src/features/evidencias/limites.ts`:
 
@@ -468,7 +468,7 @@ export function cabeNoLimite(base64: string): boolean {
 
 ```
 
-- [ ] **Step 4: Implementar o cliente da API**
+- [x] **Step 4: Implementar o cliente da API**
 
 Cria `apps/mobile/src/features/evidencias/api.ts`:
 
@@ -503,7 +503,7 @@ export async function baixarEvidencia(osId: string, anexoId: string, token: stri
 }
 ```
 
-- [ ] **Step 5: Rodar e confirmar que passa**
+- [x] **Step 5: Rodar e confirmar que passa**
 
 ```bash
 cd apps/mobile && npm test
@@ -511,7 +511,7 @@ cd apps/mobile && npm test
 
 Esperado: PASS, 9 testes no total.
 
-- [ ] **Step 6: Escrever o teste da fila offline**
+- [x] **Step 6: Escrever o teste da fila offline**
 
 Cria `apps/mobile/src/features/evidencias/outbox.test.ts`:
 
@@ -587,7 +587,7 @@ describe("fila offline de evidencias", () => {
 });
 ```
 
-- [ ] **Step 7: Rodar e confirmar que falha**
+- [x] **Step 7: Rodar e confirmar que falha**
 
 ```bash
 cd apps/mobile && npm test
@@ -595,7 +595,7 @@ cd apps/mobile && npm test
 
 Esperado: FAIL — módulo `./outbox` não existe.
 
-- [ ] **Step 8: Implementar a fila**
+- [x] **Step 8: Implementar a fila**
 
 Cria `apps/mobile/src/features/evidencias/outbox.ts`:
 
@@ -710,7 +710,7 @@ export function useProcessarFilaEvidencias(): void {
 }
 ```
 
-- [ ] **Step 9: Rodar e confirmar que passa**
+- [x] **Step 9: Rodar e confirmar que passa**
 
 ```bash
 cd apps/mobile && npm test
@@ -718,7 +718,7 @@ cd apps/mobile && npm test
 
 Esperado: PASS, 14 testes no total.
 
-- [ ] **Step 10: Typecheck**
+- [x] **Step 10: Typecheck**
 
 ```bash
 cd apps/mobile && npm run typecheck
@@ -726,7 +726,7 @@ cd apps/mobile && npm run typecheck
 
 Esperado: sem erros.
 
-- [ ] **Step 11: Commit**
+- [x] **Step 11: Commit**
 
 ```bash
 git add apps/mobile/src/features/evidencias
@@ -757,7 +757,7 @@ Fecha o módulo: a grade de fotos, os botões de câmera e galeria, e o estado "
 - Consumes: `listarEvidencias`, `baixarEvidencia`, `cabeNoLimite`, `EvidenciaInput` (Task 3); `enfileirarEvidencia`, `listarPendentesDaOs`, `useProcessarFilaEvidencias` (Task 3); `useModuloHabilitado` (Task 1); `escolherFoto`, `comprimirImagem` de `@/features/chat/media`
 - Produces: `<GaleriaEvidencias osId={string} />`
 
-- [ ] **Step 1: Investigar a permissão de câmera ANTES de escrever código**
+- [x] **Step 1: Investigar a permissão de câmera ANTES de escrever código**
 
 `android.permission.CAMERA` não aparece no `AndroidManifest.xml` gerado, embora o chat já chame `launchCameraAsync`. Há duas explicações possíveis e elas levam a caminhos diferentes.
 
@@ -772,7 +772,7 @@ No aparelho, abrir o chat e tirar uma foto:
 
 Não presumir nenhum dos dois.
 
-- [ ] **Step 2: Criar a galeria**
+- [x] **Step 2: Criar a galeria**
 
 Cria `apps/mobile/src/features/evidencias/galeria.tsx`:
 
@@ -923,7 +923,7 @@ export function GaleriaEvidencias({ osId }: { osId: string }) {
 }
 ```
 
-- [ ] **Step 3: Montar a seção na tela da OS**
+- [x] **Step 3: Montar a seção na tela da OS**
 
 Em `apps/mobile/src/app/(app)/minhas-os/[id].tsx`, acrescentar aos imports:
 
@@ -945,7 +945,7 @@ E logo **antes** do bloco `{/* Anotacao */}` (por volta da linha 205):
             {temEvidencias && <GaleriaEvidencias osId={id} />}
 ```
 
-- [ ] **Step 4: Typecheck e testes**
+- [x] **Step 4: Typecheck e testes**
 
 ```bash
 cd apps/mobile && npm run typecheck && npm test
@@ -955,7 +955,7 @@ Esperado: sem erros; 14 testes passando.
 
 Se `colors.danger` ou `colors.border` não existirem em `@/theme/tokens`, o typecheck aponta — usar os tokens equivalentes que o arquivo define, sem inventar cor literal.
 
-- [ ] **Step 5: Verificar no aparelho**
+- [x] **Step 5: Verificar no aparelho**
 
 ```bash
 cd apps/mobile && npx expo start --dev-client
@@ -965,7 +965,7 @@ Subir o Metro **de dentro de `apps/mobile`** — rodado da raiz ele não lê o `
 
 No aparelho, numa OS real: tirar foto, confirmar que aparece como "Aguardando envio", e que some da fila virando miniatura quando sobe. Depois desligar a rede, tirar outra, e confirmar que ela fica pendente e sobe sozinha ao religar.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/mobile/src/features/evidencias/galeria.tsx "apps/mobile/src/app/(app)/minhas-os/[id].tsx"
@@ -989,7 +989,7 @@ Prepara o empacotamento. O `app.json` está com a lista de permissões inteira d
 - Modify: `apps/mobile/app.json`
 - Modify: `apps/mobile/eas.json` (existe, não versionado)
 
-- [ ] **Step 1: Desduplicar o `app.json`**
+- [x] **Step 1: Desduplicar o `app.json`**
 
 ```bash
 cd apps/mobile && python3 - <<'PY'
@@ -1022,7 +1022,7 @@ Esperado: `permissions: 16 -> 8`, `UIBackgroundModes: 2 -> 1`, e `updates` sem `
 
 Se a Task 4 concluiu que a permissão de câmera é necessária, acrescentar `"android.permission.CAMERA"` ao array agora.
 
-- [ ] **Step 2: Escrever o `eas.json` completo**
+- [x] **Step 2: Escrever o `eas.json` completo**
 
 Substituir o conteúdo de `apps/mobile/eas.json` por:
 
@@ -1063,7 +1063,7 @@ O bloco `env` é o que impede o APK de sair apontando para `localhost`: `apps/mo
 
 `distribution: internal` no `production` é o que faz o EAS devolver página de instalação com QR em vez de um `.aab` de loja.
 
-- [ ] **Step 3: Typecheck**
+- [x] **Step 3: Typecheck**
 
 ```bash
 cd apps/mobile && npm run typecheck
@@ -1071,7 +1071,7 @@ cd apps/mobile && npm run typecheck
 
 Esperado: sem erros.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add apps/mobile/app.json apps/mobile/eas.json
@@ -1170,6 +1170,30 @@ Abrir, logar, confirmar que a lista de OS carrega (prova que fala com `api.isphu
 Se nenhum arquivo mudou nesta tarefa, não há commit — o entregável é o APK distribuído e verificado.
 
 ---
+
+## Desvios do plano (execucao de 2026-08-31)
+
+**Task 1** — o predicado NAO ficou em `config.tsx`. Importar aquele arquivo
+arrasta `react-native` (fonte Flow) e o vite nem parseia. Foi pra
+`src/lib/modulos.ts`, sem nativo por perto — mesma razao que ja tinha posto
+`limites.ts` num arquivo sem imports.
+
+**Task 4, Step 1** — resolvido sem aparelho, e a resposta e *nao falta nada*:
+`android.permission.CAMERA` vem do AndroidManifest do proprio
+`expo-image-picker` e o AGP mescla. Esta no
+`android/app/build/intermediates/merged_manifests/release/.../AndroidManifest.xml`.
+O manifesto que o plano leu (`app/src/main`) e so a metade nossa. O plugin de
+config so *bloqueia* a permissao (quando `cameraPermission: false`), nunca a
+acrescenta — por isso ela nao aparece la.
+
+**Alem do plano:** `MODULO_CATALOGO` cobrou entrada do modulo novo em tres
+`Record<ModuloId, ...>` exaustivos (dois na `ModulosPage` da web, um no
+`modulo-icones` do app) e num teste da API que travava a lista padrao do
+tecnico. Nenhum deles estava no plano; todos sao o typecheck/teste fazendo o
+trabalho deles.
+
+**Falta a Task 6 inteira** — build na nuvem, keystore nova e migracao dos dois
+aparelhos. Nada de codigo.
 
 ## Notas de execução
 
