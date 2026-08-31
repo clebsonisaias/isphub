@@ -5,6 +5,7 @@ import { Feather } from "@expo/vector-icons";
 import type { StatusPreset } from "@isphub/shared";
 import { USER_ROLE_LABEL } from "@isphub/shared";
 import { useAuth } from "@/lib/auth";
+import { useModuloHabilitado } from "@/lib/config";
 import { checarBiometria, iconeBiometria, rotuloBiometria, type BiometriaInfo } from "@/lib/biometria";
 import { Avatar, useAvatarUri } from "@/features/chat/avatar";
 import { escolherFoto } from "@/features/chat/media";
@@ -17,6 +18,7 @@ import { colors, font, space } from "@/theme/tokens";
 
 export default function Perfil() {
   const { usuario, token, refetchMe, logout, biometriaAtiva, ativarBiometria, desativarBiometria } = useAuth();
+  const temLinhaMovel = useModuloHabilitado("linha-movel");
   const [enviandoFoto, setEnviandoFoto] = useState(false);
   const [bioInfo, setBioInfo] = useState<BiometriaInfo | null>(null);
   const [alternandoBio, setAlternandoBio] = useState(false);
@@ -165,7 +167,7 @@ export default function Perfil() {
           e a que ele nao tinha como saber de outro jeito. Some sozinho quando a
           integracao nao esta configurada.
         */}
-        <CartaoMinhaLinha />
+        {temLinhaMovel && <CartaoMinhaLinha />}
 
         <Card style={{ gap: space.md }}>
           <Text style={{ fontSize: font.size.sm, fontWeight: font.weight.medium as "600", color: colors.ink2 }}>Status</Text>

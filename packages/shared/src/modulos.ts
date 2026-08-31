@@ -19,6 +19,7 @@ export const MODULO_IDS = [
   "notificacoes", // in-app + (depois) push
   "chat", // conversa interna (DM, grupo, thread por OS, avisos)
   "chat-clientes", // caixa de entrada omnichannel de WhatsApp (Meta/Evolution) com clientes
+  "linha-movel", // chip CITmax do proprio tecnico (consulta de consumo e plano)
   "financeiro", // contas a pagar/receber DA HUBISP (web apenas — sem tela no app do tecnico)
   "frota", // veiculo, quem esta nele agora (ocupacao por periodo) e onde ele esta (GPS)
 ] as const;
@@ -94,6 +95,20 @@ export const MODULO_CATALOGO: Record<ModuloId, ModuloMeta> = {
    * tecnico. Existe so na web.
    */
   financeiro: { id: "financeiro", nome: "Financeiro", icone: "wallet", core: false, ativoPadrao: true, ordemPadrao: 70, rolesPadrao: [UserRole.ADMIN] },
+  /*
+   * O chip da CITmax do proprio tecnico — consumo, plano e status da linha,
+   * exibido como cartao dentro do Perfil (nao vira aba, por isso nao entra em
+   * ROTAS_MODULO no app).
+   *
+   * TECNICO nas roles NAO e opcional: e o unico papel que de fato usa a tela, e
+   * o /config filtra por papel (moduloService.ts:50). Sem ele o cartao sumiria
+   * do app inteiro — que foi exatamente o erro quase cometido com `frota`.
+   *
+   * `ativoPadrao: true` pelo criterio da casa (precisa de configuracao externa
+   * pra servir?): o vinculo da linha vem do cadastro do usuario, nao de chave
+   * de integracao, e a tela degrada sozinha ("sem linha vinculada").
+   */
+  "linha-movel": { id: "linha-movel", nome: "Minha linha", icone: "smartphone", core: false, ativoPadrao: true, ordemPadrao: 75, rolesPadrao: [UserRole.ADMIN, UserRole.GESTOR, UserRole.TECNICO] },
   /*
    * Veiculo, ocupacao (quem esta nele AGORA e quem esteve) e rastreamento GPS.
    *

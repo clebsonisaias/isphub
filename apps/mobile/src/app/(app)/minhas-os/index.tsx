@@ -192,6 +192,16 @@ export default function MinhasOs() {
             onTrocarViatura={jornada ? () => setFolha("trocar") : undefined}
           />
 
+          {/*
+            Sem gate de modulo, de proposito. Declarar viatura e gesto da
+            JORNADA, que e core — nao do modulo `frota`, cujo toggle governa as
+            telas de frota no painel web.
+
+            E gatear em `frota` esconderia isto de todo tecnico: as rolesPadrao
+            do modulo sao [ADMIN, GESTOR] e o /config filtra por papel
+            (apps/api/src/services/moduloService.ts:50), entao o tecnico nunca
+            recebe `frota` na lista.
+          */}
           <FolhaViatura
             visivel={folha !== null}
             titulo={folha === "trocar" ? "Trocar de viatura" : "Qual viatura hoje?"}

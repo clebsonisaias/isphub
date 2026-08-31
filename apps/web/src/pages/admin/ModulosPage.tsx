@@ -10,7 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { modulosApi, type ModuloAdmin } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
-import { LayoutList, Camera, Route, Wifi, PenLine, PackageX, Bell, Router, MessageCircle, MessageSquareText, Wallet, Truck, Lock, ChevronUp, ChevronDown, type LucideIcon } from "lucide-react";
+import { LayoutList, Camera, Route, Wifi, PenLine, PackageX, Bell, Router, MessageCircle, MessageSquareText, Wallet, Smartphone, Truck, Lock, ChevronUp, ChevronDown, type LucideIcon } from "lucide-react";
 
 const ICONES: Record<ModuloId, LucideIcon> = {
   "minhas-os": LayoutList,
@@ -24,6 +24,7 @@ const ICONES: Record<ModuloId, LucideIcon> = {
   chat: MessageCircle,
   "chat-clientes": MessageSquareText,
   financeiro: Wallet,
+  "linha-movel": Smartphone,
   frota: Truck,
 };
 
@@ -39,6 +40,7 @@ const DESCRICOES: Record<ModuloId, string> = {
   chat: "Conversa interna — DM, grupo, thread por OS, avisos",
   "chat-clientes": "Caixa de entrada WhatsApp com clientes (Meta/Evolution) — configure em Canais WhatsApp",
   // Só na web e só para ADMIN: é o dinheiro da própria HubISP, não do assinante.
+  "linha-movel": "Chip corporativo do próprio técnico — consumo e plano, só leitura",
   financeiro: "Contas a pagar e a receber da HubISP — só na web, só para administradores",
   // O técnico declara a viatura dentro da jornada (que é core), não numa aba própria.
   frota: "Veículos, quem está em cada viatura e rastreamento GPS — só na web",

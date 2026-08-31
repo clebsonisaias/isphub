@@ -28,6 +28,9 @@ const ICONE_MODULO: Record<ModuloId, { familia: "feather" | "mci"; nome: string 
    * mobile, o typecheck ja cobrou o icone em vez de quebrar em runtime.
    */
   financeiro: { familia: "mci", nome: "wallet-outline" },
+  // Mesmo caso do financeiro: cartao dentro do Perfil, nunca aba. O Record
+  // completo cobra o icone agora em vez de quebrar em runtime depois.
+  "linha-movel": { familia: "feather", nome: "smartphone" },
   /* Mesma situacao do financeiro: sem tela no app (fora de ROTAS_MODULO). O
    * tecnico declara a viatura DENTRO da jornada, que ja e core. */
   frota: { familia: "mci", nome: "truck-outline" },
