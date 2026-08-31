@@ -7,6 +7,7 @@ import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { colors, font, radius, space } from "@/theme/tokens";
 import { Button } from "@/components/ui";
+import { Avatar, useAvatarUri } from "@/features/chat/avatar";
 
 /**
  * SELETOR DE VIATURA — a metade que faltava.
@@ -53,6 +54,14 @@ export interface ColegaResumo {
   id: string;
   nome: string;
   nomeExibicao: string | null;
+  /**
+   * A foto de perfil do colega. `GET /frota/colegas` ja mandava estes dois
+   * campos desde sempre — o tipo aqui e que nao os declarava, entao a tela
+   * mostrava so o nome. Reconhecer o colega pela cara e mais rapido que ler
+   * quatro nomes parecidos com uma mao no volante.
+   */
+  temFoto?: boolean;
+  fotoVersao?: number;
 }
 
 /** A escolha do tecnico, pronta pro corpo de `POST /jornada/iniciar`. */
@@ -265,27 +274,18 @@ export function FolhaViatura({
               <>
                 <Text style={e.rotulo}>Quem vai com você</Text>
                 <View style={e.colegas}>
-                  {colegas.data!.map((c) => {
-                    const marcado = comigo.includes(c.id);
-                    const nome = c.nomeExibicao || c.nome;
-                    return (
-                      <Pressable
-                        key={c.id}
-                        onPress={() =>
-                          setComigo((atual) =>
-                            atual.includes(c.id) ? atual.filter((x) => x !== c.id) : [...atual, c.id],
-                          )
-                        }
-                        accessibilityRole="checkbox"
-                        accessibilityState={{ checked: marcado }}
-                        accessibilityLabel={nome}
-                        style={({ pressed }) => [e.colega, marcado && e.colegaAtivo, pressed && { opacity: 0.85 }]}
-                      >
-                        {marcado ? <Feather name="check" size={13} color={colors.onBrand} /> : null}
-                        <Text style={[e.colegaTxt, marcado && { color: colors.onBrand }]}>{nome}</Text>
-                      </Pressable>
-                    );
-                  })}
+                  {colegas.data!.map((c) => (
+                    <Colega
+                      key={c.id}
+                      colega={c}
+                      marcado={comigo.includes(c.id)}
+                      onAlternar={() =>
+                        setComigo((atual) =>
+                          atual.includes(c.id) ? atual.filter((x) => x !== c.id) : [...atual, c.id],
+                        )
+                      }
+                    />
+                  ))}
                 </View>
               </>
             ) : null}
@@ -308,6 +308,46 @@ export function FolhaViatura({
         </View>
       </View>
     </Modal>
+  );
+}
+
+/**
+ * Um colega na escolha de quem vai no carro — com a foto de perfil dele.
+ *
+ * Componente proprio, e nao JSX solto dentro do `.map()`, porque `useAvatarUri`
+ * e um hook: chamado dentro do laco, quebraria a regra dos hooks assim que a
+ * lista mudasse de tamanho.
+ *
+ * Quando o colega nao tem foto, o `Avatar` cai nas iniciais sozinho — a tela
+ * fica igual ao que era antes, sem buraco nenhum.
+ */
+function Colega({
+  colega,
+  marcado,
+  onAlternar,
+}: {
+  colega: ColegaResumo;
+  marcado: boolean;
+  onAlternar: () => void;
+}) {
+  const nome = colega.nomeExibicao || colega.nome;
+  const fotoUri = useAvatarUri(colega.id, colega.temFoto, colega.fotoVersao);
+
+  return (
+    <Pressable
+      onPress={onAlternar}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: marcado }}
+      accessibilityLabel={nome}
+      style={({ pressed }) => [e.colega, marcado && e.colegaAtivo, pressed && { opacity: 0.85 }]}
+    >
+      {marcado ? (
+        <Feather name="check" size={13} color={colors.onBrand} />
+      ) : (
+        <Avatar nome={nome} fotoUri={fotoUri} size="sm" />
+      )}
+      <Text style={[e.colegaTxt, marcado && { color: colors.onBrand }]}>{nome}</Text>
+    </Pressable>
   );
 }
 
@@ -406,9 +446,12 @@ const e = StyleSheet.create({
   colega: {
     flexDirection: "row",
     alignItems: "center",
-    gap: space.xs,
+    gap: space.sm,
     minHeight: 44,
-    paddingHorizontal: space.md,
+    // Menos folga a esquerda: ali agora mora o avatar, que ja traz respiro
+    // proprio. Com `space.md` dos dois lados o chip virava uma pilula longa.
+    paddingLeft: space.xs,
+    paddingRight: space.md,
     borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: colors.line2,
