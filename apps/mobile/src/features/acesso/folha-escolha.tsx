@@ -1,5 +1,6 @@
 import { useEffect, useState, type ComponentProps } from "react";
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { checarBiometria, iconeBiometria, rotuloBiometria, type BiometriaInfo } from "@/lib/biometria";
 import type { PreferenciaAcesso } from "@/lib/preferencia-acesso";
@@ -24,6 +25,7 @@ export function FolhaEscolhaAcesso({
   onEscolher: (p: PreferenciaAcesso) => void;
 }) {
   const [bio, setBio] = useState<BiometriaInfo>({ disponivel: false, tipo: "generico" });
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     checarBiometria().then(setBio).catch(() => {});
@@ -32,7 +34,12 @@ export function FolhaEscolhaAcesso({
   return (
     <Modal visible={visivel} transparent animationType="slide" onRequestClose={() => onEscolher("nada")}>
       <View style={e.fundo}>
-        <View style={e.folha}>
+        {/*
+          `paddingBottom` fixo escondia a ultima opcao atras da barra de
+          navegacao do sistema — e a ultima e justamente "nao salvar nada", a
+          que tem consequencia de privacidade. Some o inset real do aparelho.
+        */}
+        <View style={[e.folha, { paddingBottom: space.xxl + insets.bottom }]}>
           <Text style={e.titulo}>Quer entrar mais rápido da próxima vez?</Text>
           <Text style={e.sub}>Você pode mudar isso depois, no Perfil.</Text>
 
@@ -110,7 +117,6 @@ const e = StyleSheet.create({
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,
     padding: space.lg,
-    paddingBottom: space.xxl,
     gap: space.xs,
     ...shadow.lg,
   },
