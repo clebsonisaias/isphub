@@ -1,5 +1,6 @@
 import { StatusPreset, type Jornada, type MotivoPausa, type PapelOcupacao } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
+import { escalaDoTecnico, viaturaEfetiva } from "./escalaService.js";
 import { HttpError } from "../middleware/errorHandler.js";
 import {
   declararColegas,
@@ -112,6 +113,22 @@ export interface ResultadoJornada {
 }
 
 export async function iniciarJornada(usuarioId: string, geo: Geo = {}, viatura: ViaturaArgs = {}): Promise<ResultadoJornada> {
+  /*
+   * A ESCALA MANDA. Quem decide a viatura e o supervisor, nao quem esta com
+   * pressa pra sair — entao o que vier do app e ignorado quando ha escala.
+   *
+   * Ignorar em silencio e proposital e nao descuido: reclamar de um corpo que
+   * o app nem deveria mandar so criaria erro numa tela que agora e de leitura.
+   * O app novo nao manda nada; o cuidado aqui e com o APK antigo, que continua
+   * mandando a escolha do tecnico e passaria por cima da escala.
+   *
+   * Sem escala, cai no comportamento antigo (o tecnico declara). E deliberado:
+   * no dia em que isto entra nao existe escala nenhuma, e travar a saida de
+   * todo mundo ate alguem escalar seria trocar um problema por um pior.
+   */
+  const escala = await escalaDoTecnico(usuarioId, new Date());
+  const viaturaDaVez: ViaturaArgs = { ...viatura, ...viaturaEfetiva(escala, viatura) };
+
   const aberta = await jornadaAtual(usuarioId);
   /*
    * ATENCAO ao retorno antecipado: antes ele devolvia a jornada e pronto. Com
@@ -119,7 +136,7 @@ export async function iniciarJornada(usuarioId: string, geo: Geo = {}, viatura: 
    * escolheria a viatura, a tela nao reclamaria, e a ocupacao nunca existiria.
    * Agora a jornada nao e recriada, mas a viatura e aplicada do mesmo jeito.
    */
-  if (aberta) return aplicarViatura(usuarioId, aberta, geo, viatura);
+  if (aberta) return aplicarViatura(usuarioId, aberta, geo, viaturaDaVez);
 
   try {
     /*
@@ -134,7 +151,7 @@ export async function iniciarJornada(usuarioId: string, geo: Geo = {}, viatura: 
       }),
       prisma.usuario.update({ where: { id: usuarioId }, data: { status: StatusPreset.DISPONIVEL } }),
     ]);
-    return aplicarViatura(usuarioId, serializar(j), geo, viatura);
+    return aplicarViatura(usuarioId, serializar(j), geo, viaturaDaVez);
   } catch (e) {
     /*
      * P2002 = violacao de unicidade: a corrida acima aconteceu de verdade e o
@@ -143,7 +160,7 @@ export async function iniciarJornada(usuarioId: string, geo: Geo = {}, viatura: 
      */
     if (e && typeof e === "object" && "code" in e && (e as { code: string }).code === "P2002") {
       const existente = await jornadaAtual(usuarioId);
-      if (existente) return aplicarViatura(usuarioId, existente, geo, viatura);
+      if (existente) return aplicarViatura(usuarioId, existente, geo, viaturaDaVez);
     }
     throw e;
   }

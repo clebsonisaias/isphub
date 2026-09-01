@@ -349,6 +349,7 @@ export function CardJornada({
   temLocalizacao,
   ocupado,
   viatura,
+  parceiros,
   onIniciar,
   onEncerrar,
   onTrocarViatura,
@@ -365,6 +366,8 @@ export function CardJornada({
   ocupado?: boolean;
   /** "HFX-3652 · motorista" — nulo quando o tecnico foi a pe. */
   viatura?: string | null;
+  /** Quem o supervisor escalou junto. Vazio = vai so. */
+  parceiros?: string[];
   onIniciar: () => void;
   onEncerrar: () => void;
   onTrocarViatura?: () => void;
@@ -466,9 +469,21 @@ export function CardJornada({
               style={({ pressed }) => [estilo.jorGeo, pressed && { opacity: 0.7 }]}
             >
               <Feather name="truck" size={12} color={colors.ink2} />
-              <Text style={estilo.jorGeoTxt}>{viatura ?? "Sem viatura declarada"}</Text>
+              <Text style={estilo.jorGeoTxt}>{viatura ?? "Sem viatura escalada"}</Text>
               <Feather name="edit-2" size={11} color={colors.muted} />
             </Pressable>
+          ) : null}
+
+          {/*
+            Com quem ele vai. Quem escala e o supervisor, entao esta linha e
+            informacao e nao escolha — o tecnico descobre aqui se vai so ou
+            acompanhado, em vez de ter que perguntar no radio.
+          */}
+          {parceiros && parceiros.length > 0 ? (
+            <View style={estilo.jorGeo}>
+              <Feather name="users" size={12} color={colors.ink2} />
+              <Text style={estilo.jorGeoTxt}>com {parceiros.join(", ")}</Text>
+            </View>
           ) : null}
         </View>
 

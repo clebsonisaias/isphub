@@ -168,3 +168,20 @@ export function formatarTrabalhado(inicioEm: string, pausas: PausaJornada[], ate
   const { horas, minutos } = duracaoTrabalhada(inicioEm, pausas, ate);
   return `${horas}h${String(minutos).padStart(2, "0")}`;
 }
+
+
+/**
+ * O que o supervisor escalou para um tecnico num dia.
+ *
+ * `veiculoPlaca` nulo com `escalado: true` significa A PE — decisao explicita
+ * do supervisor. Sem escala nenhuma, a rota devolve `escalado: false`, que e
+ * outra coisa: ninguem decidiu ainda.
+ */
+export interface EscalaDoDia {
+  escalado: boolean;
+  veiculoId: string | null;
+  veiculoPlaca: string | null;
+  papel: "motorista" | "passageiro";
+  /** Quem mais foi escalado pro MESMO veiculo hoje (primeiro nome). */
+  parceiros: string[];
+}

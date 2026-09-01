@@ -357,6 +357,7 @@ model Usuario {
   /// veiculos esta pessoa esteve, e quais ocupacoes ela DECLAROU (dela ou de um
   /// colega). Sem separar, "quem me pos nesse carro?" nao teria resposta.
   ocupacoesVeiculo    OcupacaoVeiculo[]   @relation("OcupacoesVeiculo")
+  escalas             EscalaJornada[]     @relation("EscalasDoTecnico")
   ocupacoesDeclaradas OcupacaoVeiculo[]   @relation("OcupacoesDeclaradas")
   vinculosRastreador  VinculoRastreador[] @relation("VinculosRastreador")
 
@@ -542,6 +543,44 @@ model PausaJornada {
 
   @@index([jornadaId, inicioEm])
   @@map("pausas_jornada")
+}
+
+/// A ESCALA do dia: quem vai em qual viatura, em que papel.
+///
+/// Inverte quem decide. Antes o tecnico declarava a viatura ao abrir o turno;
+/// agora o supervisor escala, e o app do tecnico so MOSTRA. Quem responde por
+/// carro, seguro e rodizio e a supervisao, nao quem esta com pressa pra sair.
+///
+/// SEM tabela de parceiros, de proposito: "vai com fulano" e o supervisor
+/// escalar as duas pessoas pro MESMO veiculo no MESMO dia. Uma tabela de
+/// parceiros seria um segundo lugar dizendo a mesma coisa, e os dois poderiam
+/// discordar (A com B, sem B com A).
+///
+/// `veiculoId` NULO nao e "nao escalado" — e escalado A PE, decisao explicita.
+/// "Nao escalado" e a ausencia da linha.
+model EscalaJornada {
+  id        String   @id @default(uuid())
+  usuarioId String
+  usuario   Usuario  @relation("EscalasDoTecnico", fields: [usuarioId], references: [id], onDelete: Cascade)
+  veiculoId String?
+  veiculo   Veiculo? @relation(fields: [veiculoId], references: [id], onDelete: SetNull)
+
+  papel PapelOcupacao @default(motorista)
+
+  /// O dia a que a escala se refere. DATE e nao timestamp: escala e do dia
+  /// inteiro, e guardar hora convidaria a comparar instantes com fuso.
+  dia DateTime @db.Date
+
+  /// Quem escalou. Sem FK de proposito: se o gestor sair da empresa, a escala
+  /// do passado nao pode sumir junto.
+  definidoPor String
+  criadoEm    DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  /// Uma escala por pessoa por dia. Reescalar ATUALIZA, nao empilha.
+  @@unique([usuarioId, dia])
+  @@index([dia, veiculoId])
+  @@map("escalas_jornada")
 }
 
 enum MotivoPausa {
@@ -1352,6 +1391,7 @@ model Veiculo {
 
   @@index([provedorId, status])
   @@map("veiculos")
+  escalas    EscalaJornada[]
 }
 
 /// Um abastecimento. Gera um Lancamento de despesa na MESMA transacao.

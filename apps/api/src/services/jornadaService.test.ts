@@ -37,6 +37,9 @@ const {
  * regressao.
  */
 const ocupacaoFindMany = vi.fn();
+const ocupacaoCreate = vi.fn().mockResolvedValue({ id: "o1" });
+const escalaFindUnique = vi.fn().mockResolvedValue(null);
+const escalaFindMany = vi.fn().mockResolvedValue([]);
 
 vi.mock("../lib/prisma.js", () => ({
   prisma: {
@@ -47,7 +50,8 @@ vi.mock("../lib/prisma.js", () => ({
       findMany: jornadaFindMany,
     },
     usuario: { update: usuarioUpdate },
-    ocupacaoVeiculo: { findFirst: ocupacaoFindFirst, update: ocupacaoUpdate, findMany: ocupacaoFindMany },
+    ocupacaoVeiculo: { findFirst: ocupacaoFindFirst, update: ocupacaoUpdate, findMany: ocupacaoFindMany, create: ocupacaoCreate },
+    escalaJornada: { findUnique: escalaFindUnique, findMany: escalaFindMany },
     $transaction,
   },
 }));
@@ -291,4 +295,3 @@ describe("jornadasAtivas — a viatura e a companhia", () => {
     expect(t.pausas).toEqual([{ id: "p1", inicioEm: p.inicioEm.toISOString(), fimEm: null, motivo: "almoco" }]);
   });
 });
-

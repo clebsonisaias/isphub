@@ -35,7 +35,7 @@ import { Avatar, useAvatarUri } from "@/features/chat/avatar";
 import { FilaCard } from "@/features/minhas-os/fila-card";
 import { maisRecentesPrimeiro, ordenarPorHorario, ordenarSlaFirst } from "@/features/minhas-os/sla";
 import { abrirNoWaze } from "@/features/minhas-os/navegacao";
-import { useJornada, useMinhaViatura, useRelogioServidor } from "@/features/jornada/api";
+import { useEscalaDoDia, useJornada, useMinhaViatura, useRelogioServidor } from "@/features/jornada/api";
 import { FolhaViatura, type EscolhaViatura } from "@/features/jornada/viatura";
 
 interface FilaResp {
@@ -107,8 +107,11 @@ export default function MinhasOs() {
    * carro no meio dele. Um estado so, com o modo dentro, em vez de dois
    * booleanos que podem ficar ligados ao mesmo tempo.
    */
-  const [folha, setFolha] = useState<"iniciar" | "trocar" | null>(null);
+  // So "trocar" sobrou: o carro que quebra no meio do dia continua sendo
+  // decisao de quem esta na rua.
+  const [folha, setFolha] = useState<"trocar" | null>(null);
   const minhaViatura = useMinhaViatura();
+  const escala = useEscalaDoDia();
   const rotuloViatura = minhaViatura.data
     ? `${formatarPlaca(minhaViatura.data.veiculoPlaca)} · ${PAPEL_OCUPACAO_ROTULO[minhaViatura.data.papel]}`
     : null;
@@ -120,11 +123,7 @@ export default function MinhasOs() {
      * Decidir aqui, e nao na folha, mantem a folha burra — ela so devolve a
      * escolha e nao precisa saber em que momento do dia foi aberta.
      */
-    if (folha === "trocar") {
-      if (escolha) trocarViatura.mutate(escolha);
-      return;
-    }
-    iniciar.mutate(escolha);
+    if (escolha) trocarViatura.mutate(escolha);
   }
   // Relogio do SERVIDOR: o aparelho pode estar desacertado, e "tempo trabalhado"
   // e justamente o numero que a pessoa confere.
@@ -204,6 +203,7 @@ export default function MinhasOs() {
             ocupado={
               iniciar.isPending || encerrar.isPending || trocarViatura.isPending || pausar.isPending || retomar.isPending
             }
+            parceiros={escala.data?.parceiros ?? []}
             emPausa={pausa ? MOTIVO_PAUSA_LABEL[pausa.motivo] : null}
             onPausar={() => pausar.mutate("almoco")}
             onRetomar={() => retomar.mutate()}
@@ -214,7 +214,13 @@ export default function MinhasOs() {
              * turno com uma pergunta, e perguntar depois seria perguntar tarde.
              * Quem foi a pe sai por "Sem veículo hoje", que fica em destaque.
              */
-            onIniciar={() => setFolha("iniciar")}
+            /*
+              Inicia DIRETO, sem folha de escolha: a viatura de hoje quem
+              decide e o supervisor (escala), e o app so mostra o que foi
+              escalado depois que o turno abre. Perguntar aqui daria a impressao
+              de que a escolha ainda e do tecnico.
+            */
+            onIniciar={() => iniciar.mutate(undefined)}
             onEncerrar={confirmarEncerrar}
             onTrocarViatura={jornada ? () => setFolha("trocar") : undefined}
           />
@@ -231,8 +237,8 @@ export default function MinhasOs() {
           */}
           <FolhaViatura
             visivel={folha !== null}
-            titulo={folha === "trocar" ? "Trocar de viatura" : "Qual viatura hoje?"}
-            rotuloPular={folha === "trocar" ? "Continuar sem veículo" : "Sem veículo hoje"}
+            titulo="Trocar de viatura"
+            rotuloPular="Continuar sem veículo"
             ocupado={iniciar.isPending || trocarViatura.isPending}
             onFechar={() => setFolha(null)}
             onEscolher={(escolha) => aplicarViatura(escolha)}

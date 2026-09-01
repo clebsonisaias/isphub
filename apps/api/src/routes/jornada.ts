@@ -3,6 +3,7 @@ import { z } from "zod";
 import { PAPEIS_OCUPACAO, UserRole, type JornadaResposta, type TecnicoEmJornada } from "@isphub/shared";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import * as escala from "../services/escalaService.js";
 import {
   encerrarJornada,
   iniciarJornada,
@@ -131,6 +132,66 @@ jornadaRouter.post(
   "/retomar",
   asyncHandler(async (req, res) => {
     res.json(resposta(await retomarJornada(req.user!.sub)));
+  }),
+);
+
+/**
+ * O que FOI ESCALADO pra mim hoje. Leitura pura: o app mostra, nao escolhe.
+ *
+ * Do proprio usuario (`req.user.sub`), sem parametro — a ausencia do parametro
+ * E a garantia, nao uma checagem que alguem pode esquecer de fazer.
+ */
+jornadaRouter.get(
+  "/escala",
+  asyncHandler(async (req, res) => {
+    res.json(await escala.escalaDoTecnico(req.user!.sub, new Date()));
+  }),
+);
+
+const diaSchema = z.object({ dia: z.string().date().optional() });
+const escalarSchema = z.object({
+  usuarioId: z.string().uuid(),
+  dia: z.string().date(),
+  /** Nulo = escalado A PE. Diferente de nao escalado, que e nao ter linha. */
+  veiculoId: z.string().uuid().nullable(),
+  papel: z.enum(PAPEIS_OCUPACAO).default("motorista"),
+});
+
+/** O quadro do dia — a tela do supervisor. */
+jornadaRouter.get(
+  "/escalas",
+  requireRole(UserRole.ADMIN, UserRole.GESTOR),
+  asyncHandler(async (req, res) => {
+    const { dia } = diaSchema.parse(req.query);
+    res.json(await escala.escalaDoDia(dia ? new Date(`${dia}T00:00:00Z`) : new Date()));
+  }),
+);
+
+/** Escala (ou reescala) um tecnico. Upsert: mexer no dia atualiza a linha. */
+jornadaRouter.put(
+  "/escalas",
+  requireRole(UserRole.ADMIN, UserRole.GESTOR),
+  asyncHandler(async (req, res) => {
+    const b = escalarSchema.parse(req.body);
+    await escala.escalar({
+      usuarioId: b.usuarioId,
+      dia: new Date(`${b.dia}T00:00:00Z`),
+      veiculoId: b.veiculoId,
+      papel: b.papel,
+      definidoPor: req.user!.sub,
+    });
+    res.json(await escala.escalaDoDia(new Date(`${b.dia}T00:00:00Z`)));
+  }),
+);
+
+jornadaRouter.delete(
+  "/escalas/:usuarioId",
+  requireRole(UserRole.ADMIN, UserRole.GESTOR),
+  asyncHandler(async (req, res) => {
+    const { dia } = diaSchema.parse(req.query);
+    const d = dia ? new Date(`${dia}T00:00:00Z`) : new Date();
+    await escala.desescalar(req.params.usuarioId, d);
+    res.json(await escala.escalaDoDia(d));
   }),
 );
 

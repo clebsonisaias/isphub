@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Alert } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { JornadaResposta, MotivoPausa, OrigemOcupacao, PapelOcupacao } from "@isphub/shared";
+import type { EscalaDoDia, JornadaResposta, MotivoPausa, OrigemOcupacao, PapelOcupacao } from "@isphub/shared";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { obterGeoOuNada } from "@/features/localizacao";
@@ -208,4 +208,22 @@ export function useRelogioServidor(agoraServidor: string | undefined): Date {
   }, []);
 
   return agora;
+}
+
+
+/**
+ * O que o SUPERVISOR escalou pra mim hoje. Leitura pura — o app mostra, nao
+ * escolhe.
+ *
+ * `GET /jornada/escala` nao aceita parametro nenhum: o tecnico sai do
+ * `req.user.sub`. A ausencia do parametro E a garantia de isolamento, nao uma
+ * checagem que alguem pode esquecer de fazer.
+ */
+export function useEscalaDoDia() {
+  const { token } = useAuth();
+  return useQuery({
+    queryKey: ["jornada", "escala"],
+    enabled: !!token,
+    queryFn: () => apiFetch<EscalaDoDia>("/jornada/escala", { token }),
+  });
 }
