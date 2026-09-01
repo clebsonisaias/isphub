@@ -1,4 +1,4 @@
-import { StatusPreset, type Jornada, type PapelOcupacao } from "@isphub/shared";
+import { StatusPreset, type Jornada, type MotivoPausa, type PapelOcupacao } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../middleware/errorHandler.js";
 import {
@@ -28,7 +28,7 @@ export interface Geo {
   lng?: number | null;
 }
 
-const CAMPOS: { id: true; inicioEm: true; fimEm: true; latInicio: true; lngInicio: true; latFim: true; lngFim: true } = {
+const CAMPOS = {
   id: true,
   inicioEm: true,
   fimEm: true,
@@ -36,7 +36,12 @@ const CAMPOS: { id: true; inicioEm: true; fimEm: true; latInicio: true; lngInici
   lngInicio: true,
   latFim: true,
   lngFim: true,
-};
+  // Em ordem de inicio: a tela mostra a sequencia do dia, e "a ultima pausa"
+  // so faz sentido se a ordem for a mesma em todo lugar.
+  pausas: { select: { id: true, inicioEm: true, fimEm: true, motivo: true }, orderBy: { inicioEm: "asc" } },
+} as const;
+
+type LinhaPausa = { id: string; inicioEm: Date; fimEm: Date | null; motivo: MotivoPausa };
 
 type LinhaJornada = {
   id: string;
@@ -46,6 +51,7 @@ type LinhaJornada = {
   lngInicio: number | null;
   latFim: number | null;
   lngFim: number | null;
+  pausas?: LinhaPausa[];
 };
 
 /** Datas viram ISO na fronteira da API — o resto do sistema so ve string. */
@@ -58,6 +64,12 @@ export function serializar(j: LinhaJornada): Jornada {
     lngInicio: j.lngInicio,
     latFim: j.latFim,
     lngFim: j.lngFim,
+    pausas: (j.pausas ?? []).map((p) => ({
+      id: p.id,
+      inicioEm: p.inicioEm.toISOString(),
+      fimEm: p.fimEm ? p.fimEm.toISOString() : null,
+      motivo: p.motivo,
+    })),
   };
 }
 
@@ -289,4 +301,51 @@ export async function jornadasAtivas() {
     fotoVersao: l.usuario.fotoVersao,
     inicioEm: l.inicioEm.toISOString(),
   }));
+}
+
+
+/**
+ * Comeca uma pausa (almoco, por padrao).
+ *
+ * O indice parcial `pausas_jornada_uma_aberta` e quem de fato garante UMA
+ * pausa aberta por jornada — dois toques rapidos no botao, ou dois aparelhos,
+ * batem no banco e nao numa checagem de aplicacao que pode perder a corrida.
+ * A consulta abaixo existe pra dar mensagem decente, nao pra ser a garantia.
+ */
+export async function pausarJornada(usuarioId: string, motivo: MotivoPausa = "almoco"): Promise<Jornada> {
+  const aberta = await prisma.jornadaTecnico.findFirst({
+    where: { usuarioId, fimEm: null },
+    orderBy: { inicioEm: "desc" },
+    select: { id: true },
+  });
+  if (!aberta) throw new HttpError(409, "Nenhuma jornada aberta para pausar");
+
+  try {
+    await prisma.pausaJornada.create({ data: { jornadaId: aberta.id, motivo } });
+  } catch {
+    // Violacao do indice parcial = ja havia pausa aberta. Nao e erro do
+    // usuario: ele tocou duas vezes, ou o app repetiu a chamada sem rede.
+    throw new HttpError(409, "Esta jornada ja esta em pausa");
+  }
+
+  return serializar(
+    (await prisma.jornadaTecnico.findUniqueOrThrow({ where: { id: aberta.id }, select: CAMPOS })) as LinhaJornada,
+  );
+}
+
+/** Fecha a pausa aberta e volta a contar o tempo trabalhado. */
+export async function retomarJornada(usuarioId: string): Promise<Jornada> {
+  const aberta = await prisma.jornadaTecnico.findFirst({
+    where: { usuarioId, fimEm: null },
+    orderBy: { inicioEm: "desc" },
+    select: { id: true, pausas: { where: { fimEm: null }, select: { id: true } } },
+  });
+  if (!aberta) throw new HttpError(409, "Nenhuma jornada aberta");
+  const pausa = aberta.pausas[0];
+  if (!pausa) throw new HttpError(409, "Esta jornada nao esta em pausa");
+
+  await prisma.pausaJornada.update({ where: { id: pausa.id }, data: { fimEm: new Date() } });
+  return serializar(
+    (await prisma.jornadaTecnico.findUniqueOrThrow({ where: { id: aberta.id }, select: CAMPOS })) as LinhaJornada,
+  );
 }

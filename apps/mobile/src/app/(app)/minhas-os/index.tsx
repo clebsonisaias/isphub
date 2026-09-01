@@ -8,6 +8,9 @@ import {
   PAPEL_OCUPACAO_ROTULO,
   filtroDoDia,
   formatarDuracao,
+  formatarTrabalhado,
+  pausaAberta,
+  MOTIVO_PAUSA_LABEL,
   formatarPlaca,
   jornadaPrecisaAtencao,
   type FilaItem,
@@ -96,7 +99,7 @@ export default function MinhasOs() {
    * A jornada emoldura o dia: antes de saber qual e a proxima parada, o tecnico
    * precisa saber se ja esta em servico. Por isso o card fica acima de tudo.
    */
-  const { query: jornadaQuery, iniciar, encerrar, trocarViatura } = useJornada();
+  const { query: jornadaQuery, iniciar, encerrar, trocarViatura, pausar, retomar } = useJornada();
   const jornada = jornadaQuery.data?.jornada ?? null;
 
   /*
@@ -146,7 +149,12 @@ export default function MinhasOs() {
   const m = resumo.data;
   const naFila = fila.data?.total ?? itens.length;
 
-  const tempoJornada = jornada ? formatarDuracao(jornada.inicioEm, agoraServidor) : null;
+  /*
+   * "Tempo trabalhado" agora DESCONTA as pausas — antes o almoco contava como
+   * trabalho, e o rotulo mentia todo dia na mesma medida.
+   */
+  const tempoJornada = jornada ? formatarTrabalhado(jornada.inicioEm, jornada.pausas, agoraServidor) : null;
+  const pausa = jornada ? pausaAberta(jornada.pausas) : null;
 
   async function sincronizarERecarregar() {
     setSincronizando(true);
@@ -193,7 +201,12 @@ export default function MinhasOs() {
             tempo={tempoJornada}
             precisaAtencao={jornada ? jornadaPrecisaAtencao(jornada.inicioEm, agoraServidor) : false}
             temLocalizacao={!!jornada?.latInicio}
-            ocupado={iniciar.isPending || encerrar.isPending || trocarViatura.isPending}
+            ocupado={
+              iniciar.isPending || encerrar.isPending || trocarViatura.isPending || pausar.isPending || retomar.isPending
+            }
+            emPausa={pausa ? MOTIVO_PAUSA_LABEL[pausa.motivo] : null}
+            onPausar={() => pausar.mutate("almoco")}
+            onRetomar={() => retomar.mutate()}
             viatura={rotuloViatura}
             /*
              * Tocar "Iniciar" ABRE a folha em vez de bater a jornada direto. A

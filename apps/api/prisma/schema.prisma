@@ -506,8 +506,47 @@ model JornadaTecnico {
   /// jornada — e as duas ficam no historico, em vez de a segunda sobrescrever.
   ocupacoes OcupacaoVeiculo[]
 
+  /// Os intervalos parados dentro deste turno (almoco e afins).
+  pausas    PausaJornada[]
+
   @@index([usuarioId, inicioEm])
   @@map("jornadas_tecnico")
+}
+
+/// Um intervalo PARADO dentro da jornada — almoco, principalmente.
+///
+/// Existe porque sem ela o "tempo trabalhado" conta o almoco como trabalho, e
+/// o numero que o supervisor usa pra medir o dia sai inflado na mesma medida
+/// em todo mundo, todos os dias.
+///
+/// Mesmo formato de `OcupacaoVeiculo`: intervalo `[inicioEm, fimEm)` com
+/// `fimEm` nulo significando ABERTO. Sem coluna de duracao, pela mesma razao
+/// que a jornada nao tem — o banco ja sabe subtrair.
+///
+/// ⚠️ INDICE PARCIAL FEITO A MAO, igual ao da jornada. A migracao
+/// `20260901T050000_pausa_jornada` cria
+/// `CREATE UNIQUE INDEX ... ON "pausas_jornada"("jornadaId") WHERE "fimEm" IS NULL`
+/// — a garantia de UMA pausa aberta por jornada. Um `prisma migrate diff`
+/// futuro vai propor DROP dele; esse DROP e REGRESSAO: sem o indice, dois
+/// toques em "Pausar" abrem duas pausas e o tempo e descontado em dobro.
+model PausaJornada {
+  id        String         @id @default(uuid())
+  jornadaId String
+  jornada   JornadaTecnico @relation(fields: [jornadaId], references: [id], onDelete: Cascade)
+
+  inicioEm DateTime  @default(now())
+  /// Nulo = EM PAUSA agora. E o que o indice parcial observa.
+  fimEm    DateTime?
+
+  motivo MotivoPausa @default(almoco)
+
+  @@index([jornadaId, inicioEm])
+  @@map("pausas_jornada")
+}
+
+enum MotivoPausa {
+  almoco
+  outro
 }
 
 /// Despacho de uma OS para um tecnico (historico de atribuicoes).

@@ -11,6 +11,27 @@
  * gestor veriam tempos diferentes para a mesma jornada.
  */
 
+/**
+ * Por que a pausa existe: o tecnico para pra almocar e volta. Sem registrar
+ * isso, o "tempo trabalhado" conta o almoco como trabalho — e o numero que o
+ * supervisor usa pra medir o dia fica inflado exatamente na mesma medida em
+ * todo mundo, todos os dias.
+ */
+export type MotivoPausa = "almoco" | "outro";
+
+export const MOTIVO_PAUSA_LABEL: Record<MotivoPausa, string> = {
+  almoco: "Almoço",
+  outro: "Pausa",
+};
+
+/** Um intervalo parado dentro da jornada. `fimEm` nulo = em pausa AGORA. */
+export interface PausaJornada {
+  id: string;
+  inicioEm: string;
+  fimEm: string | null;
+  motivo: MotivoPausa;
+}
+
 /** Uma jornada aberta (ou a que acabou de fechar), como a API devolve. */
 export interface Jornada {
   id: string;
@@ -21,6 +42,8 @@ export interface Jornada {
   lngInicio: number | null;
   latFim: number | null;
   lngFim: number | null;
+  /** Em ordem de inicio. Vazio quando o tecnico nao parou nenhuma vez. */
+  pausas: PausaJornada[];
 }
 
 /**
@@ -84,4 +107,52 @@ export function formatarDuracao(inicioEm: string, ate: Date): string {
 /** A jornada esta aberta ha tempo demais pra ser plausivel? */
 export function jornadaPrecisaAtencao(inicioEm: string, agora: Date): boolean {
   return agora.getTime() - Date.parse(inicioEm) >= JORNADA_LONGA_MS;
+}
+
+
+/** A pausa aberta agora, se houver. */
+export function pausaAberta(pausas: PausaJornada[]): PausaJornada | null {
+  return pausas.find((p) => p.fimEm === null) ?? null;
+}
+
+/**
+ * Quanto tempo a jornada passou PARADA ate `ate`.
+ *
+ * A pausa aberta conta ate `ate` (o contador tem que correr enquanto o tecnico
+ * almoca, senao "tempo em pausa" fica congelado justo enquanto ele esta em
+ * pausa). Cada trecho e limitado a `ate` e ao proprio inicio: relogio torto ou
+ * pausa carimbada no futuro nao pode gerar tempo negativo, que viraria tempo
+ * trabalhado A MAIS.
+ */
+export function msEmPausa(pausas: PausaJornada[], ate: Date): number {
+  return pausas.reduce((total, p) => {
+    const de = Date.parse(p.inicioEm);
+    const fim = p.fimEm ? Date.parse(p.fimEm) : ate.getTime();
+    if (Number.isNaN(de) || Number.isNaN(fim)) return total;
+    return total + Math.max(0, Math.min(fim, ate.getTime()) - de);
+  }, 0);
+}
+
+/**
+ * Tempo de fato TRABALHADO: o decorrido menos as pausas.
+ *
+ * E um numero diferente de `duracaoJornada`, que continua sendo o decorrido
+ * bruto. Os dois interessam ao supervisor ("saiu as 7h, voltou as 17h" contra
+ * "trabalhou 9h"), entao nenhum dos dois substitui o outro.
+ */
+export function duracaoTrabalhada(
+  inicioEm: string,
+  pausas: PausaJornada[],
+  ate: Date,
+): { horas: number; minutos: number; ms: number } {
+  const bruto = duracaoJornada(inicioEm, ate).ms;
+  const ms = Math.max(0, bruto - msEmPausa(pausas, ate));
+  const totalMin = Math.floor(ms / 60_000);
+  return { horas: Math.floor(totalMin / 60), minutos: totalMin % 60, ms };
+}
+
+/** "05h58" do tempo trabalhado — mesmo formato de `formatarDuracao`. */
+export function formatarTrabalhado(inicioEm: string, pausas: PausaJornada[], ate: Date): string {
+  const { horas, minutos } = duracaoTrabalhada(inicioEm, pausas, ate);
+  return `${horas}h${String(minutos).padStart(2, "0")}`;
 }

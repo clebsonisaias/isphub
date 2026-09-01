@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Alert } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { JornadaResposta, OrigemOcupacao, PapelOcupacao } from "@isphub/shared";
+import type { JornadaResposta, MotivoPausa, OrigemOcupacao, PapelOcupacao } from "@isphub/shared";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { obterGeoOuNada } from "@/features/localizacao";
@@ -136,7 +136,25 @@ export function useJornada() {
     onError: avisarFalha("encerrar a jornada"),
   });
 
-  return { query, iniciar, encerrar, trocarViatura };
+  /*
+   * Pausar nao pede geo. Iniciar e encerrar carimbam onde o tecnico estava
+   * porque aquilo delimita o turno; o almoco nao — perguntar a localizacao de
+   * alguem toda vez que ele para pra comer e vigilancia, nao operacao.
+   */
+  const pausar = useMutation({
+    mutationFn: async (motivo: MotivoPausa = "almoco") =>
+      apiFetch<JornadaResposta>("/jornada/pausar", { method: "POST", token, body: { motivo } }),
+    onSuccess: aoMudar,
+    onError: avisarFalha("pausar a jornada"),
+  });
+
+  const retomar = useMutation({
+    mutationFn: async () => apiFetch<JornadaResposta>("/jornada/retomar", { method: "POST", token, body: {} }),
+    onSuccess: aoMudar,
+    onError: avisarFalha("retomar a jornada"),
+  });
+
+  return { query, iniciar, encerrar, trocarViatura, pausar, retomar };
 }
 
 /**

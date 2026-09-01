@@ -352,6 +352,9 @@ export function CardJornada({
   onIniciar,
   onEncerrar,
   onTrocarViatura,
+  emPausa,
+  onPausar,
+  onRetomar,
 }: {
   /** "07:42" — nulo quando nao ha jornada aberta. */
   inicio: string | null;
@@ -365,6 +368,10 @@ export function CardJornada({
   onIniciar: () => void;
   onEncerrar: () => void;
   onTrocarViatura?: () => void;
+  /** Rotulo da pausa aberta ("Almoço"), ou null quando esta trabalhando. */
+  emPausa?: string | null;
+  onPausar?: () => void;
+  onRetomar?: () => void;
 }) {
   if (!inicio || !tempo) {
     /*
@@ -402,17 +409,30 @@ export function CardJornada({
     );
   }
 
-  const tom = precisaAtencao
-    ? { bg: colors.slaAmberBg, fg: colors.slaAmber }
-    : { bg: colors.slaGreenBg, fg: colors.slaGreen };
+  /*
+   * Em pausa tem tom PROPRIO. Verde diria "trabalhando", que e falso; ambar
+   * diria "problema", que tambem e — almocar nao e anomalia. O azul separa os
+   * dois estados sem alarmar.
+   */
+  const tom = emPausa
+    ? { bg: colors.blueBg, fg: colors.blue }
+    : precisaAtencao
+      ? { bg: colors.slaAmberBg, fg: colors.slaAmber }
+      : { bg: colors.slaGreenBg, fg: colors.slaGreen };
 
   return (
     <View style={[estilo.jornada, { backgroundColor: tom.bg }]}>
       <View style={estilo.jorLinha}>
         <View style={estilo.jorInfo}>
           <View style={estilo.jorTopo}>
-            <Feather name={precisaAtencao ? "alert-triangle" : "activity"} size={15} color={tom.fg} />
-            <Text style={[estilo.jorTitulo, { color: tom.fg }]}>Jornada iniciada — {inicio}</Text>
+            <Feather
+              name={emPausa ? "pause-circle" : precisaAtencao ? "alert-triangle" : "activity"}
+              size={15}
+              color={tom.fg}
+            />
+            <Text style={[estilo.jorTitulo, { color: tom.fg }]}>
+              {emPausa ? `Em ${emPausa.toLowerCase()} — desde ${inicio}` : `Jornada iniciada — ${inicio}`}
+            </Text>
           </View>
           <Text style={estilo.jorTempo}>
             Tempo trabalhado: <Text style={[estilo.jorTempoNum, NUM, { color: tom.fg }]}>{tempo}</Text>
@@ -452,16 +472,51 @@ export function CardJornada({
           ) : null}
         </View>
 
-        <Pressable
-          onPress={onEncerrar}
-          disabled={ocupado}
-          accessibilityRole="button"
-          accessibilityLabel="Encerrar jornada"
-          style={({ pressed }) => [estilo.jorBtn, { backgroundColor: tom.fg }, pressed && { opacity: 0.85 }]}
-        >
-          <Feather name="stop-circle" size={15} color={colors.onBrand} />
-          <Text style={estilo.jorBtnTxt}>{ocupado ? "…" : "Encerrar"}</Text>
-        </Pressable>
+        <View style={estilo.jorAcoes}>
+          {/*
+            Retomar vem em DESTAQUE quando esta em pausa: e a unica coisa que o
+            tecnico quer fazer ao voltar do almoco, e deixa-la com o mesmo peso
+            de "Encerrar" convida a errar o botao de olho no relogio.
+          */}
+          {emPausa && onRetomar ? (
+            <Pressable
+              onPress={onRetomar}
+              disabled={ocupado}
+              accessibilityRole="button"
+              accessibilityLabel="Retomar jornada"
+              style={({ pressed }) => [estilo.jorBtn, { backgroundColor: tom.fg }, pressed && estilo.jorBtnPress]}
+            >
+              <Feather name="play-circle" size={15} color={colors.onBrand} />
+              <Text style={estilo.jorBtnTxt}>{ocupado ? "…" : "Retomar"}</Text>
+            </Pressable>
+          ) : onPausar ? (
+            <Pressable
+              onPress={onPausar}
+              disabled={ocupado}
+              accessibilityRole="button"
+              accessibilityLabel="Pausar para o almoço"
+              style={({ pressed }) => [estilo.jorBtnFraco, pressed && estilo.jorBtnPress]}
+            >
+              <Feather name="pause" size={15} color={colors.ink2} />
+              <Text style={estilo.jorBtnFracoTxt}>Pausar</Text>
+            </Pressable>
+          ) : null}
+
+          <Pressable
+            onPress={onEncerrar}
+            disabled={ocupado}
+            accessibilityRole="button"
+            accessibilityLabel="Encerrar jornada"
+            style={({ pressed }) => [
+              emPausa ? estilo.jorBtnFraco : estilo.jorBtn,
+              !emPausa && { backgroundColor: tom.fg },
+              pressed && estilo.jorBtnPress,
+            ]}
+          >
+            <Feather name="stop-circle" size={15} color={emPausa ? colors.ink2 : colors.onBrand} />
+            <Text style={emPausa ? estilo.jorBtnFracoTxt : estilo.jorBtnTxt}>{ocupado ? "…" : "Encerrar"}</Text>
+          </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -637,6 +692,23 @@ const estilo = StyleSheet.create({
   // Mesmo feedback do Button compartilhado (ui.tsx `btnPressed`): opacidade
   // com escala. So opacidade nao da a sensacao de empurrar.
   jorForaPress: { opacity: 0.88, transform: [{ scale: 0.98 }] },
+  jorAcoes: { gap: space.xs, alignItems: "flex-end" },
+  jorBtnPress: { opacity: 0.88, transform: [{ scale: 0.98 }] },
+  jorBtnFraco: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: space.xs,
+    // Mesmo alvo do botao forte: secundario e no PESO visual, nao no tamanho —
+    // encolher o alvo faria o tecnico errar o toque com a mao suja.
+    minHeight: 44,
+    paddingHorizontal: space.md,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.line2,
+    backgroundColor: colors.card,
+  },
+  jorBtnFracoTxt: { fontSize: font.size.sm, fontWeight: font.weight.bold as "700", color: colors.ink2 },
   jorForaTxt: { fontSize: font.size.lg, fontWeight: font.weight.bold, color: colors.onBrand },
 
   jornada: { borderRadius: radius.md, padding: space.md },

@@ -10,6 +10,8 @@ import {
   jornadasAtivas,
   trocarViatura,
   type ResultadoJornada,
+  pausarJornada,
+  retomarJornada,
 } from "../services/jornadaService.js";
 
 /**
@@ -108,6 +110,27 @@ jornadaRouter.post(
   asyncHandler(async (req, res) => {
     const geo = geoSchema.parse(req.body ?? {});
     res.json(resposta(await encerrarJornada(req.user!.sub, geo)));
+  }),
+);
+
+const pausaSchema = z.object({ motivo: z.enum(["almoco", "outro"]).default("almoco") });
+
+/**
+ * Pausar e retomar. Sao do PROPRIO tecnico (`req.user.sub`), como iniciar e
+ * encerrar: quem para pra almocar e quem esta parado.
+ */
+jornadaRouter.post(
+  "/pausar",
+  asyncHandler(async (req, res) => {
+    const { motivo } = pausaSchema.parse(req.body ?? {});
+    res.json(resposta(await pausarJornada(req.user!.sub, motivo)));
+  }),
+);
+
+jornadaRouter.post(
+  "/retomar",
+  asyncHandler(async (req, res) => {
+    res.json(resposta(await retomarJornada(req.user!.sub)));
   }),
 );
 
