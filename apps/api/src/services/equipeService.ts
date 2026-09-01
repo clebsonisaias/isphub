@@ -1,4 +1,4 @@
-import type { EquipeFiltro } from "@isphub/shared";
+import { UserRole, type EquipeFiltro } from "@isphub/shared";
 
 /**
  * Recorte de "quem executa a OS". Retirada/cancelamento e feita por equipes de
@@ -39,4 +39,24 @@ export function whereEquipeOs(equipe: EquipeFiltro): Record<string, unknown> | n
   if (equipe === "interna") return OS_INTERNA_WHERE;
   if (equipe === "externa") return OS_EXTERNA_WHERE;
   return null;
+}
+
+/**
+ * Mesma coisa, mas ciente de QUEM pergunta — e e por aqui que as rotas devem
+ * entrar.
+ *
+ * O recorte de equipe existe pras filas DA HUB (Painel, Mapa, Retiradas): sem
+ * ele o painel cobrava da equipe interna um trabalho que e de equipe externa.
+ * Numa fila ja escopada a UMA PESSOA (`escopoOsWhere` fixa `tecnicoId`), a
+ * pergunta e outra — "o que foi atribuido a mim?" — e a resposta nao pode
+ * depender da categoria da OS. Se me deram, e minha.
+ *
+ * Sem esta excecao, uma OS de retirada atribuida a um tecnico SUMIA da lista
+ * dele: `atribuirTecnico` (writebackService.ts) nao olha equipe nenhuma e cria
+ * a notificacao normalmente, entao ele era avisado de uma OS que a tela nao
+ * mostrava. Dispensou a notificacao, perdeu a OS — sem erro, sem rastro.
+ */
+export function whereEquipeParaUsuario(equipe: EquipeFiltro, role: UserRole): Record<string, unknown> | null {
+  if (role === UserRole.TECNICO) return null;
+  return whereEquipeOs(equipe);
 }

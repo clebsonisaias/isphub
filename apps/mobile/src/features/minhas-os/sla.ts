@@ -31,3 +31,24 @@ export function ordenarSlaFirst(itens: FilaItem[]): FilaItem[] {
     return (a.sla.minutosRestantes ?? Infinity) - (b.sla.minutosRestantes ?? Infinity);
   });
 }
+
+/**
+ * Mais recente primeiro, sem data no fim — ordem de ARQUIVO, irma de
+ * `ordenarSlaFirst`: naquela a pergunta e "o que estoura primeiro?", aqui e "o
+ * que eu fiz por ultimo?". OS concluida nao tem SLA correndo pra ordenar.
+ *
+ * Sem data vai pro fim (nao pro topo): item sem agendamento e o menos util pra
+ * quem esta procurando o servico de ontem.
+ */
+export function maisRecentesPrimeiro(itens: FilaItem[]): FilaItem[] {
+  /*
+   * `Date.parse` de string invalida devolve NaN, e comparador que devolve NaN
+   * deixa a ordem INDEFINIDA — a lista sai embaralhada sem erro nenhum. Data
+   * ilegivel e tratada como data ausente: vai pro fim, junto das outras.
+   */
+  const ts = (iso: string | null | undefined): number => {
+    const t = iso ? Date.parse(iso) : Number.NaN;
+    return Number.isNaN(t) ? Number.NEGATIVE_INFINITY : t;
+  };
+  return [...itens].sort((a, b) => ts(b.dataAgendamento) - ts(a.dataAgendamento));
+}

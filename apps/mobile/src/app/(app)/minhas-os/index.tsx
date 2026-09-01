@@ -15,7 +15,7 @@ import {
 } from "@isphub/shared";
 import { useAuth } from "@/lib/auth";
 import { apiFetch, buildFilaQuery } from "@/lib/api";
-import { Card, Hero, Muted, Screen } from "@/components/ui";
+import { Card, Hero, Muted, Screen, Segmented } from "@/components/ui";
 import {
   Aviso,
   BarraProgresso,
@@ -30,7 +30,7 @@ import {
 import { colors, font, space } from "@/theme/tokens";
 import { Avatar, useAvatarUri } from "@/features/chat/avatar";
 import { FilaCard } from "@/features/minhas-os/fila-card";
-import { ordenarSlaFirst } from "@/features/minhas-os/sla";
+import { maisRecentesPrimeiro, ordenarSlaFirst } from "@/features/minhas-os/sla";
 import { abrirNoWaze } from "@/features/minhas-os/navegacao";
 import { useJornada, useMinhaViatura, useRelogioServidor } from "@/features/jornada/api";
 import { FolhaViatura, type EscolhaViatura } from "@/features/jornada/viatura";
@@ -63,10 +63,18 @@ export default function MinhasOs() {
    */
   const dia = useMemo(() => filtroDoDia(new Date()), []);
 
+  /*
+   * Abertas x concluidas. O servidor sempre soube responder `grupo=fechados`
+   * (routes/fila.ts), ja escopado ao tecnico — faltava alguem perguntar. Sem
+   * isso, OS concluida em qualquer dia que nao fosse HOJE era inalcancavel: o
+   * tecnico nao revia a foto que anexou nem a anotacao que escreveu.
+   */
+  const [grupo, setGrupo] = useState<"abertos" | "fechados">("abertos");
+
   const fila = useQuery({
-    queryKey: ["fila", "minhas-os"],
+    queryKey: ["fila", "minhas-os", grupo],
     enabled: !!token,
-    queryFn: () => apiFetch<FilaResp>(`/fila${buildFilaQuery({ equipe: "interna", grupo: "abertos" })}`, { token }),
+    queryFn: () => apiFetch<FilaResp>(`/fila${buildFilaQuery({ equipe: "interna", grupo })}`, { token }),
   });
 
   const agenda = useQuery({
@@ -119,7 +127,13 @@ export default function MinhasOs() {
   // e justamente o numero que a pessoa confere.
   const agoraServidor = useRelogioServidor(jornadaQuery.data?.agoraServidor);
 
-  const itens = ordenarSlaFirst(fila.data?.itens ?? []);
+  /*
+   * SLA so ordena o que ainda corre. No arquivo a pergunta e "o que eu fiz por
+   * ultimo?", entao vai do mais recente pro mais antigo — o servidor devolve em
+   * ordem crescente de agendamento, que aqui seria exatamente o avesso.
+   */
+  const brutos = fila.data?.itens ?? [];
+  const itens = grupo === "abertos" ? ordenarSlaFirst(brutos) : maisRecentesPrimeiro(brutos);
   const fotoUri = useAvatarUri(usuario?.id, usuario?.temFoto, usuario?.fotoVersao);
   const primeiroNome = ((usuario?.nomeExibicao || usuario?.nome) ?? "").trim().split(/\s+/)[0];
 
@@ -292,16 +306,28 @@ export default function MinhasOs() {
           </Secao>
 
           {/* --- A fila inteira, que continua sendo o trabalho --- */}
-          <Secao titulo={`Fila aberta (${naFila})`}>
+          <Secao titulo={grupo === "abertos" ? `Fila aberta (${naFila})` : `Concluídas (${naFila})`}>
+            <View style={{ marginBottom: space.md }}>
+              <Segmented
+                value={grupo}
+                onChange={setGrupo}
+                options={[
+                  { value: "abertos", label: "Abertas" },
+                  { value: "fechados", label: "Concluídas" },
+                ]}
+              />
+            </View>
             {/*
              * `truncado` era recebido e ignorado: a fila podia vir cortada e o
              * tecnico nao sabia que existia mais trabalho do que a tela mostrava.
              */}
-            {fila.data?.truncado ? (
-              <Aviso texto={`Mostrando ${itens.length} de ${naFila}. Refine pela busca para ver o resto.`} />
-            ) : null}
+            {fila.data?.truncado ? <Aviso texto={`Mostrando ${itens.length} de ${naFila}.`} /> : null}
             {itens.length === 0 && !fila.isLoading ? (
-              <Muted>Nenhuma OS atribuída a você.</Muted>
+              <Muted>
+                {grupo === "abertos"
+                  ? "Nenhuma OS aberta atribuída a você."
+                  : "Nenhuma OS concluída ou cancelada até agora."}
+              </Muted>
             ) : (
               <View style={{ gap: space.md }}>
                 {itens.map((item) => (

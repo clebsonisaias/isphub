@@ -7,7 +7,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { calcularSla } from "../services/slaService.js";
 import { escopoOsWhere } from "../services/escopoService.js";
 import { prepararFila } from "../services/filaService.js";
-import { whereEquipeOs } from "../services/equipeService.js";
+import { whereEquipeParaUsuario } from "../services/equipeService.js";
 
 export const filaRouter = Router();
 
@@ -102,7 +102,10 @@ filaRouter.get(
     // Recorte de equipe (interna/externa/todas) — sempre no AND, nunca no
     // topo do where: `OR` (busca, acima) e `tipoOs` (filtro de categoria)
     // ja ocupam essas chaves e seriam sobrescritos em silencio.
-    const clausulaEquipe = whereEquipeOs(f.equipe);
+    //
+    // Nao se aplica a TECNICO: a fila dele ja esta escopada a ele, e OS
+    // atribuida que a lista esconde e OS perdida. Ver whereEquipeParaUsuario.
+    const clausulaEquipe = whereEquipeParaUsuario(f.equipe, req.user!.role);
     if (clausulaEquipe) osWhere.AND = [...(osWhere.AND ?? []), clausulaEquipe];
     Object.keys(osWhere).forEach((k) => osWhere[k] === undefined && delete osWhere[k]);
 
