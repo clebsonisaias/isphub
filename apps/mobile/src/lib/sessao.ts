@@ -132,3 +132,23 @@ export function renovarSessao(): Promise<boolean> {
     });
   }
 }
+
+export type DesfechoDesbloqueio = "entrou" | "pedir-senha" | "sem-rede";
+
+/**
+ * O que fazer quando a biometria passou mas a sessao nao veio.
+ *
+ * A distincao entre "o servidor disse nao" e "eu nao consegui perguntar" e a
+ * razao de existir desta funcao, e ela ja custou confianca uma vez: o codigo
+ * antigo tratava QUALQUER falha como sessao morta e apagava a preferencia de
+ * biometria junto. Um tunel sem sinal desligava a digital do tecnico de forma
+ * permanente — e ele nao le isso como "sem rede", le como "essa porcaria nao
+ * funciona", e nao liga de novo.
+ *
+ * `sem-rede` nao autoriza mexer em NADA: nem na sessao, nem na preferencia.
+ * Tenta de novo quando houver sinal.
+ */
+export function desfechoDoDesbloqueio(entrou: boolean, servidorRespondeu: boolean): DesfechoDesbloqueio {
+  if (entrou) return "entrou";
+  return servidorRespondeu ? "pedir-senha" : "sem-rede";
+}

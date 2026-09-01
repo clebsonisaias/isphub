@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ComponentProps } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
 import { Redirect, useRouter } from "expo-router";
 import {
   AccessibilityInfo,
@@ -51,7 +51,7 @@ function CampoLogin({
 }
 
 export default function Login() {
-  const { token, login, bloqueadoPorBiometria, desbloquearComBiometria } = useAuth();
+  const { token, login, bloqueadoPorBiometria, desbloquearComBiometria, sessaoExpirou } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [email, setEmail] = useState("");
@@ -70,12 +70,23 @@ export default function Login() {
   // Auto-prompt do Face ID/digital quando ha sessao guardada esperando
   // desbloqueio (como os apps de banco). Roda uma vez; se o usuario cancelar,
   // ele ainda tem o botao e a senha. Pequeno atraso pra a tela assentar.
+  /*
+   * Traduz o desfecho em mensagem. Cancelar NAO e erro — o tecnico so mudou de
+   * ideia e a senha esta logo abaixo; encher a tela de vermelho ali seria
+   * repreender quem nao fez nada errado.
+   */
+  const tentarBiometria = useCallback(async () => {
+    setErro(null);
+    const desfecho = await desbloquearComBiometria();
+    if (desfecho === "sem-rede") setErro("Sem conexão. Tente de novo em instantes.");
+  }, [desbloquearComBiometria]);
+
   useEffect(() => {
     if (!bloqueadoPorBiometria || !bio.disponivel || tentouBioRef.current) return;
     tentouBioRef.current = true;
-    const t = setTimeout(() => void desbloquearComBiometria(), 400);
+    const t = setTimeout(() => void tentarBiometria(), 400);
     return () => clearTimeout(t);
-  }, [bloqueadoPorBiometria, bio.disponivel, desbloquearComBiometria]);
+  }, [bloqueadoPorBiometria, bio.disponivel, tentarBiometria]);
 
   // null = ainda nao sei (evita piscar animacao antes de resolver o reduce-motion).
   const [reduzir, setReduzir] = useState<boolean | null>(null);
@@ -189,7 +200,7 @@ export default function Login() {
             {bloqueadoPorBiometria && bio.disponivel ? (
               <>
                 <Pressable
-                  onPress={() => void desbloquearComBiometria()}
+                  onPress={() => void tentarBiometria()}
                   style={({ pressed }) => [styles.bioBtn, pressed && { opacity: 0.9 }]}
                   accessibilityRole="button"
                   accessibilityLabel={`Entrar com ${rotuloBiometria(bio.tipo)}`}
@@ -231,6 +242,21 @@ export default function Login() {
               icone={mostrarSenha ? "eye-off" : "eye"}
               aoTocarIcone={() => setMostrarSenha((v) => !v)}
             />
+
+            {/*
+              Aviso, nao erro: a sessao longa acabou (30 dias parada, senha
+              trocada ou sessao revogada). A preferencia de biometria continua
+              ligada, entao este login por senha ja re-arma a digital — por isso
+              a frase promete isso em vez de so informar a falha.
+            */}
+            {sessaoExpirou ? (
+              <View style={styles.avisoWrap} accessibilityLiveRegion="polite">
+                <Feather name="clock" size={15} color={colors.slaAmber} />
+                <Text style={styles.avisoTxt}>
+                  Sua sessão expirou. Entre com a senha — a digital volta a funcionar depois.
+                </Text>
+              </View>
+            ) : null}
 
             {erro ? (
               <View style={styles.erroWrap} accessibilityLiveRegion="polite">
@@ -289,7 +315,16 @@ const styles = StyleSheet.create({
   campo: { flex: 1, paddingHorizontal: space.md, paddingVertical: 13, fontSize: font.size.base, color: colors.ink },
   campoIcone: { paddingHorizontal: space.md, paddingVertical: 10 },
 
-  erroWrap: { flexDirection: "row", alignItems: "center", gap: space.xs, backgroundColor: colors.slaRedBg, borderRadius: radius.md, paddingHorizontal: space.md, paddingVertical: space.sm },
+avisoWrap: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: space.xs,
+    backgroundColor: colors.slaAmberBg,
+    borderRadius: radius.sm,
+    padding: space.sm,
+  },
+  avisoTxt: { flex: 1, fontSize: font.size.sm, color: colors.slaAmber, fontWeight: font.weight.medium as "600" },
+    erroWrap: { flexDirection: "row", alignItems: "center", gap: space.xs, backgroundColor: colors.slaRedBg, borderRadius: radius.md, paddingHorizontal: space.md, paddingVertical: space.sm },
   erroTxt: { flex: 1, fontSize: font.size.sm, color: colors.slaRed, fontWeight: font.weight.medium as "600" },
 
   bioBtn: {

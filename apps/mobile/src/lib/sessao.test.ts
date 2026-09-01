@@ -15,7 +15,7 @@ vi.mock("./token-store", () => ({
   },
 }));
 
-import { getAccessToken, getRefreshToken, renovarSessao, setSessao } from "./sessao";
+import { desfechoDoDesbloqueio, getAccessToken, getRefreshToken, renovarSessao, setSessao } from "./sessao";
 
 describe("renovarSessao", () => {
   beforeEach(() => {
@@ -103,5 +103,22 @@ describe("setSessao", () => {
     cancelar();
     setSessao("depois-de-cancelar", "r");
     expect(vistos).toEqual(["a", null]);
+  });
+});
+
+describe("desfechoDoDesbloqueio", () => {
+  it("entrou e entrou", () => {
+    expect(desfechoDoDesbloqueio(true, true)).toBe("entrou");
+    expect(desfechoDoDesbloqueio(true, false)).toBe("entrou");
+  });
+
+  it("servidor respondeu e recusou: pede senha", () => {
+    expect(desfechoDoDesbloqueio(false, true)).toBe("pedir-senha");
+  });
+
+  it("SEM REDE nao vira pedir-senha — foi assim que a digital se desligava sozinha", () => {
+    // A regressao que este teste tranca. Se alguem colapsar os dois casos de
+    // falha num so, o tecnico num tunel perde a biometria pra sempre.
+    expect(desfechoDoDesbloqueio(false, false)).toBe("sem-rede");
   });
 });

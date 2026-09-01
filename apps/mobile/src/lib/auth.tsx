@@ -1,9 +1,11 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { UsuarioPublic } from "@isphub/shared";
-import { apiFetch } from "./api";
+import { ApiError, apiFetch } from "./api";
 import { tokenStore } from "./token-store";
 import {
   assinarMudanca,
+  desfechoDoDesbloqueio,
+  type DesfechoDesbloqueio,
   carregarSessaoGuardada,
   getAccessToken,
   getRefreshToken,
@@ -33,8 +35,20 @@ interface AuthValue {
   biometriaAtiva: boolean;
   /** Ha uma sessao guardada esperando desbloqueio biometrico (nao entrou ainda). */
   bloqueadoPorBiometria: boolean;
-  /** Roda o Face ID/digital e, se ok, entra com a sessao guardada. Devolve o sucesso. */
-  desbloquearComBiometria: () => Promise<boolean>;
+  /**
+   * A sessao longa acabou (expirou/foi revogada) e o desbloqueio caiu pra
+   * senha. A preferencia de biometria FICA ligada — o proximo login por senha
+   * re-arma sozinho, sem o tecnico ter que achar o interruptor no Perfil.
+   */
+  sessaoExpirou: boolean;
+  /**
+   * Roda o Face ID/digital e, se ok, entra com a sessao longa guardada.
+   *
+   * Devolve o DESFECHO e nao um booleano porque a tela precisa dizer coisas
+   * diferentes: cancelar nao e erro, sem rede pede "tente de novo", e sessao
+   * morta pede a senha. Um booleano obrigaria a tela a adivinhar.
+   */
+  desbloquearComBiometria: () => Promise<DesfechoDesbloqueio | "cancelado">;
   /** Liga o desbloqueio biometrico (confirma com uma leitura). Precisa de sessao ativa. */
   ativarBiometria: () => Promise<boolean>;
   desativarBiometria: () => Promise<void>;
@@ -48,6 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [carregando, setCarregando] = useState(true);
   const [biometriaAtiva, setBiometriaAtiva] = useState(false);
   const [bloqueadoPorBiometria, setBloqueado] = useState(false);
+  const [sessaoExpirou, setSessaoExpirou] = useState(false);
 
   // Restaura o token guardado. Se o desbloqueio biometrico estiver ligado, NAO
   // entra automatico — marca `bloqueado` e deixa a tela de login pedir o Face
@@ -109,6 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       carregando,
       biometriaAtiva,
       bloqueadoPorBiometria,
+      sessaoExpirou,
       async login(email, senha) {
         const resp = await apiFetch<{ token: string; refreshToken: string; usuario: UsuarioPublic }>("/auth/login", {
           method: "POST",
@@ -121,6 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setToken(resp.token);
         setUsuario(resp.usuario);
         setBloqueado(false);
+        setSessaoExpirou(false);
       },
       async logout() {
         // ANTES de limpar a sessao: desregistrar exige o token de auth, e sem
@@ -152,31 +169,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       async desbloquearComBiometria() {
         const ok = await autenticarBiometria("Entrar no ISPhub");
-        if (!ok) return false;
-        const guardado = getAccessToken();
-        if (!guardado) {
-          setBloqueado(false);
-          return false;
-        }
+        // Cancelou a leitura: nao mexe em nada, o botao e a senha continuam ali.
+        if (!ok) return "cancelado";
+
+        /*
+         * O access token dura 8h e a digital costuma ser usada na manha
+         * seguinte, entao ele quase sempre chega vencido aqui. Quem responde e
+         * a sessao LONGA (30 dias parados): `apiFetch` toma o 401, renova e
+         * repete sozinho. Antes esta funcao desistia no primeiro 401 — e como
+         * ela ainda apagava a preferencia junto, a digital "parava de
+         * funcionar" no exato dia seguinte ao dia em que foi ligada.
+         */
+        let servidorRespondeu = true;
         try {
-          const me = await apiFetch<UsuarioPublic>("/auth/me", { token: guardado });
-          setToken(guardado);
+          const me = await apiFetch<UsuarioPublic>("/auth/me", { token: getAccessToken() });
+          setToken(getAccessToken());
           setUsuario(me);
           setBloqueado(false);
-          return true;
-        } catch {
-          // sessao guardada invalidou (senha trocada, usuario desativado): limpa
-          // tudo e cai pro login por senha — nunca deixa preso num loop biometrico.
-          //
-          // TODO(Task 2 do plano de sessao longa): tentar `renovarSessao()` antes
-          // de desistir, e NAO apagar a preferencia de biometria — hoje uma falha
-          // de rede desliga a digital do tecnico em silencio.
-          setSessao(null, null);
-          await tokenStore.del(BIOMETRIA_KEY);
-          setBloqueado(false);
-          setBiometriaAtiva(false);
-          return false;
+          setSessaoExpirou(false);
+          return "entrou";
+        } catch (e) {
+          // `ApiError` = o servidor respondeu (e recusou). Erro cru = nao deu
+          // nem pra perguntar. Sao situacoes opostas e o codigo antigo tratava
+          // as duas igual.
+          servidorRespondeu = e instanceof ApiError;
         }
+
+        const desfecho = desfechoDoDesbloqueio(false, servidorRespondeu);
+        if (desfecho === "pedir-senha") {
+          // Sessao morreu de verdade. Limpa a sessao, PRESERVA a preferencia:
+          // o proximo login por senha volta a armar a digital sozinho.
+          setSessao(null, null);
+          setBloqueado(false);
+          setSessaoExpirou(true);
+        }
+        // sem-rede: nao apaga nada. A tela avisa e ele tenta de novo.
+        return desfecho;
       },
       async ativarBiometria() {
         const info = await checarBiometria();
@@ -192,7 +220,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setBiometriaAtiva(false);
       },
     }),
-    [token, usuario, carregando, biometriaAtiva, bloqueadoPorBiometria],
+    [token, usuario, carregando, biometriaAtiva, bloqueadoPorBiometria, sessaoExpirou],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

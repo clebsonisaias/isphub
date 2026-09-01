@@ -367,17 +367,38 @@ export function CardJornada({
   onTrocarViatura?: () => void;
 }) {
   if (!inicio || !tempo) {
+    /*
+     * O botao mora numa SUPERFICIE, e nao solto na tela, pelo mesmo motivo que
+     * o estado de jornada aberta (logo abaixo) tambem e uma superficie: este
+     * bloco cavalga o Hero — `conteudo` sobe com marginTop negativo sobre o
+     * padding extra dele.
+     *
+     * Solto, o botao era `colors.brand` sobre um Hero `colors.brand`: contraste
+     * 1.00:1, literalmente a mesma cor. E trocar o tom do botao NAO resolvia —
+     * ele cavalga duas superficies de luminancias opostas (Hero 0.117, ground
+     * 0.888), entao nenhum preenchimento chapado alcanca 3:1 contra as duas.
+     * Medido: teal 1.68, verde 1.16, brandInk 1.28, ate quase-preto so 2.67
+     * contra o Hero. O que resolve e a superficie clara embaixo: 6.29:1 contra
+     * o Hero, com o botao indigo em cima dela a 6.29:1.
+     */
     return (
-      <Pressable
-        onPress={onIniciar}
-        disabled={ocupado}
-        accessibilityRole="button"
-        accessibilityLabel="Iniciar jornada"
-        style={({ pressed }) => [estilo.jorFora, pressed && { opacity: 0.85 }, ocupado && { opacity: 0.6 }]}
-      >
-        <Feather name="play-circle" size={18} color={colors.onBrand} />
-        <Text style={estilo.jorForaTxt}>{ocupado ? "Iniciando…" : "Iniciar jornada"}</Text>
-      </Pressable>
+      <View style={estilo.jorParada}>
+        <View style={estilo.jorTopo}>
+          <Feather name="clock" size={15} color={colors.ink2} />
+          <Text style={estilo.jorParadaTitulo}>Jornada não iniciada</Text>
+        </View>
+        <Pressable
+          onPress={onIniciar}
+          disabled={ocupado}
+          accessibilityRole="button"
+          accessibilityLabel="Iniciar jornada"
+          accessibilityState={{ disabled: !!ocupado, busy: !!ocupado }}
+          style={({ pressed }) => [estilo.jorFora, pressed && estilo.jorForaPress, ocupado && { opacity: 0.6 }]}
+        >
+          <Feather name="play-circle" size={18} color={colors.onBrand} />
+          <Text style={estilo.jorForaTxt}>{ocupado ? "Iniciando…" : "Iniciar jornada"}</Text>
+        </Pressable>
+      </View>
     );
   }
 
@@ -598,13 +619,32 @@ const estilo = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: space.sm,
-    borderRadius: radius.md,
+    /*
+     * Raio MENOR que o do `jorParada` que o envolve (radius.md). Cantos
+     * concentricos pedem interno < externo; iguais, o de dentro parece mais
+     * redondo que o de fora e a borda fica com espessura visualmente irregular.
+     */
+    borderRadius: radius.sm,
     backgroundColor: colors.brand,
-    ...shadow.brand,
+    /*
+     * Sem `shadow.brand` aqui. Aquele glow indigo existe pra um botao que
+     * flutua sozinho sobre o fundo da pagina; dentro de um card que ja tem
+     * elevacao propria, viram duas sombras empilhadas no mesmo palmo de tela
+     * (e no Android, elevation 6 dentro de elevation 2 desenha errado). A
+     * separacao aqui quem faz e o card, nao o brilho.
+     */
   },
+  // Mesmo feedback do Button compartilhado (ui.tsx `btnPressed`): opacidade
+  // com escala. So opacidade nao da a sensacao de empurrar.
+  jorForaPress: { opacity: 0.88, transform: [{ scale: 0.98 }] },
   jorForaTxt: { fontSize: font.size.lg, fontWeight: font.weight.bold, color: colors.onBrand },
 
   jornada: { borderRadius: radius.md, padding: space.md },
+  // Superficie do estado "sem jornada". Branca (nao tingida) de proposito: os
+  // tons do `jornada` acima carregam STATUS (verde = correndo, ambar = atencao)
+  // e aqui nao ha nada correndo.
+  jorParada: { borderRadius: radius.md, padding: space.md, backgroundColor: colors.card, gap: space.sm, ...shadow.sm },
+  jorParadaTitulo: { fontSize: font.size.sm, fontWeight: font.weight.bold as "700", color: colors.ink2 },
   jorLinha: { flexDirection: "row", alignItems: "center", gap: space.sm },
   jorInfo: { flex: 1, gap: 2 },
   jorTopo: { flexDirection: "row", alignItems: "center", gap: space.xs },
