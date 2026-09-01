@@ -2,10 +2,19 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import type { UsuarioPublic } from "@isphub/shared";
 import { apiFetch } from "./api";
 import { tokenStore } from "./token-store";
+import {
+  assinarMudanca,
+  carregarSessaoGuardada,
+  getAccessToken,
+  getRefreshToken,
+  renovarSessao,
+  setSessao,
+} from "./sessao";
 import { autenticarBiometria, checarBiometria } from "./biometria";
 import { desregistrarPushAtual, limparBadge } from "./push";
 
-const TOKEN_KEY = "isphub_token";
+// O par (access, refresh) e a persistencia dele moram em `sessao.ts`. Aqui so
+// resta a preferencia de biometria, que e do usuario e nao da sessao.
 const BIOMETRIA_KEY = "isphub_biometria"; // "1" = desbloqueio biometrico ligado
 
 interface AuthValue {
@@ -48,22 +57,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let vivo = true;
     (async () => {
       try {
-        const guardado = await tokenStore.get(TOKEN_KEY);
+        const { access, refresh } = await carregarSessaoGuardada();
         const bioLigada = (await tokenStore.get(BIOMETRIA_KEY)) === "1";
         if (vivo) setBiometriaAtiva(bioLigada);
-        if (!guardado) return;
+        if (!access && !refresh) return;
         if (bioLigada) {
           if (vivo) setBloqueado(true); // espera o desbloqueio na tela de login
           return;
         }
-        const me = await apiFetch<UsuarioPublic>("/auth/me", { token: guardado });
+        /*
+         * O access token dura 8h, entao na PRIMEIRA abertura do dia ele quase
+         * sempre esta vencido. Antes o app desistia aqui e jogava o tecnico no
+         * login; agora tenta a sessao longa, que dura 30 dias parada.
+         */
+        let me: UsuarioPublic | null = null;
+        if (access) {
+          me = await apiFetch<UsuarioPublic>("/auth/me", { token: access }).catch(() => null);
+        }
+        if (!me && refresh && (await renovarSessao())) {
+          me = await apiFetch<UsuarioPublic>("/auth/me", { token: getAccessToken() });
+        }
+        if (!me) throw new Error("sessao invalida");
         if (vivo) {
-          setToken(guardado);
+          setToken(getAccessToken());
           setUsuario(me);
         }
       } catch {
-        // token invalido/expirado ou usuario desativado -> descarta
-        await tokenStore.del(TOKEN_KEY);
+        // sessao invalida/expirada ou usuario desativado -> descarta
+        setSessao(null, null);
       } finally {
         if (vivo) setCarregando(false);
       }
@@ -73,6 +94,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  /*
+   * O token do contexto tem que acompanhar as renovacoes. Sem isto, `apiFetch`
+   * passaria a usar o token novo (ele le do `sessao.ts`) enquanto as telas
+   * continuariam segurando o velho — e qualquer coisa que use `token` fora do
+   * apiFetch, como o download de anexo e o SSE, falharia calada.
+   */
+  useEffect(() => assinarMudanca(setToken), []);
+
   const value = useMemo<AuthValue>(
     () => ({
       token,
@@ -81,11 +110,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       biometriaAtiva,
       bloqueadoPorBiometria,
       async login(email, senha) {
-        const resp = await apiFetch<{ token: string; usuario: UsuarioPublic }>("/auth/login", {
+        const resp = await apiFetch<{ token: string; refreshToken: string; usuario: UsuarioPublic }>("/auth/login", {
           method: "POST",
           body: { email, senha },
         });
-        await tokenStore.set(TOKEN_KEY, resp.token);
+        // `refreshToken` ja vinha nesta resposta desde que a sessao longa
+        // entrou na API; o app recebia e descartava, e por isso a sessao dele
+        // morria em 8h.
+        setSessao(resp.token, resp.refreshToken);
         setToken(resp.token);
         setUsuario(resp.usuario);
         setBloqueado(false);
@@ -96,7 +128,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // acabou de sair — grave num celular compartilhado pela equipe.
         await desregistrarPushAtual(token);
         await limparBadge();
-        await tokenStore.del(TOKEN_KEY);
+        /*
+         * Encerrar a sessao no SERVIDOR, nao so descartar aqui: sem isto o
+         * refresh continuaria valendo 30 dias depois de "sair" — grave num
+         * aparelho que a equipe compartilha. Falha nao pode travar a saida:
+         * quem clicou em sair tem que sair, com ou sem rede.
+         */
+        const refresh = getRefreshToken();
+        if (refresh) {
+          await apiFetch("/auth/logout", { method: "POST", body: { refreshToken: refresh } }).catch(() => {});
+        }
+        setSessao(null, null);
         await tokenStore.del(BIOMETRIA_KEY);
         setToken(null);
         setUsuario(null);
@@ -111,7 +153,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async desbloquearComBiometria() {
         const ok = await autenticarBiometria("Entrar no ISPhub");
         if (!ok) return false;
-        const guardado = await tokenStore.get(TOKEN_KEY);
+        const guardado = getAccessToken();
         if (!guardado) {
           setBloqueado(false);
           return false;
@@ -125,7 +167,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } catch {
           // sessao guardada invalidou (senha trocada, usuario desativado): limpa
           // tudo e cai pro login por senha — nunca deixa preso num loop biometrico.
-          await tokenStore.del(TOKEN_KEY);
+          //
+          // TODO(Task 2 do plano de sessao longa): tentar `renovarSessao()` antes
+          // de desistir, e NAO apagar a preferencia de biometria — hoje uma falha
+          // de rede desliga a digital do tecnico em silencio.
+          setSessao(null, null);
           await tokenStore.del(BIOMETRIA_KEY);
           setBloqueado(false);
           setBiometriaAtiva(false);

@@ -1,12 +1,13 @@
 import * as FileSystem from "expo-file-system/legacy";
 import type { FilaFiltros } from "@isphub/shared";
+import { API_BASE } from "./api-base";
+import { getAccessToken, renovarSessao } from "./sessao";
 
 /**
  * Cliente da API ISPhub. O app e CLIENTE — nao fala com o SGP direto nem
- * reimplementa regra. Base URL vem de EXPO_PUBLIC_API_URL (baked no build);
- * fallback pra API local no dev.
+ * reimplementa regra.
  */
-export const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:4000";
+export { API_BASE };
 
 export class ApiError extends Error {
   constructor(
@@ -25,16 +26,39 @@ export interface ApiOpts {
   signal?: AbortSignal;
 }
 
+/**
+ * Rotas onde renovar seria recursao ou nao faz sentido: `/auth/refresh` cairia
+ * em laco infinito, e login/logout nao dependem de access token valido.
+ */
+const SEM_RENOVACAO = ["/auth/login", "/auth/refresh", "/auth/logout"];
+
 export async function apiFetch<T>(path: string, opts: ApiOpts = {}): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: opts.method ?? "GET",
-    headers: {
-      "Content-Type": "application/json",
-      ...(opts.token ? { Authorization: `Bearer ${opts.token}` } : {}),
-    },
-    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
-    signal: opts.signal,
-  });
+  const enviar = (token: string | null | undefined) =>
+    fetch(`${API_BASE}${path}`, {
+      method: opts.method ?? "GET",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+      signal: opts.signal,
+    });
+
+  let res = await enviar(opts.token);
+
+  /*
+   * UMA tentativa, nunca um laco: se a renovacao nao resolveu, o 401 e real e
+   * tem que chegar na tela. Laco viraria tempestade contra /auth/refresh, que
+   * tem refreshLimiter justamente pra isso.
+   *
+   * O retry usa `getAccessToken()` e NAO o `opts.token` recebido — aquele e o
+   * token velho que o React ainda tem na mao. Reenviar o velho garantiria
+   * outro 401.
+   */
+  if (res.status === 401 && opts.token && !SEM_RENOVACAO.includes(path)) {
+    if (await renovarSessao()) res = await enviar(getAccessToken());
+  }
+
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
     try {
