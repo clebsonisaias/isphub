@@ -64,7 +64,14 @@ export interface JornadaResposta {
   agoraServidor: string;
 }
 
-/** Um tecnico em servico agora — a visao do gestor. */
+/**
+ * Um tecnico em servico agora — a visao do supervisor.
+ *
+ * Carrega as PAUSAS, e nao um "tempo trabalhado" ja calculado, de proposito: o
+ * numero muda a cada segundo e um total carimbado no servidor chegaria velho.
+ * Com os intervalos crus, a tela calcula com as mesmas funcoes que o app usa —
+ * que e a razao de elas morarem aqui.
+ */
 export interface TecnicoEmJornada {
   usuarioId: string;
   nome: string;
@@ -72,6 +79,11 @@ export interface TecnicoEmJornada {
   temFoto: boolean;
   fotoVersao: number;
   inicioEm: string;
+  pausas: PausaJornada[];
+  /** Placa da viatura declarada, ou null quando foi a pe. */
+  veiculoPlaca: string | null;
+  /** Quem mais esta na MESMA viatura agora (primeiro nome). */
+  companhia: string[];
 }
 
 /**

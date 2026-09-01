@@ -36,6 +36,8 @@ const {
  * saida. Sem isto o teste falha em `findFirst` de undefined, que e ruido, nao
  * regressao.
  */
+const ocupacaoFindMany = vi.fn();
+
 vi.mock("../lib/prisma.js", () => ({
   prisma: {
     jornadaTecnico: {
@@ -45,7 +47,7 @@ vi.mock("../lib/prisma.js", () => ({
       findMany: jornadaFindMany,
     },
     usuario: { update: usuarioUpdate },
-    ocupacaoVeiculo: { findFirst: ocupacaoFindFirst, update: ocupacaoUpdate },
+    ocupacaoVeiculo: { findFirst: ocupacaoFindFirst, update: ocupacaoUpdate, findMany: ocupacaoFindMany },
     $transaction,
   },
 }));
@@ -216,9 +218,11 @@ describe("jornadasAtivas", () => {
     jornadaFindMany.mockResolvedValue([
       {
         inicioEm: INICIO,
+        pausas: [],
         usuario: { id: "tec-1", nome: "Carlos", nomeExibicao: null, temFoto: true, fotoVersao: 3 },
       },
     ]);
+    ocupacaoFindMany.mockResolvedValue([]);
 
     const ativas = await jornadasAtivas();
 
@@ -230,6 +234,9 @@ describe("jornadasAtivas", () => {
         temFoto: true,
         fotoVersao: 3,
         inicioEm: INICIO.toISOString(),
+        pausas: [],
+        veiculoPlaca: null,
+        companhia: [],
       },
     ]);
   });
@@ -240,3 +247,48 @@ describe("jornadasAtivas", () => {
     expect(jornadaFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { fimEm: null } }));
   });
 });
+
+describe("jornadasAtivas — a viatura e a companhia", () => {
+  it("mostra a placa e QUEM MAIS esta no mesmo carro, sem incluir a propria pessoa", async () => {
+    // E a pergunta do supervisor: "quem esta na rua, em que carro, com quem".
+    jornadaFindMany.mockResolvedValue([
+      { inicioEm: INICIO, pausas: [], usuario: { id: "a", nome: "Carlos Dias", nomeExibicao: null, temFoto: false, fotoVersao: 0 } },
+      { inicioEm: INICIO, pausas: [], usuario: { id: "b", nome: "Rafael Nunes", nomeExibicao: null, temFoto: false, fotoVersao: 0 } },
+    ]);
+    ocupacaoFindMany.mockResolvedValue([
+      { usuarioId: "a", veiculo: { id: "v1", placa: "HFX3652" }, usuario: { nome: "Carlos Dias", nomeExibicao: null } },
+      { usuarioId: "b", veiculo: { id: "v1", placa: "HFX3652" }, usuario: { nome: "Rafael Nunes", nomeExibicao: null } },
+    ]);
+
+    const [carlos, rafael] = await jornadasAtivas();
+    expect(carlos.veiculoPlaca).toBe("HFX3652");
+    expect(carlos.companhia).toEqual(["Rafael"]);
+    expect(rafael.companhia).toEqual(["Carlos"]);
+  });
+
+  it("quem foi a pe nao ganha placa nem companhia de carona alheia", async () => {
+    jornadaFindMany.mockResolvedValue([
+      { inicioEm: INICIO, pausas: [], usuario: { id: "c", nome: "Ana Prado", nomeExibicao: null, temFoto: false, fotoVersao: 0 } },
+    ]);
+    // Ha um carro ocupado por OUTRA pessoa; a Ana nao esta nele.
+    ocupacaoFindMany.mockResolvedValue([
+      { usuarioId: "z", veiculo: { id: "v9", placa: "AAA0000" }, usuario: { nome: "Outro", nomeExibicao: null } },
+    ]);
+
+    const [ana] = await jornadasAtivas();
+    expect(ana.veiculoPlaca).toBeNull();
+    expect(ana.companhia).toEqual([]);
+  });
+
+  it("as pausas viajam cruas, pra tela calcular com as mesmas funcoes do app", async () => {
+    const p = { id: "p1", inicioEm: new Date(INICIO.getTime() + 4 * 3_600_000), fimEm: null, motivo: "almoco" as const };
+    jornadaFindMany.mockResolvedValue([
+      { inicioEm: INICIO, pausas: [p], usuario: { id: "a", nome: "Carlos", nomeExibicao: null, temFoto: false, fotoVersao: 0 } },
+    ]);
+    ocupacaoFindMany.mockResolvedValue([]);
+
+    const [t] = await jornadasAtivas();
+    expect(t.pausas).toEqual([{ id: "p1", inicioEm: p.inicioEm.toISOString(), fimEm: null, motivo: "almoco" }]);
+  });
+});
+

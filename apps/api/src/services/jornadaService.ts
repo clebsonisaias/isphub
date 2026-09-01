@@ -290,19 +290,57 @@ export async function jornadasAtivas() {
     orderBy: { inicioEm: "asc" },
     select: {
       inicioEm: true,
+      pausas: { select: { id: true, inicioEm: true, fimEm: true, motivo: true }, orderBy: { inicioEm: "asc" } },
       usuario: { select: { id: true, nome: true, nomeExibicao: true, temFoto: true, fotoVersao: true } },
     },
   });
-  return linhas.map((l) => ({
-    usuarioId: l.usuario.id,
-    nome: l.usuario.nome,
-    nomeExibicao: l.usuario.nomeExibicao,
-    temFoto: l.usuario.temFoto,
-    fotoVersao: l.usuario.fotoVersao,
-    inicioEm: l.inicioEm.toISOString(),
-  }));
-}
 
+  /*
+   * Viatura e companhia saem das ocupacoes ABERTAS, nao da jornada: trocar de
+   * carro no meio do dia abre outra ocupacao na mesma jornada, entao a jornada
+   * sozinha nao sabe em que carro a pessoa esta AGORA.
+   *
+   * Uma consulta so pra todo mundo (e nao uma por tecnico): a lista e pequena,
+   * mas N+1 numa tela que o supervisor deixa aberta o dia inteiro vira carga
+   * constante no banco a toa.
+   */
+  const abertas = await prisma.ocupacaoVeiculo.findMany({
+    where: { fimEm: null },
+    select: {
+      usuarioId: true,
+      veiculo: { select: { id: true, placa: true } },
+      usuario: { select: { nome: true, nomeExibicao: true } },
+    },
+  });
+
+  const porUsuario = new Map(abertas.map((o) => [o.usuarioId, o]));
+  const primeiro = (n: string) => n.trim().split(/\s+/)[0] ?? n;
+
+  return linhas.map((l) => {
+    const minha = porUsuario.get(l.usuario.id);
+    const companhia = minha
+      ? abertas
+          .filter((o) => o.veiculo.id === minha.veiculo.id && o.usuarioId !== l.usuario.id)
+          .map((o) => primeiro(o.usuario.nomeExibicao || o.usuario.nome))
+      : [];
+    return {
+      usuarioId: l.usuario.id,
+      nome: l.usuario.nome,
+      nomeExibicao: l.usuario.nomeExibicao,
+      temFoto: l.usuario.temFoto,
+      fotoVersao: l.usuario.fotoVersao,
+      inicioEm: l.inicioEm.toISOString(),
+      pausas: l.pausas.map((p) => ({
+        id: p.id,
+        inicioEm: p.inicioEm.toISOString(),
+        fimEm: p.fimEm ? p.fimEm.toISOString() : null,
+        motivo: p.motivo,
+      })),
+      veiculoPlaca: minha?.veiculo.placa ?? null,
+      companhia,
+    };
+  });
+}
 
 /**
  * Comeca uma pausa (almoco, por padrao).
