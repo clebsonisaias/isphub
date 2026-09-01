@@ -37,6 +37,7 @@ import { maisRecentesPrimeiro, ordenarPorHorario, ordenarSlaFirst } from "@/feat
 import { abrirNoWaze } from "@/features/minhas-os/navegacao";
 import { useEscalaDoDia, useJornada, useMinhaViatura, useRelogioServidor } from "@/features/jornada/api";
 import { FolhaViatura, type EscolhaViatura } from "@/features/jornada/viatura";
+import { FolhaEscolhaAcesso } from "@/features/acesso/folha-escolha";
 
 interface FilaResp {
   itens: FilaItem[];
@@ -53,7 +54,7 @@ interface FilaResp {
  * ultimo. A fila continua ali inteira — so deixou de ser a primeira coisa.
  */
 export default function MinhasOs() {
-  const { token, usuario } = useAuth();
+  const { token, usuario, preferencia, definirPreferencia } = useAuth();
   const router = useRouter();
   const [sincronizando, setSincronizando] = useState(false);
 
@@ -235,6 +236,15 @@ export default function MinhasOs() {
             (apps/api/src/services/moduloService.ts:50), entao o tecnico nunca
             recebe `frota` na lista.
           */}
+          {/*
+            Aparece uma vez, no primeiro login deste aparelho. Mora AQUI e nao
+            no `_layout`: um layout do expo-router tem que renderizar o
+            navegador, e por um irmao ao lado dele em branqueia a tela inteira.
+            Esta e a tela onde o tecnico cai depois de entrar, que e o momento
+            certo pra pergunta de qualquer forma.
+          */}
+          <FolhaEscolhaAcesso visivel={preferencia === null} onEscolher={(p) => void definirPreferencia(p)} />
+
           <FolhaViatura
             visivel={folha !== null}
             titulo="Trocar de viatura"

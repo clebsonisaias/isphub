@@ -3,7 +3,6 @@ import { Redirect, Tabs } from "expo-router";
 import { ActivityIndicator, View } from "react-native";
 import type { ModuloId } from "@isphub/shared";
 import { useAuth } from "@/lib/auth";
-import { FolhaEscolhaAcesso } from "@/features/acesso/folha-escolha";
 import { useModulos } from "@/lib/config";
 import { useRealtime } from "@/lib/realtime";
 import { usePush } from "@/features/notificacoes/push-hook";
@@ -18,7 +17,7 @@ import { colors } from "@/theme/tokens";
  * Guarda de auth: sem token -> login. Core sempre presente (fallback em useModulos).
  */
 export default function AppLayout() {
-  const { token, carregando, preferencia, definirPreferencia } = useAuth();
+  const { token, carregando } = useAuth();
   const { modulos } = useModulos();
   useRealtime(); // canal SSE ao vivo enquanto o tecnico esta logado
   usePush(); // notificacao no aparelho — o unico canal que chega com o app fechado
@@ -42,13 +41,6 @@ export default function AppLayout() {
   const ocultas = (Object.keys(ROTAS_MODULO) as ModuloId[]).filter((id) => !habilitadas.has(id));
 
   return (
-    <>
-      {/*
-        Aparece uma vez, no primeiro login deste aparelho (`preferencia === null`).
-        Fica aqui e nao na tela de login porque so faz sentido DEPOIS de entrar:
-        antes, o tecnico esta tentando entrar e a pergunta e obstaculo.
-      */}
-      <FolhaEscolhaAcesso visivel={preferencia === null} onEscolher={(p) => void definirPreferencia(p)} />
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -83,6 +75,5 @@ export default function AppLayout() {
         }}
       />
     </Tabs>
-    </>
   );
 }
