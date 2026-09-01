@@ -21,6 +21,7 @@ import { FinanceiroParceladosPage } from "@/pages/FinanceiroParceladosPage";
 import { FinanceiroProvisoesPage } from "@/pages/FinanceiroProvisoesPage";
 import { FinanceiroFrotaPage } from "@/pages/FinanceiroFrotaPage";
 import { FrotaVeiculosPage } from "@/pages/FrotaVeiculosPage";
+import { EscalaPage } from "@/pages/EscalaPage";
 import { FrotaBiPage } from "@/pages/FrotaBiPage";
 import { ProdutividadePage } from "@/pages/ProdutividadePage";
 import { FrotaMapaPage } from "@/pages/FrotaMapaPage";
@@ -168,6 +169,20 @@ function App() {
                   element={
                     <RequireAuth roles={[UserRole.ADMIN, UserRole.GESTOR]}>
                       <ProdutividadePage />
+                    </RequireAuth>
+                  }
+                />
+                {/*
+                  Escala do dia. Fica FORA de /frota porque a pergunta e outra:
+                  /frota e "quais viaturas existem", esta e "quem vai em qual
+                  hoje". Enterrada num link interno da frota, ninguem acharia
+                  antes das 7h, que e quando ela serve.
+                */}
+                <Route
+                  path="/escala"
+                  element={
+                    <RequireAuth roles={[UserRole.ADMIN, UserRole.GESTOR]}>
+                      <EscalaPage />
                     </RequireAuth>
                   }
                 />

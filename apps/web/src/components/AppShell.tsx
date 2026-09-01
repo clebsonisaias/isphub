@@ -35,6 +35,7 @@ import {
   Wallet,
   Trophy,
   Truck,
+  CalendarClock,
 } from "lucide-react";
 
 const INTERVALO_POLLING_NAO_LIDAS_MS = 45_000;
@@ -128,6 +129,20 @@ const NAV_ITEMS: {
    * ninguem em particular. TECNICO tambem: ele declara a viatura DENTRO da
    * jornada, no app; uma lista de cadastro na web nao serve pra ele.
    */
+  /*
+   * Escala do dia. Item proprio e nao um botao dentro de "Frota": quem abre
+   * Frota quer saber quais viaturas existem; quem abre isto quer decidir quem
+   * sai em qual, hoje, antes das 7h. Escondida atras de um link interno, a
+   * segunda pergunta simplesmente nao seria encontrada.
+   */
+  {
+    to: "/escala",
+    label: "Escala do dia",
+    labelCurto: "Escala",
+    icon: CalendarClock,
+    ocultoPara: [UserRole.PROVEDOR, UserRole.TECNICO],
+    modulo: "frota",
+  },
   {
     to: "/frota",
     label: "Frota",
