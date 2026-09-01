@@ -30,7 +30,7 @@ import {
 import { colors, font, space } from "@/theme/tokens";
 import { Avatar, useAvatarUri } from "@/features/chat/avatar";
 import { FilaCard } from "@/features/minhas-os/fila-card";
-import { maisRecentesPrimeiro, ordenarSlaFirst } from "@/features/minhas-os/sla";
+import { maisRecentesPrimeiro, ordenarPorHorario, ordenarSlaFirst } from "@/features/minhas-os/sla";
 import { abrirNoWaze } from "@/features/minhas-os/navegacao";
 import { useJornada, useMinhaViatura, useRelogioServidor } from "@/features/jornada/api";
 import { FolhaViatura, type EscolhaViatura } from "@/features/jornada/viatura";
@@ -361,15 +361,6 @@ function enderecoCurto(os: FilaItem): string | null {
   const rua = [e.logradouro, e.numero].filter(Boolean).join(", ");
   const resto = [e.bairro, e.cidade].filter(Boolean).join(" — ");
   return [rua, resto].filter(Boolean).join(" · ") || (os.pop ? `POP: ${os.pop}` : null);
-}
-
-/** Cedo primeiro; sem horário vai pro fim, onde não atrapalha a leitura. */
-function ordenarPorHorario(itens: FilaItem[]): FilaItem[] {
-  return [...itens].sort((a, b) => {
-    const ta = a.dataAgendamento ? Date.parse(a.dataAgendamento) : Number.POSITIVE_INFINITY;
-    const tb = b.dataAgendamento ? Date.parse(b.dataAgendamento) : Number.POSITIVE_INFINITY;
-    return ta - tb;
-  });
 }
 
 function estadoDaAgenda(os: FilaItem, proximaId?: string): EstadoAgenda {

@@ -40,15 +40,33 @@ export function ordenarSlaFirst(itens: FilaItem[]): FilaItem[] {
  * Sem data vai pro fim (nao pro topo): item sem agendamento e o menos util pra
  * quem esta procurando o servico de ontem.
  */
+/**
+ * Instante do agendamento pra fins de ORDENACAO, com `ausente` decidindo pra
+ * que ponta vai quem nao tem data utilizavel.
+ *
+ * Existe porque `Date.parse` de string invalida devolve NaN, e um comparador
+ * que devolve NaN deixa a ordem INDEFINIDA — a lista sai embaralhada sem erro
+ * nenhum, sem excecao e sem sintoma ate alguem jurar que "sumiu uma OS". Data
+ * ilegivel e tratada igual a data ausente.
+ */
+function instante(iso: string | null | undefined, ausente: number): number {
+  const t = iso ? Date.parse(iso) : Number.NaN;
+  return Number.isNaN(t) ? ausente : t;
+}
+
 export function maisRecentesPrimeiro(itens: FilaItem[]): FilaItem[] {
-  /*
-   * `Date.parse` de string invalida devolve NaN, e comparador que devolve NaN
-   * deixa a ordem INDEFINIDA — a lista sai embaralhada sem erro nenhum. Data
-   * ilegivel e tratada como data ausente: vai pro fim, junto das outras.
-   */
-  const ts = (iso: string | null | undefined): number => {
-    const t = iso ? Date.parse(iso) : Number.NaN;
-    return Number.isNaN(t) ? Number.NEGATIVE_INFINITY : t;
-  };
-  return [...itens].sort((a, b) => ts(b.dataAgendamento) - ts(a.dataAgendamento));
+  // Sem data vai pro FIM: quem procura o servico de ontem nao quer abrir a
+  // tela num item sem agendamento nenhum.
+  return [...itens].sort(
+    (a, b) =>
+      instante(b.dataAgendamento, Number.NEGATIVE_INFINITY) - instante(a.dataAgendamento, Number.NEGATIVE_INFINITY),
+  );
+}
+
+/** Cedo primeiro; sem horário vai pro fim, onde não atrapalha a leitura. */
+export function ordenarPorHorario(itens: FilaItem[]): FilaItem[] {
+  return [...itens].sort(
+    (a, b) =>
+      instante(a.dataAgendamento, Number.POSITIVE_INFINITY) - instante(b.dataAgendamento, Number.POSITIVE_INFINITY),
+  );
 }
