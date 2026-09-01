@@ -4,6 +4,7 @@ import { ApiError, apiFetch } from "./api";
 import { tokenStore } from "./token-store";
 import {
   assinarMudanca,
+  definirPersistencia,
   desfechoDoDesbloqueio,
   type DesfechoDesbloqueio,
   carregarSessaoGuardada,
@@ -13,11 +14,21 @@ import {
   setSessao,
 } from "./sessao";
 import { autenticarBiometria, checarBiometria } from "./biometria";
+import { efeitoDe, ehPreferencia, type PreferenciaAcesso } from "./preferencia-acesso";
 import { desregistrarPushAtual, limparBadge } from "./push";
 
 // O par (access, refresh) e a persistencia dele moram em `sessao.ts`. Aqui so
 // resta a preferencia de biometria, que e do usuario e nao da sessao.
-const BIOMETRIA_KEY = "isphub_biometria"; // "1" = desbloqueio biometrico ligado
+const BIOMETRIA_KEY = "isphub_biometria"; // legado: "1" = digital ligada (ver migracao no boot)
+const PREFERENCIA_KEY = "isphub_preferencia";
+const EMAIL_KEY = "isphub_email";
+/*
+ * O primeiro nome, guardado junto do e-mail. Existe pra tela de bloqueio poder
+ * dizer "Entrar como Joao": enquanto a sessao esta trancada nao houve `/auth/me`
+ * nenhum, entao `usuario` e null e nao ha de onde tirar isso. Num aparelho
+ * compartilhado e o que evita entrar como o colega sem perceber.
+ */
+const NOME_KEY = "isphub_nome";
 
 interface AuthValue {
   token: string | null;
@@ -52,9 +63,23 @@ interface AuthValue {
   /** Liga o desbloqueio biometrico (confirma com uma leitura). Precisa de sessao ativa. */
   ativarBiometria: () => Promise<boolean>;
   desativarBiometria: () => Promise<void>;
+
+  // ---- O que fica salvo neste aparelho ----
+  /** `null` = o tecnico ainda nao escolheu; e o gatilho da folha pos-login. */
+  preferencia: PreferenciaAcesso | null;
+  /** Aplica a escolha AGORA: gravando ou apagando sessao e e-mail conforme ela. */
+  definirPreferencia: (p: PreferenciaAcesso) => Promise<void>;
+  /** E-mail guardado pra pre-preencher o login (vazio quando nao se guarda). */
+  emailLembrado: string | null;
+  /** Primeiro nome de quem tem a sessao guardada, pra tela de bloqueio. */
+  nomeLembrado: string | null;
+  /** Apaga TUDO deste aparelho e volta ao login limpo ("trocar de usuario"). */
+  esquecerAparelho: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthValue | undefined>(undefined);
+
+const primeiro = (u: UsuarioPublic) => ((u.nomeExibicao || u.nome) ?? "").trim().split(/\s+/)[0] ?? "";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
@@ -63,6 +88,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [biometriaAtiva, setBiometriaAtiva] = useState(false);
   const [bloqueadoPorBiometria, setBloqueado] = useState(false);
   const [sessaoExpirou, setSessaoExpirou] = useState(false);
+  const [preferencia, setPreferencia] = useState<PreferenciaAcesso | null>(null);
+  const [emailLembrado, setEmailLembrado] = useState<string | null>(null);
+  const [nomeLembrado, setNomeLembrado] = useState<string | null>(null);
 
   // Restaura o token guardado. Se o desbloqueio biometrico estiver ligado, NAO
   // entra automatico — marca `bloqueado` e deixa a tela de login pedir o Face
@@ -72,8 +100,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let vivo = true;
     (async () => {
       try {
+        /*
+         * MIGRACAO: antes da escolha existir, a unica coisa gravada era
+         * `isphub_biometria = "1"`. Quem ja usa a digital tem so essa chave —
+         * ignora-la desligaria a biometria de todo mundo no primeiro update, o
+         * mesmo estrago que a Task 2 acabou de consertar por outro caminho.
+         */
+        const salva = await tokenStore.get(PREFERENCIA_KEY);
+        const legadoBio = (await tokenStore.get(BIOMETRIA_KEY)) === "1";
+        const pref: PreferenciaAcesso | null = ehPreferencia(salva) ? salva : legadoBio ? "biometria" : null;
+        const [emailSalvo, nomeSalvo] = await Promise.all([tokenStore.get(EMAIL_KEY), tokenStore.get(NOME_KEY)]);
+        if (vivo) {
+          setPreferencia(pref);
+          setEmailLembrado(emailSalvo);
+          setNomeLembrado(nomeSalvo);
+        }
+
         const { access, refresh } = await carregarSessaoGuardada();
-        const bioLigada = (await tokenStore.get(BIOMETRIA_KEY)) === "1";
+        const bioLigada = pref === null ? legadoBio : efeitoDe(pref).pedeBiometria;
         if (vivo) setBiometriaAtiva(bioLigada);
         if (!access && !refresh) return;
         if (bioLigada) {
@@ -125,6 +169,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       biometriaAtiva,
       bloqueadoPorBiometria,
       sessaoExpirou,
+      preferencia,
+      emailLembrado,
+      nomeLembrado,
       async login(email, senha) {
         const resp = await apiFetch<{ token: string; refreshToken: string; usuario: UsuarioPublic }>("/auth/login", {
           method: "POST",
@@ -134,6 +181,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // entrou na API; o app recebia e descartava, e por isso a sessao dele
         // morria em 8h.
         setSessao(resp.token, resp.refreshToken);
+        // A escolha ja feita continua valendo nos logins seguintes, em silencio.
+        if (preferencia && efeitoDe(preferencia).guardaEmail) {
+          await tokenStore.set(EMAIL_KEY, email.trim());
+          await tokenStore.set(NOME_KEY, primeiro(resp.usuario));
+          setEmailLembrado(email.trim());
+          setNomeLembrado(primeiro(resp.usuario));
+        }
         setToken(resp.token);
         setUsuario(resp.usuario);
         setBloqueado(false);
@@ -215,12 +269,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setBiometriaAtiva(true);
         return true;
       },
+      async esquecerAparelho() {
+        // Nao passa pelo /auth/logout: quem toca em "trocar de usuario" pode
+        // estar com a sessao ja invalida, e exigir rede pra trocar de pessoa
+        // deixaria o proximo tecnico preso na tela do anterior.
+        setSessao(null, null);
+        await Promise.all([tokenStore.del(EMAIL_KEY), tokenStore.del(NOME_KEY), tokenStore.del(BIOMETRIA_KEY), tokenStore.del(PREFERENCIA_KEY)]);
+        setEmailLembrado(null);
+        setNomeLembrado(null);
+        setBiometriaAtiva(false);
+        setBloqueado(false);
+        setSessaoExpirou(false);
+        setPreferencia(null);
+      },
+      async definirPreferencia(p) {
+        const efeito = efeitoDe(p);
+        await tokenStore.set(PREFERENCIA_KEY, p);
+        setPreferencia(p);
+
+        /*
+         * A escolha e APLICADA aqui, nao so anotada. `definirPersistencia(false)`
+         * apaga o par (access, refresh) que ja estava gravado e passa a manter a
+         * sessao so em memoria — sem isso "nao salvar nada" seria um rotulo
+         * sobre um aparelho que continua guardando tudo.
+         */
+        await definirPersistencia(efeito.guardaSessao);
+
+        if (efeito.guardaEmail) {
+          if (usuario) {
+            await tokenStore.set(EMAIL_KEY, usuario.email);
+            await tokenStore.set(NOME_KEY, primeiro(usuario));
+            setEmailLembrado(usuario.email);
+            setNomeLembrado(primeiro(usuario));
+          }
+        } else {
+          await tokenStore.del(EMAIL_KEY);
+          await tokenStore.del(NOME_KEY);
+          setEmailLembrado(null);
+          setNomeLembrado(null);
+        }
+
+        // A digital exige a sessao guardada: sem refresh no aparelho nao ha o
+        // que destrancar. Por isso ela nao e um interruptor a parte.
+        if (efeito.pedeBiometria) {
+          await tokenStore.set(BIOMETRIA_KEY, "1");
+          setBiometriaAtiva(true);
+        } else {
+          await tokenStore.del(BIOMETRIA_KEY);
+          setBiometriaAtiva(false);
+        }
+      },
       async desativarBiometria() {
         await tokenStore.del(BIOMETRIA_KEY);
         setBiometriaAtiva(false);
       },
     }),
-    [token, usuario, carregando, biometriaAtiva, bloqueadoPorBiometria, sessaoExpirou],
+    [token, usuario, carregando, biometriaAtiva, bloqueadoPorBiometria, sessaoExpirou, preferencia, emailLembrado, nomeLembrado],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

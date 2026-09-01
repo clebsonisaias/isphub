@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Stack } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import type { StatusPreset } from "@isphub/shared";
@@ -7,6 +7,7 @@ import { USER_ROLE_LABEL } from "@isphub/shared";
 import { useAuth } from "@/lib/auth";
 import { useModuloHabilitado } from "@/lib/config";
 import { checarBiometria, iconeBiometria, rotuloBiometria, type BiometriaInfo } from "@/lib/biometria";
+import type { PreferenciaAcesso } from "@/lib/preferencia-acesso";
 import { Avatar, useAvatarUri } from "@/features/chat/avatar";
 import { escolherFoto } from "@/features/chat/media";
 import { comprimirAvatar } from "@/features/perfil/media";
@@ -14,10 +15,17 @@ import { atualizarPerfil, atualizarStatus, enviarFoto, removerFoto } from "@/fea
 import { StatusPicker } from "@/features/perfil/status-picker";
 import { CartaoMinhaLinha } from "@/features/linha-movel/cartao";
 import { Button, Card, Field, Hero, Muted, Screen } from "@/components/ui";
-import { colors, font, space } from "@/theme/tokens";
+import { colors, font, radius, space } from "@/theme/tokens";
+
+/** As mesmas tres saidas da folha pos-login, editaveis aqui. */
+const OPCOES_ACESSO: { id: PreferenciaAcesso; icone: "smile" | "mail" | "shield-off"; titulo: string; descricao: string }[] = [
+  { id: "biometria", icone: "smile", titulo: "Usar biometria", descricao: "Abre o app sem digitar nada." },
+  { id: "email", icone: "mail", titulo: "Só lembrar meu e-mail", descricao: "Você digita a senha toda vez." },
+  { id: "nada", icone: "shield-off", titulo: "Não salvar nada", descricao: "Fechou o app, saiu." },
+];
 
 export default function Perfil() {
-  const { usuario, token, refetchMe, logout, biometriaAtiva, ativarBiometria, desativarBiometria } = useAuth();
+  const { usuario, token, refetchMe, logout, preferencia, definirPreferencia } = useAuth();
   const temLinhaMovel = useModuloHabilitado("linha-movel");
   const [enviandoFoto, setEnviandoFoto] = useState(false);
   const [bioInfo, setBioInfo] = useState<BiometriaInfo | null>(null);
@@ -44,15 +52,11 @@ export default function Perfil() {
     };
   }, []);
 
-  async function handleAlternarBiometria(ligar: boolean) {
+  async function handleEscolher(p: PreferenciaAcesso) {
+    if (p === preferencia) return;
     setAlternandoBio(true);
     try {
-      if (ligar) {
-        const ok = await ativarBiometria();
-        if (!ok) return; // usuario cancelou a leitura — o switch volta sozinho
-      } else {
-        await desativarBiometria();
-      }
+      await definirPreferencia(p);
     } finally {
       setAlternandoBio(false);
     }
@@ -196,27 +200,49 @@ export default function Perfil() {
           <Button label={salvandoPerfil ? "Salvando…" : "Salvar perfil"} onPress={handleSalvarPerfil} loading={salvandoPerfil} />
         </Card>
 
-        {bioInfo?.disponivel ? (
-          <Card style={{ gap: space.sm }}>
-            <Text style={{ fontSize: font.size.sm, fontWeight: font.weight.medium as "600", color: colors.ink2 }}>Segurança</Text>
-            <View style={styles.bioRow}>
-              <View style={styles.bioIcon}>
-                <Feather name={iconeBiometria(bioInfo.tipo)} size={18} color={colors.brand} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.bioTitulo}>Desbloqueio por {rotuloBiometria(bioInfo.tipo)}</Text>
-                <Muted>Entre no app sem digitar a senha.</Muted>
-              </View>
-              <Switch
-                value={biometriaAtiva}
+        {/*
+          UM lugar so decide o que fica salvo. Antes havia um switch de
+          biometria aqui e nenhum controle de e-mail ou de sessao — as outras
+          duas coisas aconteciam em silencio, sem ninguem ter escolhido.
+        */}
+        <Card style={{ gap: space.sm }}>
+          <Text style={{ fontSize: font.size.sm, fontWeight: font.weight.medium as "600", color: colors.ink2 }}>
+            Neste aparelho
+          </Text>
+          {OPCOES_ACESSO.filter((o) => o.id !== "biometria" || bioInfo?.disponivel).map((o) => {
+            const ativa = preferencia === o.id;
+            return (
+              <Pressable
+                key={o.id}
+                onPress={() => void handleEscolher(o.id)}
                 disabled={alternandoBio}
-                onValueChange={(v) => void handleAlternarBiometria(v)}
-                trackColor={{ true: colors.brand, false: colors.line2 }}
-                thumbColor={colors.card}
-              />
-            </View>
-          </Card>
-        ) : null}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: ativa, disabled: alternandoBio }}
+                accessibilityLabel={o.titulo}
+                style={({ pressed }) => [
+                  styles.acessoRow,
+                  ativa && styles.acessoRowAtiva,
+                  pressed && { opacity: 0.88, transform: [{ scale: 0.99 }] },
+                ]}
+              >
+                <View style={styles.bioIcon}>
+                  <Feather
+                    name={o.id === "biometria" && bioInfo ? iconeBiometria(bioInfo.tipo) : o.icone}
+                    size={18}
+                    color={colors.brand}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.bioTitulo}>
+                    {o.id === "biometria" && bioInfo ? `Usar ${rotuloBiometria(bioInfo.tipo)}` : o.titulo}
+                  </Text>
+                  <Muted>{o.descricao}</Muted>
+                </View>
+                {ativa ? <Feather name="check" size={18} color={colors.brand} /> : null}
+              </Pressable>
+            );
+          })}
+        </Card>
 
         <Pressable onPress={handleLogout} style={{ alignItems: "center", paddingVertical: space.md }}>
           <Text style={{ fontSize: font.size.base, fontWeight: font.weight.medium as "600", color: colors.slaRed }}>Sair</Text>
@@ -240,6 +266,17 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.brand,
   },
+acessoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.md,
+    minHeight: 60,
+    padding: space.sm,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.line2,
+  },
+  acessoRowAtiva: { borderColor: colors.brand, backgroundColor: colors.brandBg },
   bioRow: { flexDirection: "row", alignItems: "center", gap: space.md },
   bioIcon: {
     width: 38,

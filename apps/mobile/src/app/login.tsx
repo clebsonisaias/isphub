@@ -51,10 +51,11 @@ function CampoLogin({
 }
 
 export default function Login() {
-  const { token, login, bloqueadoPorBiometria, desbloquearComBiometria, sessaoExpirou } = useAuth();
+  const { token, login, bloqueadoPorBiometria, desbloquearComBiometria, sessaoExpirou, emailLembrado, nomeLembrado, esquecerAparelho } =
+    useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(emailLembrado ?? "");
   const [senha, setSenha] = useState("");
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -66,6 +67,20 @@ export default function Login() {
   useEffect(() => {
     checarBiometria().then(setBio).catch(() => {});
   }, []);
+
+  /*
+   * E-mail conhecido: preenche e vai DIRETO pro campo de senha. Um toque e um
+   * teclado a menos — no sol, de luva, com a mao suja, e a diferenca entre
+   * entrar e xingar. So foca quando nao ha biometria esperando, senao roubaria
+   * a tela do prompt do Face ID/digital.
+   */
+  useEffect(() => {
+    if (!emailLembrado) return;
+    setEmail((atual) => atual || emailLembrado);
+    if (bloqueadoPorBiometria) return;
+    const t = setTimeout(() => senhaRef.current?.focus(), 350);
+    return () => clearTimeout(t);
+  }, [emailLembrado, bloqueadoPorBiometria]);
 
   // Auto-prompt do Face ID/digital quando ha sessao guardada esperando
   // desbloqueio (como os apps de banco). Roda uma vez; se o usuario cancelar,
@@ -199,6 +214,12 @@ export default function Login() {
           <Animated.View style={[styles.card, { opacity: card, transform: [{ translateY: cardY }, { translateX: treme }] }]}>
             {bloqueadoPorBiometria && bio.disponivel ? (
               <>
+                {/*
+                  De quem e a sessao trancada. Num aparelho compartilhado evita
+                  entrar como o colega sem perceber; no proprio, e a confirmacao
+                  de que o app sabe quem voce e.
+                */}
+                {nomeLembrado ? <Text style={styles.quem}>Entrar como {nomeLembrado}</Text> : null}
                 <Pressable
                   onPress={() => void tentarBiometria()}
                   style={({ pressed }) => [styles.bioBtn, pressed && { opacity: 0.9 }]}
@@ -207,6 +228,17 @@ export default function Login() {
                 >
                   <Feather name={iconeBiometria(bio.tipo)} size={20} color={colors.onBrand} />
                   <Text style={styles.bioBtnTxt}>Entrar com {rotuloBiometria(bio.tipo)}</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    setEmail("");
+                    void esquecerAparelho();
+                  }}
+                  accessibilityRole="button"
+                  hitSlop={8}
+                  style={({ pressed }) => [{ alignSelf: "center" }, pressed && { opacity: 0.7 }]}
+                >
+                  <Text style={styles.trocar}>Trocar de usuário</Text>
                 </Pressable>
                 <View style={styles.divisor}>
                   <View style={styles.divisorLinha} />
@@ -315,7 +347,9 @@ const styles = StyleSheet.create({
   campo: { flex: 1, paddingHorizontal: space.md, paddingVertical: 13, fontSize: font.size.base, color: colors.ink },
   campoIcone: { paddingHorizontal: space.md, paddingVertical: 10 },
 
-avisoWrap: {
+  quem: { fontSize: font.size.sm, color: colors.ink2, textAlign: "center", fontWeight: font.weight.medium as "600" },
+  trocar: { fontSize: font.size.sm, color: colors.brandInk, fontWeight: font.weight.medium as "600" },
+  avisoWrap: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: space.xs,
