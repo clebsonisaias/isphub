@@ -16,6 +16,9 @@ import { decrypt } from "../lib/crypto.js";
 /** Timeout curto de proposito: ver `chamar`. */
 const TIMEOUT_MS = 8_000;
 
+/** Onde o `chatExternoRouter` esta montado no AtendAI (`server.ts`). */
+const BASE_PATH = "/api/externo/v1";
+
 export interface CredencialAtendai {
   baseUrl: string;
   chave: string;
@@ -82,9 +85,15 @@ export async function chamar<T>(
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
-    const res = await fetch(`${cred.baseUrl}/api/chat-externo${caminho}`, {
+    const res = await fetch(`${cred.baseUrl}${BASE_PATH}${caminho}`, {
       method: metodo,
-      headers: { "Content-Type": "application/json", "X-API-Key": cred.chave },
+      /*
+       * `Authorization: Bearer ak_…`, conferido no `middleware/apiKey.ts` do
+       * AtendAI. Nao e `X-API-Key`: com o header errado a chamada volta 401 e
+       * o sintoma parece chave invalida, mandando quem for depurar caçar no
+       * cadastro em vez de no cabecalho.
+       */
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${cred.chave}` },
       body: corpo === undefined ? undefined : JSON.stringify(corpo),
       signal: ctrl.signal,
     });
