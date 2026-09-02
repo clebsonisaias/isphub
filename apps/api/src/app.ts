@@ -9,6 +9,7 @@ import { provedoresRouter } from "./routes/provedores.js";
 import { categoriasRouter } from "./routes/categorias.js";
 import { usuariosRouter } from "./routes/usuarios.js";
 import { erpConfigRouter } from "./routes/erpConfig.js";
+import { atendaiConfigRouter } from "./routes/atendaiConfig.js";
 import { tiposOsRouter } from "./routes/tiposOs.js";
 import { syncRouter } from "./routes/sync.js";
 import { filaRouter } from "./routes/fila.js";
@@ -111,6 +112,7 @@ export function createApp() {
   app.use("/produtividade", produtividadeRouter);
   app.use("/chat-clientes", clienteChatRouter);
   app.use("/provedores/:provedorId/erp-config", erpConfigRouter);
+  app.use("/provedores/:provedorId/atendai", atendaiConfigRouter);
   app.use("/provedores/:provedorId/tipos-os", tiposOsRouter);
   app.use("/provedores/:provedorId/sync", syncRouter);
   app.use("/provedores/:provedorId/conexao", conexaoRouter);

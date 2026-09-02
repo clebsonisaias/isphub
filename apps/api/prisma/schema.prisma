@@ -54,6 +54,7 @@ model Provedor {
   criadoEm DateTime @default(now())
 
   erpConfigs    ErpConfig[]
+  atendaiConfig AtendaiConfig?
   tiposOs       TipoOs[]
   ordensServico OrdemServico[]
   usuarios      Usuario[]
@@ -75,6 +76,40 @@ model Provedor {
 
 /// Credenciais de acesso ao ERP de um provedor. O token e armazenado
 /// criptografado (AES-256-GCM) — ver src/lib/crypto.ts — nunca em claro.
+/// A ligacao deste provedor com o AtendAI (a plataforma de atendimento dele).
+///
+/// UMA chave por provedor, e nao uma da plataforma inteira: no AtendAI a chave
+/// pertence a um tenant (`req.sistemaExterno.tenantId`). E e justamente isso
+/// que faz a regra do produto funcionar — a OS diz o provedor, o provedor diz a
+/// chave, a chave diz o tenant, e o tecnico cai no cliente certo.
+///
+/// A ausencia desta linha NAO e erro: provedor sem AtendAI segue no caminho
+/// atual (canal WhatsApp proprio do ISPhub). Por isso `chamar()` devolve null
+/// em vez de lancar.
+model AtendaiConfig {
+  id         String   @id @default(uuid())
+  provedorId String   @unique
+  provedor   Provedor @relation(fields: [provedorId], references: [id], onDelete: Cascade)
+
+  /// Ex.: `https://atendai.citmax.com.br`. Sem barra no fim.
+  baseUrl String
+
+  /// Chave de API cifrada (iv:authTag:ciphertext em base64), igual ao token do
+  /// SGP. NUNCA volta em GET nem vai pra log.
+  chaveCifrada String
+
+  /// Segredo que o AtendAI devolve ao registrar o webhook de saida. E com ele
+  /// que se valida a assinatura do que chega — sem isso, qualquer um posta
+  /// mensagem no chat da equipe.
+  segredoCifrado String?
+
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@map("atendai_configs")
+}
+
 model ErpConfig {
   id                       String    @id @default(uuid())
   provedorId               String
