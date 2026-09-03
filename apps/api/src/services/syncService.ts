@@ -12,6 +12,7 @@ import { OS_EXTERNA_WHERE, OS_INTERNA_WHERE } from "./equipeService.js";
 import { buildConnector } from "./erpConnectorService.js";
 import { emitParaTodos, emitParaUsuario } from "./realtimeHub.js";
 import { sugerirCategoriaId } from "./categoriaMatch.js";
+import { confirmarComSgp, ligarOrfas, reconciliarDoSgp } from "./agendaService.js";
 
 /**
  * Motor de sincronizacao: puxa OS do SGP de um provedor e faz
@@ -418,6 +419,47 @@ export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; m
         `[sync] status de OS nao reconhecido(s) no provedor ${provedorId}, tratados como "aberta": ${[...statusNaoReconhecidos].join(" | ")}`,
       );
     }
+    // --- 2b. Agenda: casar o espelho com as marcacoes ---
+    // Duas direcoes, e as duas sao normais:
+    //
+    // 1) ORFAS — o atendimento marca no instante em que abre a OS no SGP, e o
+    //    espelho so a ve neste ciclo. Ate aqui a marcacao existia sem OS.
+    // 2) DO SGP — o provedor agendou direto no SGP dele. Sem trazer isso pra
+    //    agenda, a vaga e consumida na rua e a grade continua mostrando o turno
+    //    vazio: exatamente o engano da planilha, so que invisivel.
+    //
+    // Best-effort: uma agenda desalinhada e ruim, um sync derrubado e pior.
+    try {
+      await ligarOrfas(provedorId);
+      await confirmarComSgp(provedorId);
+      const semMarcacao = await prisma.ordemServico.findMany({
+        where: {
+          provedorId,
+          dataAgendamento: { not: null },
+          agendamento: null,
+          status: { in: OS_STATUS_ABERTOS },
+        },
+        select: { id: true, sgpOsId: true, dataAgendamento: true, bairro: true, pop: true },
+        take: 500,
+      });
+      const criadas = await reconciliarDoSgp(
+        semMarcacao
+          .filter((o): o is typeof o & { dataAgendamento: Date } => o.dataAgendamento != null)
+          .map((o) => ({
+            provedorId,
+            sgpOsId: o.sgpOsId,
+            ordemServicoId: o.id,
+            dataAgendamento: o.dataAgendamento,
+            // `pop` primeiro: vem sempre na listagem, enquanto `bairro` so
+            // aparece depois do backfill do cadastro (30 por ciclo, TTL 7d).
+            regiao: o.pop ?? o.bairro ?? null,
+          })),
+      );
+      if (criadas > 0) console.log(`[sync] agenda: ${criadas} OS agendadas no SGP trazidas pra grade (provedor ${provedorId})`);
+    } catch (e) {
+      console.warn(`[sync] agenda: reconciliacao falhou no provedor ${provedorId}:`, e);
+    }
+
     // --- 3. Backfill do cadastro do cliente (endereco de rua + geo + telefone) ---
     // A listagem de OS nao traz nada disso; o cadastro do cliente
     // (/api/ura/clientes/) traz. Sem isso o Mapa fica vazio e o card so mostra

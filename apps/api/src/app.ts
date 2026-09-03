@@ -23,6 +23,8 @@ import { notificacoesRouter } from "./routes/notificacoes.js";
 import { horaRouter } from "./routes/hora.js";
 import { configRouter, adminModulosRouter } from "./routes/config.js";
 import { eventosRouter } from "./routes/eventos.js";
+import { agendaRouter, adminAgendaRouter } from "./routes/agenda.js";
+import { parceiroAgendaRouter } from "./routes/parceiroAgenda.js";
 import { syncMinhasRouter } from "./routes/syncMinhas.js";
 import { chatRouter } from "./routes/chat.js";
 import { canaisWhatsappRouter } from "./routes/canaisWhatsapp.js";
@@ -102,6 +104,15 @@ export function createApp() {
   app.use("/hora", horaRouter);
   app.use("/config", configRouter);
   app.use("/admin/modulos", adminModulosRouter);
+  app.use("/agenda", agendaRouter);
+  /*
+   * Porta de sistemas PARCEIROS (o AtendAI do provedor). Versionada e sob
+   * /api/parceiro porque e contrato com outro deploy: as rotas internas podem
+   * mudar de forma junto com a tela, esta nao — do outro lado ha um sistema que
+   * so atualiza quando alguem decide atualizar.
+   */
+  app.use("/api/parceiro/v1/agenda", parceiroAgendaRouter);
+  app.use("/admin/agenda", adminAgendaRouter);
   app.use("/eventos", eventosRouter);
   app.use("/sync", syncMinhasRouter);
   app.use("/chat", chatRouter);

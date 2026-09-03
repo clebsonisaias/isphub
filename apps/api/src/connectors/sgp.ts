@@ -744,6 +744,19 @@ function comFusoSgp(dataHora: string | null): string | null {
 const FUSO_SGP = "-03:00";
 
 /**
+ * `AAAA-MM-DD HH:MM` no relogio do SGP, que e o formato que ele aceita escrever.
+ *
+ * A conversao e explicita porque o servidor roda em UTC: `toISOString()` daria
+ * a hora de Londres, e uma visita marcada pras 8h viraria 5h no ERP do
+ * provedor — errado de um jeito que so aparece na rua.
+ */
+function paraDataHoraSgp(d: Date): string {
+  const local = new Date(d.getTime() - 3 * 3_600_000);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${local.getUTCFullYear()}-${p(local.getUTCMonth() + 1)}-${p(local.getUTCDate())} ${p(local.getUTCHours())}:${p(local.getUTCMinutes())}`;
+}
+
+/**
  * Normaliza uma OS do SGP para o formato neutro do conector.
  * Defensivo quanto a nomes de campo: o SGP tem variantes entre a familia
  * "URA" e a familia "central/chamado" (ex.: os_id vs id, os_conteudo vs
@@ -1041,6 +1054,14 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
           assertSgpEscritaOk(data, path);
         }
       }
+    },
+
+    async scheduleOs(sgpOsId: string, quando: Date): Promise<void> {
+      const path = `/api/os/update/id/${encodeURIComponent(sgpOsId)}/`;
+      // JSON, nao form: mesmo motivo de `updateOsStatus` — como form o SGP
+      // responde 200 e ignora o corpo inteiro.
+      const data = await sgpPostJson(creds, path, { data_hora_agendamento: paraDataHoraSgp(quando) });
+      assertSgpEscritaOk(data, path);
     },
 
     async updateOsStatus(sgpOsId: string, statusCode: number): Promise<void> {

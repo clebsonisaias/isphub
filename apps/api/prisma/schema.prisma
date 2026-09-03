@@ -33,6 +33,21 @@ enum OsStatus {
 }
 
 /// Tipo de evento na timeline de uma OS.
+/// A metade do dia em que a visita foi marcada.
+///
+/// NAO e o mesmo "turno" de `JornadaTecnico` (bater ponto). Sao dois conceitos
+/// que a operacao chama pelo mesmo nome, e por isso este carrega Agenda no
+/// nome: um e a metade do DIA CIVIL, o outro e o expediente de UMA pessoa.
+enum TurnoAgenda {
+  manha
+  tarde
+}
+
+enum StatusAgendamento {
+  marcado
+  cancelado
+}
+
 enum OsEventoTipo {
   atribuicao
   status
@@ -59,6 +74,7 @@ model Provedor {
   ordensServico OrdemServico[]
   usuarios      Usuario[]
   syncLogs      SyncLog[]
+  agendamentos  Agendamento[]
   /// Lancamentos em que este provedor e a CONTRAPARTE (quem deve a hub).
   /// Diferente de todas as relacoes acima: nao e particao multi-tenant.
   lancamentos   Lancamento[]
@@ -102,6 +118,25 @@ model AtendaiConfig {
   /// que se valida a assinatura do que chega — sem isso, qualquer um posta
   /// mensagem no chat da equipe.
   segredoCifrado String?
+
+  /// A chave que o AtendAI usa pra entrar AQUI (sentido oposto ao de
+  /// `chaveCifrada`, que e a nossa credencial pra falar com ele).
+  ///
+  /// Guardada como HASH e nao cifrada: esta chave nunca precisa ser lida de
+  /// volta — so comparada. Cifrar daria a capacidade de exibi-la, que e
+  /// exatamente a capacidade que nao se quer ter num segredo de entrada. E
+  /// mostrada UMA vez, ao gerar. Mesma decisao do `SistemaExterno` do lado do
+  /// AtendAI, que e quem vai consumir isto.
+  chaveEntradaHash String?
+
+  /// Os 12 primeiros caracteres da chave de entrada, em claro. Serve pro
+  /// lookup (achar a linha sem varrer a tabela hasheando tudo) e pra tela
+  /// mostrar QUAL chave esta ativa sem revelar nenhuma.
+  chaveEntradaPrefixo String? @unique
+
+  /// Best-effort: quando a chave de entrada foi usada pela ultima vez. E como
+  /// se descobre integracao que parou de funcionar em silencio.
+  chaveEntradaUsoEm DateTime?
 
   ativo        Boolean  @default(true)
   criadoEm     DateTime @default(now())
@@ -278,6 +313,9 @@ model OrdemServico {
   /// descobrir o veiculo cruzando a janela de execucao com as ocupacoes do
   /// tecnico; ver `veiculosDaOs`.
   ocupacoes    OcupacaoVeiculo[]
+  /// A marcacao na agenda da ISPhub, quando existe. Chega DEPOIS da OS em
+  /// alguns casos e ANTES dela em outros — ver o comentario em `Agendamento`.
+  agendamento  Agendamento?
 
   @@unique([provedorId, sgpOsId])
   @@index([provedorId, status])
@@ -543,7 +581,7 @@ model JornadaTecnico {
   ocupacoes OcupacaoVeiculo[]
 
   /// Os intervalos parados dentro deste turno (almoco e afins).
-  pausas    PausaJornada[]
+  pausas PausaJornada[]
 
   @@index([usuarioId, inicioEm])
   @@map("jornadas_tecnico")
@@ -608,8 +646,8 @@ model EscalaJornada {
 
   /// Quem escalou. Sem FK de proposito: se o gestor sair da empresa, a escala
   /// do passado nao pode sumir junto.
-  definidoPor String
-  criadoEm    DateTime @default(now())
+  definidoPor  String
+  criadoEm     DateTime @default(now())
   atualizadoEm DateTime @updatedAt
 
   /// Uma escala por pessoa por dia. Reescalar ATUALIZA, nao empilha.
@@ -1382,7 +1420,7 @@ model Veiculo {
   /// Unico GLOBAL, e nao por provedor: placa e unica no mundo real (Denatran).
   /// `@@unique([provedorId, placa])` seria pior — o Postgres trata NULL como
   /// distinto, entao N carros da propria operacao poderiam ter a mesma placa.
-  placa  String        @unique
+  placa   String        @unique
   /// Como a operacao CHAMA este carro no dia a dia — "C011", "Suporte 1".
   ///
   /// Placa identifica; apelido RECONHECE. Num mapa com quatro pontos, ninguem
@@ -1393,12 +1431,12 @@ model Veiculo {
   /// Nulo e o normal: o campo e conveniencia, e um carro sem apelido continua
   /// perfeitamente identificado pela placa.
   apelido String?       @db.VarChar(40)
-  modelo String        @db.VarChar(80)
-  marca  String?       @db.VarChar(60)
-  ano    Int?
-  cor    String?       @db.VarChar(30)
-  tipo   TipoVeiculo   @default(carro)
-  status StatusVeiculo @default(ativo)
+  modelo  String        @db.VarChar(80)
+  marca   String?       @db.VarChar(60)
+  ano     Int?
+  cor     String?       @db.VarChar(30)
+  tipo    TipoVeiculo   @default(carro)
+  status  StatusVeiculo @default(ativo)
 
   /// Odometro corrente, em km. Cache de LEITURA: a verdade e o maior entre o
   /// ultimo Abastecimento.km e o ultimo OcupacaoVeiculo.odometroFim. So sobe
@@ -1423,10 +1461,10 @@ model Veiculo {
   eventos        EventoRastreador[]
   viagens        Viagem[]
   lancamentos    Lancamento[]
+  escalas        EscalaJornada[]
 
   @@index([provedorId, status])
   @@map("veiculos")
-  escalas    EscalaJornada[]
 }
 
 /// Um abastecimento. Gera um Lancamento de despesa na MESMA transacao.
@@ -1676,7 +1714,7 @@ model Rastreador {
 
   /// Caches de leitura, recomputaveis a partir de PosicaoRastreador.
   /// Tri-estado: nulo = a consulta falhou, nao sabemos. Nao afirme.
-  ultimaPosicaoEm DateTime?
+  ultimaPosicaoEm     DateTime?
   /// Quando o APARELHO falou com o servidor do fornecedor pela ultima vez
   /// (`lastCommunication` do `last-location`) — outro relogio, e nao um
   /// sinonimo de `ultimaPosicaoEm`.
@@ -1690,9 +1728,9 @@ model Rastreador {
   /// buraco nenhum. Com os dois relogios, "esta calado" e "esta falando mas
   /// cego" deixam de ser a mesma coisa.
   ultimaComunicacaoEm DateTime?
-  ultimoStatusEm  DateTime?
-  comunicando     Boolean?
-  rastreando      Boolean?
+  ultimoStatusEm      DateTime?
+  comunicando         Boolean?
+  rastreando          Boolean?
 
   /// ESTADO CORRENTE — tambem cache, recomputavel da ultima posicao. Existe pra
   /// a lista e o filtro ("quem esta com bateria baixa") nao precisarem varrer a
@@ -1960,13 +1998,13 @@ model RastreadorConfig {
 model BrazmovelConfig {
   id String @id @default(uuid())
 
-  baseUrl String @default("https://api.brazmovel.com.br/v1")
+  baseUrl      String  @default("https://api.brazmovel.com.br/v1")
   /// "<iv_b64>:<tag_b64>:<ct_b64>" (AES-256-GCM, ver lib/crypto.ts).
   tokenCifrado String
   ativo        Boolean @default(true)
 
-  ultimoTesteEm DateTime?
-  ultimoTesteOk Boolean?
+  ultimoTesteEm       DateTime?
+  ultimoTesteOk       Boolean?
   /// Guarda o status HTTP observado junto da mensagem: daqui a seis meses, a
   /// diferenca entre "401" e "timeout" e a diferenca entre 5 minutos e 2 horas
   /// de investigacao.
@@ -1976,4 +2014,112 @@ model BrazmovelConfig {
   atualizadoEm DateTime @updatedAt
 
   @@map("brazmovel_configs")
+}
+
+/// A grade da agenda. UMA linha so (`id = "global"`).
+///
+/// A capacidade e da EQUIPE, nao do contrato: sao os mesmos tecnicos atendendo
+/// todos os provedores, entao um teto por provedor deixaria a soma passar do
+/// que a rua aguenta. Se um dia as equipes forem regionais, o recorte natural e
+/// por cidade/POP, nao por provedor.
+model AgendaConfig {
+  id String @id @default("global")
+
+  vagasManha Int @default(20)
+  vagasTarde Int @default(20)
+
+  /// Teto do DIA inteiro, alem do teto de cada turno. Nulo = sem teto proprio.
+  ///
+  /// Os dois numeros respondem perguntas diferentes: o do turno e quantas
+  /// visitas cabem numa saida, o do dia e quantas a equipe aguenta antes de a
+  /// ultima virar madrugada. Com 20+20 e teto diario de 30, as 10 ultimas nao
+  /// sao oferecidas em turno nenhum.
+  vagasDia Int?
+
+  /// Teto de visitas por REGIAO dentro de um turno. Nulo = sem teto regional.
+  ///
+  /// E o que a planilha queria dizer com "concentracao" e nunca fez: ela tinha
+  /// a coluna Bairro e contava so o total do dia, entao 40 OS espalhadas por
+  /// bairros opostos passavam batido.
+  tetoRegiao Int?
+
+  /// Dias da semana atendidos, 0=domingo … 6=sabado. Padrao seg-sab.
+  /// A planilha ofertava domingo com capacidade cheia.
+  diasAtendidos Int[] @default([1, 2, 3, 4, 5, 6])
+
+  /// Quantos dias a frente a grade vai. A planilha mostrava 14.
+  horizonteDias Int @default(14)
+
+  /// Antecedencia minima, em minutos, entre agora e o inicio do turno ofertado
+  /// — pra nao oferecer a manha de hoje as 11h.
+  antecedenciaMin Int @default(120)
+
+  atualizadoEm DateTime @updatedAt
+
+  @@map("agenda_config")
+}
+
+/// Uma OS marcada num dia + turno. E a FONTE DA VERDADE da agenda.
+///
+/// Por que nao usar `OrdemServico.dataAgendamento`: aquele campo e espelho puro
+/// do SGP e o sync o sobrescreve a cada ciclo, sem janela de protecao (ver
+/// syncService). Uma agenda morando la seria apagada sozinha algumas vezes por
+/// hora.
+///
+/// Por que a chave e `sgpOsId` e nao `ordemServicoId`: quem marca pode ser o
+/// atendimento, que abre a OS no SGP e recebe o id na hora — mas o espelho do
+/// ISPhub so a enxerga no ciclo seguinte, ate ~3 min depois. Chavear pela OS
+/// local tornaria impossivel marcar no momento da conversa, que e exatamente o
+/// momento em que o cliente esta na linha. `(provedorId, sgpOsId)` e a mesma
+/// chave que o sync ja usa, entao a ligacao acontece sozinha quando ela chega.
+model Agendamento {
+  id         String   @id @default(uuid())
+  provedorId String
+  provedor   Provedor @relation(fields: [provedorId], references: [id], onDelete: Cascade)
+
+  sgpOsId String
+
+  /// Preenchido quando o sync espelhar a OS. Nulo = marcada e ainda nao vista.
+  ordemServicoId String?       @unique
+  ordemServico   OrdemServico? @relation(fields: [ordemServicoId], references: [id], onDelete: SetNull)
+
+  /// DATE puro: a agenda e do DIA. Guardar instante faria "23h em Natal" cair
+  /// no dia seguinte — o mesmo motivo de `EscalaJornada.dia`.
+  dia   DateTime    @db.Date
+  turno TurnoAgenda
+
+  /// POP (ou bairro) no momento da marcacao — o teto regional conta por aqui.
+  ///
+  /// Copiado em vez de lido da OS de proposito: no instante da marcacao a OS
+  /// pode nem existir no espelho, e `bairro` so aparece depois do backfill de
+  /// cadastro (30 contratos por ciclo, TTL de 7 dias). `pop` vem sempre.
+  regiao String?
+
+  status StatusAgendamento @default(marcado)
+
+  /// A ordem da visita no dia, definida pelo supervisor. E a coluna "Ordem da
+  /// Rota" da planilha — que la morria na planilha; aqui ela chega no app do
+  /// tecnico.
+  ordemRota Int?
+
+  origem String
+
+  /// Quem marcou (nome da atendente, login, ou "IA"). Colunas "Atendente" e
+  /// "Data do Registro" da planilha viram dado auditavel.
+  marcadoPor String?
+
+  observacao String?
+
+  /// Quando o SGP CONFIRMOU a data na leitura seguinte — nao quando mandamos.
+  /// `/api/os/update/` ja devolveu 200 ignorando campo que nao aceita, entao
+  /// "escrevi" nao e evidencia de "gravou".
+  sgpConfirmadoEm DateTime?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@unique([provedorId, sgpOsId])
+  @@index([dia, turno, status])
+  @@index([dia, regiao, status])
+  @@map("agendamentos")
 }

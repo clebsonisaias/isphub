@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { Categoria, ErpConfigPublic, Provedor, TipoOs } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
@@ -13,10 +13,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select } from "@/components/ui/select";
-import { categoriasApi, erpConfigApi, provedoresApi, syncApi, tiposOsApi } from "@/lib/adminApi";
+import { atendaiConfigApi, categoriasApi, erpConfigApi, provedoresApi, syncApi, tiposOsApi } from "@/lib/adminApi";
+import type { AtendaiConfigPublic } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
-import { ArrowLeft, CheckCircle2, Download, RefreshCw, Sparkles, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Copy, Download, KeyRound, RefreshCw, Sparkles, XCircle } from "lucide-react";
 
 function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
@@ -55,12 +56,16 @@ export function ProvedorDetailPage() {
         <TabsList>
           <TabsTrigger value="sgp">Integração SGP</TabsTrigger>
           <TabsTrigger value="tipos">Tipos de OS</TabsTrigger>
+          <TabsTrigger value="atendai">AtendAI</TabsTrigger>
         </TabsList>
         <TabsContent value="sgp">
           <SgpConfigForm provedorId={id} />
         </TabsContent>
         <TabsContent value="tipos">
           <TiposOsManager provedorId={id} />
+        </TabsContent>
+        <TabsContent value="atendai">
+          <AtendaiConfigForm provedorId={id} />
         </TabsContent>
       </Tabs>
       </AnimatedPage>
@@ -394,5 +399,201 @@ function TiposOsManager({ provedorId }: { provedorId: string }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * A ligação deste provedor com o AtendAI — e ela tem DOIS sentidos.
+ *
+ * "Credenciais do AtendAI" é como o ISPhub fala com ele (chat, avisos ao
+ * cliente). "Chave de agendamento" é o contrário: como o AtendAI entra aqui pra
+ * consultar vagas e marcar visita. São segredos diferentes, gerados por lados
+ * diferentes, e tratá-los como um só já quebraria na primeira rotação de chave.
+ */
+function AtendaiConfigForm({ provedorId }: { provedorId: string }) {
+  const { toast } = useToast();
+  const [config, setConfig] = useState<AtendaiConfigPublic | null>(null);
+  const [baseUrl, setBaseUrl] = useState("");
+  const [chave, setChave] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [testando, setTestando] = useState(false);
+  const [gerando, setGerando] = useState(false);
+  /* A chave de entrada em claro só existe nesta variável, até sair da tela. */
+  const [chaveNova, setChaveNova] = useState<string | null>(null);
+
+  const carregar = useCallback(() => {
+    atendaiConfigApi
+      .obter(provedorId)
+      .then((c) => {
+        setConfig(c);
+        if (c) setBaseUrl(c.baseUrl);
+      })
+      .catch((err) => toast({ titulo: "Erro ao carregar", descricao: mensagem(err), variante: "erro" }));
+  }, [provedorId, toast]);
+
+  useEffect(carregar, [carregar]);
+
+  async function salvar() {
+    setSalvando(true);
+    try {
+      await atendaiConfigApi.salvar(provedorId, { baseUrl, chave });
+      setChave("");
+      carregar();
+      toast({ titulo: "Credenciais salvas", variante: "sucesso" });
+    } catch (err) {
+      toast({ titulo: "Não foi possível salvar", descricao: mensagem(err), variante: "erro" });
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  async function testar() {
+    setTestando(true);
+    try {
+      const r = await atendaiConfigApi.testar(provedorId);
+      toast(
+        r.ok
+          ? { titulo: "Conexão OK", descricao: `${r.colaboradores ?? 0} colaborador(es)`, variante: "sucesso" }
+          : { titulo: "O AtendAI recusou", descricao: r.erro, variante: "erro" },
+      );
+    } catch (err) {
+      toast({ titulo: "Falha no teste", descricao: mensagem(err), variante: "erro" });
+    } finally {
+      setTestando(false);
+    }
+  }
+
+  async function gerar() {
+    setGerando(true);
+    try {
+      const { chave: nova } = await atendaiConfigApi.gerarChaveEntrada(provedorId);
+      setChaveNova(nova);
+      carregar();
+    } catch (err) {
+      toast({ titulo: "Não foi possível gerar", descricao: mensagem(err), variante: "erro" });
+    } finally {
+      setGerando(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>Credenciais do AtendAI</CardTitle>
+          <CardDescription>Como o ISPhub fala com a plataforma de atendimento deste provedor.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {config && (
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+              <span className="text-muted-foreground">Chave atual:</span>
+              <code className="text-xs">{config.chaveMascarada}</code>
+            </div>
+          )}
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="atendai-url">URL base</Label>
+            <Input
+              id="atendai-url"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder="https://atendai.exemplo.com.br"
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="atendai-chave">Chave de API do AtendAI</Label>
+            <Input
+              id="atendai-chave"
+              type="password"
+              value={chave}
+              onChange={(e) => setChave(e.target.value)}
+              placeholder={config ? "Informe a chave para atualizar" : "ak_..."}
+            />
+          </div>
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Button variant="brand" onClick={() => void salvar()} disabled={salvando || !baseUrl || !chave}>
+              {salvando ? "Salvando..." : "Salvar"}
+            </Button>
+            <Button variant="outline" onClick={() => void testar()} disabled={testando || !config}>
+              {testando ? "Testando..." : "Testar conexão"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Chave de agendamento</CardTitle>
+          <CardDescription>
+            Com ela o AtendAI consulta as vagas e marca a visita aqui. Cole no AtendAI, em Integração ISPhub.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {!config ? (
+            <p className="text-sm text-muted-foreground">Salve as credenciais acima antes de gerar a chave.</p>
+          ) : (
+            <>
+              {config.chaveEntradaPrefixo ? (
+                <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+                  <span className="text-muted-foreground">Chave ativa:</span>
+                  <code className="text-xs">{config.chaveEntradaPrefixo}…</code>
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    {config.chaveEntradaUsoEm
+                      ? `usada em ${new Date(config.chaveEntradaUsoEm).toLocaleString("pt-BR")}`
+                      : "nunca usada"}
+                  </span>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">Nenhuma chave gerada — o AtendAI ainda não agenda aqui.</p>
+              )}
+
+              {/*
+                A chave em claro aparece UMA vez e não é recuperável: o servidor
+                guarda só o hash. Some da tela ao sair — avisar disso aqui é o
+                que evita a ligação de amanhã pedindo "manda de novo".
+              */}
+              {chaveNova && (
+                <div className="flex flex-col gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-3">
+                  <p className="text-sm font-medium">Copie agora — esta chave não será mostrada de novo.</p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 break-all rounded bg-background px-2 py-1 text-xs">{chaveNova}</code>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        void navigator.clipboard?.writeText(chaveNova);
+                        toast({ titulo: "Chave copiada", variante: "sucesso" });
+                      }}
+                    >
+                      <Copy className="size-4" />
+                      Copiar
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                <Button variant="brand" onClick={() => void gerar()} disabled={gerando}>
+                  <KeyRound className="size-4" />
+                  {gerando ? "Gerando..." : config.chaveEntradaPrefixo ? "Gerar nova (invalida a atual)" : "Gerar chave"}
+                </Button>
+                {config.chaveEntradaPrefixo && (
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      void atendaiConfigApi.revogarChaveEntrada(provedorId).then(() => {
+                        setChaveNova(null);
+                        carregar();
+                        toast({ titulo: "Chave revogada", variante: "sucesso" });
+                      })
+                    }
+                  >
+                    Revogar
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }

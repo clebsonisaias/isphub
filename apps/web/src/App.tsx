@@ -22,6 +22,7 @@ import { FinanceiroProvisoesPage } from "@/pages/FinanceiroProvisoesPage";
 import { FinanceiroFrotaPage } from "@/pages/FinanceiroFrotaPage";
 import { FrotaVeiculosPage } from "@/pages/FrotaVeiculosPage";
 import { EscalaPage } from "@/pages/EscalaPage";
+import { AgendaPage } from "@/pages/AgendaPage";
 import { FrotaBiPage } from "@/pages/FrotaBiPage";
 import { ProdutividadePage } from "@/pages/ProdutividadePage";
 import { FrotaMapaPage } from "@/pages/FrotaMapaPage";
@@ -169,6 +170,21 @@ function App() {
                   element={
                     <RequireAuth roles={[UserRole.ADMIN, UserRole.GESTOR]}>
                       <ProdutividadePage />
+                    </RequireAuth>
+                  }
+                />
+                {/*
+                  Agenda de visitas. Substitui a planilha de agendamento de OS
+                  do Drive. Vizinha da Escala e nao a mesma tela: a Escala
+                  distribui PESSOAS entre viaturas, a Agenda distribui VISITAS
+                  entre dias — e quem responde por cada uma abre a tela em
+                  momentos diferentes do dia.
+                */}
+                <Route
+                  path="/agenda"
+                  element={
+                    <RequireAuth roles={[UserRole.ADMIN, UserRole.GESTOR]}>
+                      <AgendaPage />
                     </RequireAuth>
                   }
                 />

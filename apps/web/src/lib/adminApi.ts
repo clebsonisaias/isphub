@@ -36,6 +36,31 @@ export const erpConfigApi = {
     api.post<{ ok: boolean; message?: string }>(`/provedores/${provedorId}/erp-config/testar`),
 };
 
+/** O que `GET /provedores/:id/atendai` devolve — nenhum segredo, por construção. */
+export interface AtendaiConfigPublic {
+  id: string;
+  baseUrl: string;
+  chaveMascarada: string;
+  temSegredoWebhook: boolean;
+  ativo: boolean;
+  /** Identifica QUAL chave de entrada está ativa sem revelar nenhuma. */
+  chaveEntradaPrefixo: string | null;
+  chaveEntradaUsoEm: string | null;
+}
+
+export const atendaiConfigApi = {
+  obter: (provedorId: string) => api.get<AtendaiConfigPublic | null>(`/provedores/${provedorId}/atendai`),
+  salvar: (provedorId: string, data: { baseUrl: string; chave: string; ativo?: boolean }) =>
+    api.put<void>(`/provedores/${provedorId}/atendai`, data),
+  testar: (provedorId: string) =>
+    api.post<{ ok: boolean; erro?: string; colaboradores?: number }>(`/provedores/${provedorId}/atendai/testar`),
+  /** Devolve a chave em claro — a ÚNICA vez em que ela existe fora do hash. */
+  gerarChaveEntrada: (provedorId: string) =>
+    api.post<{ chave: string }>(`/provedores/${provedorId}/atendai/chave-entrada`),
+  revogarChaveEntrada: (provedorId: string) =>
+    api.delete<void>(`/provedores/${provedorId}/atendai/chave-entrada`),
+};
+
 export const tiposOsApi = {
   listar: (provedorId: string) => api.get<TipoOs[]>(`/provedores/${provedorId}/tipos-os`),
   importar: (provedorId: string) =>

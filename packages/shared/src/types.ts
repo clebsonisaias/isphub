@@ -1,3 +1,4 @@
+import type { TurnoAgenda } from "./agenda.js";
 import type { OsPrioridade, OsStatus } from "./status.js";
 import type { UserRole } from "./roles.js";
 
@@ -133,6 +134,13 @@ export interface OrdemServico {
   /** Data/hora reais de abertura no SGP — distinta de criadoEm (data do 1o sync). */
   dataCadastro?: string | null;
   dataAgendamento?: string | null;
+  /**
+   * A posicao desta parada na rota do dia, definida pelo supervisor na agenda.
+   * Nulo = ainda nao roteirizada. Ver `turnoAgenda`.
+   */
+  ordemRota?: number | null;
+  /** A metade do dia em que a visita foi marcada na agenda da ISPhub. */
+  turnoAgenda?: TurnoAgenda | null;
   /** Tecnico ISPhub atribuido (despacho feito dentro do ISPhub). */
   tecnicoId?: string | null;
   tecnicoNome?: string | null;

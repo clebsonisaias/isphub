@@ -112,7 +112,14 @@ filaRouter.get(
     const [ordens, totalOs] = await Promise.all([
       prisma.ordemServico.findMany({
         where: osWhere,
-        include: { provedor: true, tipoOs: { include: { categoria: true } }, tecnico: true },
+        include: {
+          provedor: true,
+          tipoOs: { include: { categoria: true } },
+          tecnico: true,
+          // A rota do dia: o supervisor ordena na agenda e o app do tecnico le
+          // daqui. Na planilha essa coluna existia e morria na planilha.
+          agendamento: { select: { ordemRota: true, turno: true, status: true } },
+        },
         orderBy: [{ dataAgendamento: "asc" }, { criadoEm: "desc" }],
         take: LIMITE_FILA,
       }),
@@ -169,6 +176,10 @@ filaRouter.get(
       usuario: os.usuario,
       dataCadastro: os.dataCadastro?.toISOString() ?? null,
       dataAgendamento: os.dataAgendamento?.toISOString() ?? null,
+      // Marcacao cancelada nao roteiriza nada — deixar a ordem antiga faria o
+      // app do tecnico listar uma parada que ninguem vai fazer.
+      ordemRota: os.agendamento?.status === "marcado" ? os.agendamento.ordemRota : null,
+      turnoAgenda: os.agendamento?.status === "marcado" ? os.agendamento.turno : null,
       tecnicoId: os.tecnicoId,
       tecnicoNome: os.tecnico?.nome ?? null,
       tecnicoSgpNome: os.tecnicoSgpNome,

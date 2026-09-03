@@ -1,0 +1,85 @@
+import type { AgendaConfigDto, OsStatus, TurnoAgenda, VagaTurno } from "@isphub/shared";
+import { api } from "./apiClient";
+
+/**
+ * A agenda de OS — o que a operação mantinha numa planilha no Drive.
+ *
+ * Separado de `filaApi` de propósito: a fila responde "o que existe pra fazer",
+ * a agenda responde "o que cabe amanhã de manhã". São duas perguntas, e a
+ * segunda tem uma resposta que a primeira nunca teve — um limite.
+ */
+
+export interface GradeResposta {
+  config: AgendaConfigDto;
+  vagas: VagaTurno[];
+}
+
+/** Uma parada da rota do dia. */
+export interface ParadaAgenda {
+  id: string;
+  sgpOsId: string;
+  ordemRota: number | null;
+  regiao: string | null;
+  origem: string;
+  marcadoPor: string | null;
+  observacao: string | null;
+  sgpConfirmadoEm: string | null;
+  provedor: { id: string; nome: string; cor: string };
+  ordemServico: {
+    id: string;
+    status: OsStatus;
+    clienteNome: string | null;
+    telefone: string | null;
+    bairro: string | null;
+    logradouro: string | null;
+    numero: string | null;
+    cidade: string | null;
+    pop: string | null;
+    tecnico: { id: string; nome: string; nomeExibicao: string | null } | null;
+    tipoOs: { descricao: string | null; categoria: { nome: string; cor: string } | null } | null;
+  } | null;
+}
+
+/** `2026-09-10` — o dia como o servidor espera (DATE, sem hora nem fuso). */
+export function diaISO(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+export const agendaApi = {
+  grade: (params?: { de?: string; ate?: string; regiao?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.de) q.set("de", params.de);
+    if (params?.ate) q.set("ate", params.ate);
+    if (params?.regiao) q.set("regiao", params.regiao);
+    const s = q.toString();
+    return api.get<GradeResposta>(`/agenda/vagas${s ? `?${s}` : ""}`);
+  },
+
+  /** Só o que cabe. Nada bloqueado sai daqui — ver a rota no servidor. */
+  proximas: (quantas = 6, regiao?: string) => {
+    const q = new URLSearchParams({ quantas: String(quantas) });
+    if (regiao) q.set("regiao", regiao);
+    return api.get<VagaTurno[]>(`/agenda/proximas?${q}`);
+  },
+
+  doTurno: (dia: string, turno: TurnoAgenda) =>
+    api.get<ParadaAgenda[]>(`/agenda/turno?dia=${dia}&turno=${turno}`),
+
+  marcar: (d: {
+    provedorId: string;
+    sgpOsId: string;
+    dia: string;
+    turno: TurnoAgenda;
+    regiao?: string | null;
+    observacao?: string | null;
+  }) => api.post<{ id: string }>("/agenda", d),
+
+  desmarcar: (id: string) => api.delete<{ id: string }>(`/agenda/${id}`),
+
+  /** A rota inteira de uma vez: arrastar uma parada renumera todas. */
+  definirRota: (dia: string, turno: TurnoAgenda, ids: string[]) =>
+    api.put<ParadaAgenda[]>("/agenda/rota", { dia, turno, ids }),
+
+  lerConfig: () => api.get<AgendaConfigDto>("/admin/agenda"),
+  salvarConfig: (patch: Partial<AgendaConfigDto>) => api.put<AgendaConfigDto>("/admin/agenda", patch),
+};

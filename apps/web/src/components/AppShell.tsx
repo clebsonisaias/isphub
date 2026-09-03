@@ -36,6 +36,7 @@ import {
   Trophy,
   Truck,
   CalendarClock,
+  CalendarDays,
 } from "lucide-react";
 
 const INTERVALO_POLLING_NAO_LIDAS_MS = 45_000;
@@ -135,6 +136,18 @@ const NAV_ITEMS: {
    * sai em qual, hoje, antes das 7h. Escondida atras de um link interno, a
    * segunda pergunta simplesmente nao seria encontrada.
    */
+  /*
+   * Agenda de visitas — a planilha de agendamento de OS que a operacao mantinha
+   * no Drive. Item proprio, e ANTES da Escala: primeiro se decide em que dia a
+   * visita cabe, depois quem sai em qual carro pra faze-la.
+   */
+  {
+    to: "/agenda",
+    label: "Agenda de visitas",
+    labelCurto: "Agenda",
+    icon: CalendarDays,
+    ocultoPara: [UserRole.PROVEDOR, UserRole.TECNICO],
+  },
   {
     to: "/escala",
     label: "Escala do dia",

@@ -63,10 +63,20 @@ export function maisRecentesPrimeiro(itens: FilaItem[]): FilaItem[] {
   );
 }
 
-/** Cedo primeiro; sem horário vai pro fim, onde não atrapalha a leitura. */
+/**
+ * A ordem do dia: a rota do supervisor quando ela existe, o horário quando não.
+ *
+ * A rota ganha do horário de propósito. Quando o supervisor sequencia as
+ * paradas, ele está decidindo o caminho — e ordenar por horário por cima disso
+ * devolveria o técnico ao zigue-zague que a sequência existe pra evitar. Sem
+ * rota definida, cedo primeiro; sem nenhum dos dois, pro fim, onde não
+ * atrapalha a leitura.
+ */
 export function ordenarPorHorario(itens: FilaItem[]): FilaItem[] {
+  const rota = (i: FilaItem) => i.ordemRota ?? Number.POSITIVE_INFINITY;
   return [...itens].sort(
     (a, b) =>
+      rota(a) - rota(b) ||
       instante(a.dataAgendamento, Number.POSITIVE_INFINITY) - instante(b.dataAgendamento, Number.POSITIVE_INFINITY),
   );
 }

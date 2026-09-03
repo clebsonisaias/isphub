@@ -315,6 +315,24 @@ export interface ErpConnector {
   updateOsStatus(sgpOsId: string, statusCode: number): Promise<void>;
 
   /**
+   * Grava a data/hora agendada da OS no ERP.
+   *
+   * A agenda do ISPhub NAO depende disto: ela e a fonte da verdade e vive numa
+   * tabela propria (`Agendamento`), porque `dataAgendamento` e espelho puro e o
+   * sync o reescreve a cada ciclo. Isto existe pra quem olha so o ERP —
+   * o proprio provedor — enxergar a mesma visita.
+   *
+   * **Best-effort de proposito.** O endpoint de update ja devolveu HTTP 200
+   * ignorando campo em silencio (ver `addOsNote` acima, caso `os_conteudo`).
+   * Por isso quem chama nao trata sucesso da chamada como evidencia de
+   * gravacao: `Agendamento.sgpConfirmadoEm` so e preenchido quando a LEITURA
+   * seguinte devolver a data esperada.
+   *
+   * @param quando instante do inicio do atendimento, ja no fuso do ERP.
+   */
+  scheduleOs(sgpOsId: string, quando: Date): Promise<void>;
+
+  /**
    * Ficha completa da OS no ERP. Complementa o espelho local (que abre a tela
    * na hora); isto chega depois com o que o espelho nao tem — plano,
    * credenciais PPPoE, ponto de referencia. `null` quando o ERP nao devolve a
