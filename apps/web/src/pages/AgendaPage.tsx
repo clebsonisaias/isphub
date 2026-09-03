@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowDown, ArrowUp, CalendarDays, CloudOff, MapPin, Phone, Settings2, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, CalendarDays, CalendarOff, CheckCircle2, CloudOff, MapPin, Phone, RefreshCw, Settings2, Trash2, X } from "lucide-react";
 import { ROTULO_TURNO, TURNOS_AGENDA, type AgendaConfigDto, type TurnoAgenda, type VagaTurno } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
 import { AnimatedPage } from "@/components/AnimatedPage";
@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/context/ToastContext";
 import { ordensServicoApi, tecnicosApi, type TecnicoResumo } from "@/lib/filaApi";
-import { agendaApi, type GradeResposta, type ParadaAgenda } from "@/lib/agendaApi";
+import { agendaApi, type ExcecaoAgenda, type GradeResposta, type ParadaAgenda } from "@/lib/agendaApi";
 
 /**
  * A AGENDA — a planilha de agendamento de OS, inteira, numa página.
@@ -32,6 +32,8 @@ function rotuloDia(dia: string) {
 
 /** Cor da célula. Só a urgência recebe cor — o resto fica neutro. */
 function tomDaVaga(v: VagaTurno) {
+  // Feriado é neutro, não vermelho: nada deu errado, o dia só não existe.
+  if (v.bloqueio === "feriado") return "bg-muted/40 text-muted-foreground";
   if (v.bloqueio === "dia_nao_atendido") return "bg-muted/40 text-muted-foreground";
   if (v.bloqueio === "antecedencia") return "bg-muted/40 text-muted-foreground";
   if (v.bloqueio) return "bg-destructive/15 text-destructive";
@@ -49,6 +51,10 @@ function textoBloqueio(v: VagaTurno) {
       return "Dia lotado";
     case "regiao":
       return "Limite da região";
+    case "feriado":
+      // O motivo, não a palavra "feriado": um dia que some sem explicação vira
+      // pergunta interna sobre por que sumiu.
+      return v.motivoBloqueio ?? "Feriado";
     case "dia_nao_atendido":
       return "Sem atendimento";
     case "antecedencia":
@@ -227,7 +233,10 @@ export function AgendaPage() {
                               ) : null}
                             </span>
                             <span className="flex items-center gap-1 text-xs">
-                              {v.bloqueio && v.bloqueio !== "dia_nao_atendido" && v.bloqueio !== "antecedencia" ? (
+                              {v.bloqueio &&
+                              v.bloqueio !== "dia_nao_atendido" &&
+                              v.bloqueio !== "feriado" &&
+                              v.bloqueio !== "antecedencia" ? (
                                 <AlertTriangle className="size-3.5" aria-hidden />
                               ) : null}
                               {textoBloqueio(v)}
@@ -333,6 +342,29 @@ export function AgendaPage() {
                                 a agenda daqui é a verdade —, mas quem só olha o
                                 ERP do provedor ainda não vê esta visita.
                               */}
+                              {/*
+                                O cliente respondeu o lembrete. Visita confirmada
+                                é visita que provavelmente acontece — e a diferença
+                                entre as duas é o deslocamento perdido.
+                              */}
+                              {p.confirmadoEm ? (
+                                <span
+                                  title={`Confirmada pelo cliente em ${new Date(p.confirmadoEm).toLocaleString("pt-BR")}`}
+                                  className="inline-flex items-center gap-1 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-700 dark:text-emerald-400"
+                                >
+                                  <CheckCircle2 className="size-3" aria-hidden />
+                                  confirmada
+                                </span>
+                              ) : null}
+                              {p.remarcacoesCliente > 0 ? (
+                                <span
+                                  title="Remarcações pedidas pelo próprio cliente"
+                                  className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                                >
+                                  <RefreshCw className="size-3" aria-hidden />
+                                  {p.remarcacoesCliente}×
+                                </span>
+                              ) : null}
                               {p.sgpConfirmadoEm === null ? (
                                 <span
                                   title="Ainda não confirmado no SGP do provedor"
@@ -425,6 +457,7 @@ function LimitesDaAgenda({
   const [dias, setDias] = useState<number[]>(config.diasAtendidos);
   const [antecedencia, setAntecedencia] = useState(config.antecedenciaMin);
   const [horizonte, setHorizonte] = useState(config.horizonteDias);
+  const [remarcacoes, setRemarcacoes] = useState(config.remarcacoesMaxCliente);
   const [salvando, setSalvando] = useState(false);
 
   const nomesDias = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
@@ -440,6 +473,7 @@ function LimitesDaAgenda({
         diasAtendidos: dias,
         antecedenciaMin: antecedencia,
         horizonteDias: horizonte,
+        remarcacoesMaxCliente: remarcacoes,
       });
     } finally {
       setSalvando(false);
@@ -563,8 +597,22 @@ function LimitesDaAgenda({
                 className="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
               />
             </label>
+            <label className="flex flex-col gap-1.5 text-xs">
+              <span className="font-medium text-foreground">Remarcações do cliente</span>
+              <input
+                type="number"
+                min={0}
+                max={10}
+                value={remarcacoes}
+                onChange={(e) => setRemarcacoes(Number(e.target.value))}
+                className="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+              />
+              <span className="text-muted-foreground">Passou disso, a conversa vai para um atendente.</span>
+            </label>
           </div>
         </div>
+
+        <ExcecoesDoCalendario />
 
         <div className="flex items-center gap-3">
           <button
@@ -584,5 +632,120 @@ function LimitesDaAgenda({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * OS DIAS QUE FOGEM DA REGRA — feriado municipal que fecha, mutirão que abre.
+ *
+ * Feriado NACIONAL não aparece aqui e não precisa ser cadastrado: ele é
+ * calculado, inclusive os que mudam de data todo ano (Carnaval, Sexta-feira
+ * Santa, Corpus Christi). Uma lista digitada à mão erra por omissão, e erra
+ * sempre em dezembro.
+ */
+function ExcecoesDoCalendario() {
+  const { toast } = useToast();
+  const [itens, setItens] = useState<ExcecaoAgenda[] | null>(null);
+  const [dia, setDia] = useState("");
+  const [motivo, setMotivo] = useState("");
+  const [atende, setAtende] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+
+  useEffect(() => {
+    void agendaApi.excecoes().then(setItens).catch(() => setItens([]));
+  }, []);
+
+  async function adicionar() {
+    if (!dia || !motivo.trim()) return;
+    setSalvando(true);
+    try {
+      setItens(await agendaApi.salvarExcecao({ dia, atende, motivo: motivo.trim() }));
+      setDia("");
+      setMotivo("");
+      setAtende(false);
+    } catch {
+      toast({ variante: "erro", titulo: "Não foi possível salvar o dia." });
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2 border-t border-border pt-4">
+      <div>
+        <h3 className="text-xs font-medium text-foreground">Dias que fogem da regra</h3>
+        <p className="text-xs text-muted-foreground">
+          Feriado municipal que fecha, ou sábado de mutirão que abre. Os feriados nacionais já são calculados — não
+          precisa cadastrar.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-2">
+        <input
+          type="date"
+          aria-label="Dia"
+          value={dia}
+          onChange={(e) => setDia(e.target.value)}
+          className="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+        />
+        <input
+          aria-label="Motivo"
+          value={motivo}
+          onChange={(e) => setMotivo(e.target.value)}
+          placeholder="Padroeira de Macaíba"
+          className="min-w-48 flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+          onKeyDown={(e) => e.key === "Enter" && void adicionar()}
+        />
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <input type="checkbox" checked={atende} onChange={(e) => setAtende(e.target.checked)} />
+          Atende mesmo assim
+        </label>
+        <button
+          type="button"
+          onClick={() => void adicionar()}
+          disabled={salvando || !dia || !motivo.trim()}
+          className="rounded-md border border-border px-3 py-1.5 text-sm disabled:opacity-50"
+        >
+          Adicionar
+        </button>
+      </div>
+
+      {itens && itens.length > 0 && (
+        <ul className="divide-y divide-border rounded-md border border-border">
+          {itens.map((e) => (
+            <li key={e.id} className="flex items-center gap-2 px-3 py-1.5 text-xs">
+              {/*
+                Os dois casos precisam se distinguir de relance: um tira um dia
+                da agenda, o outro põe. Só o texto não separa numa lista longa.
+              */}
+              {e.atende ? (
+                <CheckCircle2 className="size-3.5 text-emerald-600" aria-hidden />
+              ) : (
+                <CalendarOff className="size-3.5 text-muted-foreground" aria-hidden />
+              )}
+              <span className="w-24 tabular-nums">{rotuloDia(e.dia)}</span>
+              <span className="flex-1 truncate">{e.motivo}</span>
+              <span className="text-muted-foreground">{e.atende ? "atende" : "fechado"}</span>
+              <button
+                type="button"
+                aria-label={`Remover ${e.motivo}`}
+                onClick={() =>
+                  void agendaApi
+                    .removerExcecao(e.dia)
+                    .then(setItens)
+                    .catch(() => toast({ variante: "erro", titulo: "Não foi possível remover." }))
+                }
+                className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-destructive"
+              >
+                <Trash2 className="size-3.5" aria-hidden />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {itens?.length === 0 && (
+        <p className="text-xs text-muted-foreground">Nenhum dia cadastrado além dos feriados nacionais.</p>
+      )}
+    </div>
   );
 }

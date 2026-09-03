@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { AgendaConfigDto } from "@isphub/shared";
+import type { ExcecaoAgendaDto } from "@isphub/shared";
 import {
   chaveJanela,
+  podeClienteRemarcar,
   diaBrDe,
   diaDaSemana,
   inicioDoTurno,
@@ -21,6 +23,7 @@ const CONFIG: AgendaConfigDto = {
   diasAtendidos: [1, 2, 3, 4, 5, 6],
   horizonteDias: 14,
   antecedenciaMin: 120,
+  remarcacoesMaxCliente: 2,
 };
 
 /** Quarta-feira, 10/09/2026, 07:00 em Natal (10:00 UTC). */
@@ -252,5 +255,131 @@ describe("teto do DIA — o outro limite", () => {
     ]);
     const vagas = proximasVagas({ agora: QUARTA_7H, config: COM_TETO_DIA, ocupacoes, quantas: 2 });
     expect(vagas.some((v) => v.dia === "2026-09-11")).toBe(false);
+  });
+});
+
+describe("feriados e exceções de calendário", () => {
+  const excecao = (dia: string, atende: boolean, motivo: string): Map<string, ExcecaoAgendaDto> =>
+    new Map([[dia, { dia, atende, motivo }]]);
+
+  it("Natal fecha mesmo caindo em dia útil e com a agenda vazia", () => {
+    // 2026-12-25 é sexta — um dia atendido, sem nenhuma marcação.
+    expect(diaDaSemana("2026-12-25")).toBe(5);
+    const v = vagaDe({ dia: "2026-12-25", turno: "manha", config: CONFIG, agora: QUARTA_7H });
+    expect(v).toMatchObject({ bloqueio: "feriado", motivoBloqueio: "Natal", livres: 0 });
+  });
+
+  it("o motivo chega na grade — dia que some sem explicação vira chamado interno", () => {
+    const [manha] = montarGrade({
+      de: "2026-06-04", // Corpus Christi de 2026
+      ate: "2026-06-04",
+      config: CONFIG,
+      ocupacoes: new Map(),
+      agora: QUARTA_7H,
+    });
+    expect(manha!.motivoBloqueio).toBe("Corpus Christi");
+  });
+
+  it("exceção cadastrada fecha um dia útil comum", () => {
+    const v = vagaDe({
+      dia: "2026-09-11",
+      turno: "manha",
+      config: CONFIG,
+      excecao: excecao("2026-09-11", false, "Padroeira da cidade").get("2026-09-11"),
+      agora: QUARTA_7H,
+    });
+    expect(v).toMatchObject({ bloqueio: "feriado", motivoBloqueio: "Padroeira da cidade" });
+  });
+
+  it("exceção com atende:true ABRE um domingo", () => {
+    // 2026-09-13 é domingo, que `diasAtendidos` não cobre.
+    const v = vagaDe({
+      dia: "2026-09-13",
+      turno: "manha",
+      config: CONFIG,
+      excecao: excecao("2026-09-13", true, "Mutirão").get("2026-09-13"),
+      agora: QUARTA_7H,
+    });
+    expect(v).toMatchObject({ bloqueio: null, livres: 20 });
+  });
+
+  it("exceção com atende:true ganha até do feriado nacional", () => {
+    /*
+     * É o override humano: quem cadastrou sabe que a equipe vai trabalhar
+     * naquele feriado, e nenhuma regra automática deve poder desfazer isso.
+     */
+    const v = vagaDe({
+      dia: "2026-12-25",
+      turno: "manha",
+      config: CONFIG,
+      excecao: excecao("2026-12-25", true, "Plantão de Natal").get("2026-12-25"),
+      agora: QUARTA_7H,
+    });
+    expect(v.bloqueio).toBeNull();
+  });
+
+  it("mesmo liberado na mão, o turno lotado continua lotado", () => {
+    // A exceção decide o CALENDÁRIO, não a capacidade da equipe.
+    const v = vagaDe({
+      dia: "2026-12-25",
+      turno: "manha",
+      config: CONFIG,
+      ocupacao: ocupada(20),
+      excecao: excecao("2026-12-25", true, "Plantão").get("2026-12-25"),
+      agora: QUARTA_7H,
+    });
+    expect(v.bloqueio).toBe("lotado");
+  });
+
+  it("proximasVagas nunca oferece um feriado", () => {
+    const vagas = proximasVagas({
+      agora: new Date("2026-12-22T10:00:00.000Z"),
+      config: { ...CONFIG, horizonteDias: 10 },
+      ocupacoes: new Map(),
+      quantas: 40,
+    });
+    expect(vagas.some((v) => v.dia === "2026-12-25")).toBe(false);
+    // E os dias em volta continuam sendo oferecidos.
+    expect(vagas.some((v) => v.dia === "2026-12-24")).toBe(true);
+  });
+});
+
+describe("podeClienteRemarcar — as regras do autoatendimento", () => {
+  const base = { hoje: "2026-09-10", max: 2 };
+
+  it("primeira remarcação, visita amanhã: pode", () => {
+    expect(podeClienteRemarcar({ ...base, atual: { dia: "2026-09-11", remarcacoesCliente: 0 } })).toBeNull();
+  });
+
+  it("na segunda ainda pode; na terceira, não", () => {
+    expect(podeClienteRemarcar({ ...base, atual: { dia: "2026-09-11", remarcacoesCliente: 1 } })).toBeNull();
+    const r = podeClienteRemarcar({ ...base, atual: { dia: "2026-09-11", remarcacoesCliente: 2 } });
+    expect(r?.motivo).toBe("max_remarcacoes");
+  });
+
+  it("no DIA da visita não remarca mais — o técnico já saiu com a rota", () => {
+    const r = podeClienteRemarcar({ ...base, atual: { dia: "2026-09-10", remarcacoesCliente: 0 } });
+    expect(r?.motivo).toBe("tarde_demais");
+  });
+
+  it("visita que já passou também é tarde demais", () => {
+    const r = podeClienteRemarcar({ ...base, atual: { dia: "2026-09-08", remarcacoesCliente: 0 } });
+    expect(r?.motivo).toBe("tarde_demais");
+  });
+
+  it("sem visita marcada, a recusa diz isso — não 'você já remarcou demais'", () => {
+    // A explicação errada faria o cliente discutir um limite que ele não usou.
+    expect(podeClienteRemarcar({ ...base, atual: null })?.motivo).toBe("sem_marcacao");
+  });
+
+  it("o teto vem da configuração, não do código", () => {
+    expect(podeClienteRemarcar({ ...base, max: 5, atual: { dia: "2026-09-11", remarcacoesCliente: 3 } })).toBeNull();
+    expect(podeClienteRemarcar({ ...base, max: 0, atual: { dia: "2026-09-11", remarcacoesCliente: 0 } })?.motivo).toBe(
+      "max_remarcacoes",
+    );
+  });
+
+  it("a recusa é 409 — é regra de negócio, não erro do sistema", () => {
+    expect(podeClienteRemarcar({ ...base, atual: null })?.status).toBe(409);
   });
 });

@@ -49,6 +49,17 @@ export interface AgendaConfigDto {
   horizonteDias: number;
   /** Antecedencia minima, em minutos, entre agora e o inicio do turno ofertado. */
   antecedenciaMin: number;
+  /** Quantas vezes o proprio cliente pode remarcar sozinho. */
+  remarcacoesMaxCliente: number;
+}
+
+/** Um dia que foge da regra do calendario, como o servico o entrega. */
+export interface ExcecaoAgendaDto {
+  /** `AAAA-MM-DD`. */
+  dia: string;
+  /** false = nao atende. true = atende mesmo assim (vence tudo). */
+  atende: boolean;
+  motivo: string;
 }
 
 /** Por que uma janela nao pode receber mais nada. `null` = pode. */
@@ -57,6 +68,7 @@ export type BloqueioVaga =
   | "dia_lotado"
   | "regiao"
   | "dia_nao_atendido"
+  | "feriado"
   | "antecedencia";
 
 /** Uma janela (dia + turno) da grade. */
@@ -76,6 +88,14 @@ export interface VagaTurno {
   ocupadasRegiao: number | null;
   /** Total marcado no DIA (os dois turnos), pro teto diario e pro painel. */
   ocupadasDia: number;
+  /**
+   * Por que este dia esta fechado, em palavras — "Natal", "Padroeira de
+   * Macaiba". Nulo quando o bloqueio nao e de calendario.
+   *
+   * Um dia que some da grade sem explicacao vira chamado interno perguntando
+   * por que; com o motivo ao lado, ninguem precisa perguntar.
+   */
+  motivoBloqueio: string | null;
 }
 
 /** Hora local (BR) em que cada turno comeca. Usada pra antecedencia e write-back. */

@@ -1,9 +1,11 @@
 import {
+  feriadoNacional,
   HORA_INICIO_TURNO,
   TURNOS_AGENDA,
   turnoDaHora,
   type AgendaConfigDto,
   type BloqueioVaga,
+  type ExcecaoAgendaDto,
   type TurnoAgenda,
   type VagaTurno,
 } from "@isphub/shared";
@@ -98,15 +100,30 @@ export function vagaDe(args: {
   ocupacao?: Ocupacao;
   /** O total marcado no DIA (os dois turnos), pro teto diario. */
   ocupadasDia?: number;
+  /** A excecao cadastrada pra este dia, quando houver. */
+  excecao?: ExcecaoAgendaDto | undefined;
   agora: Date;
 }): VagaTurno {
-  const { dia, turno, config, agora } = args;
+  const { dia, turno, config, agora, excecao } = args;
   const ocupacao = args.ocupacao ?? VAZIA;
   const capacidade = capacidadeDe(turno, config);
   const ocupadasDia = args.ocupadasDia ?? ocupacao.total;
 
+  /*
+   * A excecao com `atende: true` vence TUDO — inclusive domingo e feriado
+   * nacional. E a decisao de uma pessoa que sabe o que vai acontecer naquele
+   * dia, e nenhuma regra automatica deveria poder desfaze-la. Por isso ela sai
+   * da corrente de bloqueios em vez de entrar nela como mais um `else if`.
+   */
+  const liberadoNaMao = excecao?.atende === true;
+  const feriado = liberadoNaMao ? null : (excecao ? excecao.motivo : feriadoNacional(dia));
+
   let bloqueio: BloqueioVaga | null = null;
-  if (!config.diasAtendidos.includes(diaDaSemana(dia))) {
+  let motivoBloqueio: string | null = null;
+  if (feriado) {
+    bloqueio = "feriado";
+    motivoBloqueio = feriado;
+  } else if (!liberadoNaMao && !config.diasAtendidos.includes(diaDaSemana(dia))) {
     bloqueio = "dia_nao_atendido";
   } else if (inicioDoTurno(dia, turno).getTime() - agora.getTime() < config.antecedenciaMin * 60_000) {
     bloqueio = "antecedencia";
@@ -145,6 +162,7 @@ export function vagaDe(args: {
     reparo: ocupacao.reparo,
     ocupadasRegiao: ocupacao.regiao,
     ocupadasDia,
+    motivoBloqueio,
   };
 }
 
@@ -159,6 +177,8 @@ export function montarGrade(args: {
   ate: string;
   config: AgendaConfigDto;
   ocupacoes: Map<string, Ocupacao>;
+  /** `AAAA-MM-DD` -> excecao. Ausente = so o calendario automatico vale. */
+  excecoes?: Map<string, ExcecaoAgendaDto>;
   agora: Date;
 }): VagaTurno[] {
   const grade: VagaTurno[] = [];
@@ -176,6 +196,7 @@ export function montarGrade(args: {
           config: args.config,
           ocupacao: args.ocupacoes.get(chaveJanela(dia, turno)),
           ocupadasDia,
+          excecao: args.excecoes?.get(dia),
           agora: args.agora,
         }),
       );
@@ -195,11 +216,19 @@ export function proximasVagas(args: {
   agora: Date;
   config: AgendaConfigDto;
   ocupacoes: Map<string, Ocupacao>;
+  excecoes?: Map<string, ExcecaoAgendaDto>;
   quantas: number;
 }): VagaTurno[] {
   const inicio = diaBrDe(args.agora);
   const fim = somarDias(inicio, args.config.horizonteDias);
-  return montarGrade({ de: inicio, ate: fim, config: args.config, ocupacoes: args.ocupacoes, agora: args.agora })
+  return montarGrade({
+    de: inicio,
+    ate: fim,
+    config: args.config,
+    ocupacoes: args.ocupacoes,
+    excecoes: args.excecoes,
+    agora: args.agora,
+  })
     .filter((v) => v.bloqueio === null && v.livres > 0)
     .slice(0, args.quantas);
 }
@@ -227,6 +256,7 @@ export async function lerConfig(): Promise<AgendaConfigDto> {
     diasAtendidos: c.diasAtendidos,
     horizonteDias: c.horizonteDias,
     antecedenciaMin: c.antecedenciaMin,
+    remarcacoesMaxCliente: c.remarcacoesMaxCliente,
   };
 }
 
@@ -268,15 +298,92 @@ export async function ocupacoesEntre(de: string, ate: string, regiao?: string | 
   return mapa;
 }
 
+/**
+ * As excecoes de calendario de um intervalo, prontas pra `montarGrade`.
+ *
+ * Uma consulta so pro periodo inteiro, como o mapa de ocupacoes: perguntar dia
+ * a dia seriam 15 idas ao banco a cada vez que alguem abre a tela.
+ */
+export async function excecoesEntre(de: string, ate: string): Promise<Map<string, ExcecaoAgendaDto>> {
+  const linhas = await prisma.excecaoAgenda.findMany({
+    where: { dia: { gte: dataDoDia(de), lte: dataDoDia(ate) } },
+    select: { dia: true, atende: true, motivo: true },
+  });
+  return new Map(
+    linhas.map((l) => {
+      const dia = l.dia.toISOString().slice(0, 10);
+      return [dia, { dia, atende: l.atende, motivo: l.motivo }];
+    }),
+  );
+}
+
 export async function grade(args: { de: string; ate: string; regiao?: string | null; agora?: Date }) {
-  const [config, ocupacoes] = await Promise.all([lerConfig(), ocupacoesEntre(args.de, args.ate, args.regiao)]);
+  const [config, ocupacoes, excecoes] = await Promise.all([
+    lerConfig(),
+    ocupacoesEntre(args.de, args.ate, args.regiao),
+    excecoesEntre(args.de, args.ate),
+  ]);
   return montarGrade({
     de: args.de,
     ate: args.ate,
     config,
     ocupacoes,
+    excecoes,
     agora: args.agora ?? new Date(),
   });
+}
+
+/**
+ * As proximas janelas que cabem, montadas do banco.
+ *
+ * Existe pra ninguem mais montar isso a mao: quem chamava `proximasVagas`
+ * direto tinha que lembrar de carregar ocupacoes E excecoes, e esquecer a
+ * segunda fazia a grade do supervisor bloquear o feriado enquanto o bot
+ * continuava oferecendo o mesmo dia. Uma funcao, todos os chamadores.
+ */
+export async function proximasVagasDoBanco(args: {
+  regiao?: string | null;
+  quantas: number;
+  agora?: Date;
+}): Promise<VagaTurno[]> {
+  const agora = args.agora ?? new Date();
+  const config = await lerConfig();
+  const hoje = diaBrDe(agora);
+  const ate = somarDias(hoje, config.horizonteDias);
+  const [ocupacoes, excecoes] = await Promise.all([
+    ocupacoesEntre(hoje, ate, args.regiao),
+    excecoesEntre(hoje, ate),
+  ]);
+  return proximasVagas({ agora, config, ocupacoes, excecoes, quantas: args.quantas });
+}
+
+/** As excecoes cadastradas a partir de hoje — a lista da tela do supervisor. */
+export async function listarExcecoes(deHoje = true) {
+  return prisma.excecaoAgenda.findMany({
+    where: deHoje ? { dia: { gte: dataDoDia(diaBrDe(new Date())) } } : {},
+    orderBy: { dia: "asc" },
+    select: { id: true, dia: true, atende: true, motivo: true, definidoPor: true },
+  });
+}
+
+/**
+ * Cadastra (ou corrige) a excecao de um dia.
+ *
+ * Upsert pela data, nao insert: recadastrar o mesmo dia ATUALIZA a regra. Duas
+ * linhas pro mesmo dia poderiam discordar, e nada no sistema saberia qual delas
+ * vale.
+ */
+export async function salvarExcecao(args: { dia: string; atende: boolean; motivo: string; definidoPor?: string | null }) {
+  const dados = { atende: args.atende, motivo: args.motivo, definidoPor: args.definidoPor ?? null };
+  return prisma.excecaoAgenda.upsert({
+    where: { dia: dataDoDia(args.dia) },
+    create: { dia: dataDoDia(args.dia), ...dados },
+    update: dados,
+  });
+}
+
+export async function removerExcecao(dia: string) {
+  await prisma.excecaoAgenda.deleteMany({ where: { dia: dataDoDia(dia) } });
 }
 
 export interface MarcarArgs {
@@ -288,6 +395,58 @@ export interface MarcarArgs {
   origem: string;
   marcadoPor?: string | null;
   observacao?: string | null;
+}
+
+/**
+ * Recusa que o CLIENTE recebeu por regra de autoatendimento, nao por lotacao.
+ *
+ * Tipo proprio porque a resposta certa e outra: turno cheio manda oferecer
+ * outra data; isto aqui manda chamar um humano. Quem chama precisa distinguir
+ * sem ler a mensagem.
+ */
+export class LimiteDoCliente extends HttpError {
+  constructor(
+    message: string,
+    readonly motivo: "max_remarcacoes" | "tarde_demais" | "sem_marcacao",
+  ) {
+    super(409, message);
+  }
+}
+
+/**
+ * As regras que valem SO pro cliente remarcando sozinho. Pura, e por isso
+ * testavel sem banco.
+ *
+ * Nao entram em `vagaDe` de proposito: `vagaDe` responde "cabe na rua?", e a
+ * resposta e a mesma pra todo mundo. Isto aqui responde "esta pessoa pode?",
+ * que e outra pergunta e so existe pro autoatendimento.
+ */
+export function podeClienteRemarcar(args: {
+  atual: { dia: string; remarcacoesCliente: number } | null;
+  hoje: string;
+  max: number;
+}): LimiteDoCliente | null {
+  if (!args.atual) {
+    return new LimiteDoCliente("Nao encontrei uma visita marcada para remarcar.", "sem_marcacao");
+  }
+  if (args.atual.remarcacoesCliente >= args.max) {
+    return new LimiteDoCliente(
+      "Voce ja remarcou esta visita o maximo de vezes. Vou te passar para um atendente.",
+      "max_remarcacoes",
+    );
+  }
+  /*
+   * "Ate a vespera": chegou o dia da visita, so um humano remarca. O tecnico ja
+   * saiu com a rota daquele dia na mao, e trocar a parada dele pelo WhatsApp do
+   * cliente e como o dia da errado sem ninguem perceber.
+   */
+  if (args.atual.dia <= args.hoje) {
+    return new LimiteDoCliente(
+      "A visita e hoje — nao da mais para remarcar por aqui. Vou te passar para um atendente.",
+      "tarde_demais",
+    );
+  }
+  return null;
 }
 
 /**
@@ -304,6 +463,9 @@ export interface MarcarArgs {
  */
 export async function marcar(args: MarcarArgs) {
   const config = await lerConfig();
+  // A excecao do dia entra na checagem: sem ela, marcar direto (sem passar
+  // pela oferta) furaria o feriado — e e exatamente assim que o AtendAI marca.
+  const excecoes = await excecoesEntre(args.dia, args.dia);
 
   return prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`agenda:${args.dia}:${args.turno}`}))`;
@@ -331,6 +493,7 @@ export async function marcar(args: MarcarArgs) {
           (soma, t) => soma + (ocupacoes.get(chaveJanela(args.dia, t))?.total ?? 0),
           0,
         ),
+        excecao: excecoes.get(args.dia),
         agora: new Date(),
       });
       if (vaga.bloqueio) throw new HttpError(409, motivoRecusa(vaga.bloqueio));
@@ -380,6 +543,8 @@ export function motivoRecusa(bloqueio: BloqueioVaga): string {
       return "Limite da regiao atingido neste turno — escolha outro dia ou turno.";
     case "dia_nao_atendido":
       return "Nao ha atendimento neste dia da semana.";
+    case "feriado":
+      return "Nao ha atendimento neste dia (feriado).";
     case "antecedencia":
       return "Turno muito proximo — escolha um horario mais a frente.";
   }
@@ -427,6 +592,8 @@ export async function doTurno(dia: string, turno: TurnoAgenda) {
       marcadoPor: true,
       observacao: true,
       sgpConfirmadoEm: true,
+      confirmadoEm: true,
+      remarcacoesCliente: true,
       provedor: { select: { id: true, nome: true, cor: true } },
       ordemServico: {
         select: {
@@ -590,4 +757,112 @@ export async function confirmarComSgp(provedorId: string): Promise<number> {
     data: { sgpConfirmadoEm: new Date() },
   });
   return r.count;
+}
+
+
+/**
+ * O cliente confirmou que estara em casa.
+ *
+ * Nao muda nada na agenda — muda o que o supervisor sabe ao montar a rota.
+ * Visita confirmada e visita que provavelmente acontece; a diferenca entre as
+ * duas e o deslocamento perdido.
+ */
+export async function confirmarPeloCliente(provedorId: string, sgpOsId: string) {
+  const m = await prisma.agendamento.findUnique({
+    where: { provedorId_sgpOsId: { provedorId, sgpOsId } },
+    select: { id: true, status: true },
+  });
+  if (!m || m.status !== "marcado") return null;
+  return prisma.agendamento.update({
+    where: { id: m.id },
+    data: { confirmadoEm: new Date() },
+    select: { id: true, dia: true, turno: true, confirmadoEm: true },
+  });
+}
+
+/**
+ * Remarca a pedido do PROPRIO cliente, com as regras de autoatendimento.
+ *
+ * Separada de `marcar` porque so aqui existem teto e prazo — e porque so aqui
+ * a remarcacao precisa ser CONTADA. Unificar as duas faria a atendente gastar
+ * o teto do cliente, que e o contrario do que o teto existe pra fazer.
+ */
+export async function remarcarPeloCliente(args: {
+  provedorId: string;
+  sgpOsId: string;
+  dia: string;
+  turno: TurnoAgenda;
+  regiao?: string | null;
+}) {
+  const config = await lerConfig();
+  const atual = await prisma.agendamento.findUnique({
+    where: { provedorId_sgpOsId: { provedorId: args.provedorId, sgpOsId: args.sgpOsId } },
+    select: { id: true, dia: true, status: true, remarcacoesCliente: true, ordemRota: true },
+  });
+
+  const recusa = podeClienteRemarcar({
+    atual:
+      atual && atual.status === "marcado"
+        ? { dia: atual.dia.toISOString().slice(0, 10), remarcacoesCliente: atual.remarcacoesCliente }
+        : null,
+    hoje: diaBrDe(new Date()),
+    max: config.remarcacoesMaxCliente,
+  });
+  if (recusa) throw recusa;
+
+  // A rota estava montada? Entao o supervisor precisa saber que ela mudou.
+  const estavaRoteirizada = atual!.ordemRota != null;
+
+  const marcado = await marcar({
+    provedorId: args.provedorId,
+    sgpOsId: args.sgpOsId,
+    dia: args.dia,
+    turno: args.turno,
+    regiao: args.regiao,
+    origem: "cliente",
+    marcadoPor: "Cliente",
+  });
+
+  await prisma.agendamento.update({
+    where: { id: marcado.id },
+    // Remarcou: a confirmacao anterior era sobre OUTRA data e nao vale mais.
+    data: { remarcacoesCliente: { increment: 1 }, confirmadoEm: null },
+  });
+
+  if (estavaRoteirizada) await avisarSupervisao(marcado.id, args.dia, args.turno);
+  return marcado;
+}
+
+/**
+ * Avisa quem despacha que o cliente mexeu numa visita JA roteirizada.
+ *
+ * So nesse caso: remarcacao de visita ainda nao roteirizada nao tira o sono de
+ * ninguem, e avisar de tudo faria o sino virar ruido que ninguem le.
+ */
+async function avisarSupervisao(agendamentoId: string, dia: string, turno: TurnoAgenda): Promise<void> {
+  try {
+    const m = await prisma.agendamento.findUnique({
+      where: { id: agendamentoId },
+      select: { sgpOsId: true, ordemServicoId: true, ordemServico: { select: { clienteNome: true } } },
+    });
+    const quem = m?.ordemServico?.clienteNome?.trim() || `OS #${m?.sgpOsId ?? "?"}`;
+    const quando = `${dia.slice(8, 10)}/${dia.slice(5, 7)} de ${turno === "manha" ? "manha" : "tarde"}`;
+    const supervisores = await prisma.usuario.findMany({
+      where: { ativo: true, role: { in: ["admin", "gestor"] } },
+      select: { id: true },
+    });
+    if (supervisores.length === 0) return;
+    await prisma.notificacao.createMany({
+      data: supervisores.map((u) => ({
+        usuarioId: u.id,
+        tipo: "agenda_remarcada",
+        mensagem: `${quem} remarcou a visita para ${quando} — a rota do dia mudou.`,
+        ordemServicoId: m?.ordemServicoId ?? null,
+      })),
+    });
+  } catch (e) {
+    // Aviso e complemento: falhar aqui nao pode desfazer uma remarcacao que o
+    // cliente ja ouviu como confirmada.
+    console.warn("[agenda] nao consegui avisar a supervisao da remarcacao:", e);
+  }
 }

@@ -132,3 +132,48 @@ atendaiConfigRouter.delete(
     res.status(204).end();
   }),
 );
+
+/**
+ * "Ligar agendamento" — gera a chave e a ENTREGA ao AtendAI, numa tacada.
+ *
+ * Tira o copia-e-cola do meio. Antes, ligar as duas plataformas era gerar a
+ * chave aqui, copiar, e colar la — e uma chave que passa pela area de
+ * transferencia de alguem e uma chave que pode acabar num chat, num bloco de
+ * notas, ou colada no provedor errado. Aqui ela nasce e viaja sem ninguem ver.
+ *
+ * A ORDEM importa: entrega primeiro, e so grava se o outro lado aceitou. Gerar
+ * antes deixaria a chave nova valendo aqui e a antiga la — ou seja, a
+ * integracao PARARIA de funcionar por causa do botao que existe pra liga-la.
+ */
+atendaiConfigRouter.post(
+  "/ligar-agendamento",
+  asyncHandler(async (req, res) => {
+    const provedorId = req.params.provedorId!;
+    const cred = await credencialDoProvedor(provedorId);
+    if (!cred) throw new HttpError(409, "Cadastre as credenciais do AtendAI deste provedor antes de ligar a agenda");
+
+    /*
+     * A URL publica desta API, vista de fora. Vem do request e nao de
+     * configuracao: atras do proxy, `X-Forwarded-*` diz o endereco pelo qual o
+     * mundo REALMENTE alcanca a API — e uma env var a mais e mais uma coisa que
+     * pode ficar desatualizada em silencio e so falhar meses depois.
+     */
+    const doCorpo = z.object({ url: z.string().url().optional() }).parse(req.body ?? {});
+    const url = (doCorpo.url ?? `${req.protocol}://${req.get("host")}`).replace(/\/+$/, "");
+
+    const chave = await gerarChaveEntrada(provedorId);
+    try {
+      await chamar(cred, "POST", "/isphub/vincular", { url, chave });
+    } catch (e) {
+      // O outro lado recusou: a chave que acabamos de gerar nao serve pra
+      // ninguem, e deixa-la valida so aumentaria a superficie por nada.
+      await revogarChaveEntrada(provedorId);
+      throw new HttpError(
+        502,
+        `O AtendAI nao aceitou a ligacao: ${e instanceof Error ? e.message : "falha desconhecida"}`,
+      );
+    }
+
+    res.json({ ok: true, url });
+  }),
+);

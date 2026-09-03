@@ -15,10 +15,22 @@ export interface GradeResposta {
 }
 
 /** Uma parada da rota do dia. */
+/** Um dia que foge da regra do calendário — feriado municipal, ou mutirão. */
+export interface ExcecaoAgenda {
+  id: string;
+  dia: string;
+  atende: boolean;
+  motivo: string;
+  definidoPor: string | null;
+}
+
 export interface ParadaAgenda {
   id: string;
   sgpOsId: string;
   ordemRota: number | null;
+  /** Nulo = o cliente ainda não respondeu o lembrete (≠ "não vem"). */
+  confirmadoEm: string | null;
+  remarcacoesCliente: number;
   regiao: string | null;
   origem: string;
   marcadoPor: string | null;
@@ -82,4 +94,10 @@ export const agendaApi = {
 
   lerConfig: () => api.get<AgendaConfigDto>("/admin/agenda"),
   salvarConfig: (patch: Partial<AgendaConfigDto>) => api.put<AgendaConfigDto>("/admin/agenda", patch),
+
+  /** Só as exceções cadastradas — feriado nacional é calculado, não listado. */
+  excecoes: () => api.get<ExcecaoAgenda[]>("/admin/agenda/excecoes"),
+  salvarExcecao: (d: { dia: string; atende: boolean; motivo: string }) =>
+    api.put<ExcecaoAgenda[]>("/admin/agenda/excecoes", d),
+  removerExcecao: (dia: string) => api.delete<ExcecaoAgenda[]>(`/admin/agenda/excecoes/${dia}`),
 };

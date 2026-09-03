@@ -10,6 +10,7 @@ export * from "./financeiro.js";
 export * from "./contratoStatus.js";
 export * from "./dia.js";
 export * from "./agenda.js";
+export * from "./feriados.js";
 export * from "./jornada.js";
 export * from "./navegacao.js";
 export * from "./frota.js";

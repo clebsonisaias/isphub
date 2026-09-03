@@ -57,10 +57,7 @@ agendaRouter.get(
       .object({ regiao: z.string().trim().min(1).optional(), quantas: z.coerce.number().int().min(1).max(30).default(6) })
       .parse(req.query);
 
-    const config = await agenda.lerConfig();
-    const hoje = agenda.diaBrDe(new Date());
-    const ocupacoes = await agenda.ocupacoesEntre(hoje, agenda.somarDias(hoje, config.horizonteDias), regiao);
-    res.json(agenda.proximasVagas({ agora: new Date(), config, ocupacoes, quantas }));
+    res.json(await agenda.proximasVagasDoBanco({ regiao, quantas }));
   }),
 );
 
@@ -142,6 +139,40 @@ adminAgendaRouter.get(
   }),
 );
 
+/**
+ * As excecoes de calendario. Feriado NACIONAL nao aparece aqui — aquele e
+ * calculado, e nao ha o que cadastrar.
+ */
+adminAgendaRouter.get(
+  "/excecoes",
+  asyncHandler(async (_req, res) => {
+    res.json(await agenda.listarExcecoes());
+  }),
+);
+
+adminAgendaRouter.put(
+  "/excecoes",
+  asyncHandler(async (req, res) => {
+    const b = z
+      .object({
+        dia: DIA,
+        atende: z.boolean().default(false),
+        motivo: z.string().trim().min(1).max(120),
+      })
+      .parse(req.body);
+    await agenda.salvarExcecao({ ...b, definidoPor: req.user!.email });
+    res.json(await agenda.listarExcecoes());
+  }),
+);
+
+adminAgendaRouter.delete(
+  "/excecoes/:dia",
+  asyncHandler(async (req, res) => {
+    await agenda.removerExcecao(DIA.parse(req.params.dia));
+    res.json(await agenda.listarExcecoes());
+  }),
+);
+
 adminAgendaRouter.put(
   "/",
   asyncHandler(async (req, res) => {
@@ -157,6 +188,7 @@ adminAgendaRouter.put(
         diasAtendidos: z.array(z.number().int().min(0).max(6)).min(1).max(7),
         horizonteDias: z.number().int().min(1).max(90),
         antecedenciaMin: z.number().int().min(0).max(10_080),
+        remarcacoesMaxCliente: z.number().int().min(0).max(10),
       })
       .partial()
       .parse(req.body);

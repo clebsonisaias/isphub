@@ -17,7 +17,7 @@ import { atendaiConfigApi, categoriasApi, erpConfigApi, provedoresApi, syncApi, 
 import type { AtendaiConfigPublic } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
-import { ArrowLeft, CheckCircle2, Copy, Download, KeyRound, RefreshCw, Sparkles, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Copy, Download, KeyRound, Link2, RefreshCw, Sparkles, XCircle } from "lucide-react";
 
 function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
@@ -418,6 +418,7 @@ function AtendaiConfigForm({ provedorId }: { provedorId: string }) {
   const [salvando, setSalvando] = useState(false);
   const [testando, setTestando] = useState(false);
   const [gerando, setGerando] = useState(false);
+  const [ligando, setLigando] = useState(false);
   /* A chave de entrada em claro só existe nesta variável, até sair da tela. */
   const [chaveNova, setChaveNova] = useState<string | null>(null);
 
@@ -476,6 +477,20 @@ function AtendaiConfigForm({ provedorId }: { provedorId: string }) {
     }
   }
 
+  async function ligar() {
+    setLigando(true);
+    try {
+      const r = await atendaiConfigApi.ligarAgendamento(provedorId);
+      setChaveNova(null);
+      carregar();
+      toast({ titulo: "Agendamento ligado", descricao: `O AtendAI já fala com ${r.url}`, variante: "sucesso" });
+    } catch (err) {
+      toast({ titulo: "Não foi possível ligar", descricao: mensagem(err), variante: "erro" });
+    } finally {
+      setLigando(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <Card>
@@ -524,7 +539,8 @@ function AtendaiConfigForm({ provedorId }: { provedorId: string }) {
         <CardHeader>
           <CardTitle>Chave de agendamento</CardTitle>
           <CardDescription>
-            Com ela o AtendAI consulta as vagas e marca a visita aqui. Cole no AtendAI, em Integração ISPhub.
+            Com ela o AtendAI consulta as vagas e marca a visita aqui. "Ligar agendamento" gera a chave e a entrega
+            sozinho — ninguém precisa copiá-la.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -571,9 +587,18 @@ function AtendaiConfigForm({ provedorId }: { provedorId: string }) {
               )}
 
               <div className="flex flex-wrap gap-2">
-                <Button variant="brand" onClick={() => void gerar()} disabled={gerando}>
+                {/*
+                  O caminho normal: a chave nasce e viaja sem ninguém ver. O
+                  botão de gerar continua abaixo para quando o AtendAI está fora
+                  do ar ou é outra instalação — aí não tem como entregar sozinho.
+                */}
+                <Button variant="brand" onClick={() => void ligar()} disabled={ligando}>
+                  <Link2 className="size-4" />
+                  {ligando ? "Ligando..." : config.chaveEntradaPrefixo ? "Religar (troca a chave)" : "Ligar agendamento"}
+                </Button>
+                <Button variant="outline" onClick={() => void gerar()} disabled={gerando}>
                   <KeyRound className="size-4" />
-                  {gerando ? "Gerando..." : config.chaveEntradaPrefixo ? "Gerar nova (invalida a atual)" : "Gerar chave"}
+                  {gerando ? "Gerando..." : "Gerar chave para colar à mão"}
                 </Button>
                 {config.chaveEntradaPrefixo && (
                   <Button

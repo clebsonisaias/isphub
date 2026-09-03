@@ -2054,6 +2054,11 @@ model AgendaConfig {
   /// — pra nao oferecer a manha de hoje as 11h.
   antecedenciaMin Int @default(120)
 
+  /// Quantas vezes o PROPRIO CLIENTE pode remarcar sozinho, pelo WhatsApp.
+  /// Passou disso, a conversa vai pra um humano: remarcacao sem teto vira
+  /// ping-pong as custas da rota de quem ja saiu pra rua.
+  remarcacoesMaxCliente Int @default(2)
+
   atualizadoEm DateTime @updatedAt
 
   @@map("agenda_config")
@@ -2110,6 +2115,14 @@ model Agendamento {
 
   observacao String?
 
+  /// Quando o CLIENTE confirmou a visita, respondendo o lembrete da vespera.
+  /// Nulo = ainda nao respondeu (nao e o mesmo que "nao vem").
+  confirmadoEm DateTime?
+
+  /// Quantas vezes o proprio cliente remarcou. Conta so o que veio DELE — a
+  /// atendente e o bot remarcando em nome dele nao gastam o teto.
+  remarcacoesCliente Int @default(0)
+
   /// Quando o SGP CONFIRMOU a data na leitura seguinte — nao quando mandamos.
   /// `/api/os/update/` ja devolveu 200 ignorando campo que nao aceita, entao
   /// "escrevi" nao e evidencia de "gravou".
@@ -2122,4 +2135,38 @@ model Agendamento {
   @@index([dia, turno, status])
   @@index([dia, regiao, status])
   @@map("agendamentos")
+}
+
+/// Um dia que foge da regra do calendario.
+///
+/// Duas coisas na mesma tabela de proposito, porque sao a mesma pergunta com
+/// sinal trocado: o feriado municipal que FECHA um dia util, e o sabado de
+/// mutirao que ABRE um dia que nao seria atendido. Duas tabelas separadas
+/// teriam que ser consultadas juntas de qualquer jeito, e poderiam discordar
+/// sobre o mesmo dia.
+///
+/// Vale pra agenda inteira: a equipe e uma so, e a referencia acordada e o
+/// calendario de Macaiba/RN, onde fica a sede. Feriado nacional NAO entra aqui
+/// — aquele e calculado (ver shared/feriados.ts), justamente pra ninguem
+/// precisar lembrar de cadastrar dezembro.
+model ExcecaoAgenda {
+  id String @id @default(uuid())
+
+  /// DATE puro, e UNICO: cadastrar o mesmo dia de novo ATUALIZA a regra, em
+  /// vez de empilhar uma segunda que discordaria da primeira.
+  dia DateTime @unique @db.Date
+
+  /// false = nao atende (o caso comum). true = atende MESMO assim, e ganha de
+  /// domingo e de feriado nacional — e o override humano, entao vence tudo.
+  atende Boolean @default(false)
+
+  /// Aparece na grade do supervisor. Um dia que some sem explicacao vira
+  /// chamado interno perguntando por que.
+  motivo String
+
+  definidoPor  String?
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@map("excecoes_agenda")
 }

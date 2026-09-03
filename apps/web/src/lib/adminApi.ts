@@ -59,6 +59,9 @@ export const atendaiConfigApi = {
     api.post<{ chave: string }>(`/provedores/${provedorId}/atendai/chave-entrada`),
   revogarChaveEntrada: (provedorId: string) =>
     api.delete<void>(`/provedores/${provedorId}/atendai/chave-entrada`),
+  /** Gera a chave e a entrega ao AtendAI numa tacada — sem copia-e-cola. */
+  ligarAgendamento: (provedorId: string) =>
+    api.post<{ ok: boolean; url: string }>(`/provedores/${provedorId}/atendai/ligar-agendamento`),
 };
 
 export const tiposOsApi = {

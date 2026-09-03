@@ -55,10 +55,7 @@ parceiroAgendaRouter.get(
       })
       .parse(req.query);
 
-    const config = await agenda.lerConfig();
-    const hoje = agenda.diaBrDe(new Date());
-    const ocupacoes = await agenda.ocupacoesEntre(hoje, agenda.somarDias(hoje, config.horizonteDias), regiao);
-    const vagas = agenda.proximasVagas({ agora: new Date(), config, ocupacoes, quantas });
+    const vagas = await agenda.proximasVagasDoBanco({ regiao, quantas });
 
     res.json({
       vagas: vagas.map((v) => ({
@@ -142,11 +139,26 @@ parceiroAgendaRouter.get(
   asyncHandler(async (req, res) => {
     const m = await prisma.agendamento.findUnique({
       where: { provedorId_sgpOsId: { provedorId: req.provedorParceiroId!, sgpOsId: req.params.sgpOsId } },
-      select: { id: true, dia: true, turno: true, status: true, ordemRota: true },
+      select: {
+        id: true,
+        dia: true,
+        turno: true,
+        status: true,
+        ordemRota: true,
+        confirmadoEm: true,
+        remarcacoesCliente: true,
+      },
     });
     if (!m || m.status !== "marcado") return res.json(null);
     const dia = m.dia.toISOString().slice(0, 10);
-    res.json({ id: m.id, dia, turno: m.turno, inicioEm: agenda.inicioDoTurno(dia, m.turno).toISOString() });
+    res.json({
+      id: m.id,
+      dia,
+      turno: m.turno,
+      inicioEm: agenda.inicioDoTurno(dia, m.turno).toISOString(),
+      confirmada: m.confirmadoEm != null,
+      remarcacoesCliente: m.remarcacoesCliente,
+    });
   }),
 );
 
@@ -198,6 +210,69 @@ parceiroAgendaRouter.get(
           bairro: l.ordemServico!.bairro,
         })),
     });
+  }),
+);
+
+/**
+ * `POST /marcacao/:sgpOsId/confirmar` — o cliente disse que estara em casa.
+ *
+ * Nao muda a agenda; muda o que o supervisor sabe ao montar a rota. Visita
+ * confirmada e visita que provavelmente acontece, e a diferenca entre as duas
+ * e o deslocamento perdido.
+ */
+parceiroAgendaRouter.post(
+  "/marcacao/:sgpOsId/confirmar",
+  asyncHandler(async (req, res) => {
+    const m = await agenda.confirmarPeloCliente(req.provedorParceiroId!, req.params.sgpOsId);
+    if (!m) throw new HttpError(404, "Nao ha visita marcada para esta OS");
+    const dia = m.dia.toISOString().slice(0, 10);
+    res.json({ dia, turno: m.turno, confirmadoEm: m.confirmadoEm });
+  }),
+);
+
+/**
+ * `POST /marcacao/:sgpOsId/remarcar` — o PROPRIO cliente remarcando.
+ *
+ * Rota separada de `/marcar` porque as regras sao outras: ha teto de vezes e
+ * prazo ("ate a vespera"), e a remarcacao e contada. Usar `/marcar` com
+ * `por: "cliente"` faria a atendente e o bot gastarem o teto do cliente — que
+ * e o contrario do que o teto existe pra fazer.
+ *
+ * A recusa por limite vem com `motivo`, pra quem chama saber que a saida e
+ * chamar um humano e nao oferecer outra data.
+ */
+parceiroAgendaRouter.post(
+  "/marcacao/:sgpOsId/remarcar",
+  asyncHandler(async (req, res) => {
+    const b = z
+      .object({
+        dia: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use AAAA-MM-DD"),
+        turno: z.enum(TURNOS_AGENDA),
+        regiao: z.string().trim().min(1).nullish(),
+      })
+      .parse(req.body);
+    try {
+      const m = await agenda.remarcarPeloCliente({
+        provedorId: req.provedorParceiroId!,
+        sgpOsId: req.params.sgpOsId,
+        dia: b.dia,
+        turno: b.turno,
+        regiao: b.regiao,
+      });
+      res.status(201).json({
+        id: m.id,
+        dia: b.dia,
+        turno: b.turno,
+        inicioEm: agenda.inicioDoTurno(b.dia, b.turno).toISOString(),
+      });
+      void agenda.enviarAoSgp(m.id);
+    } catch (e) {
+      if (e instanceof agenda.LimiteDoCliente) {
+        res.status(409).json({ error: e.message, motivo: e.motivo });
+        return;
+      }
+      throw e;
+    }
   }),
 );
 
