@@ -1,10 +1,11 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
-const update = vi.fn();
-const updateMany = vi.fn();
+const upsert = vi.fn();
+const deleteMany = vi.fn();
 const findUnique = vi.fn();
+const update = vi.fn();
 vi.mock("../lib/prisma.js", () => ({
-  prisma: { atendaiConfig: { update, updateMany, findUnique } },
+  prisma: { chaveParceiro: { upsert, deleteMany, findUnique, update } },
 }));
 
 const { gerarChaveEntrada, provedorDaChave, revogarChaveEntrada } = await import("./chaveParceiroService.js");
@@ -14,8 +15,9 @@ const { createHash } = await import("node:crypto");
 const hash = (c: string) => createHash("sha256").update(c, "utf8").digest("hex");
 
 beforeEach(() => {
+  upsert.mockReset().mockResolvedValue({});
+  deleteMany.mockReset().mockResolvedValue({});
   update.mockReset().mockResolvedValue({});
-  updateMany.mockReset().mockResolvedValue({});
   findUnique.mockReset();
 });
 
@@ -24,14 +26,20 @@ describe("gerarChaveEntrada", () => {
     const chave = await gerarChaveEntrada("prov-1");
     expect(chave).toMatch(/^isk_[\w-]{20,}$/);
 
-    const gravado = update.mock.calls[0][0].data;
+    const { create, update: upd } = upsert.mock.calls[0][0];
     // O que vai pro banco NAO pode conter a chave — se contivesse, um dump de
     // banco viraria uma lista de credenciais validas.
-    expect(JSON.stringify(gravado)).not.toContain(chave.slice(12));
-    expect(gravado.chaveEntradaHash).toBe(hash(chave));
-    expect(gravado.chaveEntradaPrefixo).toBe(chave.slice(0, 12));
+    expect(JSON.stringify(create)).not.toContain(chave.slice(12));
+    expect(create.hash).toBe(hash(chave));
+    expect(create.prefixo).toBe(chave.slice(0, 12));
     // Regerar zera o "ultimo uso": o numero passa a ser da chave nova.
-    expect(gravado.chaveEntradaUsoEm).toBeNull();
+    expect(upd.usoEm).toBeNull();
+  });
+
+  it("nao exige nada alem do provedor — qualquer sistema pode ganhar chave", async () => {
+    await gerarChaveEntrada("prov-sem-atendai", "ERP X");
+    expect(upsert.mock.calls[0][0].where).toEqual({ provedorId: "prov-sem-atendai" });
+    expect(upsert.mock.calls[0][0].create.rotulo).toBe("ERP X");
   });
 
   it("duas chamadas nunca produzem a mesma chave", async () => {
@@ -41,10 +49,10 @@ describe("gerarChaveEntrada", () => {
 
 describe("provedorDaChave", () => {
   const linha = (over: Record<string, unknown> = {}) => ({
-    id: "cfg-1",
+    id: "chave-1",
     provedorId: "prov-1",
-    ativo: true,
-    chaveEntradaHash: hash("isk_certa"),
+    hash: hash("isk_certa"),
+    provedor: { ativo: true },
     ...over,
   });
 
@@ -65,26 +73,20 @@ describe("provedorDaChave", () => {
     expect(findUnique).not.toHaveBeenCalled();
   });
 
-  it("integracao desativada recusa, mesmo com a chave certa", async () => {
-    findUnique.mockResolvedValue(linha({ ativo: false }));
+  it("provedor desativado recusa, mesmo com a chave certa", async () => {
+    findUnique.mockResolvedValue(linha({ provedor: { ativo: false } }));
     expect(await provedorDaChave("isk_certa")).toBeNull();
   });
 
-  it("chave revogada (hash nulo) recusa", async () => {
-    findUnique.mockResolvedValue(linha({ chaveEntradaHash: null }));
-    expect(await provedorDaChave("isk_certa")).toBeNull();
-  });
-
-  it("provedor sem linha nenhuma recusa", async () => {
+  it("chave inexistente recusa", async () => {
     findUnique.mockResolvedValue(null);
     expect(await provedorDaChave("isk_certa")).toBeNull();
   });
 });
 
 describe("revogarChaveEntrada", () => {
-  it("limpa hash, prefixo e uso — e nao toca no resto do cadastro", async () => {
+  it("apaga a chave do provedor — e so dele", async () => {
     await revogarChaveEntrada("prov-1");
-    const data = updateMany.mock.calls[0][0].data;
-    expect(data).toEqual({ chaveEntradaHash: null, chaveEntradaPrefixo: null, chaveEntradaUsoEm: null });
+    expect(deleteMany.mock.calls[0][0]).toEqual({ where: { provedorId: "prov-1" } });
   });
 });

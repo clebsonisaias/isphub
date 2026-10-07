@@ -26,7 +26,9 @@ import { ordensServicoApi, tecnicosApi, type TecnicoResumo } from "@/lib/filaApi
 import { ApiError } from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-import { Navigation } from "lucide-react";
+import { CalendarDays, Navigation } from "lucide-react";
+import { MarcarVisitaDialog } from "@/components/MarcarVisitaDialog";
+import { rotuloVisita } from "@/lib/agendaApi";
 
 function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
@@ -52,6 +54,7 @@ export function OrdemServicoDetailDialog({
   const [acaoEmCurso, setAcaoEmCurso] = useState<string | null>(null);
   const [houveMudanca, setHouveMudanca] = useState(false);
   const [detalhesLive, setDetalhesLive] = useState<DetalhesTecnicos | null>(null);
+  const [marcandoVisita, setMarcandoVisita] = useState(false);
 
   // Uma consulta por dialog, consumida por DUAS abas (Detalhes e Conexão).
   // Ver a nota em useFichaSgp: um componente por aba faria o Radix desmontar e
@@ -284,6 +287,24 @@ export function OrdemServicoDetailDialog({
               {podeDespachar && (
                 <div className="flex flex-col gap-2">
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Despacho</p>
+                  {/* A visita vem ANTES do tecnico: primeiro cabe no dia, depois
+                      alguem vai. A agenda (nao o SGP) e a fonte da verdade da data. */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setMarcandoVisita(true)}
+                      disabled={acaoEmCurso !== null || !OS_STATUS_ABERTOS.includes(os.status)}
+                    >
+                      <CalendarDays className="size-3.5" />
+                      {os.diaAgenda && os.turnoAgenda ? "Remarcar visita" : "Marcar visita"}
+                    </Button>
+                    {os.diaAgenda && os.turnoAgenda && (
+                      <span className="text-sm text-muted-foreground">
+                        Visita: <span className="font-medium text-foreground">{rotuloVisita(os.diaAgenda, os.turnoAgenda)}</span>
+                      </span>
+                    )}
+                  </div>
                   <div className="flex flex-wrap items-center gap-2">
                   <Select
                     aria-label="Atribuir técnico"
@@ -357,6 +378,17 @@ export function OrdemServicoDetailDialog({
           </TabsContent>
         </Tabs>
       </DialogContent>
+      {marcandoVisita && (
+        <MarcarVisitaDialog
+          item={os}
+          onClose={() => setMarcandoVisita(false)}
+          onMarcado={(dia, turno) => {
+            setOs((atual) => ({ ...atual, diaAgenda: dia, turnoAgenda: turno }));
+            marcarMudanca();
+            setMarcandoVisita(false);
+          }}
+        />
+      )}
     </Dialog>
   );
 }

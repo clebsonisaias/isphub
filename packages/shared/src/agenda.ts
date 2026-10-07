@@ -68,6 +68,8 @@ export type BloqueioVaga =
   | "dia_lotado"
   | "regiao"
   | "dia_nao_atendido"
+  /** O dia atende, mas nao neste turno — sabado a tarde. */
+  | "turno_nao_atendido"
   | "feriado"
   | "antecedencia";
 

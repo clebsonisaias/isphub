@@ -14,6 +14,7 @@
  * DESTRUTIVO: apaga agendamentos, OS e provedores. So aponte pra um banco
  * descartavel.
  */
+import { feriadoNacional } from "@isphub/shared";
 import { prisma } from "./lib/prisma.js";
 import * as agenda from "./services/agendaService.js";
 
@@ -32,8 +33,11 @@ async function main() {
   await agenda.salvarConfig({ vagasManha: 3, vagasTarde: 3, vagasDia: null, tetoRegiao: 2, antecedenciaMin: 0 });
 
   const hoje = agenda.diaBrDe(new Date());
-  const dia = agenda.somarDias(hoje, 3); // longe da antecedencia
-  const diaUtil = agenda.diaDaSemana(dia) === 0 ? agenda.somarDias(dia, 1) : dia;
+  // Um dia com os DOIS turnos: domingo nao atende, sabado so tem a manha, e
+  // feriado nacional fecha o dia (12/10 ja pegou este script).
+  const comDoisTurnos = (d: string): string =>
+    [0, 6].includes(agenda.diaDaSemana(d)) || feriadoNacional(d) ? comDoisTurnos(agenda.somarDias(d, 1)) : d;
+  const diaUtil = comDoisTurnos(agenda.somarDias(hoje, 3)); // longe da antecedencia
 
   // 1) marca ate lotar
   for (let i = 1; i <= 3; i++) {
@@ -67,7 +71,7 @@ async function main() {
 
   // 5) CONCORRENCIA: 8 marcacoes paralelas numa unica vaga
   const diaLivre = agenda.somarDias(diaUtil, 1);
-  const dl = agenda.diaDaSemana(diaLivre) === 0 ? agenda.somarDias(diaLivre, 1) : diaLivre;
+  const dl = comDoisTurnos(diaLivre);
   await agenda.salvarConfig({ vagasManha: 1, tetoRegiao: null });
   const r = await Promise.allSettled(
     Array.from({ length: 8 }, (_, i) =>

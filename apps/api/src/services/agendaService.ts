@@ -125,6 +125,13 @@ export function vagaDe(args: {
     motivoBloqueio = feriado;
   } else if (!liberadoNaMao && !config.diasAtendidos.includes(diaDaSemana(dia))) {
     bloqueio = "dia_nao_atendido";
+  } else if (!liberadoNaMao && turno === "tarde" && diaDaSemana(dia) === 6) {
+    // Sabado so tem a saida da manha: a equipe fecha ao meio-dia. Fica atras
+    // de `liberadoNaMao` pelo mesmo motivo dos outros: um mutirao cadastrado
+    // com `atende: true` abre a tarde tambem.
+    // ponytail: regra fixa (decisao de 07/10/2026). Se a tarde de sabado
+    // passar a variar, vira `diasSoManha Int[]` na AgendaConfig.
+    bloqueio = "turno_nao_atendido";
   } else if (inicioDoTurno(dia, turno).getTime() - agora.getTime() < config.antecedenciaMin * 60_000) {
     bloqueio = "antecedencia";
   } else if (config.vagasDia != null && ocupadasDia >= config.vagasDia) {
@@ -543,6 +550,8 @@ export function motivoRecusa(bloqueio: BloqueioVaga): string {
       return "Limite da regiao atingido neste turno — escolha outro dia ou turno.";
     case "dia_nao_atendido":
       return "Nao ha atendimento neste dia da semana.";
+    case "turno_nao_atendido":
+      return "Sabado so tem atendimento de manha — escolha a manha ou outro dia.";
     case "feriado":
       return "Nao ha atendimento neste dia (feriado).";
     case "antecedencia":

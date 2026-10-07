@@ -161,3 +161,47 @@ test("a rota do supervisor persiste e chega na fila que o app do técnico lê", 
 
   await desmarcarTudo(request, token, criados);
 });
+
+test("supervisor marca a visita pelo detalhe da OS, e ela aparece no card e na grade", async ({ page, request }) => {
+  const token = await entrar(page);
+  // Grade de verdade (15/15): o teste é do CAMINHO pela tela, não do limite.
+  await request.put(`${API}/admin/agenda`, {
+    headers: auth(token),
+    data: { vagasManha: 15, vagasTarde: 15, vagasDia: null, tetoRegiao: null, antecedenciaMin: 120 },
+  });
+  const alvo = await diaLivre(request, token);
+
+  // Abre a OS pelo card da fila e pede pra marcar.
+  await page.goto("/");
+  await page.getByRole("button", { name: /Cliente E2E/ }).first().click();
+  const detalhe = page.getByRole("dialog").first();
+  await expect(detalhe).toBeVisible();
+  await detalhe.getByRole("button", { name: /marcar visita/i }).click();
+
+  // O diálogo da agenda lista dia × turno; a célula livre é um botão.
+  const agenda = page.getByRole("dialog").filter({ hasText: /Marcar visita|Remarcar visita/ }).last();
+  await expect(agenda).toBeVisible();
+  // Sábado à tarde NUNCA é oferecido — a regra chega até a tela.
+  await expect(agenda.getByRole("button", { name: /^sáb .*Tarde: Só manhã/ }).first()).toBeDisabled();
+
+  const celula = agenda.getByRole("button", { name: new RegExp(`${alvo.turno === "manha" ? "Manhã" : "Tarde"}: \\d+ livre`) }).first();
+  const nomeCelula = (await celula.getAttribute("aria-label"))!;
+  await celula.click();
+
+  // Volta pro detalhe com a visita anunciada; o card da fila passa a mostrar o dia.
+  await expect(detalhe.getByText(/^Visita:/)).toBeVisible();
+  await expect(detalhe.getByRole("button", { name: /remarcar visita/i })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: /Cliente E2E/ }).first()).toContainText(/Visita/);
+
+  // E está na agenda, com o mesmo dia e turno (via API, que é o que a grade lê).
+  const fila = await (await request.get(`${API}/fila?grupo=abertos&equipe=interna`, { headers: auth(token) })).json();
+  const naFila = fila.itens.find((i: { sgpOsId: string }) => i.sgpOsId === "e2e-os-1");
+  expect(naFila.diaAgenda).toBeTruthy();
+  expect(nomeCelula).toContain(naFila.turnoAgenda === "manha" ? "Manhã" : "Tarde");
+
+  // Limpa: cada teste desfaz o que marcou (banco compartilhado).
+  const paradas = await (await request.get(`${API}/agenda/turno?dia=${naFila.diaAgenda}&turno=${naFila.turnoAgenda}`, { headers: auth(token) })).json();
+  const minha = paradas.find((p: { sgpOsId: string }) => p.sgpOsId === "e2e-os-1");
+  if (minha) await desmarcarTudo(request, token, [minha.id]);
+});

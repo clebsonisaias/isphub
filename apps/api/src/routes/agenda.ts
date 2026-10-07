@@ -130,7 +130,9 @@ agendaRouter.put(
 /** A grade configuravel — a aba "Configuracoes" da planilha. */
 export const adminAgendaRouter = Router();
 
-adminAgendaRouter.use(requireAuth, requireRole(UserRole.ADMIN));
+// ADMIN e GESTOR: o gestor ja ve o botao de limites na tela e ja pode marcar
+// visita — recusar aqui so dava 403 depois de ele preencher o formulario.
+adminAgendaRouter.use(requireAuth, requireRole(UserRole.ADMIN, UserRole.GESTOR));
 
 adminAgendaRouter.get(
   "/",

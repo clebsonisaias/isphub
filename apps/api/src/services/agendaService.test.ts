@@ -81,6 +81,22 @@ describe("vagaDe", () => {
     expect(v.bloqueio).toBe("dia_nao_atendido");
   });
 
+  it("sabado: a manha oferece a capacidade inteira, a tarde nao existe", () => {
+    // 2026-09-12 e sabado.
+    expect(diaDaSemana("2026-09-12")).toBe(6);
+    const manha = vagaDe({ dia: "2026-09-12", turno: "manha", config: CONFIG, agora: QUARTA_7H });
+    expect(manha).toMatchObject({ livres: 20, bloqueio: null });
+
+    const tarde = vagaDe({ dia: "2026-09-12", turno: "tarde", config: CONFIG, agora: QUARTA_7H });
+    expect(tarde).toMatchObject({ livres: 0, bloqueio: "turno_nao_atendido" });
+  });
+
+  it("sabado a tarde nunca sai nas proximas vagas, mesmo com tudo vazio", () => {
+    const vagas = proximasVagas({ config: CONFIG, agora: QUARTA_7H, ocupacoes: new Map(), quantas: 30 });
+    expect(vagas.some((v) => diaDaSemana(v.dia) === 6 && v.turno === "tarde")).toBe(false);
+    expect(vagas.some((v) => diaDaSemana(v.dia) === 6 && v.turno === "manha")).toBe(true);
+  });
+
   it("dia nao atendido ganha do lotado — a recusa tem que explicar a causa certa", () => {
     const v = vagaDe({ dia: "2026-09-13", turno: "manha", config: CONFIG, ocupacao: ocupada(20), agora: QUARTA_7H });
     expect(v.bloqueio).toBe("dia_nao_atendido");
@@ -128,11 +144,11 @@ describe("proximasVagas — o que o cliente chega a ouvir", () => {
     const vagas = proximasVagas({ agora: QUARTA_7H, config: CONFIG, ocupacoes, quantas: 3 });
 
     // 10/09 manha caiu por antecedencia; 10/09 tarde vale; 11/09 lotou os dois;
-    // 12/09 (sabado) assume. 13/09 e domingo e nao entra.
+    // 12/09 (sabado) so tem a manha. 13/09 e domingo e nao entra; 14/09 assume.
     expect(vagas.map((v) => `${v.dia} ${v.turno}`)).toEqual([
       "2026-09-10 tarde",
       "2026-09-12 manha",
-      "2026-09-12 tarde",
+      "2026-09-14 manha",
     ]);
   });
 
@@ -301,6 +317,17 @@ describe("feriados e exceções de calendário", () => {
       agora: QUARTA_7H,
     });
     expect(v).toMatchObject({ bloqueio: null, livres: 20 });
+  });
+
+  it("mutirao cadastrado com `atende: true` abre tambem a tarde de sabado", () => {
+    const v = vagaDe({
+      dia: "2026-09-12",
+      turno: "tarde",
+      config: CONFIG,
+      agora: QUARTA_7H,
+      excecao: excecao("2026-09-12", true, "Mutirão").get("2026-09-12"),
+    });
+    expect(v.bloqueio).toBeNull();
   });
 
   it("exceção com atende:true ganha até do feriado nacional", () => {

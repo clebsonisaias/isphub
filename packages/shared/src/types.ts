@@ -141,6 +141,8 @@ export interface OrdemServico {
   ordemRota?: number | null;
   /** A metade do dia em que a visita foi marcada na agenda da ISPhub. */
   turnoAgenda?: TurnoAgenda | null;
+  /** `AAAA-MM-DD` da visita marcada na agenda da ISPhub. Nulo = sem marcacao ativa. */
+  diaAgenda?: string | null;
   /** Tecnico ISPhub atribuido (despacho feito dentro do ISPhub). */
   tecnicoId?: string | null;
   tecnicoNome?: string | null;

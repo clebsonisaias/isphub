@@ -13,11 +13,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select } from "@/components/ui/select";
-import { atendaiConfigApi, categoriasApi, erpConfigApi, provedoresApi, syncApi, tiposOsApi } from "@/lib/adminApi";
-import type { AtendaiConfigPublic } from "@/lib/adminApi";
+import { atendaiConfigApi, categoriasApi, chaveParceiroApi, erpConfigApi, provedoresApi, syncApi, tiposOsApi } from "@/lib/adminApi";
+import type { AtendaiConfigPublic, ChaveParceiroPublic } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
-import { ArrowLeft, CheckCircle2, Copy, Download, KeyRound, Link2, RefreshCw, Sparkles, XCircle } from "lucide-react";
+import { ArrowLeft, CalendarDays, CheckCircle2, Copy, Download, KeyRound, Link2, RefreshCw, Sparkles, XCircle } from "lucide-react";
 
 function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
@@ -57,6 +57,7 @@ export function ProvedorDetailPage() {
           <TabsTrigger value="sgp">Integração SGP</TabsTrigger>
           <TabsTrigger value="tipos">Tipos de OS</TabsTrigger>
           <TabsTrigger value="atendai">AtendAI</TabsTrigger>
+          <TabsTrigger value="api-agenda">API de agendamento</TabsTrigger>
         </TabsList>
         <TabsContent value="sgp">
           <SgpConfigForm provedorId={id} />
@@ -66,6 +67,9 @@ export function ProvedorDetailPage() {
         </TabsContent>
         <TabsContent value="atendai">
           <AtendaiConfigForm provedorId={id} />
+        </TabsContent>
+        <TabsContent value="api-agenda">
+          <ChaveParceiroCard provedorId={id} />
         </TabsContent>
       </Tabs>
       </AnimatedPage>
@@ -417,10 +421,7 @@ function AtendaiConfigForm({ provedorId }: { provedorId: string }) {
   const [chave, setChave] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [testando, setTestando] = useState(false);
-  const [gerando, setGerando] = useState(false);
   const [ligando, setLigando] = useState(false);
-  /* A chave de entrada em claro só existe nesta variável, até sair da tela. */
-  const [chaveNova, setChaveNova] = useState<string | null>(null);
 
   const carregar = useCallback(() => {
     atendaiConfigApi
@@ -464,24 +465,10 @@ function AtendaiConfigForm({ provedorId }: { provedorId: string }) {
     }
   }
 
-  async function gerar() {
-    setGerando(true);
-    try {
-      const { chave: nova } = await atendaiConfigApi.gerarChaveEntrada(provedorId);
-      setChaveNova(nova);
-      carregar();
-    } catch (err) {
-      toast({ titulo: "Não foi possível gerar", descricao: mensagem(err), variante: "erro" });
-    } finally {
-      setGerando(false);
-    }
-  }
-
   async function ligar() {
     setLigando(true);
     try {
       const r = await atendaiConfigApi.ligarAgendamento(provedorId);
-      setChaveNova(null);
       carregar();
       toast({ titulo: "Agendamento ligado", descricao: `O AtendAI já fala com ${r.url}`, variante: "sucesso" });
     } catch (err) {
@@ -537,15 +524,15 @@ function AtendaiConfigForm({ provedorId }: { provedorId: string }) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Chave de agendamento</CardTitle>
+          <CardTitle>Agendamento pelo AtendAI</CardTitle>
           <CardDescription>
-            Com ela o AtendAI consulta as vagas e marca a visita aqui. "Ligar agendamento" gera a chave e a entrega
-            sozinho — ninguém precisa copiá-la.
+            "Ligar agendamento" gera a chave da API de agendamento e a entrega ao AtendAI sozinho — ninguém precisa
+            copiá-la. A chave é a mesma da aba "API de agendamento"; religar troca a chave para todos os sistemas.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {!config ? (
-            <p className="text-sm text-muted-foreground">Salve as credenciais acima antes de gerar a chave.</p>
+            <p className="text-sm text-muted-foreground">Salve as credenciais acima antes de ligar o agendamento.</p>
           ) : (
             <>
               {config.chaveEntradaPrefixo ? (
@@ -561,62 +548,168 @@ function AtendaiConfigForm({ provedorId }: { provedorId: string }) {
               ) : (
                 <p className="text-sm text-muted-foreground">Nenhuma chave gerada — o AtendAI ainda não agenda aqui.</p>
               )}
-
-              {/*
-                A chave em claro aparece UMA vez e não é recuperável: o servidor
-                guarda só o hash. Some da tela ao sair — avisar disso aqui é o
-                que evita a ligação de amanhã pedindo "manda de novo".
-              */}
-              {chaveNova && (
-                <div className="flex flex-col gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-3">
-                  <p className="text-sm font-medium">Copie agora — esta chave não será mostrada de novo.</p>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 break-all rounded bg-background px-2 py-1 text-xs">{chaveNova}</code>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        void navigator.clipboard?.writeText(chaveNova);
-                        toast({ titulo: "Chave copiada", variante: "sucesso" });
-                      }}
-                    >
-                      <Copy className="size-4" />
-                      Copiar
-                    </Button>
-                  </div>
-                </div>
-              )}
-
               <div className="flex flex-wrap gap-2">
-                {/*
-                  O caminho normal: a chave nasce e viaja sem ninguém ver. O
-                  botão de gerar continua abaixo para quando o AtendAI está fora
-                  do ar ou é outra instalação — aí não tem como entregar sozinho.
-                */}
                 <Button variant="brand" onClick={() => void ligar()} disabled={ligando}>
                   <Link2 className="size-4" />
                   {ligando ? "Ligando..." : config.chaveEntradaPrefixo ? "Religar (troca a chave)" : "Ligar agendamento"}
                 </Button>
-                <Button variant="outline" onClick={() => void gerar()} disabled={gerando}>
-                  <KeyRound className="size-4" />
-                  {gerando ? "Gerando..." : "Gerar chave para colar à mão"}
-                </Button>
-                {config.chaveEntradaPrefixo && (
-                  <Button
-                    variant="outline"
-                    onClick={() =>
-                      void atendaiConfigApi.revogarChaveEntrada(provedorId).then(() => {
-                        setChaveNova(null);
-                        carregar();
-                        toast({ titulo: "Chave revogada", variante: "sucesso" });
-                      })
-                    }
-                  >
-                    Revogar
-                  </Button>
-                )}
               </div>
             </>
           )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+/**
+ * A chave da API de agendamento (`/api/parceiro/v1/agenda`) deste provedor.
+ * Qualquer sistema do provedor entra com ela — o AtendAI é um deles, e a aba
+ * dele tem o atalho que gera e entrega sozinho. Aqui é o caminho manual, pra
+ * um ERP, um CRM ou um script do provedor.
+ */
+function ChaveParceiroCard({ provedorId }: { provedorId: string }) {
+  const { toast } = useToast();
+  const [chave, setChave] = useState<ChaveParceiroPublic | null | undefined>(undefined);
+  const [rotulo, setRotulo] = useState("");
+  const [gerando, setGerando] = useState(false);
+  /* A chave em claro só existe nesta variável, até sair da tela. */
+  const [chaveNova, setChaveNova] = useState<string | null>(null);
+
+  const carregar = useCallback(() => {
+    chaveParceiroApi
+      .obter(provedorId)
+      .then(setChave)
+      .catch((err) => toast({ titulo: "Erro ao carregar", descricao: mensagem(err), variante: "erro" }));
+  }, [provedorId, toast]);
+
+  useEffect(carregar, [carregar]);
+
+  async function gerar() {
+    setGerando(true);
+    try {
+      const { chave: nova } = await chaveParceiroApi.gerar(provedorId, rotulo.trim() || undefined);
+      setChaveNova(nova);
+      carregar();
+    } catch (err) {
+      toast({ titulo: "Não foi possível gerar", descricao: mensagem(err), variante: "erro" });
+    } finally {
+      setGerando(false);
+    }
+  }
+
+  async function revogar() {
+    try {
+      await chaveParceiroApi.revogar(provedorId);
+      setChaveNova(null);
+      carregar();
+      toast({ titulo: "Chave revogada", descricao: "Nenhum sistema externo agenda mais por aqui.", variante: "sucesso" });
+    } catch (err) {
+      toast({ titulo: "Não foi possível revogar", descricao: mensagem(err), variante: "erro" });
+    }
+  }
+
+  const base = `${window.location.origin.replace("painel.", "api.")}/api/parceiro/v1/agenda`;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <CalendarDays className="size-4 text-primary" />
+            API de agendamento
+          </CardTitle>
+          <CardDescription>
+            Um sistema do provedor (ERP, CRM, bot) consulta as vagas e marca a visita aqui, com uma chave{" "}
+            <code className="text-xs">isk_…</code> no cabeçalho <code className="text-xs">Authorization: Bearer</code>.
+            A mesma regra da agenda vale para ele: 15 por turno, sábado só de manhã, feriado não oferece.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {chave === undefined ? (
+            <Skeleton className="h-10 w-full" />
+          ) : chave ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+              <span className="text-muted-foreground">Chave ativa:</span>
+              <code className="text-xs">{chave.prefixo}…</code>
+              {chave.rotulo && <span className="rounded-full bg-secondary px-2 py-0.5 text-xs">{chave.rotulo}</span>}
+              <span className="ml-auto text-xs text-muted-foreground">
+                {chave.usoEm ? `usada em ${new Date(chave.usoEm).toLocaleString("pt-BR")}` : "nunca usada"}
+              </span>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Nenhuma chave gerada — nenhum sistema externo agenda aqui ainda.</p>
+          )}
+
+          {/*
+            A chave em claro aparece UMA vez e não é recuperável: o servidor
+            guarda só o hash. Some da tela ao sair — avisar disso aqui é o
+            que evita a ligação de amanhã pedindo "manda de novo".
+          */}
+          {chaveNova && (
+            <div className="flex flex-col gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-3">
+              <p className="text-sm font-medium">Copie agora — esta chave não será mostrada de novo.</p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 break-all rounded bg-background px-2 py-1 text-xs">{chaveNova}</code>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(chaveNova);
+                    toast({ titulo: "Chave copiada", variante: "sucesso" });
+                  }}
+                >
+                  <Copy className="size-4" />
+                  Copiar
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <div className="flex flex-1 flex-col gap-1.5">
+              <Label htmlFor="chave-rotulo">Sistema que vai usar (opcional)</Label>
+              <Input
+                id="chave-rotulo"
+                value={rotulo}
+                onChange={(e) => setRotulo(e.target.value)}
+                placeholder={chave?.rotulo ?? "ex.: ERP, CRM, AtendAI"}
+                maxLength={60}
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="brand" onClick={() => void gerar()} disabled={gerando}>
+                <KeyRound className="size-4" />
+                {gerando ? "Gerando..." : chave ? "Regerar (troca a chave)" : "Gerar chave"}
+              </Button>
+              {chave && (
+                <Button variant="outline" onClick={() => void revogar()}>
+                  Revogar
+                </Button>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Como usar</CardTitle>
+          <CardDescription>
+            Documentação completa em <code className="text-xs">docs/api-agendamento.md</code> do repositório e no OpenAPI
+            (tag "API de agendamento").
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <pre className="overflow-x-auto rounded-md bg-muted/40 p-3 text-xs leading-relaxed">
+{`# próximas vagas (só o que cabe)
+curl -H "Authorization: Bearer isk_..." "${base}/vagas?regiao=Macaíba&quantas=6"
+
+# marcar a visita da OS 12345 do SGP
+curl -X POST -H "Authorization: Bearer isk_..." -H "Content-Type: application/json" \\
+  -d '{"sgpOsId":"12345","dia":"2026-10-10","turno":"manha","regiao":"Macaíba","marcadoPor":"Maria"}' \\
+  ${base}/marcar
+# 201 marcou · 409 não coube (a mensagem diz por quê: lotado, sábado só manhã, feriado…)`}
+          </pre>
         </CardContent>
       </Card>
     </div>

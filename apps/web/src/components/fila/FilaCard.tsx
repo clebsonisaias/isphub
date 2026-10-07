@@ -7,6 +7,8 @@ import { ContratoStatusBadge } from "@/components/ContratoStatusBadge";
 import { ConexaoBadge } from "@/components/fila/ConexaoBadge";
 import { copiarTexto, numeroWhatsApp } from "@/lib/clipboard";
 import { iconeCategoria } from "@/lib/categoriaIcons";
+import { rotuloDiaAgenda } from "@/lib/agendaApi";
+import { ROTULO_TURNO } from "@isphub/shared";
 import { Clock, ChevronRight, ChevronsUp, MapPin, MessageCircle, Copy, Check, UserPlus, HelpCircle } from "lucide-react";
 
 /**
@@ -42,7 +44,13 @@ function corRail(item: FilaItem): string {
 }
 
 /** Data em destaque + rótulo do que ela é: agendamento (se houver) ou abertura. */
-function dataDestaque(item: FilaItem): { rotulo: string; iso: string | null } {
+function dataDestaque(item: FilaItem): { rotulo: string; iso: string | null; grande?: string; pequeno?: string } {
+  // A marcacao da agenda ISPhub vence a data do SGP: e ela que o supervisor
+  // escolheu, e o SGP so a reflete depois do write-back. Nao tem hora — a
+  // agenda e por turno — entao o destaque vira o dia e a linha de baixo o turno.
+  if (item.diaAgenda && item.turnoAgenda) {
+    return { rotulo: "Visita", iso: null, grande: rotuloDiaAgenda(item.diaAgenda), pequeno: ROTULO_TURNO[item.turnoAgenda] };
+  }
   if (item.dataAgendamento) return { rotulo: "Agendada", iso: item.dataAgendamento };
   return { rotulo: "Aberta", iso: item.dataCadastro ?? item.criadoEm };
 }
@@ -225,8 +233,8 @@ export function FilaCard({ item, agora, onClick }: { item: FilaItem; agora: numb
 
         <div className="leading-tight">
           <p className="text-[0.68rem] uppercase tracking-wide text-muted-foreground/70">{destaque.rotulo}</p>
-          <p className="text-lg font-bold tabular-nums text-foreground">{fmtHora(destaque.iso)}</p>
-          <p className="text-xs text-muted-foreground">{fmtData(destaque.iso)}</p>
+          <p className="text-lg font-bold tabular-nums text-foreground">{destaque.grande ?? fmtHora(destaque.iso)}</p>
+          <p className="text-xs text-muted-foreground">{destaque.pequeno ?? fmtData(destaque.iso)}</p>
         </div>
 
         <SlaBadge sla={item.sla} />

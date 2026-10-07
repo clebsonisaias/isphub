@@ -70,6 +70,7 @@ model Provedor {
 
   erpConfigs    ErpConfig[]
   atendaiConfig AtendaiConfig?
+  chaveParceiro ChaveParceiro?
   tiposOs       TipoOs[]
   ordensServico OrdemServico[]
   usuarios      Usuario[]
@@ -119,30 +120,43 @@ model AtendaiConfig {
   /// mensagem no chat da equipe.
   segredoCifrado String?
 
-  /// A chave que o AtendAI usa pra entrar AQUI (sentido oposto ao de
-  /// `chaveCifrada`, que e a nossa credencial pra falar com ele).
-  ///
-  /// Guardada como HASH e nao cifrada: esta chave nunca precisa ser lida de
-  /// volta — so comparada. Cifrar daria a capacidade de exibi-la, que e
-  /// exatamente a capacidade que nao se quer ter num segredo de entrada. E
-  /// mostrada UMA vez, ao gerar. Mesma decisao do `SistemaExterno` do lado do
-  /// AtendAI, que e quem vai consumir isto.
-  chaveEntradaHash String?
-
-  /// Os 12 primeiros caracteres da chave de entrada, em claro. Serve pro
-  /// lookup (achar a linha sem varrer a tabela hasheando tudo) e pra tela
-  /// mostrar QUAL chave esta ativa sem revelar nenhuma.
-  chaveEntradaPrefixo String? @unique
-
-  /// Best-effort: quando a chave de entrada foi usada pela ultima vez. E como
-  /// se descobre integracao que parou de funcionar em silencio.
-  chaveEntradaUsoEm DateTime?
-
   ativo        Boolean  @default(true)
   criadoEm     DateTime @default(now())
   atualizadoEm DateTime @updatedAt
 
   @@map("atendai_configs")
+}
+
+/// A chave que um sistema PARCEIRO usa pra entrar aqui pela API de
+/// agendamento (`/api/parceiro/v1/agenda`). Uma por provedor.
+///
+/// Morava em `AtendaiConfig` ate 07/10/2026, quando o unico parceiro era o
+/// AtendAI. Saiu de la porque a API e a mesma pra qualquer sistema do
+/// provedor, e exigir o cadastro do AtendAI pra gerar a chave de outro
+/// sistema nao fazia sentido.
+///
+/// HASH, nao cifrada: nunca precisa ser lida de volta, so comparada. Mostrada
+/// UMA vez, ao gerar.
+model ChaveParceiro {
+  id         String   @id @default(uuid())
+  provedorId String   @unique
+  provedor   Provedor @relation(fields: [provedorId], references: [id], onDelete: Cascade)
+
+  hash String
+
+  /// Os 12 primeiros caracteres em claro: lookup sem varrer a tabela, e a
+  /// tela mostra QUAL chave esta ativa sem revelar nenhuma.
+  prefixo String @unique
+
+  /// Nome do sistema que usa a chave ("AtendAI", "ERP X") — so pra tela.
+  rotulo String?
+
+  /// Best-effort: ultimo uso. E como se descobre integracao parada em silencio.
+  usoEm DateTime?
+
+  criadoEm DateTime @default(now())
+
+  @@map("chaves_parceiro")
 }
 
 model ErpConfig {

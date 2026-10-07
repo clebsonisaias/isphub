@@ -35,6 +35,7 @@ function tomDaVaga(v: VagaTurno) {
   // Feriado é neutro, não vermelho: nada deu errado, o dia só não existe.
   if (v.bloqueio === "feriado") return "bg-muted/40 text-muted-foreground";
   if (v.bloqueio === "dia_nao_atendido") return "bg-muted/40 text-muted-foreground";
+  if (v.bloqueio === "turno_nao_atendido") return "bg-muted/40 text-muted-foreground";
   if (v.bloqueio === "antecedencia") return "bg-muted/40 text-muted-foreground";
   if (v.bloqueio) return "bg-destructive/15 text-destructive";
   if (v.livres <= 3) return "bg-amber-500/15 text-amber-700 dark:text-amber-400";
@@ -57,6 +58,8 @@ function textoBloqueio(v: VagaTurno) {
       return v.motivoBloqueio ?? "Feriado";
     case "dia_nao_atendido":
       return "Sem atendimento";
+    case "turno_nao_atendido":
+      return "Só manhã";
     case "antecedencia":
       return "Prazo curto";
     default:

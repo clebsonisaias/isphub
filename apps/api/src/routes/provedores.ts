@@ -4,6 +4,7 @@ import { UserRole } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { chaveDoProvedor, gerarChaveEntrada, revogarChaveEntrada } from "../services/chaveParceiroService.js";
 
 export const provedoresRouter = Router();
 
@@ -77,5 +78,41 @@ provedoresRouter.delete(
       throw new HttpError(404, "Provedor nao encontrado");
     });
     res.status(204).send();
+  }),
+);
+
+/*
+ * A chave da API de agendamento (`/api/parceiro/v1/agenda`), por provedor.
+ * Qualquer sistema do provedor entra com ela — o AtendAI e um deles. Ver
+ * `docs/api-agendamento.md`.
+ */
+const chaveParceiroSchema = z.object({ rotulo: z.string().trim().max(60).nullish() });
+
+provedoresRouter.get(
+  "/:id/chave-parceiro",
+  requireRole(UserRole.ADMIN, UserRole.GESTOR),
+  asyncHandler(async (req, res) => {
+    res.json(await chaveDoProvedor(req.params.id));
+  }),
+);
+
+/** Gera ou REGERA (a anterior morre na hora). Devolve em claro uma unica vez. */
+provedoresRouter.post(
+  "/:id/chave-parceiro",
+  requireRole(UserRole.ADMIN, UserRole.GESTOR),
+  asyncHandler(async (req, res) => {
+    const provedor = await prisma.provedor.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!provedor) throw new HttpError(404, "Provedor nao encontrado");
+    const { rotulo } = chaveParceiroSchema.parse(req.body ?? {});
+    res.json({ chave: await gerarChaveEntrada(provedor.id, rotulo) });
+  }),
+);
+
+provedoresRouter.delete(
+  "/:id/chave-parceiro",
+  requireRole(UserRole.ADMIN, UserRole.GESTOR),
+  asyncHandler(async (req, res) => {
+    await revogarChaveEntrada(req.params.id);
+    res.status(204).end();
   }),
 );

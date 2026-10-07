@@ -64,6 +64,22 @@ export const atendaiConfigApi = {
     api.post<{ ok: boolean; url: string }>(`/provedores/${provedorId}/atendai/ligar-agendamento`),
 };
 
+/** A chave da API de agendamento: só o que a tela pode ver. */
+export interface ChaveParceiroPublic {
+  prefixo: string;
+  rotulo: string | null;
+  usoEm: string | null;
+  criadoEm: string;
+}
+
+export const chaveParceiroApi = {
+  obter: (provedorId: string) => api.get<ChaveParceiroPublic | null>(`/provedores/${provedorId}/chave-parceiro`),
+  /** Devolve a chave em claro — a ÚNICA vez em que ela existe fora do hash. Regerar mata a anterior. */
+  gerar: (provedorId: string, rotulo?: string) =>
+    api.post<{ chave: string }>(`/provedores/${provedorId}/chave-parceiro`, rotulo ? { rotulo } : {}),
+  revogar: (provedorId: string) => api.delete<void>(`/provedores/${provedorId}/chave-parceiro`),
+};
+
 export const tiposOsApi = {
   listar: (provedorId: string) => api.get<TipoOs[]>(`/provedores/${provedorId}/tipos-os`),
   importar: (provedorId: string) =>

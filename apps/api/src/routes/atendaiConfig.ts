@@ -7,7 +7,7 @@ import { requireAuth, requireRole } from "../middleware/auth.js";
 import { decrypt, encrypt, maskToken } from "../lib/crypto.js";
 import { validarUrlExterna } from "../lib/urlValidation.js";
 import { chamar, credencialDoProvedor } from "../services/atendaiService.js";
-import { gerarChaveEntrada, revogarChaveEntrada } from "../services/chaveParceiroService.js";
+import { chaveDoProvedor, gerarChaveEntrada, revogarChaveEntrada } from "../services/chaveParceiroService.js";
 
 /**
  * Cadastro da ligacao de um provedor com o AtendAI.
@@ -32,6 +32,9 @@ atendaiConfigRouter.get(
   asyncHandler(async (req, res) => {
     const row = await prisma.atendaiConfig.findUnique({ where: { provedorId: req.params.provedorId! } });
     if (!row) return res.json(null);
+    // A chave de parceiro e do PROVEDOR (tabela propria, desde 07/10/2026);
+    // aqui so aparece pra tela do AtendAI saber se a ligacao esta feita.
+    const chave = await chaveDoProvedor(row.provedorId);
 
     let chaveMascarada = "****";
     try {
@@ -50,8 +53,8 @@ atendaiConfigRouter.get(
       // A chave de ENTRADA (a que o AtendAI usa pra agendar aqui) nunca volta,
       // nem mascarada: ela e hash, entao nem o servidor a conhece. So o
       // prefixo, que identifica QUAL chave esta ativa sem revelar nenhuma.
-      chaveEntradaPrefixo: row.chaveEntradaPrefixo,
-      chaveEntradaUsoEm: row.chaveEntradaUsoEm,
+      chaveEntradaPrefixo: chave?.prefixo ?? null,
+      chaveEntradaUsoEm: chave?.usoEm ?? null,
     });
   }),
 );
@@ -117,10 +120,9 @@ atendaiConfigRouter.post(
 atendaiConfigRouter.post(
   "/chave-entrada",
   asyncHandler(async (req, res) => {
-    const provedorId = req.params.provedorId!;
-    const existe = await prisma.atendaiConfig.findUnique({ where: { provedorId }, select: { id: true } });
-    if (!existe) throw new HttpError(409, "Cadastre o AtendAI deste provedor antes de gerar a chave");
-    res.json({ chave: await gerarChaveEntrada(provedorId) });
+    // Atalho mantido pra tela do AtendAI; a rota canonica e
+    // `POST /provedores/:id/chave-parceiro`, que serve a qualquer sistema.
+    res.json({ chave: await gerarChaveEntrada(req.params.provedorId!, "AtendAI") });
   }),
 );
 
@@ -161,7 +163,7 @@ atendaiConfigRouter.post(
     const doCorpo = z.object({ url: z.string().url().optional() }).parse(req.body ?? {});
     const url = (doCorpo.url ?? `${req.protocol}://${req.get("host")}`).replace(/\/+$/, "");
 
-    const chave = await gerarChaveEntrada(provedorId);
+    const chave = await gerarChaveEntrada(provedorId, "AtendAI");
     try {
       await chamar(cred, "POST", "/isphub/vincular", { url, chave });
     } catch (e) {

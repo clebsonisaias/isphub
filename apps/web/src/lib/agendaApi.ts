@@ -1,4 +1,4 @@
-import type { AgendaConfigDto, OsStatus, TurnoAgenda, VagaTurno } from "@isphub/shared";
+import { ROTULO_TURNO, type AgendaConfigDto, type OsStatus, type TurnoAgenda, type VagaTurno } from "@isphub/shared";
 import { api } from "./apiClient";
 
 /**
@@ -50,6 +50,19 @@ export interface ParadaAgenda {
     tecnico: { id: string; nome: string; nomeExibicao: string | null } | null;
     tipoOs: { descricao: string | null; categoria: { nome: string; cor: string } | null } | null;
   } | null;
+}
+
+const DIA_SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+
+/** "sex 10/10" — o dia da agenda como a grade e o card mostram. */
+export function rotuloDiaAgenda(dia: string) {
+  const d = new Date(`${dia}T12:00:00Z`);
+  return `${DIA_SEMANA[d.getUTCDay()]} ${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/** "sex 10/10, Manhã" — como o card e o detalhe anunciam a marcação. */
+export function rotuloVisita(dia: string, turno: TurnoAgenda) {
+  return `${rotuloDiaAgenda(dia)}, ${ROTULO_TURNO[turno]}`;
 }
 
 /** `2026-09-10` — o dia como o servidor espera (DATE, sem hora nem fuso). */

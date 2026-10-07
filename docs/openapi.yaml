@@ -87,8 +87,212 @@ tags:
     description: Entrada pública das mensagens de WhatsApp.
   - name: Utilidades
     description: Saúde do serviço e hora de referência.
+  - name: API de agendamento
+    description: |
+      Porta da agenda de visitas para **sistemas parceiros** do provedor (ERP,
+      CRM, bot de atendimento). Autenticada por chave `isk_…` gerada em
+      Provedores → "API de agendamento" (ou "Ligar agendamento" na aba AtendAI).
+      O escopo vem da chave: cada chave pertence a um provedor e só vê as OS dele.
+      Limite de 120 req/min por IP. Regras aplicadas pelo servidor: capacidade
+      por turno (15), teto do dia, teto por região, sábado só manhã, feriados
+      nacionais calculados e exceções de calendário.
 
 paths:
+  /api/parceiro/v1/agenda/vagas:
+    get:
+      tags: [API de agendamento]
+      summary: Próximas janelas com vaga
+      description: |
+        Só o que **cabe**: janela lotada, feriado, sábado à tarde ou prazo curto
+        não aparecem. `regiao` (bairro/POP do cliente) liga o teto regional.
+      security: [{ chaveParceiro: [] }]
+      operationId: parceiroAgendaVagas
+      parameters:
+        - { name: regiao, in: query, schema: { type: string } }
+        - { name: quantas, in: query, schema: { type: integer, minimum: 1, maximum: 30, default: 6 } }
+      responses:
+        "200":
+          description: Janelas livres, da mais próxima para a mais distante.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  vagas:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        dia: { type: string, format: date, example: "2026-10-10" }
+                        turno: { type: string, enum: [manha, tarde] }
+                        livres: { type: integer }
+                        inicioEm: { type: string, format: date-time }
+        "401": { description: Chave ausente ou inválida. }
+        "429": { description: Mais de 120 requisições por minuto. }
+
+  /api/parceiro/v1/agenda/marcar:
+    post:
+      tags: [API de agendamento]
+      summary: Marca (ou remarca) a visita de uma OS
+      description: |
+        A chave é `sgpOsId` (id da OS no SGP). Chamar de novo para a mesma OS
+        **remarca**. Não exige que a OS já tenha sido sincronizada: a ligação
+        acontece no próximo ciclo. O servidor grava a data no SGP depois de
+        responder.
+      security: [{ chaveParceiro: [] }]
+      operationId: parceiroAgendaMarcar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sgpOsId, dia, turno]
+              properties:
+                sgpOsId: { type: string, example: "12345" }
+                dia: { type: string, format: date, example: "2026-10-10" }
+                turno: { type: string, enum: [manha, tarde] }
+                regiao: { type: string, nullable: true }
+                por: { type: string, enum: [ia, humano, cliente], default: humano }
+                marcadoPor: { type: string, maxLength: 120, nullable: true }
+                observacao: { type: string, maxLength: 500, nullable: true }
+      responses:
+        "201":
+          description: Marcada.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  dia: { type: string, format: date }
+                  turno: { type: string, enum: [manha, tarde] }
+                  inicioEm: { type: string, format: date-time }
+        "409":
+          description: |
+            Não coube. `error` explica em texto. Motivos possíveis: turno lotado,
+            dia lotado, limite da região, dia sem atendimento, sábado à tarde,
+            feriado, prazo curto. Ofereça outra janela de `GET /vagas`.
+        "401": { description: Chave ausente ou inválida. }
+
+  /api/parceiro/v1/agenda/marcacao/{sgpOsId}:
+    get:
+      tags: [API de agendamento]
+      summary: O que está marcado para uma OS
+      security: [{ chaveParceiro: [] }]
+      operationId: parceiroAgendaMarcacao
+      parameters:
+        - { name: sgpOsId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: A marcação ativa, ou `null` se não houver.
+          content:
+            application/json:
+              schema:
+                type: object
+                nullable: true
+                properties:
+                  id: { type: string }
+                  dia: { type: string, format: date }
+                  turno: { type: string, enum: [manha, tarde] }
+                  inicioEm: { type: string, format: date-time }
+                  confirmada: { type: boolean }
+                  remarcacoesCliente: { type: integer }
+    delete:
+      tags: [API de agendamento]
+      summary: Desmarca a visita
+      description: A vaga volta para a grade na hora.
+      security: [{ chaveParceiro: [] }]
+      operationId: parceiroAgendaDesmarcar
+      parameters:
+        - { name: sgpOsId, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Desmarcada (ou já estava). }
+        "404": { description: Não há marcação para esta OS. }
+
+  /api/parceiro/v1/agenda/marcacao/{sgpOsId}/confirmar:
+    post:
+      tags: [API de agendamento]
+      summary: Cliente confirmou a visita
+      security: [{ chaveParceiro: [] }]
+      operationId: parceiroAgendaConfirmar
+      parameters:
+        - { name: sgpOsId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Confirmada.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dia: { type: string, format: date }
+                  turno: { type: string, enum: [manha, tarde] }
+                  confirmadoEm: { type: string, format: date-time }
+        "404": { description: Não há visita marcada para esta OS. }
+
+  /api/parceiro/v1/agenda/marcacao/{sgpOsId}/remarcar:
+    post:
+      tags: [API de agendamento]
+      summary: Cliente remarcou sozinho
+      description: |
+        Caminho do **autoatendimento**: conta no teto de remarcações do cliente
+        (padrão 2) e só vale até a véspera. Atendente e sistemas devem usar
+        `POST /marcar`, que não gasta o teto do cliente.
+      security: [{ chaveParceiro: [] }]
+      operationId: parceiroAgendaRemarcar
+      parameters:
+        - { name: sgpOsId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dia, turno]
+              properties:
+                dia: { type: string, format: date }
+                turno: { type: string, enum: [manha, tarde] }
+                regiao: { type: string, nullable: true }
+      responses:
+        "201": { description: Remarcada. Mesmo corpo de `POST /marcar`. }
+        "409":
+          description: |
+            Recusada. `motivo` é `max_remarcacoes` (chame um humano),
+            `tarde_demais` (passou da véspera) ou `sem_marcacao`; sem `motivo`,
+            é falta de vaga — ofereça outra janela.
+
+  /api/parceiro/v1/agenda/visitas:
+    get:
+      tags: [API de agendamento]
+      summary: Visitas marcadas num dia
+      description: |
+        Para o lembrete de véspera. Só devolve quem tem telefone e cuja OS não
+        foi cancelada nem concluída.
+      security: [{ chaveParceiro: [] }]
+      operationId: parceiroAgendaVisitas
+      parameters:
+        - { name: dia, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        "200":
+          description: Visitas do dia, por turno e ordem da rota.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dia: { type: string, format: date }
+                  visitas:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        sgpOsId: { type: string }
+                        turno: { type: string, enum: [manha, tarde] }
+                        cliente: { type: string, nullable: true }
+                        telefone: { type: string }
+                        bairro: { type: string, nullable: true }
+
   /health:
     get:
       tags: [Utilidades]
@@ -2592,6 +2796,12 @@ paths:
 
 components:
   securitySchemes:
+    chaveParceiro:
+      type: http
+      scheme: bearer
+      description: |
+        Chave de parceiro `isk_…` (sem JWT). Mostrada uma única vez ao gerar;
+        o servidor guarda só o hash. Regerar invalida a anterior na hora.
     bearerAuth:
       type: http
       scheme: bearer
