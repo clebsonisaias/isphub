@@ -11,7 +11,6 @@ import { Button, Card, Field, Muted, Pill, Screen, SectionLabel, Title, type Pil
 import { colors, font, space } from "@/theme/tokens";
 import { useAcoesOs } from "@/features/minhas-os/acoes";
 import { GaleriaEvidencias } from "@/features/evidencias/galeria";
-import { useProcessarFilaEvidencias } from "@/features/evidencias/outbox";
 import { abrirNoWaze } from "@/features/minhas-os/navegacao";
 import { AcaoContratoStatus } from "@/features/minhas-os/acao-contrato-status";
 import { ConexaoStatus } from "@/features/minhas-os/conexao-status";
@@ -61,7 +60,6 @@ export default function DetalheOs() {
   const temProvisionamento = useModuloHabilitado("provisionamento");
   const temChat = useModuloHabilitado("chat");
   const temEvidencias = useModuloHabilitado("evidencias");
-  useProcessarFilaEvidencias();
   const [nota, setNota] = useState("");
   const { marcarACaminho, mudarStatus, anotar, mudarContratoStatus } = useAcoesOs(id);
   const { garantirConversaDeOs } = useCriarConversa();

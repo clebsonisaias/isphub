@@ -7,6 +7,7 @@ import { useModulos } from "@/lib/config";
 import { useRealtime } from "@/lib/realtime";
 import { usePush } from "@/features/notificacoes/push-hook";
 import { useNaoLidas } from "@/features/chat/hooks";
+import { useProcessarFilaEvidencias } from "@/features/evidencias/outbox";
 import { ROTAS_MODULO } from "@/lib/modulo-registry";
 import { ModuloIcon } from "@/lib/modulo-icones";
 import { colors } from "@/theme/tokens";
@@ -21,6 +22,7 @@ export default function AppLayout() {
   const { modulos } = useModulos();
   useRealtime(); // canal SSE ao vivo enquanto o tecnico esta logado
   usePush(); // notificacao no aparelho — o unico canal que chega com o app fechado
+  useProcessarFilaEvidencias(); // fotos offline sobem daqui, nao so com o detalhe da OS aberto
   const naoLidas = useNaoLidas().data?.naoLidas ?? 0;
 
   if (carregando) {

@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Image, ScrollView, View } from "react-native";
+import { ActivityIndicator, Alert, Image, Pressable, ScrollView, Text, View } from "react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import type { EvidenciaResumo } from "@isphub/shared";
 import { useAuth } from "@/lib/auth";
 import { Button, Muted, SectionLabel } from "@/components/ui";
-import { colors, radius, space } from "@/theme/tokens";
+import { colors, font, radius, space } from "@/theme/tokens";
 import { escolherFoto, comprimirImagem } from "@/features/chat/media";
 import { baixarEvidencia, listarEvidencias } from "./api";
 import { cabeNoLimite } from "./limites";
-import { enfileirarEvidencia, listarPendentesDaOs, type EvidenciaPendente } from "./outbox";
+import { enfileirarEvidencia, listarPendentesDaOs, tentarDeNovo, uriDaPendente, type EvidenciaPendente } from "./outbox";
 
 const LADO_MINIATURA = 96;
 
@@ -53,29 +53,56 @@ function Miniatura({ osId, anexo }: { osId: string; anexo: EvidenciaResumo }) {
   );
 }
 
-/** Item ainda na fila: nao tem id do servidor, entao mostra estado em vez de imagem. */
-function MiniaturaPendente({ pendente }: { pendente: EvidenciaPendente }) {
+/**
+ * Item ainda na fila. A foto ja esta no aparelho, entao mostra ELA (nao uma
+ * caixa cinza) com um selo de estado por cima: "Enviando" enquanto espera a
+ * rede, "Reenviar" quando o servidor recusou — e ai o toque reenfileira.
+ */
+function MiniaturaPendente({ pendente, aoTentarDeNovo }: { pendente: EvidenciaPendente; aoTentarDeNovo: () => void }) {
+  const uri = uriDaPendente(pendente);
+  const falhou = pendente.falhou;
+  const corSelo = falhou ? colors.slaRed : "rgba(26,29,41,0.72)";
+
   return (
-    <View
-      style={{
+    <Pressable
+      disabled={!falhou}
+      onPress={aoTentarDeNovo}
+      accessibilityRole="button"
+      accessibilityLabel={falhou ? "Envio recusado. Toque para reenviar" : "Foto aguardando envio"}
+      style={({ pressed }) => ({
         width: LADO_MINIATURA,
         height: LADO_MINIATURA,
         borderRadius: radius.sm,
+        overflow: "hidden",
         backgroundColor: colors.cardAlt,
-        borderWidth: 1,
-        borderColor: pendente.falhou ? colors.slaRed : colors.line2,
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 4,
-      }}
+        borderWidth: falhou ? 1.5 : 0,
+        borderColor: colors.slaRed,
+        opacity: pressed ? 0.85 : 1,
+      })}
     >
-      <Feather
-        name={pendente.falhou ? "alert-circle" : "clock"}
-        size={18}
-        color={pendente.falhou ? colors.slaRed : colors.muted}
-      />
-      <Muted style={{ fontSize: 10, textAlign: "center" }}>{pendente.falhou ? "Falhou" : "Aguardando envio"}</Muted>
-    </View>
+      <Image source={{ uri }} style={{ width: "100%", height: "100%", opacity: falhou ? 0.55 : 0.8 }} />
+      <View
+        style={{
+          position: "absolute",
+          left: 6,
+          right: 6,
+          bottom: 6,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 4,
+          paddingVertical: 4,
+          paddingHorizontal: 6,
+          borderRadius: radius.pill,
+          backgroundColor: corSelo,
+        }}
+      >
+        <Feather name={falhou ? "refresh-cw" : "upload-cloud"} size={11} color="#FFFFFF" />
+        <Text style={{ color: "#FFFFFF", fontSize: font.size.xs - 1, fontWeight: font.weight.medium }} numberOfLines={1}>
+          {falhou ? "Reenviar" : "Enviando"}
+        </Text>
+      </View>
+    </Pressable>
   );
 }
 
@@ -116,7 +143,9 @@ export function GaleriaEvidencias({ osId }: { osId: string }) {
       recarregarPendentes();
       qc.invalidateQueries({ queryKey: ["evidencias", osId] });
     } catch {
-      Alert.alert("Não foi possível processar a foto", "Tente novamente.");
+      // Inclui falha ao GUARDAR a foto (disco cheio etc.): avisar agora e
+      // melhor que a foto sumir da fila depois.
+      Alert.alert("Não foi possível guardar a foto", "Tente novamente.");
     } finally {
       setOcupado(false);
     }
@@ -137,7 +166,11 @@ export function GaleriaEvidencias({ osId }: { osId: string }) {
             <Miniatura key={anexo.id} osId={osId} anexo={anexo} />
           ))}
           {pendentes.map((p) => (
-            <MiniaturaPendente key={p.localId} pendente={p} />
+            <MiniaturaPendente
+              key={p.localId}
+              pendente={p}
+              aoTentarDeNovo={() => void tentarDeNovo(p.localId).finally(recarregarPendentes)}
+            />
           ))}
         </ScrollView>
       )}
