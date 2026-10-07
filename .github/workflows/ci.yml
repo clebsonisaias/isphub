@@ -47,6 +47,11 @@ jobs:
       - name: Testes da API
         run: npm test -w @isphub/api
 
+      # Sao testes de logica pura (vitest, sem react-native): rodam em 1s e
+      # ate aqui so passavam na maquina de quem lembrava de rodar.
+      - name: Testes do mobile
+        run: npm test -w @isphub/mobile
+
       - name: Lint do web
         run: npm run lint -w @isphub/web
 
