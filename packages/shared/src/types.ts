@@ -143,6 +143,8 @@ export interface OrdemServico {
   turnoAgenda?: TurnoAgenda | null;
   /** `AAAA-MM-DD` da visita marcada na agenda da ISPhub. Nulo = sem marcacao ativa. */
   diaAgenda?: string | null;
+  /** Id da marcacao ativa — e o que `DELETE /agenda/:id` (desmarcar) espera. */
+  agendamentoId?: string | null;
   /** Tecnico ISPhub atribuido (despacho feito dentro do ISPhub). */
   tecnicoId?: string | null;
   tecnicoNome?: string | null;

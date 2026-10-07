@@ -118,7 +118,7 @@ filaRouter.get(
           tecnico: true,
           // A rota do dia: o supervisor ordena na agenda e o app do tecnico le
           // daqui. Na planilha essa coluna existia e morria na planilha.
-          agendamento: { select: { ordemRota: true, turno: true, status: true, dia: true } },
+          agendamento: { select: { id: true, ordemRota: true, turno: true, status: true, dia: true } },
         },
         orderBy: [{ dataAgendamento: "asc" }, { criadoEm: "desc" }],
         take: LIMITE_FILA,
@@ -181,6 +181,7 @@ filaRouter.get(
       ordemRota: os.agendamento?.status === "marcado" ? os.agendamento.ordemRota : null,
       turnoAgenda: os.agendamento?.status === "marcado" ? os.agendamento.turno : null,
       diaAgenda: os.agendamento?.status === "marcado" ? os.agendamento.dia.toISOString().slice(0, 10) : null,
+      agendamentoId: os.agendamento?.status === "marcado" ? os.agendamento.id : null,
       tecnicoId: os.tecnicoId,
       tecnicoNome: os.tecnico?.nome ?? null,
       tecnicoSgpNome: os.tecnicoSgpNome,

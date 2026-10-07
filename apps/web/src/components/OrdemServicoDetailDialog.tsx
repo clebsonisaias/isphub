@@ -26,9 +26,9 @@ import { ordensServicoApi, tecnicosApi, type TecnicoResumo } from "@/lib/filaApi
 import { ApiError } from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-import { CalendarDays, Navigation } from "lucide-react";
+import { CalendarDays, CalendarX2, Navigation } from "lucide-react";
 import { MarcarVisitaDialog } from "@/components/MarcarVisitaDialog";
-import { rotuloVisita } from "@/lib/agendaApi";
+import { agendaApi, rotuloVisita } from "@/lib/agendaApi";
 
 function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
@@ -55,6 +55,25 @@ export function OrdemServicoDetailDialog({
   const [houveMudanca, setHouveMudanca] = useState(false);
   const [detalhesLive, setDetalhesLive] = useState<DetalhesTecnicos | null>(null);
   const [marcandoVisita, setMarcandoVisita] = useState(false);
+  // Dois toques pra desmarcar: o primeiro so pergunta. Inline, sem outro
+  // dialogo em cima de um dialogo.
+  const [confirmandoDesmarcar, setConfirmandoDesmarcar] = useState(false);
+
+  async function handleDesmarcar() {
+    if (!os.agendamentoId) return;
+    setAcaoEmCurso("desmarcar");
+    try {
+      await agendaApi.desmarcar(os.agendamentoId);
+      setOs((atual) => ({ ...atual, diaAgenda: null, turnoAgenda: null, agendamentoId: null, ordemRota: null }));
+      marcarMudanca();
+      toast({ titulo: "Visita desmarcada", descricao: "A vaga voltou para a grade.", variante: "sucesso" });
+    } catch (err) {
+      toast({ titulo: "Não foi possível desmarcar", descricao: mensagem(err), variante: "erro" });
+    } finally {
+      setAcaoEmCurso(null);
+      setConfirmandoDesmarcar(false);
+    }
+  }
 
   // Uma consulta por dialog, consumida por DUAS abas (Detalhes e Conexão).
   // Ver a nota em useFichaSgp: um componente por aba faria o Radix desmontar e
@@ -304,6 +323,34 @@ export function OrdemServicoDetailDialog({
                         Visita: <span className="font-medium text-foreground">{rotuloVisita(os.diaAgenda, os.turnoAgenda)}</span>
                       </span>
                     )}
+                    {os.agendamentoId &&
+                      (confirmandoDesmarcar ? (
+                        <span className="flex items-center gap-1.5 text-sm">
+                          <span className="text-muted-foreground">Desmarcar?</span>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={handleDesmarcar}
+                            disabled={acaoEmCurso !== null}
+                          >
+                            {acaoEmCurso === "desmarcar" ? "Desmarcando..." : "Sim, desmarcar"}
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => setConfirmandoDesmarcar(false)} disabled={acaoEmCurso !== null}>
+                            Não
+                          </Button>
+                        </span>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-muted-foreground hover:text-destructive"
+                          onClick={() => setConfirmandoDesmarcar(true)}
+                          disabled={acaoEmCurso !== null}
+                        >
+                          <CalendarX2 className="size-3.5" />
+                          Desmarcar
+                        </Button>
+                      ))}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                   <Select
@@ -382,8 +429,8 @@ export function OrdemServicoDetailDialog({
         <MarcarVisitaDialog
           item={os}
           onClose={() => setMarcandoVisita(false)}
-          onMarcado={(dia, turno) => {
-            setOs((atual) => ({ ...atual, diaAgenda: dia, turnoAgenda: turno }));
+          onMarcado={(dia, turno, id) => {
+            setOs((atual) => ({ ...atual, diaAgenda: dia, turnoAgenda: turno, agendamentoId: id }));
             marcarMudanca();
             setMarcandoVisita(false);
           }}

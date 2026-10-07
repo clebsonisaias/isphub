@@ -198,10 +198,19 @@ test("supervisor marca a visita pelo detalhe da OS, e ela aparece no card e na g
   const fila = await (await request.get(`${API}/fila?grupo=abertos&equipe=interna`, { headers: auth(token) })).json();
   const naFila = fila.itens.find((i: { sgpOsId: string }) => i.sgpOsId === "e2e-os-1");
   expect(naFila.diaAgenda).toBeTruthy();
+  expect(naFila.agendamentoId).toBeTruthy();
   expect(nomeCelula).toContain(naFila.turnoAgenda === "manha" ? "Manhã" : "Tarde");
 
-  // Limpa: cada teste desfaz o que marcou (banco compartilhado).
-  const paradas = await (await request.get(`${API}/agenda/turno?dia=${naFila.diaAgenda}&turno=${naFila.turnoAgenda}`, { headers: auth(token) })).json();
-  const minha = paradas.find((p: { sgpOsId: string }) => p.sgpOsId === "e2e-os-1");
-  if (minha) await desmarcarTudo(request, token, [minha.id]);
+  // Desmarcar pela tela: dois toques (o primeiro só pergunta), e a vaga volta.
+  await page.getByRole("button", { name: /Cliente E2E/ }).first().click();
+  const detalhe2 = page.getByRole("dialog").first();
+  await detalhe2.getByRole("button", { name: /^desmarcar$/i }).click();
+  await detalhe2.getByRole("button", { name: /sim, desmarcar/i }).click();
+  await expect(detalhe2.getByRole("button", { name: /^marcar visita$/i })).toBeVisible();
+  await expect(detalhe2.getByText(/^Visita:/)).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: /Cliente E2E/ }).first()).not.toContainText(/Visita/);
+
+  const depois = await (await request.get(`${API}/fila?grupo=abertos&equipe=interna`, { headers: auth(token) })).json();
+  expect(depois.itens.find((i: { sgpOsId: string }) => i.sgpOsId === "e2e-os-1").agendamentoId).toBeNull();
 });

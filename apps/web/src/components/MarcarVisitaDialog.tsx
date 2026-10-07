@@ -48,8 +48,8 @@ export function MarcarVisitaDialog({
 }: {
   item: FilaItem;
   onClose: () => void;
-  /** Dia e turno que ficaram gravados. */
-  onMarcado: (dia: string, turno: TurnoAgenda) => void;
+  /** Dia, turno e id da marcacao que ficaram gravados (o id e o que desmarca). */
+  onMarcado: (dia: string, turno: TurnoAgenda, agendamentoId: string) => void;
 }) {
   const { toast } = useToast();
   const [grade, setGrade] = useState<GradeResposta | null>(null);
@@ -87,9 +87,9 @@ export function MarcarVisitaDialog({
     const chave = `${dia}|${turno}`;
     setMarcando(chave);
     try {
-      await agendaApi.marcar({ provedorId: item.provedorId, sgpOsId: item.sgpOsId, dia, turno, regiao: regiao ?? null });
+      const { id } = await agendaApi.marcar({ provedorId: item.provedorId, sgpOsId: item.sgpOsId, dia, turno, regiao: regiao ?? null });
       toast({ titulo: atual ? "Visita remarcada" : "Visita marcada", descricao: rotuloVisita(dia, turno), variante: "sucesso" });
-      onMarcado(dia, turno);
+      onMarcado(dia, turno, id);
     } catch (e) {
       // 409 ja vem com o motivo certo do servidor ("Turno lotado", "Sabado so
       // tem atendimento de manha"); recarrega a grade porque alguem passou na frente.
