@@ -7,7 +7,7 @@ import {
   type RawOs,
   type ResultadoStatusOs,
 } from "@isphub/shared";
-import { prisma } from "../lib/prisma.js";
+import { comTravaExclusiva, prisma } from "../lib/prisma.js";
 import { OS_EXTERNA_WHERE, OS_INTERNA_WHERE } from "./equipeService.js";
 import { buildConnector } from "./erpConnectorService.js";
 import { emitParaTodos, emitParaUsuario } from "./realtimeHub.js";
@@ -221,7 +221,18 @@ export function deveAvisarMudanca(
   return conhecida.status !== statusSgp;
 }
 
+/**
+ * Sync de um provedor, serializado por advisory lock. O scheduler, a rota
+ * manual e o /sync/minhas-os passam todos por aqui — e no deploy do Coolify o
+ * container velho e o novo rodam juntos por alguns segundos: sem a trava, dois
+ * syncs do mesmo provedor gravam `osEvento` em dobro no ramo "fechar".
+ */
 export async function syncProvedor(provedorId: string): Promise<{ ok: boolean; message?: string }> {
+  const resultado = await comTravaExclusiva(`sync:${provedorId}`, () => syncProvedorSemTrava(provedorId));
+  return resultado ?? { ok: false, message: "Sync ja em andamento para este provedor" };
+}
+
+async function syncProvedorSemTrava(provedorId: string): Promise<{ ok: boolean; message?: string }> {
   const config = await prisma.erpConfig.findFirst({
     where: { provedorId, tipo: "SGP", ativo: true },
   });

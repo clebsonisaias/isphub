@@ -28,6 +28,7 @@ const {
   $transaction,
   syncLogCreate,
   erpConfigUpdate,
+  comTravaExclusiva,
 } = vi.hoisted(() => ({
   erpConfigFindFirst: vi.fn(),
   tipoOsFindMany: vi.fn(),
@@ -40,6 +41,7 @@ const {
   $transaction: vi.fn(),
   syncLogCreate: vi.fn(),
   erpConfigUpdate: vi.fn(),
+  comTravaExclusiva: vi.fn(),
 }));
 const { buildConnector } = vi.hoisted(() => ({ buildConnector: vi.fn() }));
 const { emitParaTodos, emitParaUsuario } = vi.hoisted(() => ({ emitParaTodos: vi.fn(), emitParaUsuario: vi.fn() }));
@@ -62,6 +64,7 @@ vi.mock("../lib/prisma.js", () => ({
     $transaction,
     syncLog: { create: syncLogCreate },
   },
+  comTravaExclusiva,
 }));
 vi.mock("./erpConnectorService.js", () => ({ buildConnector }));
 vi.mock("./realtimeHub.js", () => ({ emitParaTodos, emitParaUsuario }));
@@ -102,6 +105,8 @@ beforeEach(() => {
   // $transaction recebe [update(...), osEvento.create(...)] como promises;
   // resolve executando cada uma (que ja sao os mocks acima).
   $transaction.mockImplementation(async (ops: Promise<unknown>[]) => Promise.all(ops));
+  // Trava livre por padrao: roda o sync. O teste da trava ocupada sobrescreve.
+  comTravaExclusiva.mockImplementation(async (_chave: string, fn: () => Promise<unknown>) => fn());
 
   // ordemServico.findMany: osConhecidas (select tem statusAlteradoEm) vs a
   // query do backfill de geo (select so tem contratoId) — distingue pelo shape.
@@ -250,5 +255,19 @@ describe("varredura completa — reconcilia OS que saiu da fila de abertas", () 
 
     expect(emitParaUsuario).toHaveBeenCalledWith("tec-1", expect.objectContaining({ tipo: "os-alterada" }));
     expect(emitParaTodos).toHaveBeenCalledWith(expect.objectContaining({ tipo: "os-alterada" }));
+  });
+});
+
+describe("advisory lock por provedor", () => {
+  it("trava ocupada: nao toca o SGP nem o banco e responde 'em andamento'", async () => {
+    comTravaExclusiva.mockResolvedValueOnce(null);
+
+    const resultado = await syncProvedor(PROVEDOR_ID);
+
+    expect(resultado.ok).toBe(false);
+    expect(resultado.message).toMatch(/em andamento/);
+    expect(comTravaExclusiva).toHaveBeenCalledWith(`sync:${PROVEDOR_ID}`, expect.any(Function));
+    expect(buildConnector).not.toHaveBeenCalled();
+    expect(erpConfigUpdate).not.toHaveBeenCalled();
   });
 });
