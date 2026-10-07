@@ -4,6 +4,7 @@ import express from "express";
 import helmet from "helmet";
 import { env } from "./config/env.js";
 import { errorHandler } from "./middleware/errorHandler.js";
+import { prisma } from "./lib/prisma.js";
 import { authRouter } from "./routes/auth.js";
 import { provedoresRouter } from "./routes/provedores.js";
 import { categoriasRouter } from "./routes/categorias.js";
@@ -91,8 +92,16 @@ export function createApp() {
   // em base64), que tem rota propria — nao ha motivo pra /auth/login aceitar 5MB.
   app.use(express.json({ limit: "1mb" }));
 
-  app.get("/health", (_req, res) => {
-    res.json({ ok: true, service: "isphub-api" });
+  // Toca o banco: sem isso o Coolify mantem o container "saudavel" com o
+  // Postgres fora. Timeout curto pra nao prender o probe.
+  app.get("/health", async (_req, res) => {
+    const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 2000));
+    try {
+      await Promise.race([prisma.$queryRaw`SELECT 1`, timeout]);
+      res.json({ ok: true, service: "isphub-api" });
+    } catch {
+      res.status(503).json({ ok: false, service: "isphub-api", db: "indisponivel" });
+    }
   });
 
   app.use("/auth", authRouter);

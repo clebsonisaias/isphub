@@ -55,14 +55,15 @@ export function registrarPerdaDeSessao(cb: AoPerderSessao | null) {
  * token que a primeira acabou de queimar. O servidor tem uma janela de graca
  * pra isso, mas gastar a janela por descuido do cliente seria pedir problema.
  */
-let renovacaoEmCurso: Promise<boolean> | null = null;
+type Renovacao = "renovou" | "recusou" | "rede";
+let renovacaoEmCurso: Promise<Renovacao> | null = null;
 
-async function renovarSessao(): Promise<boolean> {
+async function renovarSessao(): Promise<Renovacao> {
   if (renovacaoEmCurso) return renovacaoEmCurso;
 
-  renovacaoEmCurso = (async () => {
+  renovacaoEmCurso = (async (): Promise<Renovacao> => {
     const atual = refreshToken;
-    if (!atual) return false;
+    if (!atual) return "recusou";
     try {
       // fetch direto, NAO `request()`: passar por ele criaria recursao —
       // um 401 aqui tentaria renovar de novo, indefinidamente.
@@ -71,16 +72,16 @@ async function renovarSessao(): Promise<boolean> {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refreshToken: atual }),
       });
-      if (!res.ok) return false;
+      if (!res.ok) return "recusou";
 
       const data = (await res.json()) as { token: string; refreshToken: string };
       setAuthToken(data.token);
       setRefreshToken(data.refreshToken);
-      return true;
+      return "renovou";
     } catch {
-      // Falha de REDE nao e sessao invalida. Devolver false aqui so faz a
-      // chamada original propagar o 401 original — nao apaga a sessao.
-      return false;
+      // Falha de REDE nao e sessao invalida: a chamada original propaga o
+      // 401 dela e a sessao fica guardada pra proxima tentativa.
+      return "rede";
     }
   })();
 
@@ -118,9 +119,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
    * publicas de recuperacao de senha tambem nao teriam o que renovar.
    */
   if (res.status === 401 && refreshToken) {
-    const renovou = await renovarSessao();
-    if (renovou) res = await enviar(method, path, body);
-    else encerrarSessao();
+    const renovacao = await renovarSessao();
+    if (renovacao === "renovou") res = await enviar(method, path, body);
+    else if (renovacao === "recusou") encerrarSessao();
   }
 
   const isJson = res.headers.get("content-type")?.includes("application/json");
@@ -144,8 +145,9 @@ async function getBlob(path: string): Promise<Blob> {
 
   let res = await buscar();
   if (res.status === 401 && refreshToken) {
-    if (await renovarSessao()) res = await buscar();
-    else encerrarSessao();
+    const renovacao = await renovarSessao();
+    if (renovacao === "renovou") res = await buscar();
+    else if (renovacao === "recusou") encerrarSessao();
   }
   if (!res.ok) throw new ApiError(res.status, `Erro ${res.status}`);
   return res.blob();

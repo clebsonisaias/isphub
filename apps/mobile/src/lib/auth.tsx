@@ -130,20 +130,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
          * login; agora tenta a sessao longa, que dura 30 dias parada.
          */
         let me: UsuarioPublic | null = null;
+        // Servidor respondeu negando (nao-401: desativado etc.). Falta de rede
+        // e 401 (access vencido, o normal de manha) NAO entram aqui.
+        let recusou = false;
         if (access) {
-          me = await apiFetch<UsuarioPublic>("/auth/me", { token: access }).catch(() => null);
+          me = await apiFetch<UsuarioPublic>("/auth/me", { token: access }).catch((e) => {
+            recusou = e instanceof ApiError && e.status !== 401;
+            return null;
+          });
         }
-        if (!me && refresh && (await renovarSessao())) {
+        // `renovarSessao` ja apaga a sessao quando o servidor RECUSA o refresh;
+        // em falha de rede devolve false e preserva os tokens.
+        if (!me && !recusou && refresh && (await renovarSessao())) {
           me = await apiFetch<UsuarioPublic>("/auth/me", { token: getAccessToken() });
         }
-        if (!me) throw new Error("sessao invalida");
+        if (!me) throw new Error(recusou ? "sessao recusada" : "sem rede");
         if (vivo) {
           setToken(getAccessToken());
           setUsuario(me);
         }
-      } catch {
-        // sessao invalida/expirada ou usuario desativado -> descarta
-        setSessao(null, null);
+      } catch (e) {
+        // So descarta quando o servidor respondeu negando. Sem rede, os tokens
+        // ficam guardados: o mesmo caminho da biometria ("sem-rede" nao mexe em nada).
+        if (e instanceof ApiError || (e instanceof Error && e.message === "sessao recusada")) {
+          setSessao(null, null);
+        }
       } finally {
         if (vivo) setCarregando(false);
       }

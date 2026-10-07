@@ -1,7 +1,9 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -78,7 +80,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         // 401 aqui e access token vencido, nao queda de conexao: renovar e
         // reconectar na hora resolve, enquanto esperar o backoff so atrasa.
         if (res.status === 401) {
-          const renovou = await api.renovarSessao();
+          const renovou = (await api.renovarSessao()) === "renovou";
           if (renovou && !parado) {
             void conectar();
             return;
@@ -150,15 +152,17 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     };
   }, [usuario]);
 
-  function subscribe(listener: Listener) {
+  const subscribe = useCallback((listener: Listener) => {
     listenersRef.current.add(listener);
     return () => {
       listenersRef.current.delete(listener);
     };
-  }
+  }, []);
+
+  const value = useMemo(() => ({ subscribe, conectado }), [subscribe, conectado]);
 
   return (
-    <RealtimeContext.Provider value={{ subscribe, conectado }}>
+    <RealtimeContext.Provider value={value}>
       {children}
     </RealtimeContext.Provider>
   );
@@ -179,7 +183,11 @@ export function useRealtime(onEvento: Listener) {
     throw new Error("useRealtime deve ser usado dentro de <RealtimeProvider>");
 
   const onEventoRef = useRef(onEvento);
-  onEventoRef.current = onEvento;
+  // Fora do render (regra no-ref-current-in-render). O callback so e lido dentro
+  // do subscribe (eventos SSE, sempre assincronos), entao um effect basta.
+  useEffect(() => {
+    onEventoRef.current = onEvento;
+  });
 
   useEffect(
     () => ctx.subscribe((evento) => onEventoRef.current(evento)),

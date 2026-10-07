@@ -20,6 +20,11 @@ import * as agenda from "./services/agendaService.js";
 const ok = (c: boolean, m: string) => console.log(`${c ? "✓" : "✗ FALHOU"} ${m}`);
 
 async function main() {
+  const url = process.env.DATABASE_URL ?? "";
+  if (process.env.NODE_ENV === "production" || !/test/i.test(url)) {
+    console.error("verifica-agenda: recusado — DATABASE_URL precisa conter 'test' e NODE_ENV nao pode ser production.");
+    process.exit(1);
+  }
   await prisma.agendamento.deleteMany({});
   await prisma.ordemServico.deleteMany({});
   await prisma.provedor.deleteMany({});
