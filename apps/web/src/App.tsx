@@ -10,6 +10,7 @@ import { RecuperarSenhaPage } from "@/pages/RecuperarSenhaPage";
 import { SmtpPage } from "@/pages/admin/SmtpPage";
 import { RedefinirSenhaPage } from "@/pages/RedefinirSenhaPage";
 import { PainelPage } from "@/pages/PainelPage";
+import { OsPage } from "@/pages/OsPage";
 import { RetiradasPage } from "@/pages/RetiradasPage";
 import { MapaPage } from "@/pages/MapaPage";
 import { DashboardPage } from "@/pages/DashboardPage";
@@ -54,6 +55,16 @@ function App() {
                   element={
                     <RequireAuth>
                       <PainelPage />
+                    </RequireAuth>
+                  }
+                />
+                {/* Uma OS com link proprio; o dialogo da fila e o atalho. Quem pode
+                    ver cada OS e decidido na API (escopo por provedor/tecnico). */}
+                <Route
+                  path="/os/:id"
+                  element={
+                    <RequireAuth>
+                      <OsPage />
                     </RequireAuth>
                   }
                 />

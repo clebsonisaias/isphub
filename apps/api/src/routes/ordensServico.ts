@@ -9,6 +9,7 @@ import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { podeAcessarOs } from "../services/escopoService.js";
 import * as writeback from "../services/writebackService.js";
+import { INCLUDE_FILA, paraFilaItem } from "./fila.js";
 
 export const ordensServicoRouter = Router();
 
@@ -46,17 +47,13 @@ ordensServicoRouter.get(
     await assertAcesso(req, req.params.id);
     const os = await prisma.ordemServico.findUnique({
       where: { id: req.params.id },
-      include: { provedor: true, tipoOs: true, tecnico: true, atribuicoes: { orderBy: { atribuidoEm: "desc" } } },
+      include: { ...INCLUDE_FILA, atribuicoes: { orderBy: { atribuidoEm: "desc" } } },
     });
-    // Aninha `endereco` (colunas planas no banco) pra bater com o tipo
-    // OrdemServico do shared que os clientes consomem (o app mobile lê
-    // os.endereco.logradouro). Aditivo: os campos planos seguem presentes.
-    res.json(
-      os && {
-        ...os,
-        endereco: { logradouro: os.logradouro, numero: os.numero, bairro: os.bairro, cidade: os.cidade, lat: os.lat, lng: os.lng },
-      },
-    );
+    // A mesma forma da fila (FilaItem: endereco aninhado, categoria, sla,
+    // agenda) por cima das colunas planas e relacoes cruas: a tela /os/:id
+    // reusa o detalhe da fila, e o app mobile le os.endereco.logradouro.
+    // Aditivo — nada que ja era devolvido some.
+    res.json(os && { ...os, ...paraFilaItem(os) });
   }),
 );
 

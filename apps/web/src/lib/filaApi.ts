@@ -45,7 +45,8 @@ export const filaApi = {
 };
 
 export const ordensServicoApi = {
-  obter: (id: string) => api.get<OrdemServico>(`/ordens-servico/${id}`),
+  // Devolve a forma da fila (provedor, sla, categoria, agenda) — ver GET /ordens-servico/:id.
+  obter: (id: string) => api.get<FilaItem>(`/ordens-servico/${id}`),
   aCaminho: (id: string) => api.post<OrdemServico>(`/ordens-servico/${id}/acaminho`),
   mudarStatus: (id: string, status: OsStatus) => api.patch<OrdemServico>(`/ordens-servico/${id}/status`, { status }),
 

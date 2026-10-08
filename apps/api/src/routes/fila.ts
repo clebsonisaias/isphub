@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { OsStatus, OS_STATUS_ABERTOS, UserRole, type FilaItem } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
+import type { Prisma } from "@prisma/client";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth } from "../middleware/auth.js";
 import { calcularSla } from "../services/slaService.js";
@@ -12,6 +13,97 @@ import { whereEquipeParaUsuario } from "../services/equipeService.js";
 export const filaRouter = Router();
 
 filaRouter.use(requireAuth);
+
+/**
+ * O que a fila inclui de cada OS — e o que `paraFilaItem` precisa. Exportado
+ * porque `GET /ordens-servico/:id` devolve a MESMA forma: a tela de OS e o
+ * dialogo da fila sao o mesmo componente, e duas serializacoes divergiriam.
+ */
+export const INCLUDE_FILA = {
+  provedor: true,
+  tipoOs: { include: { categoria: true } },
+  tecnico: true,
+  // A rota do dia: o supervisor ordena na agenda e o app do tecnico le
+  // daqui. Na planilha essa coluna existia e morria na planilha.
+  agendamento: { select: { id: true, ordemRota: true, turno: true, status: true, dia: true, confirmadoEm: true, sgpConfirmadoEm: true } },
+} satisfies Prisma.OrdemServicoInclude;
+
+export function paraFilaItem(os: Prisma.OrdemServicoGetPayload<{ include: typeof INCLUDE_FILA }>): FilaItem {
+  return {
+    id: os.id,
+    provedorId: os.provedorId,
+    provedor: {
+      id: os.provedor.id,
+      nome: os.provedor.nome,
+      cor: os.provedor.cor,
+      logoUrl: os.provedor.logoUrl,
+      ativo: os.provedor.ativo,
+      criadoEm: os.provedor.criadoEm.toISOString(),
+    },
+    sgpOsId: os.sgpOsId,
+    tipoOsId: os.tipoOsId,
+    tipoDescricao: os.tipoOs?.descricao ?? null,
+    categoria: os.tipoOs?.categoria
+      ? {
+          id: os.tipoOs.categoria.id,
+          nome: os.tipoOs.categoria.nome,
+          cor: os.tipoOs.categoria.cor,
+          icone: os.tipoOs.categoria.icone,
+          slaHorasPadrao: os.tipoOs.categoria.slaHorasPadrao,
+          // O mapa desenha interna e externa juntas e precisa distinguir
+          // retirada de servico da casa sem uma segunda consulta.
+          equipeExterna: os.tipoOs.categoria.equipeExterna,
+        }
+      : null,
+    status: os.status as OsStatus,
+    prioridade: os.prioridade as 1 | 2 | 3,
+    clienteNome: os.clienteNome,
+    clienteDocumento: os.clienteDocumento,
+    telefone: os.telefone,
+    contratoId: os.contratoId,
+    contratoStatus: os.contratoStatus,
+    protocolo: os.protocolo,
+    conteudo: os.conteudo,
+    observacao: os.observacao,
+    endereco: {
+      logradouro: os.logradouro,
+      numero: os.numero,
+      bairro: os.bairro,
+      cidade: os.cidade,
+      lat: os.lat,
+      lng: os.lng,
+    },
+    pop: os.pop,
+    usuario: os.usuario,
+    dataCadastro: os.dataCadastro?.toISOString() ?? null,
+    dataAgendamento: os.dataAgendamento?.toISOString() ?? null,
+    // Marcacao cancelada nao roteiriza nada — deixar a ordem antiga faria o
+    // app do tecnico listar uma parada que ninguem vai fazer.
+    ordemRota: os.agendamento?.status === "marcado" ? os.agendamento.ordemRota : null,
+    turnoAgenda: os.agendamento?.status === "marcado" ? os.agendamento.turno : null,
+    diaAgenda: os.agendamento?.status === "marcado" ? os.agendamento.dia.toISOString().slice(0, 10) : null,
+    agendamentoId: os.agendamento?.status === "marcado" ? os.agendamento.id : null,
+    visitaConfirmadaEm: os.agendamento?.status === "marcado" ? (os.agendamento.confirmadoEm?.toISOString() ?? null) : null,
+    visitaSgpConfirmadaEm:
+      os.agendamento?.status === "marcado" ? (os.agendamento.sgpConfirmadoEm?.toISOString() ?? null) : null,
+    tecnicoId: os.tecnicoId,
+    tecnicoNome: os.tecnico?.nome ?? null,
+    tecnicoSgpNome: os.tecnicoSgpNome,
+    criadoEm: os.criadoEm.toISOString(),
+    atualizadoEm: os.atualizadoEm.toISOString(),
+    sincronizadoEm: os.sincronizadoEm.toISOString(),
+    // dataCadastro (data real de abertura no SGP) e uma base de SLA mais
+    // fiel que criadoEm, que so reflete quando o ISPhub sincronizou pela
+    // primeira vez — importante pra OS antigas importadas so agora.
+    // SLA efetivo: o do tipo, com fallback pro padrao da categoria (menos
+    // configuracao manual por tipo — so precisa mexer quando o tipo foge
+    // do padrao da propria categoria).
+    sla: calcularSla({
+      slaHoras: os.tipoOs?.slaHoras ?? os.tipoOs?.categoria?.slaHorasPadrao,
+      dataBase: os.dataAgendamento ?? os.dataCadastro ?? os.criadoEm,
+    }),
+  };
+}
 
 /**
  * Teto defensivo de itens devolvidos numa resposta da fila. Alto o bastante
@@ -119,14 +211,7 @@ filaRouter.get(
     const [ordens, totalOs] = await Promise.all([
       prisma.ordemServico.findMany({
         where: osWhere,
-        include: {
-          provedor: true,
-          tipoOs: { include: { categoria: true } },
-          tecnico: true,
-          // A rota do dia: o supervisor ordena na agenda e o app do tecnico le
-          // daqui. Na planilha essa coluna existia e morria na planilha.
-          agendamento: { select: { id: true, ordemRota: true, turno: true, status: true, dia: true, confirmadoEm: true, sgpConfirmadoEm: true } },
-        },
+        include: INCLUDE_FILA,
         orderBy: [{ dataAgendamento: "asc" }, { criadoEm: "desc" }],
         take: LIMITE_FILA,
       }),
@@ -135,80 +220,7 @@ filaRouter.get(
       prisma.ordemServico.count({ where: osWhere }),
     ]);
 
-    const itensOs: FilaItem[] = ordens.map((os) => ({
-      id: os.id,
-      provedorId: os.provedorId,
-      provedor: {
-        id: os.provedor.id,
-        nome: os.provedor.nome,
-        cor: os.provedor.cor,
-        logoUrl: os.provedor.logoUrl,
-        ativo: os.provedor.ativo,
-        criadoEm: os.provedor.criadoEm.toISOString(),
-      },
-      sgpOsId: os.sgpOsId,
-      tipoOsId: os.tipoOsId,
-      tipoDescricao: os.tipoOs?.descricao ?? null,
-      categoria: os.tipoOs?.categoria
-        ? {
-            id: os.tipoOs.categoria.id,
-            nome: os.tipoOs.categoria.nome,
-            cor: os.tipoOs.categoria.cor,
-            icone: os.tipoOs.categoria.icone,
-            slaHorasPadrao: os.tipoOs.categoria.slaHorasPadrao,
-            // O mapa desenha interna e externa juntas e precisa distinguir
-            // retirada de servico da casa sem uma segunda consulta.
-            equipeExterna: os.tipoOs.categoria.equipeExterna,
-          }
-        : null,
-      status: os.status as OsStatus,
-      prioridade: os.prioridade as 1 | 2 | 3,
-      clienteNome: os.clienteNome,
-      clienteDocumento: os.clienteDocumento,
-      telefone: os.telefone,
-      contratoId: os.contratoId,
-      contratoStatus: os.contratoStatus,
-      protocolo: os.protocolo,
-      conteudo: os.conteudo,
-      observacao: os.observacao,
-      endereco: {
-        logradouro: os.logradouro,
-        numero: os.numero,
-        bairro: os.bairro,
-        cidade: os.cidade,
-        lat: os.lat,
-        lng: os.lng,
-      },
-      pop: os.pop,
-      usuario: os.usuario,
-      dataCadastro: os.dataCadastro?.toISOString() ?? null,
-      dataAgendamento: os.dataAgendamento?.toISOString() ?? null,
-      // Marcacao cancelada nao roteiriza nada — deixar a ordem antiga faria o
-      // app do tecnico listar uma parada que ninguem vai fazer.
-      ordemRota: os.agendamento?.status === "marcado" ? os.agendamento.ordemRota : null,
-      turnoAgenda: os.agendamento?.status === "marcado" ? os.agendamento.turno : null,
-      diaAgenda: os.agendamento?.status === "marcado" ? os.agendamento.dia.toISOString().slice(0, 10) : null,
-      agendamentoId: os.agendamento?.status === "marcado" ? os.agendamento.id : null,
-      visitaConfirmadaEm: os.agendamento?.status === "marcado" ? (os.agendamento.confirmadoEm?.toISOString() ?? null) : null,
-      visitaSgpConfirmadaEm:
-        os.agendamento?.status === "marcado" ? (os.agendamento.sgpConfirmadoEm?.toISOString() ?? null) : null,
-      tecnicoId: os.tecnicoId,
-      tecnicoNome: os.tecnico?.nome ?? null,
-      tecnicoSgpNome: os.tecnicoSgpNome,
-      criadoEm: os.criadoEm.toISOString(),
-      atualizadoEm: os.atualizadoEm.toISOString(),
-      sincronizadoEm: os.sincronizadoEm.toISOString(),
-      // dataCadastro (data real de abertura no SGP) e uma base de SLA mais
-      // fiel que criadoEm, que so reflete quando o ISPhub sincronizou pela
-      // primeira vez — importante pra OS antigas importadas so agora.
-      // SLA efetivo: o do tipo, com fallback pro padrao da categoria (menos
-      // configuracao manual por tipo — so precisa mexer quando o tipo foge
-      // do padrao da propria categoria).
-      sla: calcularSla({
-        slaHoras: os.tipoOs?.slaHoras ?? os.tipoOs?.categoria?.slaHorasPadrao,
-        dataBase: os.dataAgendamento ?? os.dataCadastro ?? os.criadoEm,
-      }),
-    }));
+    const itensOs = ordens.map(paraFilaItem);
 
     // Ordena e aplica o teto — devolve o conjunto COMPLETO do grupo ativo
     // (todos os provedores), pra o cliente facetar/paginar sobre dados
