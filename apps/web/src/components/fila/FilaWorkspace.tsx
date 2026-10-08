@@ -20,6 +20,7 @@ import { useRealtime, useRealtimeConectado } from "@/lib/realtime";
 import { categoriasApi, provedoresApi } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
 import { OrdemServicoDetailDialog } from "@/components/OrdemServicoDetailDialog";
+import { VisoesSalvas } from "@/components/fila/VisoesSalvas";
 import { FilaSidebar } from "@/components/fila/FilaSidebar";
 import { FilaChipsAtivos } from "@/components/fila/FilaChipsAtivos";
 import { FilaCard } from "@/components/fila/FilaCard";
@@ -379,6 +380,23 @@ export function FilaWorkspace({
     setFiltros((prev) => ({ ...prev, ...patch }));
   }
 
+  // Visao salva = a query string da URL (mais a busca, que nao vai pra URL).
+  // Aplicar e so reler esse texto como se a pagina tivesse aberto nele.
+  function aplicarVisao(qs: string) {
+    const p = new URLSearchParams(qs);
+    setFiltros(filtrosDaUrl(p));
+    const o = p.get("ord");
+    setOrdenacao(o === "recentes" || o === "antigas" || o === "visita" ? o : "urgencia");
+    setVisao(p.get("visao") === "concluidas" ? "concluidas" : "fila");
+    setBusca(p.get("q") ?? "");
+  }
+  const qsAtual = (() => {
+    const p = new URLSearchParams(searchParams);
+    if (busca.trim()) p.set("q", busca.trim());
+    else p.delete("q");
+    return p.toString();
+  })();
+
   const temFiltroAtivo =
     filtros.status !== "todos" ||
     filtros.prioridade !== "todas" ||
@@ -460,6 +478,7 @@ export function FilaWorkspace({
             {/* `=== false` e nao `!aoVivo`: `null` significa "primeira conexao
                 ainda em curso", e tratar isso como queda faria a tela gritar a
                 cada carregamento. */}
+            <VisoesSalvas equipe={equipe} qsAtual={qsAtual} temFiltro={temFiltroAtivo || ordenacao !== "urgencia" || visao !== "fila"} onAplicar={aplicarVisao} />
             {aoVivo === false && (
               <span
                 className="inline-flex items-center gap-1 text-xs font-medium text-warning"
