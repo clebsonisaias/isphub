@@ -24,4 +24,23 @@ export default defineConfig({
   server: {
     port: 5173,
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // Vendors estaveis em chunks proprios: mudam so quando a dependencia
+        // sobe, entao o navegador reaproveita entre deploys. As paginas ja
+        // se separam sozinhas pelo lazy() do App.
+        // Forma de funcao: o Vite 8 (rolldown) nao aceita mais o objeto.
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return;
+          const pacote = id.split(/[\\/]node_modules[\\/]/).pop()?.split(/[\\/]/).slice(0, id.includes("/node_modules/@") ? 2 : 1).join("/") ?? "";
+          if (["leaflet", "react-leaflet"].includes(pacote)) return "leaflet";
+          if (["gsap", "@gsap/react", "framer-motion", "motion-dom", "motion-utils"].includes(pacote)) return "motion";
+          if (["react", "react-dom", "react-router", "react-router-dom", "scheduler"].includes(pacote)) return "react";
+          // Sem isto cada icone vira um chunk de 300 bytes (50 requisicoes).
+          if (pacote === "lucide-react") return "icons";
+        },
+      },
+    },
+  },
 });
