@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { OS_STATUS_ABERTOS, UserRole, diaBrHoje, type Categoria, type EquipeFiltro, type FilaItem, type Provedor } from "@isphub/shared";
@@ -51,6 +52,8 @@ import {
  * "há 12s" / "há 3min". Relativo e nao relogio: o que importa e a IDADE do
  * dado, e ler "14:22" obriga a fazer a conta de cabeca pra saber se esta velho.
  */
+const SEM_ITENS: FilaItem[] = [];
+
 function segundosDesde(quando: number, agoraMs: number): string {
   const seg = Math.max(0, Math.round((agoraMs - quando) / 1000));
   if (seg < 60) return `há ${seg}s`;
@@ -135,17 +138,17 @@ export function FilaWorkspace({
   const ehProvedor = usuario?.role === UserRole.PROVEDOR;
   const ehTecnico = usuario?.role === UserRole.TECNICO;
 
-  const [provedores, setProvedores] = useState<Provedor[]>([]);
-  const [categorias, setCategorias] = useState<Categoria[]>([]);
-  const [itens, setItens] = useState<FilaItem[]>([]);
-  // Contagem real por grupo (do banco): nao depende do que coube na pagina.
-  const [totais, setTotais] = useState({ osAbertas: 0, osFechadas: 0, osSlaEstourado: 0 });
-  // true quando o grupo ativo tem mais itens do que o servidor devolve de uma
-  // vez — a lista mostra os mais recentes e o aviso pede pra refinar.
-  const [truncado, setTruncado] = useState(false);
-  // Total real de OS do grupo no banco (pra o aviso de truncamento dizer "de N").
-  const [totalServidor, setTotalServidor] = useState(0);
-  const [carregando, setCarregando] = useState(true);
+  const queryClient = useQueryClient();
+  const { data: provedores = [] } = useQuery<Provedor[]>({
+    queryKey: ["provedores"],
+    queryFn: () => provedoresApi.listar(),
+    staleTime: 5 * 60_000,
+  });
+  const { data: categorias = [] } = useQuery<Categoria[]>({
+    queryKey: ["categorias", "ativas"],
+    queryFn: async () => (await categoriasApi.listar()).filter((c) => c.ativo),
+    staleTime: 5 * 60_000,
+  });
 
   const [searchParams, setSearchParams] = useSearchParams();
   /*
@@ -169,8 +172,6 @@ export function FilaWorkspace({
   const [sidebarMobile, setSidebarMobile] = useState(false);
 
   const [selecionado, setSelecionado] = useState<FilaItem | null>(null);
-  const [refetch, setRefetch] = useState(0);
-  const [atualizadoEm, setAtualizadoEm] = useState<number | null>(null);
   const aoVivo = useRealtimeConectado();
   // "Aberta há" recalcula a cada minuto sem re-fetch.
   const [agora, setAgora] = useState(() => Date.now());
@@ -210,14 +211,6 @@ export function FilaWorkspace({
   }, [searchParams]);
 
   useEffect(() => {
-    provedoresApi.listar().then(setProvedores).catch(() => {});
-    categoriasApi
-      .listar()
-      .then((cats) => setCategorias(cats.filter((c) => c.ativo)))
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
     const t = setInterval(() => setAgora(Date.now()), 60000);
     return () => clearInterval(t);
   }, []);
@@ -234,37 +227,38 @@ export function FilaWorkspace({
   // sumir quando o volume passava do antigo teto de 500). Só a busca e a
   // equipe (interna/externa) vão ao servidor — equipe é o recorte que garante
   // que esta tela nunca mistura com a outra.
-  useEffect(() => {
-    let cancelado = false;
-    setCarregando(true);
-    filaApi
-      .listar({
+  const fila = useQuery({
+    // So o grupo da aba ativa: sem isso, uma base com muita OS encerrada
+    // consome o teto de registros e esconde as abertas.
+    queryKey: ["fila", { grupo: visao === "concluidas" ? "fechados" : "abertos", busca: buscaDebounced || undefined, equipe }],
+    queryFn: () =>
+      filaApi.listar({
         busca: buscaDebounced || undefined,
-        // So o grupo da aba ativa: sem isso, uma base com muita OS encerrada
-        // consome o teto de registros e esconde as abertas.
         grupo: visao === "concluidas" ? "fechados" : "abertos",
         equipe,
-      })
-      .then((resp) => {
-        if (!cancelado) {
-          setItens(resp.itens);
-          setTotais(resp.totais);
-          setTruncado(resp.truncado);
-          setTotalServidor(resp.total);
-          setAtualizadoEm(Date.now());
-        }
-      })
-      .catch((err) => {
-        if (!cancelado) toast({ titulo: "Erro ao carregar a fila", descricao: mensagem(err), variante: "erro" });
-      })
-      .finally(() => {
-        if (!cancelado) setCarregando(false);
-      });
-    return () => {
-      cancelado = true;
-    };
+      }),
+    // Troca de aba/busca mantem a lista anterior na tela ate a nova chegar —
+    // sem piscar pro skeleton.
+    placeholderData: keepPreviousData,
+  });
+  // Constante compartilhada: um `?? []` novo a cada render invalidaria os useMemo abaixo.
+  const itens = fila.data?.itens ?? SEM_ITENS;
+  // Contagem real por grupo (do banco): nao depende do que coube na pagina.
+  const totais = fila.data?.totais ?? { osAbertas: 0, osFechadas: 0, osSlaEstourado: 0 };
+  // true quando o grupo ativo tem mais itens do que o servidor devolve de uma
+  // vez — a lista mostra os mais recentes e o aviso pede pra refinar.
+  const truncado = fila.data?.truncado ?? false;
+  // Total real de OS do grupo no banco (pra o aviso de truncamento dizer "de N").
+  const totalServidor = fila.data?.total ?? 0;
+  const carregando = fila.isFetching;
+  const atualizadoEm = fila.dataUpdatedAt || null;
+  useEffect(() => {
+    if (fila.error) toast({ titulo: "Erro ao carregar a fila", descricao: mensagem(fila.error), variante: "erro" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visao, buscaDebounced, refetch, equipe]);
+  }, [fila.error]);
+  // Qualquer escrita ou aviso do servidor invalida a fila inteira (todas as
+  // abas/buscas em cache), e so a query montada re-busca.
+  const invalidarFila = () => void queryClient.invalidateQueries({ queryKey: ["fila"] });
 
   /*
    * ATUALIZACAO AUTOMATICA — a tela era carregada uma vez e so recarregava
@@ -298,10 +292,10 @@ export function FilaWorkspace({
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (forcado) {
       debounceRef.current = null;
-      setRefetch((n) => n + 1);
+      invalidarFila();
       return;
     }
-    debounceRef.current = setTimeout(() => setRefetch((n) => n + 1), 800);
+    debounceRef.current = setTimeout(invalidarFila, 800);
   }
 
   useRealtime((evento) => {
@@ -751,7 +745,7 @@ export function FilaWorkspace({
             onClose={() => setSelecionado(null)}
             onAtualizado={() => {
               setSelecionado(null);
-              setRefetch((n) => n + 1);
+              invalidarFila();
             }}
           />
         )}

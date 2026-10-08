@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { AlertTriangle, ArrowDown, ArrowUp, CalendarDays, CalendarOff, CalendarPlus, CheckCircle2, ChevronLeft, ChevronRight, CloudOff, MapPin, Phone, RefreshCw, Route, Search, Settings2, Trash2, X } from "lucide-react";
 import { ROTULO_TURNO, TURNOS_AGENDA, diaBrHoje, formatarKm, inicioDaSemana, somarDias, type AgendaConfigDto, type FilaItem, type TurnoAgenda, type VagaTurno } from "@isphub/shared";
@@ -11,7 +12,7 @@ import { filaApi, ordensServicoApi, tecnicosApi, type TecnicoResumo } from "@/li
 import { Input } from "@/components/ui/input";
 import { fechadoNoCalendario, textoBloqueio, tomDaVaga } from "@/lib/agendaUi";
 import { ApiError } from "@/lib/apiClient";
-import { agendaApi, rotuloDiaAgenda, type ExcecaoAgenda, type GradeResposta, type ParadaAgenda } from "@/lib/agendaApi";
+import { agendaApi, rotuloDiaAgenda, type ExcecaoAgenda, type ParadaAgenda } from "@/lib/agendaApi";
 
 /**
  * A AGENDA — a planilha de agendamento de OS, inteira, numa página.
@@ -40,12 +41,9 @@ function mensagem(err: unknown): string {
 
 export function AgendaPage() {
   const { toast } = useToast();
-  const [grade, setGrade] = useState<GradeResposta | null>(null);
-  const [carregando, setCarregando] = useState(true);
   const [janela, setJanela] = useState<{ dia: string; turno: TurnoAgenda } | null>(null);
   const [paradas, setParadas] = useState<ParadaAgenda[]>([]);
   const [carregandoParadas, setCarregandoParadas] = useState(false);
-  const [tecnicos, setTecnicos] = useState<TecnicoResumo[]>([]);
   const [salvando, setSalvando] = useState(false);
   const [editandoLimites, setEditandoLimites] = useState(false);
   const hoje = diaBrHoje();
@@ -62,21 +60,22 @@ export function AgendaPage() {
   const [sugerindo, setSugerindo] = useState(false);
   const shouldReduceMotion = useReducedMotion();
 
-  const carregarGrade = useCallback(async () => {
-    setCarregando(true);
-    try {
-      setGrade(await agendaApi.grade({ de: semana, ate: somarDias(semana, 6) }));
-    } catch {
-      toast({ variante: "erro", titulo: "Não foi possível carregar a agenda." });
-    } finally {
-      setCarregando(false);
-    }
-  }, [toast, semana]);
-
+  const queryClient = useQueryClient();
+  const gradeQuery = useQuery({
+    queryKey: ["agenda", "grade", semana],
+    queryFn: () => agendaApi.grade({ de: semana, ate: somarDias(semana, 6) }),
+    // Trocar de semana mantem a grade anterior ate a nova chegar.
+    placeholderData: keepPreviousData,
+  });
+  const grade = gradeQuery.data ?? null;
+  const carregando = gradeQuery.isPending;
   useEffect(() => {
-    void carregarGrade();
-    void tecnicosApi.listar().then(setTecnicos).catch(() => setTecnicos([]));
-  }, [carregarGrade]);
+    if (gradeQuery.error) toast({ variante: "erro", titulo: "Não foi possível carregar a agenda." });
+  }, [gradeQuery.error, toast]);
+  // Toda escrita (marcar, desmarcar, limites) chama isto: invalida TODAS as
+  // semanas em cache, e so a montada re-busca.
+  const carregarGrade = useCallback(() => queryClient.invalidateQueries({ queryKey: ["agenda", "grade"] }), [queryClient]);
+  const { data: tecnicos = [] } = useQuery<TecnicoResumo[]>({ queryKey: ["tecnicos"], queryFn: () => tecnicosApi.listar(), staleTime: 5 * 60_000 });
 
   const carregarParadas = useCallback(
     async (dia: string, turno: TurnoAgenda) => {

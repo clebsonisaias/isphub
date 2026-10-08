@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { manutencaoApi, checklistApi, type ChecklistResumo, type PlanoComEstado } from "@/lib/veiculosApi";
 import { api } from "@/lib/apiClient";
 import {
@@ -73,26 +74,16 @@ function Badge({ status }: { status: StatusVeiculo }) {
 
 export function FrotaVeiculosPage() {
   const { toast } = useToast();
-  const [veiculos, setVeiculos] = useState<VeiculoFrota[] | null>(null);
-  const [erro, setErro] = useState<string | null>(null);
   const [busca, setBusca] = useState("");
   const [editando, setEditando] = useState<VeiculoFrota | null>(null);
   const [criando, setCriando] = useState(false);
   const [importando, setImportando] = useState(false);
   const [credencial, setCredencial] = useState(false);
 
-  const carregar = useCallback(async () => {
-    setErro(null);
-    try {
-      setVeiculos(await veiculosApi.listar());
-    } catch (e) {
-      setErro(mensagem(e));
-    }
-  }, []);
-
-  useEffect(() => {
-    void carregar();
-  }, [carregar]);
+  const lista = useQuery({ queryKey: ["frota", "veiculos"], queryFn: () => veiculosApi.listar() });
+  const veiculos = lista.data ?? null;
+  const erro = lista.error ? mensagem(lista.error) : null;
+  const carregar = useCallback(() => lista.refetch(), [lista]);
 
   /*
    * Busca compara a placa NORMALIZADA: quem digita "abc-1234" tem de achar o
