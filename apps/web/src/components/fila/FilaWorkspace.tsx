@@ -716,7 +716,7 @@ export function FilaWorkspace({
                   return shouldReduceMotion ? (
                     <div key={item.id} className="contents">
                       {cabecalho}
-                      <FilaCard item={item} agora={agora} onClick={() => setSelecionado(item)} />
+                      <FilaCard item={item} onClick={() => setSelecionado(item)} />
                     </div>
                   ) : (
                     <motion.div
@@ -729,7 +729,7 @@ export function FilaWorkspace({
                       className="flex flex-col gap-2.5"
                     >
                       {cabecalho}
-                      <FilaCard item={item} agora={agora} onClick={() => setSelecionado(item)} />
+                      <FilaCard item={item} onClick={() => setSelecionado(item)} />
                     </motion.div>
                   );
                 })}
