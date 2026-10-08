@@ -55,6 +55,11 @@ export const ordensServicoApi = {
   anotar: (id: string, texto: string) => api.post<OrdemServico>(`/ordens-servico/${id}/anotacoes`, { texto }),
   atribuir: (id: string, tecnicoId: string) => api.post<OrdemServico>(`/ordens-servico/${id}/atribuir`, { tecnicoId }),
   eventos: (id: string) => api.get<OsEvento[]>(`/ordens-servico/${id}/eventos`),
+  /** A viatura esteve no endereco? `null` = OS nao concluida. */
+  auditoria: (id: string) =>
+    api.get<{ veredito: "presente" | "ausente" | "sem_dados"; distanciaMinMetros: number | null; posicoes: number } | null>(
+      `/ordens-servico/${id}/auditoria`,
+    ),
   /** Quanto a viatura rodou ate esta OS. `null` quando nao ha janela de execucao. */
   deslocamento: (id: string) =>
     api.get<{ metros: number; pontos: number; fonte: "gps" | "estimado" | "sem_dados"; inicioEm: string; fimEm: string } | null>(

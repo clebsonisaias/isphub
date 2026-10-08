@@ -18,6 +18,7 @@ export * from "./geodesia.js";
 export * from "./deslocamento.js";
 export * from "./rota.js";
 export * from "./redistribuicao.js";
+export * from "./presenca.js";
 export * from "./rastreamento.js";
 export * from "./sensores.js";
 export * from "./viagens.js";

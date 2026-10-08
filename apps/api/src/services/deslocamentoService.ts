@@ -51,7 +51,7 @@ export async function deslocamentoDaOs(ordemServicoId: string): Promise<Deslocam
 }
 
 /** Rastreador vinculado ao veiculo num instante. */
-async function rastreadorDoVeiculoEm(veiculoId: string, em: Date) {
+export async function rastreadorDoVeiculoEm(veiculoId: string, em: Date) {
   const v = await prisma.vinculoRastreador.findFirst({
     where: { veiculoId, inicioEm: { lte: em }, OR: [{ fimEm: null }, { fimEm: { gt: em } }] },
     orderBy: { inicioEm: "desc" },
@@ -60,7 +60,7 @@ async function rastreadorDoVeiculoEm(veiculoId: string, em: Date) {
   return v?.rastreador ?? null;
 }
 
-async function posicoesEntre(rastreadorId: string, de: Date, ate: Date) {
+export async function posicoesEntre(rastreadorId: string, de: Date, ate: Date) {
   return prisma.posicaoRastreador.findMany({
     where: { rastreadorId, registradoEm: { gte: de, lte: ate } },
     orderBy: { registradoEm: "asc" },
@@ -72,7 +72,7 @@ async function posicoesEntre(rastreadorId: string, de: Date, ate: Date) {
  * Busca no fornecedor os pontos do intervalo e grava o que ainda nao existia.
  * Best-effort: fornecedor fora do ar so deixa a serie como estava.
  */
-async function densificar(
+export async function densificar(
   rastreador: { id: string; identificadorExterno: string; provedorId: string | null; fornecedor: "plataformatk" },
   de: Date,
   ate: Date,

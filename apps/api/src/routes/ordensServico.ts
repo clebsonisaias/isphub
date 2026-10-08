@@ -3,6 +3,7 @@ import { z } from "zod";
 import { OsStatus, UserRole, ehCodigoStatusContrato, type CodigoStatusContrato } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { calcularDeslocamentoOs, deslocamentoDaOs } from "../services/deslocamentoService.js";
+import { auditarOs, auditoriaDaOs } from "../services/auditoriaVisitaService.js";
 import { geoSchema } from "../lib/geo.js";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
@@ -154,6 +155,17 @@ ordensServicoRouter.get(
     const forcar = req.query.calcular === "1" && (req.user!.role === UserRole.ADMIN || req.user!.role === UserRole.GESTOR);
     const atual = forcar ? null : await deslocamentoDaOs(req.params.id);
     res.json(atual ?? (await calcularDeslocamentoOs(req.params.id)));
+  }),
+);
+
+/** A viatura esteve no endereco? `?auditar=1` (admin/gestor) força. `null` = OS nao concluida. */
+ordensServicoRouter.get(
+  "/:id/auditoria",
+  asyncHandler(async (req, res) => {
+    await assertAcesso(req, req.params.id);
+    const forcar = req.query.auditar === "1" && (req.user!.role === UserRole.ADMIN || req.user!.role === UserRole.GESTOR);
+    const atual = forcar ? null : await auditoriaDaOs(req.params.id);
+    res.json(atual ?? (await auditarOs(req.params.id)));
   }),
 );
 

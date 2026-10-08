@@ -343,6 +343,8 @@ export interface DashboardAgenda {
   /** Marcadas cuja data o SGP do provedor ainda nao refletiu. */
   pendentesSgp: number;
   porFuncionario: { marcadoPor: string; origem: string; marcadas: number; canceladas: number }[];
+  /** OS concluidas nos ultimos 7 dias cuja viatura NAO passou pelo endereco (auditoria). */
+  semPresenca7d: number;
 }
 
 export interface DashboardRetiradas {

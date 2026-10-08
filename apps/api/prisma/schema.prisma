@@ -327,6 +327,7 @@ model OrdemServico {
   /// descobrir o veiculo cruzando a janela de execucao com as ocupacoes do
   /// tecnico; ver `veiculosDaOs`.
   deslocamento DeslocamentoOs?
+  auditoriaVisita AuditoriaVisita?
   ocupacoes    OcupacaoVeiculo[]
   /// A marcacao na agenda da ISPhub, quando existe. Chega DEPOIS da OS em
   /// alguns casos e ANTES dela em outros — ver o comentario em `Agendamento`.
@@ -1985,6 +1986,10 @@ model RastreadorConfig {
   intervaloPollingSegundos Int     @default(60)
   ativo                    Boolean @default(true)
 
+  /// Check-in automatico: viatura parada a ate N metros do endereco da OS "a
+  /// caminho" vira "em execucao". 0 desliga.
+  checkinRaioMetros Int @default(150)
+
   /// Limite unico da frota, em km/h. Configuravel porque 100 e o limite de uma
   /// rodovia e o absurdo de uma rua residencial — e quem sabe qual serve e o
   /// gestor, nao eu.
@@ -2096,6 +2101,29 @@ model AgendaConfig {
   atualizadoEm DateTime @updatedAt
 
   @@map("agenda_config")
+}
+
+/// A viatura esteve no endereco da OS concluida? Derivado e recalculavel.
+/// `sem_dados` nunca alerta: sem posicao, sem endereco ou sem veiculo nao ha
+/// como afirmar nada.
+model AuditoriaVisita {
+  id             String       @id @default(uuid())
+  ordemServicoId String       @unique
+  ordemServico   OrdemServico @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
+  veiculoId      String?
+
+  /// presente | ausente | sem_dados
+  veredito           String
+  distanciaMinMetros Int?
+  posicoes           Int
+  inicioEm           DateTime
+  fimEm              DateTime
+  auditadaEm         DateTime @default(now())
+  /// Quando o aviso "visita sem presenca" saiu pros gestores.
+  notificadaEm DateTime?
+
+  @@index([veredito, auditadaEm])
+  @@map("auditorias_visita")
 }
 
 /// Quanto a viatura rodou ATE uma OS: do fim da parada anterior (ou inicio da

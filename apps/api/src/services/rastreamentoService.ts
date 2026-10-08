@@ -11,6 +11,7 @@ import {
 } from "@isphub/shared";
 import { comConcorrenciaLimitada } from "../lib/limitador.js";
 import { prisma } from "../lib/prisma.js";
+import { checkinAutomatico } from "./checkinService.js";
 import { buildRastreadorConnector } from "./rastreadorService.js";
 import { aplicarLeitura, comoMapaSensores, estadoAnteriorDe, type LeituraNova } from "./frotaEventoService.js";
 
@@ -141,6 +142,7 @@ export async function coletarDeUmaConfig(
     chaveCifrada: string;
     dicionarioEm?: Date | null;
     limiteVelocidadeKmh?: number | null;
+    checkinRaioMetros?: number | null;
   },
   conector: RastreadorConnector = buildRastreadorConnector(config),
 ): Promise<ResumoColeta> {
@@ -328,6 +330,13 @@ export async function coletarDeUmaConfig(
         resumo.eventos += d.eventos;
         resumo.viagensAbertas += d.viagensAbertas;
         resumo.viagensFechadas += d.viagensFechadas;
+        // Check-in automatico: separado da derivacao e so com raio ligado —
+        // falhar aqui nao pode desfazer evento nem viagem ja gravados.
+        if ((config.checkinRaioMetros ?? 0) > 0) {
+          await checkinAutomatico(leitura, config.checkinRaioMetros!).catch((e) =>
+            console.warn(`[rastreamento] check-in falhou para ${leitura.rastreadorId}:`, e),
+          );
+        }
       } catch (err) {
         // Um rastreador problematico nao pode calar os outros — mesma regra do
         // laco de credenciais no scheduler.

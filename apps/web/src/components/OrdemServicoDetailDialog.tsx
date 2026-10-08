@@ -26,7 +26,7 @@ import { ordensServicoApi, tecnicosApi, type TecnicoResumo } from "@/lib/filaApi
 import { ApiError } from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-import { CalendarDays, CalendarX2, Navigation, Route } from "lucide-react";
+import { CalendarDays, CalendarX2, MapPinCheck, MapPinOff, Navigation, Route } from "lucide-react";
 import { formatarKm } from "@isphub/shared";
 import { MarcarVisitaDialog } from "@/components/MarcarVisitaDialog";
 import { agendaApi, rotuloVisita } from "@/lib/agendaApi";
@@ -61,6 +61,19 @@ export function OrdemServicoDetailDialog({
   const [confirmandoDesmarcar, setConfirmandoDesmarcar] = useState(false);
   // Quanto a viatura rodou ate aqui — so existe depois de a OS ter sido executada.
   const [deslocamento, setDeslocamento] = useState<{ metros: number; fonte: "gps" | "estimado" | "sem_dados" } | null>(null);
+  // Auditoria de presenca: so existe depois de concluida; "sem dados" nao aparece.
+  const [auditoria, setAuditoria] = useState<{ veredito: "presente" | "ausente"; distanciaMinMetros: number | null } | null>(null);
+  useEffect(() => {
+    if (!podeDespachar || os.status !== OsStatus.CONCLUIDA) return;
+    let vivo = true;
+    ordensServicoApi
+      .auditoria(os.id)
+      .then((a) => vivo && setAuditoria(a && a.veredito !== "sem_dados" ? (a as { veredito: "presente" | "ausente"; distanciaMinMetros: number | null }) : null))
+      .catch(() => {});
+    return () => {
+      vivo = false;
+    };
+  }, [podeDespachar, os.id, os.status]);
   useEffect(() => {
     if (!podeDespachar) return;
     let vivo = true;
@@ -335,6 +348,19 @@ export function OrdemServicoDetailDialog({
                     {os.diaAgenda && os.turnoAgenda && (
                       <span className="text-sm text-muted-foreground">
                         Visita: <span className="font-medium text-foreground">{rotuloVisita(os.diaAgenda, os.turnoAgenda)}</span>
+                      </span>
+                    )}
+                    {auditoria && (
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${auditoria.veredito === "presente" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}
+                        title={
+                          auditoria.veredito === "presente"
+                            ? `A viatura passou a ${auditoria.distanciaMinMetros} m do endereço durante a execução`
+                            : `A viatura não passou pelo endereço (distância mínima ${auditoria.distanciaMinMetros} m)`
+                        }
+                      >
+                        {auditoria.veredito === "presente" ? <MapPinCheck className="size-3.5" /> : <MapPinOff className="size-3.5" />}
+                        {auditoria.veredito === "presente" ? "Viatura esteve no local" : "Viatura não passou no local"}
                       </span>
                     )}
                     {deslocamento && (

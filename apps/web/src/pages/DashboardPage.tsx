@@ -218,9 +218,10 @@ export function DashboardPage() {
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
                 <FaixaSemana vagas={agenda.ocupacao} />
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-3 gap-4">
                   <MiniStat label="Sem confirmação do cliente" value={agenda.semConfirmacaoCliente} critico />
                   <MiniStat label="Pendentes no SGP" value={agenda.pendentesSgp} critico />
+                  <MiniStat label="Sem presença (7 dias)" value={agenda.semPresenca7d} critico />
                 </div>
                 <Link to="/agenda" className="inline-flex w-fit items-center gap-1 text-sm font-medium text-primary hover:underline">
                   Abrir a agenda <ArrowRight className="size-3.5" />

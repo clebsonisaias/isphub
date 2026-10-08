@@ -16,6 +16,7 @@ import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { z } from "zod";
 import * as agenda from "../services/agendaService.js";
+import { semPresencaDesde } from "../services/auditoriaVisitaService.js";
 import { calcularSla } from "../services/slaService.js";
 import { escopoOsWhere } from "../services/escopoService.js";
 import { produtividade } from "../services/meuDiaService.js";
@@ -258,7 +259,7 @@ dashboardRouter.get(
     const fimSemana = somarDias(hoje, 6);
     const desde = new Date(Date.now() - dias * 86_400_000);
 
-    const [ocupacao, semConfirmacaoCliente, pendentesSgp, linhas] = await Promise.all([
+    const [ocupacao, semConfirmacaoCliente, pendentesSgp, linhas, semPresenca7d] = await Promise.all([
       agenda.grade({ de: hoje, ate: fimSemana }),
       prisma.agendamento.count({
         where: { status: "marcado", dia: { gte: agenda.dataDoDia(hoje), lte: agenda.dataDoDia(fimSemana) }, confirmadoEm: null },
@@ -273,6 +274,7 @@ dashboardRouter.get(
         where: { criadoEm: { gte: desde } },
         _count: { _all: true },
       }),
+      semPresencaDesde(new Date(Date.now() - 7 * 86_400_000)),
     ]);
 
     const resposta: DashboardAgenda = {
@@ -280,6 +282,7 @@ dashboardRouter.get(
       ocupacao,
       semConfirmacaoCliente,
       pendentesSgp,
+      semPresenca7d,
       porFuncionario: agenda.resumirMarcacoes(
         linhas.map((l) => ({ marcadoPor: l.marcadoPor, origem: l.origem, status: l.status, total: l._count._all })),
       ),
