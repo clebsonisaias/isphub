@@ -197,3 +197,35 @@ test("o contador do topo diz que sao OS ABERTAS", async ({ page }) => {
 
   await expect(page.getByText(/OS abertas? geolocalizadas?/)).toBeVisible();
 });
+
+test("rota de um turno: pinos numerados pela ordem da rota, e só as visitas daquela janela", async ({ page, request }) => {
+  await login(page);
+  const token = (await page.evaluate(() => localStorage.getItem("isphub_token"))) as string;
+  const auth = { Authorization: `Bearer ${token}` };
+  const API = "http://localhost:4000";
+
+  const fila = await (await request.get(`${API}/fila?grupo=abertos&equipe=interna`, { headers: auth })).json();
+  const os = fila.itens.find((i: { sgpOsId: string }) => i.sgpOsId === "e2e-os-1");
+  if (os?.agendamentoId) await request.delete(`${API}/agenda/${os.agendamentoId}`, { headers: auth });
+  const [vaga] = await (await request.get(`${API}/agenda/proximas?quantas=1`, { headers: auth })).json();
+  const marcado = await (
+    await request.post(`${API}/agenda`, {
+      headers: auth,
+      data: { provedorId: os.provedorId, sgpOsId: "e2e-os-1", dia: vaga.dia, turno: vaga.turno, regiao: "Centro" },
+    })
+  ).json();
+
+  await page.goto("/mapa");
+  const seletor = page.getByLabel("Rota de um turno");
+  await seletor.selectOption(`${vaga.dia}|${vaga.turno}`);
+  // O título passa a contar paradas, e o pino traz o número da parada.
+  await expect(page.getByText(/1 parada na rota/)).toBeVisible();
+  await expect(page.locator(".leaflet-marker-icon", { hasText: "1" })).toHaveCount(1);
+  // Filtros de equipe/provedor não valem no modo rota.
+  await expect(page.getByLabel("Tipo de OS no mapa")).toHaveCount(0);
+
+  await seletor.selectOption("");
+  await expect(page.getByLabel("Tipo de OS no mapa")).toBeVisible();
+
+  await request.delete(`${API}/agenda/${marcado.id}`, { headers: auth });
+});

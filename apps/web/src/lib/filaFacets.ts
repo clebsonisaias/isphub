@@ -1,4 +1,4 @@
-import { OS_STATUS_LABEL, OsPrioridade, OsStatus, type FilaItem } from "@isphub/shared";
+import { OS_STATUS_LABEL, OsPrioridade, OsStatus, chaveVisita, compararVisita, diaBrHoje, janelaVisita, type FilaItem } from "@isphub/shared";
 import { SLA_PRIORIDADE } from "@/components/SlaBadge";
 
 /** "sem_categoria" filtra OS cujo tipo ainda nao foi mapeado a nenhuma categoria canonica. */
@@ -13,12 +13,28 @@ export type CategoriaFiltro = string | "todas" | "sem_categoria";
  */
 export type TecnicoFiltro = string | "todos" | "a_despachar";
 
+/**
+ * Visita: a marcacao da agenda ISPhub (nao a data do SGP). "hoje"/"amanha"/
+ * "semana" (ate 7 dias) recortam o que ja tem dia; "sem_visita" e o que ainda
+ * precisa ser marcado — a pergunta do supervisor no fim do dia.
+ */
+export type VisitaFiltro = "todas" | "hoje" | "amanha" | "semana" | "sem_visita";
+
+export const VISITA_LABEL: Record<VisitaFiltro, string> = {
+  todas: "Todas",
+  hoje: "Hoje",
+  amanha: "Amanhã",
+  semana: "Esta semana",
+  sem_visita: "Sem visita",
+};
+
 export interface FilaFacetState {
   status: OsStatus | "todos";
   prioridade: OsPrioridade | "todas";
   categoriaId: CategoriaFiltro;
   provedorId: string | "todos";
   tecnicoId: TecnicoFiltro;
+  visita: VisitaFiltro;
   busca: string;
 }
 
@@ -28,6 +44,7 @@ export const FILA_FACET_INICIAL: FilaFacetState = {
   categoriaId: "todas",
   provedorId: "todos",
   tecnicoId: "todos",
+  visita: "todas",
   busca: "",
 };
 
@@ -54,6 +71,19 @@ function chaveTecnico(item: FilaItem): string {
   return item.tecnicoId ?? "a_despachar";
 }
 
+/**
+ * Em que opcao da faceta "Visita" a OS cai. "semana" inclui hoje e amanha
+ * (quem pede "esta semana" quer tudo ate domingo, nao so de depois de amanha).
+ */
+function chavesVisita(item: FilaItem, hoje: string): VisitaFiltro[] {
+  if (!item.diaAgenda) return ["sem_visita"];
+  const j = janelaVisita(item.diaAgenda, hoje);
+  if (j === "hoje") return ["hoje", "semana"];
+  if (j === "amanha") return ["amanha", "semana"];
+  if (j === "semana") return ["semana"];
+  return [];
+}
+
 /** Aplica um predicado por dimensão, ignorando a própria dimensão (para faceta "OR dentro, AND entre"). */
 function passaStatus(item: FilaItem, f: FilaFacetState) {
   return f.status === "todos" || item.status === f.status;
@@ -70,16 +100,20 @@ function passaProvedor(item: FilaItem, f: FilaFacetState) {
 function passaTecnico(item: FilaItem, f: FilaFacetState) {
   return f.tecnicoId === "todos" || chaveTecnico(item) === f.tecnicoId;
 }
+function passaVisita(item: FilaItem, f: FilaFacetState, hoje: string) {
+  return f.visita === "todas" || chavesVisita(item, hoje).includes(f.visita);
+}
 
 /** Aplica todos os filtros (a busca já vem resolvida do servidor, mas mantemos por segurança). */
-export function filtrarFila(itens: FilaItem[], f: FilaFacetState): FilaItem[] {
+export function filtrarFila(itens: FilaItem[], f: FilaFacetState, hoje: string = diaBrHoje()): FilaItem[] {
   return itens.filter(
     (i) =>
       passaStatus(i, f) &&
       passaPrioridade(i, f) &&
       passaCategoria(i, f) &&
       passaProvedor(i, f) &&
-      passaTecnico(i, f),
+      passaTecnico(i, f) &&
+      passaVisita(i, f, hoje),
   );
 }
 
@@ -117,6 +151,8 @@ function ignorarValor(dim: keyof FilaFacetState): FilaFacetState[keyof FilaFacet
       return "todos";
     case "tecnicoId":
       return "todos";
+    case "visita":
+      return "todas";
     default:
       return "";
   }
@@ -138,6 +174,8 @@ export interface FilaFacetCounts {
   porProvedor: Map<string, number>;
   /** Chave = tecnicoId, ou "a_despachar" pras OS sem tecnico. */
   porTecnico: Map<string, number>;
+  /** Uma OS pode contar em mais de uma (hoje tambem e "esta semana"). */
+  porVisita: Map<VisitaFiltro, number>;
   /**
    * Tecnicos QUE TEM OS, ja com nome resolvido e ordenados por carga.
    *
@@ -180,11 +218,21 @@ export function calcularFacetas(itens: FilaItem[], f: FilaFacetState): FilaFacet
     porCategoria: contarPor(itens, f, "categoriaId", chaveCategoria),
     porProvedor: contarPor(itens, f, "provedorId", (i) => i.provedorId),
     porTecnico: contarPor(itens, f, "tecnicoId", chaveTecnico),
+    porVisita: contarVisita(itens, f),
     tecnicos: listarTecnicos(itens, f),
   };
 }
 
-export type OrdenacaoFila = "urgencia" | "recentes" | "antigas";
+/** Contagem da faceta "Visita" — multi-chave, por isso nao passa por `contarPor`. */
+function contarVisita(itens: FilaItem[], f: FilaFacetState): Map<VisitaFiltro, number> {
+  const hoje = diaBrHoje();
+  const base = filtrarFila(itens, { ...f, visita: "todas" }, hoje);
+  const mapa = new Map<VisitaFiltro, number>();
+  for (const i of base) for (const k of chavesVisita(i, hoje)) mapa.set(k, (mapa.get(k) ?? 0) + 1);
+  return mapa;
+}
+
+export type OrdenacaoFila = "urgencia" | "recentes" | "antigas" | "visita";
 
 /** Data mais relevante da OS, para ordenar "mais recentes primeiro". */
 function dataRelevante(item: FilaItem): number {
@@ -195,6 +243,19 @@ function dataRelevante(item: FilaItem): number {
 
 export function ordenarFila(itens: FilaItem[], modo: OrdenacaoFila): FilaItem[] {
   const copia = [...itens];
+  if (modo === "visita") {
+    // A agenda manda: dia, turno, parada. Sem visita vai pro fim; dentro de
+    // uma janela sem rota, a urgencia desempata — e o que o supervisor
+    // olharia pra decidir a ordem de qualquer jeito.
+    copia.sort((a, b) => {
+      const v = compararVisita(a, b);
+      if (v !== 0) return v;
+      const pa = SLA_PRIORIDADE[a.sla.semaforo];
+      const pb = SLA_PRIORIDADE[b.sla.semaforo];
+      return pa !== pb ? pa - pb : dataRelevante(b) - dataRelevante(a);
+    });
+    return copia;
+  }
   if (modo === "recentes") {
     copia.sort((a, b) => dataRelevante(b) - dataRelevante(a));
     return copia;
@@ -223,3 +284,17 @@ export const STATUS_ORDEM: OsStatus[] = [
 ];
 
 export { OS_STATUS_LABEL };
+
+/**
+ * Rotulo da secao quando a fila esta ordenada por visita: "Hoje · Manhã",
+ * "sáb 10/10 · Tarde", "Sem visita". `chave` vem de `chaveVisita`.
+ */
+export function rotuloSecaoVisita(chave: string, hoje: string, rotuloDia: (dia: string) => string): string {
+  if (chave === "sem_visita") return "Sem visita marcada";
+  const [dia, turno] = chave.split("|");
+  const j = janelaVisita(dia, hoje);
+  const quando = j === "hoje" ? "Hoje" : j === "amanha" ? "Amanhã" : rotuloDia(dia);
+  return `${quando} · ${turno === "manha" ? "Manhã" : "Tarde"}`;
+}
+
+export { chaveVisita };

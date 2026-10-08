@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { MapContainer, Marker, Popup } from "react-leaflet";
+import { MapContainer, Marker, Polyline, Popup } from "react-leaflet";
 import { AjustarLimites, BRASIL_CENTER, CamadaOsm } from "@/components/mapa/base";
-import type { FilaItem, Provedor } from "@isphub/shared";
+import { ROTULO_TURNO, TURNOS_AGENDA, diaBrHoje, inicioDaSemana, somarDias, type FilaItem, type Provedor, type TurnoAgenda } from "@isphub/shared";
+import { agendaApi, rotuloDiaAgenda, type ParadaAgenda } from "@/lib/agendaApi";
 import { AppShell } from "@/components/AppShell";
 import { AnimatedPage } from "@/components/AnimatedPage";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -52,11 +53,20 @@ function corDeAlerta(): string {
  * Leaflet). Monta o elemento via DOM API (nao interpolando `cor` numa string
  * HTML) para nao depender so da validacao do backend contra a cor conter markup.
  */
-function pinIcon(cor: string, retirada = false, contratoIrregular = false) {
+function pinIcon(cor: string, retirada = false, contratoIrregular = false, numero?: number) {
   const ponto = document.createElement("span");
   ponto.style.display = "block";
-  ponto.style.width = "16px";
-  ponto.style.height = "16px";
+  // Com numero (rota do turno) o pino cresce pra caber a parada; e a ordem de
+  // visita, nao um id — e o que o supervisor confere contra o painel da rota.
+  const lado = numero != null ? 24 : 16;
+  ponto.style.width = `${lado}px`;
+  ponto.style.height = `${lado}px`;
+  if (numero != null) {
+    ponto.textContent = String(numero);
+    ponto.style.color = "#fff";
+    ponto.style.font = "700 11px/20px system-ui, sans-serif";
+    ponto.style.textAlign = "center";
+  }
   /*
    * FORMA distingue retirada de serviço da casa: losango (quadrado girado)
    * contra círculo.
@@ -103,7 +113,7 @@ function pinIcon(cor: string, retirada = false, contratoIrregular = false) {
    */
   const toque = window.matchMedia("(pointer: coarse)").matches;
   if (!toque) {
-    return L.divIcon({ className: "", html: ponto, iconSize: [16, 16], iconAnchor: [8, 8] });
+    return L.divIcon({ className: "", html: ponto, iconSize: [lado, lado], iconAnchor: [lado / 2, lado / 2] });
   }
 
   const caixa = document.createElement("span");
@@ -132,12 +142,50 @@ export function MapaPage() {
   const [equipe, setEquipe] = useState<EquipeFiltro>("todas");
   const [itens, setItens] = useState<FilaItem[]>([]);
   const [carregando, setCarregando] = useState(true);
+  /*
+   * ROTA DO TURNO: "" = todas as OS abertas (o mapa de sempre); "dia|turno" =
+   * só as visitas marcadas naquela janela, numeradas pela ordem da rota e
+   * ligadas por uma linha. E a visao que o teto por regiao tentava proteger
+   * sem ninguem conseguir ENXERGAR o deslocamento.
+   */
+  const [janela, setJanela] = useState("");
+  const [paradas, setParadas] = useState<ParadaAgenda[]>([]);
+  const hoje = diaBrHoje();
+  const janelas = useMemo(() => {
+    const segunda = inicioDaSemana(hoje);
+    return Array.from({ length: 6 }, (_, i) => somarDias(segunda, i)).flatMap((dia) =>
+      TURNOS_AGENDA.filter((t) => !(t === "tarde" && new Date(`${dia}T12:00:00Z`).getUTCDay() === 6)).map((t) => ({
+        valor: `${dia}|${t}`,
+        rotulo: `${dia === hoje ? "Hoje" : rotuloDiaAgenda(dia)} · ${ROTULO_TURNO[t]}`,
+      })),
+    );
+  }, [hoje]);
+
+  useEffect(() => {
+    if (!janela) {
+      setParadas([]);
+      return;
+    }
+    const [dia, turno] = janela.split("|") as [string, TurnoAgenda];
+    let cancelado = false;
+    setCarregando(true);
+    agendaApi
+      .doTurno(dia, turno)
+      .then((p) => !cancelado && setParadas(p))
+      .catch((err) => !cancelado && toast({ titulo: "Erro ao carregar a rota", descricao: mensagem(err), variante: "erro" }))
+      .finally(() => !cancelado && setCarregando(false));
+    return () => {
+      cancelado = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [janela]);
 
   useEffect(() => {
     provedoresApi.listar().then(setProvedores).catch(() => {});
   }, []);
 
   useEffect(() => {
+    if (janela) return; // no modo rota, quem carrega e o efeito da janela
     setCarregando(true);
     filaApi
       .listar({
@@ -176,7 +224,8 @@ export function MapaPage() {
       })
       .catch((err) => toast({ titulo: "Erro ao carregar o mapa", descricao: mensagem(err), variante: "erro" }))
       .finally(() => setCarregando(false));
-  }, [provedorId, equipe]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provedorId, equipe, janela]);
 
   /*
    * Quantos contratos irregulares há no recorte. Serve pra dois fins: decidir
@@ -189,9 +238,22 @@ export function MapaPage() {
     [itens],
   );
 
+  // Paradas da rota com coordenada, ja na ordem de visita (doTurno ordena por ordemRota).
+  const paradasNoMapa = useMemo(
+    () =>
+      paradas
+        .map((p, i) => ({ parada: p, numero: p.ordemRota ?? i + 1 }))
+        .filter(({ parada }) => parada.ordemServico?.lat != null && parada.ordemServico?.lng != null),
+    [paradas],
+  );
+  const semCoordenada = paradas.length - paradasNoMapa.length;
+
   const pontos = useMemo<[number, number][]>(
-    () => itens.map((i) => [i.endereco.lat as number, i.endereco.lng as number]),
-    [itens],
+    () =>
+      janela
+        ? paradasNoMapa.map(({ parada }) => [parada.ordemServico!.lat as number, parada.ordemServico!.lng as number])
+        : itens.map((i) => [i.endereco.lat as number, i.endereco.lng as number]),
+    [itens, janela, paradasNoMapa],
   );
 
   return (
@@ -203,7 +265,9 @@ export function MapaPage() {
           {/* "aberta" explicito: sem isso, o numero parece "todas as OS" e
               quem conhece o volume da operacao acha que sumiu dado. */}
           <p className="text-sm text-muted-foreground">
-            {itens.length} {itens.length === 1 ? "OS aberta geolocalizada" : "OS abertas geolocalizadas"}
+            {janela
+              ? `${paradasNoMapa.length} ${paradasNoMapa.length === 1 ? "parada" : "paradas"} na rota${semCoordenada > 0 ? ` · ${semCoordenada} sem coordenada` : ""}`
+              : `${itens.length} ${itens.length === 1 ? "OS aberta geolocalizada" : "OS abertas geolocalizadas"}`}
           </p>
           {/*
             Legenda. Marcador com significado e enigma sem ela — quem olha ve
@@ -240,6 +304,20 @@ export function MapaPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Select
+            value={janela}
+            onChange={(e) => setJanela(e.target.value)}
+            aria-label="Rota de um turno"
+            className="bg-secondary/40"
+          >
+            <option value="">Todas as OS abertas</option>
+            {janelas.map((j) => (
+              <option key={j.valor} value={j.valor}>
+                Rota: {j.rotulo}
+              </option>
+            ))}
+          </Select>
+          {!janela && (
+          <Select
             value={equipe}
             onChange={(e) => setEquipe(e.target.value as EquipeFiltro)}
             aria-label="Tipo de OS no mapa"
@@ -251,7 +329,8 @@ export function MapaPage() {
               </option>
             ))}
           </Select>
-          {usuario?.role !== UserRole.PROVEDOR && usuario?.role !== UserRole.TECNICO && (
+          )}
+          {!janela && usuario?.role !== UserRole.PROVEDOR && usuario?.role !== UserRole.TECNICO && (
             <Select
               value={provedorId}
               onChange={(e) => setProvedorId(e.target.value)}
@@ -276,7 +355,35 @@ export function MapaPage() {
           <MapContainer center={BRASIL_CENTER} zoom={4} style={{ height: "100%", width: "100%" }}>
             <CamadaOsm />
             <AjustarLimites pontos={pontos} />
-            {itens.map((item) => (
+            {janela && pontos.length > 1 ? (
+              <Polyline positions={pontos} pathOptions={{ color: "var(--primary)", weight: 3, opacity: 0.7, dashArray: "6 6" }} />
+            ) : null}
+            {janela &&
+              paradasNoMapa.map(({ parada, numero }) => {
+                const os = parada.ordemServico!;
+                return (
+                  <Marker key={parada.id} position={[os.lat as number, os.lng as number]} icon={pinIcon(parada.provedor.cor, false, false, numero)}>
+                    <Popup>
+                      <div className="flex flex-col gap-1 text-sm">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          {numero}ª parada · {ROTULO_TURNO[janela.split("|")[1] as TurnoAgenda]}
+                        </p>
+                        <p className="font-medium">{os.clienteNome ?? `OS ${parada.sgpOsId}`}</p>
+                        {os.tipoOs?.categoria ? (
+                          <span className="text-xs font-medium" style={{ color: os.tipoOs.categoria.cor }}>
+                            {os.tipoOs.categoria.nome}
+                          </span>
+                        ) : null}
+                        <p className="text-muted-foreground">
+                          {[os.logradouro, os.numero].filter(Boolean).join(", ") || os.bairro || os.pop || "Localização não informada"}
+                        </p>
+                        {os.tecnico ? <p className="text-xs text-muted-foreground">Técnico: {os.tecnico.nomeExibicao ?? os.tecnico.nome}</p> : null}
+                      </div>
+                    </Popup>
+                  </Marker>
+                );
+              })}
+            {!janela && itens.map((item) => (
               <Marker
                 key={item.id}
                 position={[item.endereco.lat as number, item.endereco.lng as number]}

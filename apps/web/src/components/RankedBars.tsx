@@ -15,7 +15,14 @@ export interface RankedBarItem {
  * entidade, concluidas em verde), rotulo e numeros junto. Reusado em
  * Por provedor / Por categoria / Por tecnico / Retiradas por provedor.
  */
-export function RankedBars({ itens }: { itens: RankedBarItem[] }) {
+export function RankedBars({
+  itens,
+  rotulos = { abertas: "abertas", concluidas: "concluídas" },
+}: {
+  itens: RankedBarItem[];
+  /** O que cada metade da barra significa — "marcadas · canceladas" na agenda. */
+  rotulos?: { abertas: string; concluidas: string };
+}) {
   const ranqueados = [...itens].sort((a, b) => b.abertas + b.concluidas - (a.abertas + a.concluidas));
   const max = Math.max(1, ...ranqueados.map((i) => i.abertas + i.concluidas));
 
@@ -33,7 +40,8 @@ export function RankedBars({ itens }: { itens: RankedBarItem[] }) {
                 <span className="truncate">{item.nome}</span>
               </span>
               <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">{item.abertas}</span> abertas · {item.concluidas} concluídas
+                <span className="font-medium text-foreground">{item.abertas}</span> {rotulos.abertas} · {item.concluidas}{" "}
+                {rotulos.concluidas}
               </span>
             </div>
             <div className="flex h-2.5 w-full gap-0.5 overflow-hidden rounded-full bg-secondary">

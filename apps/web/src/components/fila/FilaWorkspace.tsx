@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { OS_STATUS_ABERTOS, UserRole, type Categoria, type EquipeFiltro, type FilaItem, type Provedor } from "@isphub/shared";
+import { OS_STATUS_ABERTOS, UserRole, diaBrHoje, type Categoria, type EquipeFiltro, type FilaItem, type Provedor } from "@isphub/shared";
+import { rotuloDiaAgenda } from "@/lib/agendaApi";
 import { AppShell } from "@/components/AppShell";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -24,8 +25,10 @@ import { FilaCard } from "@/components/fila/FilaCard";
 import {
   FILA_FACET_INICIAL,
   calcularFacetas,
+  chaveVisita,
   filtrarFila,
   ordenarFila,
+  rotuloSecaoVisita,
   type FilaFacetState,
   type OrdenacaoFila,
 } from "@/lib/filaFacets";
@@ -62,6 +65,21 @@ function mensagem(err: unknown): string {
 /** OS concluída ou cancelada (fora dos status "abertos"). */
 function estaFinalizado(item: FilaItem): boolean {
   return !OS_STATUS_ABERTOS.includes(item.status);
+}
+
+/** Le os filtros da URL; valor desconhecido cai no padrao em vez de quebrar a tela. */
+function filtrosDaUrl(p: URLSearchParams): FilaFacetState {
+  const visita = p.get("visita");
+  return {
+    ...FILA_FACET_INICIAL,
+    status: (p.get("status") as FilaFacetState["status"]) ?? "todos",
+    prioridade: (p.get("prioridade") as FilaFacetState["prioridade"]) ?? "todas",
+    categoriaId: p.get("categoria") ?? "todas",
+    provedorId: p.get("provedor") ?? "todos",
+    tecnicoId: p.get("tecnico") ?? "todos",
+    visita:
+      visita === "hoje" || visita === "amanha" || visita === "semana" || visita === "sem_visita" ? visita : "todas",
+  };
 }
 
 const TAMANHOS_PAGINA = [10, 20, 50];
@@ -129,11 +147,23 @@ export function FilaWorkspace({
   const [totalServidor, setTotalServidor] = useState(0);
   const [carregando, setCarregando] = useState(true);
 
-  const [visao, setVisao] = useState<"fila" | "concluidas">("fila");
-  const [filtros, setFiltros] = useState<FilaFacetState>(FILA_FACET_INICIAL);
+  const [searchParams, setSearchParams] = useSearchParams();
+  /*
+   * Filtros, ordenacao e aba moram tambem na URL: compartilhar "a fila de hoje
+   * sem tecnico" vira um link, e voltar do detalhe nao perde o recorte. So o
+   * que difere do padrao e escrito; `q` (busca) ja tinha o seu caminho. A
+   * pagina fica fora: muda a cada clique e nao e um "estado" de verdade.
+   */
+  const [visao, setVisao] = useState<"fila" | "concluidas">(() =>
+    searchParams.get("visao") === "concluidas" ? "concluidas" : "fila",
+  );
+  const [filtros, setFiltros] = useState<FilaFacetState>(() => filtrosDaUrl(searchParams));
   const [busca, setBusca] = useState("");
   const [buscaDebounced, setBuscaDebounced] = useState("");
-  const [ordenacao, setOrdenacao] = useState<OrdenacaoFila>("urgencia");
+  const [ordenacao, setOrdenacao] = useState<OrdenacaoFila>(() => {
+    const o = searchParams.get("ord");
+    return o === "recentes" || o === "antigas" || o === "visita" ? o : "urgencia";
+  });
   const [pageSize, setPageSize] = useState(20);
   const [page, setPage] = useState(1);
   const [sidebarMobile, setSidebarMobile] = useState(false);
@@ -146,7 +176,29 @@ export function FilaWorkspace({
   const [agora, setAgora] = useState(() => Date.now());
 
   const shouldReduceMotion = useReducedMotion();
-  const [searchParams] = useSearchParams();
+
+  useEffect(() => {
+    setSearchParams(
+      (atual) => {
+        const p = new URLSearchParams(atual);
+        for (const [chave, valor, padrao] of [
+          ["status", filtros.status, "todos"],
+          ["prioridade", filtros.prioridade, "todas"],
+          ["categoria", filtros.categoriaId, "todas"],
+          ["provedor", filtros.provedorId, "todos"],
+          ["tecnico", filtros.tecnicoId, "todos"],
+          ["visita", filtros.visita, "todas"],
+          ["ord", ordenacao, "urgencia"],
+          ["visao", visao, "fila"],
+        ] as const) {
+          if (valor === padrao) p.delete(chave);
+          else p.set(chave, String(valor));
+        }
+        return p;
+      },
+      { replace: true },
+    );
+  }, [filtros, ordenacao, visao, setSearchParams]);
 
   // Chegada via Command Palette (Cmd/Ctrl+K "buscar OS") — aplica o termo na
   // busca já existente da tela, em vez de reinventar um jeito de abrir o
@@ -308,6 +360,17 @@ export function FilaWorkspace({
     concluidas: totais.osFechadas,
   };
 
+  // Contagem por janela (dia|turno) sobre TODO o filtrado, nao so a pagina: o
+  // cabecalho "Hoje · Manhã (5)" tem que dizer quantas existem, nao quantas
+  // couberam nesta pagina.
+  const porSecaoVisita = useMemo(() => {
+    const m = new Map<string, number>();
+    if (ordenacao !== "visita") return m;
+    for (const i of filtrados) m.set(chaveVisita(i), (m.get(chaveVisita(i)) ?? 0) + 1);
+    return m;
+  }, [filtrados, ordenacao]);
+  const hojeBr = diaBrHoje();
+
   const totalPaginas = Math.max(1, Math.ceil(filtrados.length / pageSize));
   const pageSegura = Math.min(page, totalPaginas);
   const inicio = (pageSegura - 1) * pageSize;
@@ -332,6 +395,7 @@ export function FilaWorkspace({
     // OS aberta no momento". Ou seja, afirmava que nao havia OS quando havia,
     // e ainda escondia o botao de limpar que resolveria.
     filtros.tecnicoId !== "todos" ||
+    filtros.visita !== "todas" ||
     busca.trim() !== "";
 
   function limparFiltros() {
@@ -340,7 +404,7 @@ export function FilaWorkspace({
   }
 
   function removerFiltro(
-    dim: "status" | "prioridade" | "categoriaId" | "provedorId" | "tecnicoId" | "busca",
+    dim: "status" | "prioridade" | "categoriaId" | "provedorId" | "tecnicoId" | "visita" | "busca",
   ) {
     if (dim === "busca") {
       setBusca("");
@@ -503,6 +567,7 @@ export function FilaWorkspace({
                 aria-label="Ordenar por"
               >
                 <option value="urgencia">Mais urgentes primeiro</option>
+                <option value="visita">Por visita (dia · turno · rota)</option>
                 <option value="recentes">Mais recentes primeiro</option>
                 <option value="antigas">Mais antigas primeiro</option>
               </Select>
@@ -573,11 +638,11 @@ export function FilaWorkspace({
           <AnimatePresence>
             {truncado && !primeiraCarga && (
               <motion.div
-                initial={shouldReduceMotion ? false : { opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={shouldReduceMotion ? undefined : { opacity: 0, height: 0 }}
+                initial={shouldReduceMotion ? false : { opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={shouldReduceMotion ? undefined : { opacity: 0, y: -4 }}
                 transition={{ duration: 0.2, ease: "easeOut" }}
-                className="mb-3 flex items-start gap-2 overflow-hidden rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-foreground"
+                className="mb-3 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-foreground"
               >
                 <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
                 <span>
@@ -629,9 +694,30 @@ export function FilaWorkspace({
                   shouldReduceMotion) desliga tudo pra quem prefere menos
                   movimento — os cards soh aparecem/somem, sem deslocamento. */}
               <AnimatePresence initial={false}>
-                {paginaItens.map((item) =>
-                  shouldReduceMotion ? (
-                    <FilaCard key={item.id} item={item} agora={agora} onClick={() => setSelecionado(item)} />
+                {paginaItens.map((item, idx) => {
+                  // Ordenado por visita, a lista ganha um cabecalho sempre que a
+                  // janela (dia|turno) muda em relacao ao card anterior.
+                  const chave = chaveVisita(item);
+                  const abreSecao = ordenacao === "visita" && (idx === 0 || chaveVisita(paginaItens[idx - 1]) !== chave);
+                  const cabecalho = abreSecao ? (
+                    <div
+                      key={`secao-${chave}`}
+                      className="mt-2 flex items-center gap-2 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground first:mt-0"
+                    >
+                      <span className={chave === "sem_visita" ? "text-warning" : "text-primary"}>
+                        {rotuloSecaoVisita(chave, hojeBr, rotuloDiaAgenda)}
+                      </span>
+                      <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[0.65rem] tabular-nums normal-case">
+                        {porSecaoVisita.get(chave) ?? 0}
+                      </span>
+                      <span className="h-px flex-1 bg-border" />
+                    </div>
+                  ) : null;
+                  return shouldReduceMotion ? (
+                    <div key={item.id} className="contents">
+                      {cabecalho}
+                      <FilaCard item={item} agora={agora} onClick={() => setSelecionado(item)} />
+                    </div>
                   ) : (
                     <motion.div
                       key={item.id}
@@ -640,11 +726,13 @@ export function FilaWorkspace({
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -8 }}
                       transition={{ duration: 0.2, ease: "easeOut" }}
+                      className="flex flex-col gap-2.5"
                     >
+                      {cabecalho}
                       <FilaCard item={item} agora={agora} onClick={() => setSelecionado(item)} />
                     </motion.div>
-                  ),
-                )}
+                  );
+                })}
               </AnimatePresence>
             </div>
           )}

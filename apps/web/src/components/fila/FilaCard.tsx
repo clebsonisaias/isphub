@@ -9,7 +9,7 @@ import { copiarTexto, numeroWhatsApp } from "@/lib/clipboard";
 import { iconeCategoria } from "@/lib/categoriaIcons";
 import { rotuloDiaAgenda } from "@/lib/agendaApi";
 import { ROTULO_TURNO } from "@isphub/shared";
-import { Clock, ChevronRight, ChevronsUp, MapPin, MessageCircle, Copy, Check, UserPlus, HelpCircle } from "lucide-react";
+import { Clock, ChevronRight, ChevronsUp, MapPin, MessageCircle, Copy, Check, UserPlus, HelpCircle, CheckCircle2, CloudOff } from "lucide-react";
 
 /**
  * Chegou no espelho ha pouco? `criadoEm` e do ISPhub, nao do SGP: e literalmente
@@ -49,7 +49,8 @@ function dataDestaque(item: FilaItem): { rotulo: string; iso: string | null; gra
   // escolheu, e o SGP so a reflete depois do write-back. Nao tem hora — a
   // agenda e por turno — entao o destaque vira o dia e a linha de baixo o turno.
   if (item.diaAgenda && item.turnoAgenda) {
-    return { rotulo: "Visita", iso: null, grande: rotuloDiaAgenda(item.diaAgenda), pequeno: ROTULO_TURNO[item.turnoAgenda] };
+    const parada = item.ordemRota != null ? ` · ${item.ordemRota}ª parada` : "";
+    return { rotulo: "Visita", iso: null, grande: rotuloDiaAgenda(item.diaAgenda), pequeno: `${ROTULO_TURNO[item.turnoAgenda]}${parada}` };
   }
   if (item.dataAgendamento) return { rotulo: "Agendada", iso: item.dataAgendamento };
   return { rotulo: "Aberta", iso: item.dataCadastro ?? item.criadoEm };
@@ -235,6 +236,29 @@ export function FilaCard({ item, agora, onClick }: { item: FilaItem; agora: numb
           <p className="text-[0.68rem] uppercase tracking-wide text-muted-foreground/70">{destaque.rotulo}</p>
           <p className="text-lg font-bold tabular-nums text-foreground">{destaque.grande ?? fmtHora(destaque.iso)}</p>
           <p className="text-xs text-muted-foreground">{destaque.pequeno ?? fmtData(destaque.iso)}</p>
+          {item.diaAgenda && (
+            // Dois estados da marcacao, pequenos: o cliente confirmou? o SGP ja
+            // reflete? Sao as duas pendencias que fazem o supervisor ligar.
+            <p className="mt-0.5 flex items-center gap-2 text-[0.68rem]">
+              {item.visitaConfirmadaEm ? (
+                <span className="inline-flex items-center gap-0.5 text-success" title={`Cliente confirmou em ${new Date(item.visitaConfirmadaEm).toLocaleString("pt-BR")}`}>
+                  <CheckCircle2 className="size-3" /> confirmada
+                </span>
+              ) : (
+                <span className="text-muted-foreground/70" title="O cliente ainda não confirmou a visita">sem confirmação</span>
+              )}
+              {!item.visitaSgpConfirmadaEm && (
+                <span className="inline-flex items-center gap-0.5 text-warning" title="A data ainda não foi refletida no SGP do provedor">
+                  <CloudOff className="size-3" /> SGP
+                </span>
+              )}
+            </p>
+          )}
+          {item.diaAgenda && item.dataAgendamento && (
+            <p className="text-[0.65rem] text-muted-foreground/60" title="Data registrada no SGP do provedor">
+              SGP: {fmtData(item.dataAgendamento)} {fmtHora(item.dataAgendamento)}
+            </p>
+          )}
         </div>
 
         <SlaBadge sla={item.sla} />

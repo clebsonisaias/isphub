@@ -1,10 +1,10 @@
 import type { Categoria, Provedor } from "@isphub/shared";
-import { OS_STATUS_LABEL, PRIORIDADE_LABEL, type FilaFacetState } from "@/lib/filaFacets";
+import { OS_STATUS_LABEL, PRIORIDADE_LABEL, VISITA_LABEL, type FilaFacetState } from "@/lib/filaFacets";
 import { X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 
 /** Dimensões de filtro que viram chip (a busca entra separada). */
-type Dimensao = "status" | "prioridade" | "categoriaId" | "provedorId" | "tecnicoId";
+type Dimensao = "status" | "prioridade" | "categoriaId" | "provedorId" | "tecnicoId" | "visita";
 
 interface ChipInfo {
   dim: Dimensao | "busca";
@@ -64,6 +64,9 @@ export function FilaChipsAtivos({
     const rotulo = filtros.tecnicoId === "a_despachar" ? "A despachar" : (nomeTecnico ?? "Técnico");
     chips.push({ dim: "tecnicoId", rotulo: `Despacho: ${rotulo}` });
   }
+  if (filtros.visita !== "todas") {
+    chips.push({ dim: "visita", rotulo: `Visita: ${VISITA_LABEL[filtros.visita]}` });
+  }
   if (busca.trim()) {
     chips.push({ dim: "busca", rotulo: `Busca: "${busca.trim()}"` });
   }
@@ -72,11 +75,11 @@ export function FilaChipsAtivos({
     <AnimatePresence>
       {chips.length > 0 && (
         <motion.div
-          initial={shouldReduceMotion ? false : { opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: "auto" }}
-          exit={shouldReduceMotion ? undefined : { opacity: 0, height: 0 }}
+          initial={shouldReduceMotion ? false : { opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={shouldReduceMotion ? undefined : { opacity: 0, y: -4 }}
           transition={{ duration: 0.2, ease: "easeOut" }}
-          className="mb-3 flex flex-wrap items-center gap-2 overflow-hidden"
+          className="mb-3 flex flex-wrap items-center gap-2"
         >
           <AnimatePresence initial={false}>
             {chips.map((chip) =>

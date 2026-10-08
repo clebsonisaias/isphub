@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import type { DashboardMetrics, TecnicoEmJornada } from "@isphub/shared";
+import { ROTULO_TURNO, TURNOS_AGENDA, type DashboardAgenda, type DashboardMetrics, type TecnicoEmJornada, type VagaTurno } from "@isphub/shared";
+import { Select } from "@/components/ui/select";
+import { fechadoNoCalendario, textoBloqueio, tomDaVaga } from "@/lib/agendaUi";
+import { rotuloDiaAgenda } from "@/lib/agendaApi";
 import { gsap, useGSAP, ScrollTrigger } from "@/lib/gsapSetup";
 import { AppShell } from "@/components/AppShell";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,7 +17,7 @@ import { dashboardApi } from "@/lib/dashboardApi";
 import { EmJornada } from "@/components/dashboard/EmJornada";
 import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
-import { ArrowRight, PackageX, Inbox, CheckCircle2, Building2, AlarmClock, Activity, type LucideIcon } from "lucide-react";
+import { ArrowRight, PackageX, Inbox, CheckCircle2, Building2, AlarmClock, Activity, CalendarDays, Users, type LucideIcon } from "lucide-react";
 
 function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
@@ -108,6 +111,17 @@ export function DashboardPage() {
   const [emJornada, setEmJornada] = useState<TecnicoEmJornada[]>([]);
   const [carregando, setCarregando] = useState(true);
   const pageRef = useRef<HTMLDivElement>(null);
+  // Agenda: separada e tolerante como a jornada — a API e ADMIN/GESTOR, e um
+  // 403 (provedor) so esconde o bloco, nao derruba o resto.
+  const [agenda, setAgenda] = useState<DashboardAgenda | null>(null);
+  const [diasRanking, setDiasRanking] = useState(30);
+
+  useEffect(() => {
+    dashboardApi
+      .agenda(diasRanking)
+      .then(setAgenda)
+      .catch(() => setAgenda(null));
+  }, [diasRanking]);
 
   function carregar() {
     setCarregando(true);
@@ -191,6 +205,62 @@ export function DashboardPage() {
           <KpiTile label="Provedores" value={metrics.porProvedor.length} tone="blue" icon={Building2} />
           <KpiTile label="SLA estourado" value={metrics.slaEstourado} tone="critico" icon={AlarmClock} />
         </div>
+
+        {agenda ? (
+          <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Card className="dash-top-card opacity-0">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <CalendarDays className="size-4 text-muted-foreground" />
+                  Agenda · próximos 7 dias
+                </CardTitle>
+                <CardDescription>Ocupação de cada turno, com o que ainda depende de alguém.</CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4">
+                <FaixaSemana vagas={agenda.ocupacao} />
+                <div className="grid grid-cols-2 gap-4">
+                  <MiniStat label="Sem confirmação do cliente" value={agenda.semConfirmacaoCliente} critico />
+                  <MiniStat label="Pendentes no SGP" value={agenda.pendentesSgp} critico />
+                </div>
+                <Link to="/agenda" className="inline-flex w-fit items-center gap-1 text-sm font-medium text-primary hover:underline">
+                  Abrir a agenda <ArrowRight className="size-3.5" />
+                </Link>
+              </CardContent>
+            </Card>
+
+            <Card className="dash-top-card opacity-0">
+              <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Users className="size-4 text-muted-foreground" />
+                    Marcações por funcionário
+                  </CardTitle>
+                  <CardDescription>Quem marcou visitas no período, e quantas foram desmarcadas depois.</CardDescription>
+                </div>
+                <Select value={diasRanking} onChange={(e) => setDiasRanking(Number(e.target.value))} aria-label="Período" className="w-28 bg-secondary/40">
+                  <option value={7}>7 dias</option>
+                  <option value={30}>30 dias</option>
+                  <option value={90}>90 dias</option>
+                </Select>
+              </CardHeader>
+              <CardContent>
+                {agenda.porFuncionario.length === 0 ? (
+                  <SecaoVazia titulo="Nenhuma marcação no período" />
+                ) : (
+                  <RankedBars
+                    rotulos={{ abertas: "marcadas", concluidas: "canceladas" }}
+                    itens={agenda.porFuncionario.map((f) => ({
+                      id: `${f.marcadoPor}|${f.origem}`,
+                      nome: f.marcadoPor,
+                      abertas: f.marcadas,
+                      concluidas: f.canceladas,
+                    }))}
+                  />
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        ) : null}
 
         {/* Quem esta na rua AGORA — decide o despacho, entao vem antes dos
             recortes por provedor/categoria. */}
@@ -336,6 +406,43 @@ function MiniStat({ label, value, critico }: { label: string; value: number; cri
     <div>
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className={`mt-1 text-2xl font-semibold ${critico && value > 0 ? "text-destructive" : "text-foreground"}`}>{value}</p>
+    </div>
+  );
+}
+
+/**
+ * A semana em uma faixa: 7 dias × 2 turnos, mesmas cores da grade da Agenda.
+ * Não é interativa — o clique leva pra /agenda, onde a rota se resolve.
+ */
+function FaixaSemana({ vagas }: { vagas: VagaTurno[] }) {
+  const dias = [...new Set(vagas.map((v) => v.dia))];
+  const porJanela = new Map(vagas.map((v) => [`${v.dia}|${v.turno}`, v]));
+  return (
+    <div className="grid gap-1 text-[11px]" style={{ gridTemplateColumns: `3rem repeat(${dias.length}, minmax(0, 1fr))` }}>
+      <span />
+      {dias.map((d) => (
+        <span key={d} className="truncate text-center font-medium text-muted-foreground">
+          {rotuloDiaAgenda(d)}
+        </span>
+      ))}
+      {TURNOS_AGENDA.map((t) => (
+        <div key={t} className="contents">
+          <span className="flex items-center text-muted-foreground">{ROTULO_TURNO[t]}</span>
+          {dias.map((d) => {
+            const v = porJanela.get(`${d}|${t}`);
+            if (!v) return <span key={d} />;
+            return (
+              <span
+                key={d}
+                title={`${ROTULO_TURNO[t]} de ${rotuloDiaAgenda(d)}: ${v.ocupadas} de ${v.capacidade}, ${textoBloqueio(v)}`}
+                className={`flex h-9 items-center justify-center rounded-md border border-border font-semibold tabular-nums ${tomDaVaga(v)}`}
+              >
+                {fechadoNoCalendario(v) ? "—" : `${v.ocupadas}/${v.capacidade}`}
+              </span>
+            );
+          })}
+        </div>
+      ))}
     </div>
   );
 }

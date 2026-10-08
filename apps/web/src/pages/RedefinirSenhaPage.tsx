@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { api } from "@/lib/apiClient";
@@ -25,9 +25,15 @@ export function RedefinirSenhaPage() {
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [pronto, setPronto] = useState(false);
+  // Trava sincrona de reentrada — ver comentario no handleSubmit.
+  const enviandoRef = useRef(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    // O botao ja fica disabled={enviando}, mas isso so vale apos o re-render —
+    // um duplo-Enter/clique dispararia 2 envios antes. Esta trava e sincrona
+    // (armada so depois da validacao, pra um erro de senha nao travar retentativas).
+    if (enviandoRef.current) return;
     setErro(null);
 
     // Validação no cliente antes de gastar uma ida ao servidor — e antes de
@@ -41,6 +47,7 @@ export function RedefinirSenhaPage() {
       return;
     }
 
+    enviandoRef.current = true;
     setEnviando(true);
     try {
       await api.post("/auth/redefinir-senha", { token, novaSenha: senha });
@@ -50,6 +57,7 @@ export function RedefinirSenhaPage() {
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Não foi possível redefinir a senha.");
     } finally {
+      enviandoRef.current = false;
       setEnviando(false);
     }
   }

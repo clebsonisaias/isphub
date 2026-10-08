@@ -302,7 +302,12 @@ function useQuantosCabem(qtdItens: number, navRef: React.RefObject<HTMLElement |
   // O rAF acima precisa chamar a versao ATUAL de `recalcular`; a ref evita a
   // dependencia circular de referenciar o callback dentro dele mesmo.
   const recalcularRef = useRef(recalcular);
-  recalcularRef.current = recalcular;
+  // Escrita fora do render (regra no-ref-current-in-render): roda no commit,
+  // antes do useLayoutEffect(recalcular) abaixo, entao o rAF de retry sempre le
+  // a versao atual. Sem deps = atualiza a cada commit, igual a escrita anterior.
+  useLayoutEffect(() => {
+    recalcularRef.current = recalcular;
+  });
 
   useEffect(() => () => {
     if (retryRef.current !== null) cancelAnimationFrame(retryRef.current);

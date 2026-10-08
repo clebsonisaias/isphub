@@ -5,12 +5,14 @@ import {
   OS_STATUS_LABEL,
   PRIORIDADE_LABEL,
   STATUS_ORDEM,
+  VISITA_LABEL,
   type FilaFacetCounts,
   type FilaFacetState,
+  type VisitaFiltro,
 } from "@/lib/filaFacets";
 import { iconeCategoria } from "@/lib/categoriaIcons";
 import { CountUp } from "@/components/CountUp";
-import { LayoutList, HelpCircle, UserCheck, UserPlus } from "lucide-react";
+import { LayoutList, HelpCircle, UserCheck, UserPlus, CalendarDays, CalendarX2 } from "lucide-react";
 
 interface Props {
   filtros: FilaFacetState;
@@ -90,7 +92,8 @@ export function FilaSidebar({ filtros, facetas, provedores, categorias, mostrarP
             filtros.prioridade === "todas" &&
             filtros.categoriaId === "todas" &&
             filtros.provedorId === "todos" &&
-            filtros.tecnicoId === "todos"
+            filtros.tecnicoId === "todos" &&
+            filtros.visita === "todas"
           }
           onClick={() =>
             onChange({
@@ -99,6 +102,7 @@ export function FilaSidebar({ filtros, facetas, provedores, categorias, mostrarP
               categoriaId: "todas",
               provedorId: "todos",
               tecnicoId: "todos",
+              visita: "todas",
             })
           }
           icon={<LayoutList className="size-4 shrink-0" />}
@@ -142,6 +146,32 @@ export function FilaSidebar({ filtros, facetas, provedores, categorias, mostrarP
         {facetas.tecnicos.length === 0 && (facetas.porTecnico.get("a_despachar") ?? 0) === 0 && (
           <p className="px-3 py-1.5 text-xs text-muted-foreground">Nenhuma OS neste recorte.</p>
         )}
+      </Secao>
+
+      {/*
+        VISITA logo apos Despacho: as duas perguntas do supervisor sao "quem vai"
+        e "quando vai". "Sem visita" aparece mesmo zerado pelo mesmo motivo de
+        "A despachar" — a ausencia dela e a informacao.
+      */}
+      <Secao titulo="Visita">
+        <LinhaFiltro label={VISITA_LABEL.todas} ativo={filtros.visita === "todas"} onClick={() => onChange({ visita: "todas" })} />
+        {(["hoje", "amanha", "semana"] as VisitaFiltro[]).map((v) => (
+          <LinhaFiltro
+            key={v}
+            label={VISITA_LABEL[v]}
+            icon={<CalendarDays className="size-3.5 shrink-0 text-muted-foreground" />}
+            count={facetas.porVisita.get(v) ?? 0}
+            ativo={filtros.visita === v}
+            onClick={() => onChange({ visita: v })}
+          />
+        ))}
+        <LinhaFiltro
+          label={VISITA_LABEL.sem_visita}
+          icon={<CalendarX2 className="size-3.5 shrink-0 text-warning" />}
+          count={facetas.porVisita.get("sem_visita") ?? 0}
+          ativo={filtros.visita === "sem_visita"}
+          onClick={() => onChange({ visita: "sem_visita" })}
+        />
       </Secao>
 
       <Secao titulo="Categoria">

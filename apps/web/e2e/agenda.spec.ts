@@ -214,3 +214,90 @@ test("supervisor marca a visita pelo detalhe da OS, e ela aparece no card e na g
   const depois = await (await request.get(`${API}/fila?grupo=abertos&equipe=interna`, { headers: auth(token) })).json();
   expect(depois.itens.find((i: { sgpOsId: string }) => i.sgpOsId === "e2e-os-1").agendamentoId).toBeNull();
 });
+
+/** Rótulo "sex 10/10" como a Agenda e o Mapa escrevem um dia AAAA-MM-DD. */
+function rotuloDia(dia: string) {
+  const d = new Date(`${dia}T12:00:00Z`);
+  const DIA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+  return `${DIA[d.getUTCDay()]} ${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/** Garante que a OS do seed começa SEM visita (execuções anteriores podem ter deixado uma). */
+async function semVisita(req: APIRequestContext, token: string, sgpOsId: string) {
+  const fila = await (await req.get(`${API}/fila?grupo=abertos&equipe=interna`, { headers: auth(token) })).json();
+  const os = fila.itens.find((i: { sgpOsId: string }) => i.sgpOsId === sgpOsId);
+  if (os?.agendamentoId) await desmarcarTudo(req, token, [os.agendamentoId]);
+}
+
+test("turno vazio abre o painel, e Adicionar OS marca a visita ali mesmo", async ({ page, request }) => {
+  const token = await entrar(page);
+  await request.put(`${API}/admin/agenda`, {
+    headers: auth(token),
+    data: { vagasManha: 15, vagasTarde: 15, vagasDia: null, tetoRegiao: null, antecedenciaMin: 120 },
+  });
+  await semVisita(request, token, "e2e-os-1");
+  const alvo = await diaLivre(request, token);
+  const turnoRotulo = alvo.turno === "manha" ? "Manhã" : "Tarde";
+
+  await page.goto("/agenda");
+  const qualquerCelula = page.getByRole("button", { name: /^(Manhã|Tarde) de .*: \d+ de \d+/ });
+  await expect(qualquerCelula.first()).toBeVisible();
+  // A vaga livre pode cair na semana que vem: anda até a célula existir.
+  const celula = page.getByRole("button", { name: new RegExp(`^${turnoRotulo} de ${rotuloDia(alvo.dia)}:`) });
+  for (let i = 0; i < 3 && (await celula.count()) === 0; i++) {
+    await page.getByRole("button", { name: "Próxima semana" }).click();
+    await expect(qualquerCelula.first()).toBeVisible();
+  }
+  await expect(celula).toBeVisible();
+  // Antes um turno vazio nem abria. Agora abre, com "Adicionar OS".
+  await celula.click();
+  const painel = page.getByRole("complementary", { name: "Rota do turno" });
+  await expect(painel).toBeVisible();
+  await expect(painel.getByRole("heading", { name: /Adicionar OS neste turno/ })).toBeVisible();
+
+  await painel.getByLabel("Buscar OS sem visita").fill("Cliente E2E");
+  const linha = painel.locator("li", { hasText: "Cliente E2E" }).first();
+  await linha.getByRole("button", { name: "Marcar" }).click();
+
+  // Vira parada da rota, e some das candidatas.
+  const paradas = painel.locator("ol > li");
+  await expect(paradas.filter({ hasText: "Cliente E2E" })).toHaveCount(1);
+  await expect(painel.locator("section li", { hasText: "Cliente E2E" })).toHaveCount(0);
+
+  // Desmarcar pede confirmação: o primeiro toque só pergunta.
+  await paradas.filter({ hasText: "Cliente E2E" }).getByRole("button", { name: /^Desmarcar/ }).click();
+  await expect(painel.getByText("Desmarcar?")).toBeVisible();
+  await painel.getByRole("button", { name: "Sim" }).click();
+  await expect(paradas.filter({ hasText: "Cliente E2E" })).toHaveCount(0);
+});
+
+test("a Fila agrupa por visita e o card mostra o dia e o turno da agenda", async ({ page, request }) => {
+  const token = await entrar(page);
+  await semVisita(request, token, "e2e-os-1");
+  const alvo = await diaLivre(request, token);
+  const provedorId = (await (await request.get(`${API}/provedores`, { headers: auth(token) })).json())[0].id;
+  const marcado = await (
+    await request.post(`${API}/agenda`, {
+      headers: auth(token),
+      data: { provedorId, sgpOsId: "e2e-os-1", dia: alvo.dia, turno: alvo.turno, regiao: "Centro" },
+    })
+  ).json();
+
+  // Ordenação e filtros ficam na URL: a tela abre já "por visita".
+  await page.goto("/?ord=visita");
+  const turnoRotulo = alvo.turno === "manha" ? "Manhã" : "Tarde";
+  // Cabeçalho da seção: "Hoje · Manhã", "Amanhã · Tarde" ou "sex 10/10 · Manhã".
+  await expect(page.getByText(new RegExp(`(Hoje|Amanhã|${rotuloDia(alvo.dia)}) · ${turnoRotulo}`)).first()).toBeVisible();
+  const card = page.getByRole("button", { name: /Cliente E2E/ }).first();
+  await expect(card).toContainText("Visita");
+  await expect(card).toContainText(rotuloDia(alvo.dia));
+  await expect(card).toContainText(turnoRotulo);
+
+  // Faceta "Sem visita" esconde a marcada; o chip aparece e a URL carrega o filtro.
+  await page.getByRole("button", { name: /^Sem visita/ }).first().click();
+  await expect(page).toHaveURL(/visita=sem_visita/);
+  await expect(page.getByRole("button", { name: /Cliente E2E/ })).toHaveCount(0);
+  await expect(page.getByText("Visita: Sem visita")).toBeVisible();
+
+  await desmarcarTudo(request, token, [marcado.id]);
+});

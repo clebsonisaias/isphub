@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertCircle, ArrowLeft, Loader2, MailCheck } from "lucide-react";
 import { api } from "@/lib/apiClient";
@@ -20,9 +20,15 @@ export function RecuperarSenhaPage() {
   const [enviando, setEnviando] = useState(false);
   const [enviado, setEnviado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  // Trava sincrona de reentrada — ver comentario no handleSubmit.
+  const enviandoRef = useRef(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    // O botao ja fica disabled={enviando}, mas isso so vale apos o re-render —
+    // um duplo-Enter/clique dispararia 2 envios antes. Esta trava e sincrona.
+    if (enviandoRef.current) return;
+    enviandoRef.current = true;
     setErro(null);
     setEnviando(true);
     try {
@@ -33,6 +39,7 @@ export function RecuperarSenhaPage() {
       // existe", que a API trata como sucesso.
       setErro(err instanceof Error ? err.message : "Não foi possível enviar agora. Tente novamente.");
     } finally {
+      enviandoRef.current = false;
       setEnviando(false);
     }
   }

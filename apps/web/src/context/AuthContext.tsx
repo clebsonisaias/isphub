@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { UsuarioPublic } from "@isphub/shared";
 import {
   api,
@@ -67,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void restaurarSessao();
   }, []);
 
-  async function login(email: string, senha: string) {
+  const login = useCallback(async (email: string, senha: string) => {
     const resp = await api.post<{ token: string; refreshToken: string; usuario: UsuarioPublic }>(
       "/auth/login",
       { email, senha },
@@ -75,9 +75,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthToken(resp.token);
     setRefreshToken(resp.refreshToken);
     setUsuario(resp.usuario);
-  }
+  }, []);
 
-  async function logout() {
+  const logout = useCallback(async () => {
     // Encerra a sessao NO SERVIDOR antes de esquecer o token: ate agora logout
     // era so descartar do lado do cliente, e o refresh continuava valendo.
     const refresh = getRefreshToken();
@@ -88,27 +88,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Best-effort: sair da conta nao pode falhar porque a rede caiu.
       await api.post("/auth/logout", { refreshToken: refresh }).catch(() => {});
     }
-  }
+  }, []);
 
   /** "Sair de todos os dispositivos" — derruba tambem as outras sessoes. */
-  async function sairDeTodos() {
+  const sairDeTodos = useCallback(async () => {
     await api.post("/auth/sair-de-todos");
     setAuthToken(null);
     setRefreshToken(null);
     setUsuario(null);
-  }
+  }, []);
 
-  async function refetchMe() {
+  const refetchMe = useCallback(async () => {
     if (!getAuthToken()) return;
     const me = await api.get<UsuarioPublic>("/auth/me");
     setUsuario(me);
-  }
+  }, []);
 
-  return (
-    <AuthContext.Provider value={{ usuario, carregando, login, logout, sairDeTodos, refetchMe }}>
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo(
+    () => ({ usuario, carregando, login, logout, sairDeTodos, refetchMe }),
+    [usuario, carregando, login, logout, sairDeTodos, refetchMe],
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

@@ -6,6 +6,9 @@ import {
   OsPrioridade,
   OsStatus,
   PAPEL_OCUPACAO_ROTULO,
+  ROTULO_TURNO,
+  TURNOS_AGENDA,
+  diaBrHoje,
   filtroDoDia,
   formatarDuracao,
   formatarTrabalhado,
@@ -33,7 +36,7 @@ import {
 import { colors, font, space } from "@/theme/tokens";
 import { Avatar, useAvatarUri } from "@/features/chat/avatar";
 import { FilaCard } from "@/features/minhas-os/fila-card";
-import { maisRecentesPrimeiro, ordenarPorHorario, ordenarSlaFirst } from "@/features/minhas-os/sla";
+import { agruparPorTurno, escolherProxima, maisRecentesPrimeiro, ordenarSlaFirst } from "@/features/minhas-os/sla";
 import { abrirNoWaze } from "@/features/minhas-os/navegacao";
 import { useEscalaDoDia, useJornada, useMinhaViatura, useRelogioServidor } from "@/features/jornada/api";
 import { FolhaViatura, type EscolhaViatura } from "@/features/jornada/viatura";
@@ -81,12 +84,27 @@ export default function MinhasOs() {
     queryFn: () => apiFetch<FilaResp>(`/fila${buildFilaQuery({ equipe: "interna", grupo })}`, { token }),
   });
 
-  const agenda = useQuery({
-    queryKey: ["fila", "agenda-dia", dia.de],
+  /*
+   * A agenda do dia le a AGENDA ISPHUB (`diaAgenda`): visita marcada no painel
+   * aparece aqui no mesmo instante, sem esperar o write-back nem o sync. A
+   * consulta antiga, pela data do SGP, fica como fallback so quando a agenda
+   * vem vazia — provedor que ainda agenda direto no SGP continua enxergando.
+   */
+  const hojeBr = diaBrHoje();
+  const agendaIsphub = useQuery({
+    queryKey: ["fila", "agenda-isphub", hojeBr],
     enabled: !!token,
+    queryFn: () => apiFetch<FilaResp>(`/fila${buildFilaQuery({ equipe: "interna", diaAgenda: hojeBr })}`, { token }),
+  });
+  const agendaSgp = useQuery({
+    queryKey: ["fila", "agenda-dia", dia.de],
+    enabled: !!token && agendaIsphub.isSuccess && agendaIsphub.data.itens.length === 0,
     queryFn: () =>
       apiFetch<FilaResp>(`/fila${buildFilaQuery({ equipe: "interna", de: dia.de, ate: dia.ate })}`, { token }),
   });
+  const agendaItens = agendaIsphub.data?.itens.length ? agendaIsphub.data.itens : (agendaSgp.data?.itens ?? []);
+  const agendaCarregando = agendaIsphub.isLoading || agendaSgp.isLoading;
+  const pelaAgendaIsphub = (agendaIsphub.data?.itens.length ?? 0) > 0;
 
   // O resumo vem do servidor porque a fila aberta nao sabe de OS concluida —
   // o app contava so o que enxergava, e concluir uma OS nao mexia no numero.
@@ -141,10 +159,11 @@ export default function MinhasOs() {
   const primeiroNome = ((usuario?.nomeExibicao || usuario?.nome) ?? "").trim().split(/\s+/)[0];
 
   /*
-   * A proxima parada e a mais urgente, nao a primeira da agenda: `ordenarSlaFirst`
-   * ja poe estourado na frente, e quem esta atrasado nao espera o horario.
+   * A proxima parada segue a ROTA do dia quando o supervisor a definiu; so sem
+   * agenda e que a urgencia por SLA decide (ver `escolherProxima`).
    */
-  const proxima = itens[0];
+  const proxima = escolherProxima(itens, agendaItens);
+  const porTurno = agruparPorTurno(agendaItens);
 
   const m = resumo.data;
   const naFila = fila.data?.total ?? itens.length;
@@ -162,7 +181,7 @@ export default function MinhasOs() {
       // Best-effort: o sync pode estar em rate-limit; as listas recarregam de
       // qualquer jeito pra tela nunca ficar presa num estado velho.
       await apiFetch("/sync/minhas-os", { method: "POST", token }).catch(() => {});
-      await Promise.all([fila.refetch(), agenda.refetch(), resumo.refetch()]);
+      await Promise.all([fila.refetch(), agendaIsphub.refetch(), agendaSgp.isSuccess ? agendaSgp.refetch() : undefined, resumo.refetch()]);
     } finally {
       setSincronizando(false);
     }
@@ -296,29 +315,42 @@ export default function MinhasOs() {
           <Secao
             titulo="Agenda do dia"
             acao={
-              agenda.data?.itens.length ? (
-                <Text style={styles.secaoContagem}>{agenda.data.itens.length} paradas</Text>
+              agendaItens.length ? (
+                <Text style={styles.secaoContagem}>
+                  {agendaItens.length} {agendaItens.length === 1 ? "parada" : "paradas"}
+                </Text>
               ) : undefined
             }
           >
             <Card style={{ paddingHorizontal: space.sm, paddingVertical: space.sm }}>
-              {agenda.isLoading ? (
+              {agendaCarregando ? (
                 <ActivityIndicator color={colors.brand} style={{ marginVertical: space.md }} />
-              ) : agenda.data?.itens.length ? (
-                ordenarPorHorario(agenda.data.itens).map((os, i, arr) => (
-                  <LinhaAgenda
-                    key={os.id}
-                    horario={os.dataAgendamento ? hora(os.dataAgendamento) : "--:--"}
-                    titulo={`OS #${os.sgpOsId}${os.tipoDescricao ? ` — ${os.tipoDescricao}` : ""}`}
-                    estado={estadoDaAgenda(os, proxima?.id)}
-                    rotulo={rotuloDaAgenda(os, proxima?.id)}
-                    onPress={() => router.push(`/minhas-os/${os.id}`)}
-                    ultimo={i === arr.length - 1}
-                  />
+              ) : agendaItens.length ? (
+                TURNOS_AGENDA.filter((t) => porTurno[t].length > 0).map((t) => (
+                  <View key={t} style={{ gap: 2 }}>
+                    <Text style={styles.turnoTitulo}>{ROTULO_TURNO[t]}</Text>
+                    {porTurno[t].map((os, i, arr) => (
+                      <LinhaAgenda
+                        key={os.id}
+                        // Com rota, a coluna da esquerda e a PARADA ("3ª"); sem rota, a hora do SGP.
+                        horario={os.ordemRota != null ? `${os.ordemRota}ª` : os.dataAgendamento ? hora(os.dataAgendamento) : "--:--"}
+                        titulo={`OS #${os.sgpOsId}${os.categoria?.nome ? ` — ${os.categoria.nome}` : os.tipoDescricao ? ` — ${os.tipoDescricao}` : ""}`}
+                        estado={estadoDaAgenda(os, proxima?.id)}
+                        rotulo={rotuloDaAgenda(os, proxima?.id)}
+                        onPress={() => router.push(`/minhas-os/${os.id}`)}
+                        ultimo={i === arr.length - 1}
+                      />
+                    ))}
+                  </View>
                 ))
               ) : (
-                <Muted style={{ padding: space.sm }}>Nenhuma OS agendada para hoje.</Muted>
+                <Muted style={{ padding: space.sm }}>Nenhuma visita marcada para hoje.</Muted>
               )}
+              {!agendaCarregando && agendaItens.length > 0 && !pelaAgendaIsphub ? (
+                <Muted style={{ paddingHorizontal: space.sm, paddingTop: space.xs, fontSize: 11 }}>
+                  Pela data do SGP — nenhuma visita marcada na agenda ISPhub hoje.
+                </Muted>
+              ) : null}
             </Card>
           </Secao>
 
@@ -411,6 +443,15 @@ function rotuloDaAgenda(os: FilaItem, proximaId?: string): string {
 
 const styles = StyleSheet.create({
   corpo: { paddingBottom: space.xxl },
+  turnoTitulo: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    paddingHorizontal: space.sm,
+    paddingTop: space.xs,
+  },
   heroWrap: { paddingHorizontal: space.lg, paddingTop: space.sm },
   conteudo: { paddingHorizontal: space.lg, marginTop: -space.xl, gap: space.xl },
   kpis: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },

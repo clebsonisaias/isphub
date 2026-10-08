@@ -1,4 +1,4 @@
-import type { FilaItem, SlaInfo } from "@isphub/shared";
+import { OS_STATUS_ABERTOS, compararVisita, type FilaItem, type SlaInfo, type TurnoAgenda } from "@isphub/shared";
 
 /** "45min" · "3h 15min" · "2d 4h" a partir de minutos. */
 export function fmtDuracao(min: number): string {
@@ -79,4 +79,41 @@ export function ordenarPorHorario(itens: FilaItem[]): FilaItem[] {
       rota(a) - rota(b) ||
       instante(a.dataAgendamento, Number.POSITIVE_INFINITY) - instante(b.dataAgendamento, Number.POSITIVE_INFINITY),
   );
+}
+
+/**
+ * A agenda do dia em duas metades. Quem esta na agenda ISPhub tem turno; o
+ * que veio so com a data do SGP (fallback) cai pela hora: antes do meio-dia e
+ * manha. Dentro de cada turno vale a rota do supervisor, depois a hora.
+ */
+export function agruparPorTurno(itens: FilaItem[]): Record<TurnoAgenda, FilaItem[]> {
+  const grupos: Record<TurnoAgenda, FilaItem[]> = { manha: [], tarde: [] };
+  for (const i of itens) {
+    const turno = i.turnoAgenda ?? turnoPelaHora(i.dataAgendamento);
+    grupos[turno].push(i);
+  }
+  grupos.manha = ordenarPorHorario(grupos.manha);
+  grupos.tarde = ordenarPorHorario(grupos.tarde);
+  return grupos;
+}
+
+function turnoPelaHora(iso: string | null | undefined): TurnoAgenda {
+  const t = iso ? Date.parse(iso) : Number.NaN;
+  if (Number.isNaN(t)) return "manha";
+  // -03:00 fixo, a mesma regra do servidor (`turnoBrDe`).
+  const horaBr = (new Date(t).getUTCHours() + 24 - 3) % 24;
+  return horaBr < 12 ? "manha" : "tarde";
+}
+
+/**
+ * Qual OS o tecnico ataca agora. A ROTA do dia manda quando existe: o
+ * supervisor sequenciou as paradas, e pular pra "mais urgente por SLA"
+ * devolveria o zigue-zague que a rota existe pra evitar. Sem agenda (ou tudo
+ * dela ja concluido), vale o SLA sobre a fila aberta.
+ */
+export function escolherProxima(abertas: FilaItem[], agendaHoje: FilaItem[]): FilaItem | undefined {
+  const daRota = [...agendaHoje]
+    .filter((i) => OS_STATUS_ABERTOS.includes(i.status))
+    .sort((a, b) => compararVisita(a, b) || ordenarPorHorario([a, b])[0] === a ? -1 : 1);
+  return daRota[0] ?? ordenarSlaFirst(abertas)[0];
 }

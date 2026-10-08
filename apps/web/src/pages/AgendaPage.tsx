@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowDown, ArrowUp, CalendarDays, CalendarOff, CheckCircle2, CloudOff, MapPin, Phone, RefreshCw, Settings2, Trash2, X } from "lucide-react";
-import { ROTULO_TURNO, TURNOS_AGENDA, type AgendaConfigDto, type TurnoAgenda, type VagaTurno } from "@isphub/shared";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AlertTriangle, ArrowDown, ArrowUp, CalendarDays, CalendarOff, CalendarPlus, CheckCircle2, ChevronLeft, ChevronRight, CloudOff, MapPin, Phone, RefreshCw, Search, Settings2, Trash2, X } from "lucide-react";
+import { ROTULO_TURNO, TURNOS_AGENDA, diaBrHoje, inicioDaSemana, somarDias, type AgendaConfigDto, type FilaItem, type TurnoAgenda, type VagaTurno } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
 import { AnimatedPage } from "@/components/AnimatedPage";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/context/ToastContext";
-import { ordensServicoApi, tecnicosApi, type TecnicoResumo } from "@/lib/filaApi";
-import { agendaApi, type ExcecaoAgenda, type GradeResposta, type ParadaAgenda } from "@/lib/agendaApi";
+import { filaApi, ordensServicoApi, tecnicosApi, type TecnicoResumo } from "@/lib/filaApi";
+import { Input } from "@/components/ui/input";
+import { fechadoNoCalendario, textoBloqueio, tomDaVaga } from "@/lib/agendaUi";
+import { ApiError } from "@/lib/apiClient";
+import { agendaApi, rotuloDiaAgenda, type ExcecaoAgenda, type GradeResposta, type ParadaAgenda } from "@/lib/agendaApi";
 
 /**
  * A AGENDA — a planilha de agendamento de OS, inteira, numa página.
@@ -23,48 +27,15 @@ import { agendaApi, type ExcecaoAgenda, type GradeResposta, type ParadaAgenda } 
  * remaneja — que é o momento em que as duas perguntas são a mesma.
  */
 
-const DIA_SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+const rotuloDia = rotuloDiaAgenda;
 
-function rotuloDia(dia: string) {
-  const d = new Date(`${dia}T12:00:00Z`);
-  return `${DIA_SEMANA[d.getUTCDay()]} ${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+/** Os 7 dias (seg–dom) da semana que começa em `segunda`. Domingo entra cinza: o dia existe, só não atende. */
+function diasDaSemana(segunda: string): string[] {
+  return Array.from({ length: 7 }, (_, i) => somarDias(segunda, i));
 }
 
-/** Cor da célula. Só a urgência recebe cor — o resto fica neutro. */
-function tomDaVaga(v: VagaTurno) {
-  // Feriado é neutro, não vermelho: nada deu errado, o dia só não existe.
-  if (v.bloqueio === "feriado") return "bg-muted/40 text-muted-foreground";
-  if (v.bloqueio === "dia_nao_atendido") return "bg-muted/40 text-muted-foreground";
-  if (v.bloqueio === "turno_nao_atendido") return "bg-muted/40 text-muted-foreground";
-  if (v.bloqueio === "antecedencia") return "bg-muted/40 text-muted-foreground";
-  if (v.bloqueio) return "bg-destructive/15 text-destructive";
-  if (v.livres <= 3) return "bg-amber-500/15 text-amber-700 dark:text-amber-400";
-  return "bg-background";
-}
-
-function textoBloqueio(v: VagaTurno) {
-  switch (v.bloqueio) {
-    case "lotado":
-      return "Turno lotado";
-    case "dia_lotado":
-      // Não diz "turno": o dia inteiro fechou, e mandar tentar o outro turno
-      // do mesmo dia só produziria a mesma recusa de novo.
-      return "Dia lotado";
-    case "regiao":
-      return "Limite da região";
-    case "feriado":
-      // O motivo, não a palavra "feriado": um dia que some sem explicação vira
-      // pergunta interna sobre por que sumiu.
-      return v.motivoBloqueio ?? "Feriado";
-    case "dia_nao_atendido":
-      return "Sem atendimento";
-    case "turno_nao_atendido":
-      return "Só manhã";
-    case "antecedencia":
-      return "Prazo curto";
-    default:
-      return `${v.livres} livre${v.livres === 1 ? "" : "s"}`;
-  }
+function mensagem(err: unknown): string {
+  return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
 }
 
 export function AgendaPage() {
@@ -77,17 +48,27 @@ export function AgendaPage() {
   const [tecnicos, setTecnicos] = useState<TecnicoResumo[]>([]);
   const [salvando, setSalvando] = useState(false);
   const [editandoLimites, setEditandoLimites] = useState(false);
+  const hoje = diaBrHoje();
+  // A semana em tela, pela segunda-feira. Começa na de hoje; ‹ › andam de 7 em 7.
+  const [semana, setSemana] = useState(() => inicioDaSemana(hoje));
+  // Desmarcar em dois toques: o primeiro só pergunta. Um por vez.
+  const [confirmandoId, setConfirmandoId] = useState<string | null>(null);
+  // "Adicionar OS": o lote de OS abertas sem visita, carregado uma vez por painel.
+  const [candidatas, setCandidatas] = useState<FilaItem[] | null>(null);
+  const [buscaOs, setBuscaOs] = useState("");
+  const [marcandoId, setMarcandoId] = useState<string | null>(null);
+  const shouldReduceMotion = useReducedMotion();
 
   const carregarGrade = useCallback(async () => {
     setCarregando(true);
     try {
-      setGrade(await agendaApi.grade());
+      setGrade(await agendaApi.grade({ de: semana, ate: somarDias(semana, 6) }));
     } catch {
       toast({ variante: "erro", titulo: "Não foi possível carregar a agenda." });
     } finally {
       setCarregando(false);
     }
-  }, [toast]);
+  }, [toast, semana]);
 
   useEffect(() => {
     void carregarGrade();
@@ -110,19 +91,63 @@ export function AgendaPage() {
 
   function abrir(dia: string, turno: TurnoAgenda) {
     setJanela({ dia, turno });
+    setConfirmandoId(null);
     void carregarParadas(dia, turno);
+    // As candidatas valem pra qualquer janela; buscar uma vez por painel aberto.
+    if (candidatas === null) {
+      filaApi
+        .listar({ grupo: "abertos", equipe: "interna" })
+        .then((r) => setCandidatas(r.itens))
+        .catch(() => setCandidatas([]));
+    }
   }
 
-  /** A grade agrupada por dia — a aba "Painel" da planilha. */
-  const porDia = useMemo(() => {
-    const mapa = new Map<string, Partial<Record<TurnoAgenda, VagaTurno>>>();
-    for (const v of grade?.vagas ?? []) {
-      const linha = mapa.get(v.dia) ?? {};
-      linha[v.turno] = v;
-      mapa.set(v.dia, linha);
-    }
-    return [...mapa.entries()];
+  /** `vagas` por `dia|turno`, pra montar a grade seg–sáb × manhã/tarde. */
+  const porJanela = useMemo(() => {
+    const mapa = new Map<string, VagaTurno>();
+    for (const v of grade?.vagas ?? []) mapa.set(`${v.dia}|${v.turno}`, v);
+    return mapa;
   }, [grade]);
+  const dias = diasDaSemana(semana);
+
+  /** OS abertas ainda sem visita, filtradas pela busca — o que dá pra marcar neste turno. */
+  const candidatasVisiveis = useMemo(() => {
+    const q = buscaOs.trim().toLowerCase();
+    return (candidatas ?? [])
+      .filter((i) => !i.diaAgenda)
+      .filter(
+        (i) =>
+          !q ||
+          (i.clienteNome ?? "").toLowerCase().includes(q) ||
+          (i.protocolo ?? "").toLowerCase().includes(q) ||
+          (i.contratoId ?? "").toLowerCase().includes(q) ||
+          i.sgpOsId.toLowerCase().includes(q),
+      )
+      .slice(0, 30);
+  }, [candidatas, buscaOs]);
+
+  async function marcarNaJanela(item: FilaItem) {
+    if (!janela) return;
+    setMarcandoId(item.id);
+    try {
+      await agendaApi.marcar({
+        provedorId: item.provedorId,
+        sgpOsId: item.sgpOsId,
+        dia: janela.dia,
+        turno: janela.turno,
+        regiao: item.pop ?? item.endereco?.bairro ?? null,
+      });
+      setCandidatas((atual) => atual?.map((c) => (c.id === item.id ? { ...c, diaAgenda: janela.dia, turnoAgenda: janela.turno } : c)) ?? null);
+      await Promise.all([carregarParadas(janela.dia, janela.turno), carregarGrade()]);
+      toast({ variante: "sucesso", titulo: "Visita marcada", descricao: `${item.clienteNome ?? `OS ${item.sgpOsId}`} · ${rotuloDia(janela.dia)}, ${ROTULO_TURNO[janela.turno]}` });
+    } catch (e) {
+      // 409 chega com o motivo do servidor ("Turno lotado", "Sábado só tem...").
+      toast({ variante: "erro", titulo: "Não deu para marcar", descricao: mensagem(e) });
+      void carregarGrade();
+    } finally {
+      setMarcandoId(null);
+    }
+  }
 
   /**
    * Move uma parada e grava a rota inteira.
@@ -160,8 +185,10 @@ export function AgendaPage() {
 
   async function desmarcar(parada: ParadaAgenda) {
     if (!janela) return;
+    setConfirmandoId(null);
     try {
       await agendaApi.desmarcar(parada.id);
+      setCandidatas(null); // a OS volta a ser candidata; recarrega na próxima abertura
       await Promise.all([carregarParadas(janela.dia, janela.turno), carregarGrade()]);
       toast({ variante: "sucesso", titulo: "Visita desmarcada. A vaga voltou pra grade." });
     } catch {
@@ -182,6 +209,35 @@ export function AgendaPage() {
                 Onde ainda cabe, e em que ordem visitar. Instalação e reparo dividem o mesmo teto — são os mesmos
                 técnicos.
               </p>
+            </div>
+            <div className="flex items-center gap-1 rounded-md border border-border bg-card p-0.5 text-sm">
+              <button
+                type="button"
+                onClick={() => setSemana((s) => somarDias(s, -7))}
+                aria-label="Semana anterior"
+                className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <ChevronLeft className="size-4" aria-hidden />
+              </button>
+              <button
+                type="button"
+                onClick={() => setSemana(inicioDaSemana(hoje))}
+                disabled={semana === inicioDaSemana(hoje)}
+                className="rounded px-2 py-1 text-xs font-medium hover:bg-muted disabled:text-muted-foreground disabled:hover:bg-transparent"
+              >
+                Hoje
+              </button>
+              <span className="min-w-28 text-center text-xs tabular-nums text-muted-foreground">
+                {rotuloDia(dias[0])} – {rotuloDia(dias[6])}
+              </span>
+              <button
+                type="button"
+                onClick={() => setSemana((s) => somarDias(s, 7))}
+                aria-label="Próxima semana"
+                className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <ChevronRight className="size-4" aria-hidden />
+              </button>
             </div>
             {config ? (
               <button
@@ -206,50 +262,74 @@ export function AgendaPage() {
                   ))}
                 </div>
               ) : (
-                <ul className="divide-y divide-border">
-                  {porDia.map(([dia, turnos]) => (
-                    <li key={dia} className="flex flex-wrap items-center gap-2 px-4 py-2">
-                      <span className="w-24 shrink-0 text-sm font-medium tabular-nums">{rotuloDia(dia)}</span>
-                      {TURNOS_AGENDA.map((t) => {
-                        const v = turnos[t];
-                        if (!v) return null;
-                        const clicavel = v.bloqueio !== "dia_nao_atendido" && v.ocupadas > 0;
-                        return (
-                          <button
-                            key={t}
-                            type="button"
-                            disabled={!clicavel}
-                            onClick={() => abrir(dia, t)}
-                            aria-label={`${ROTULO_TURNO[t]} de ${rotuloDia(dia)}: ${v.ocupadas} de ${v.capacidade}, ${textoBloqueio(v)}`}
-                            className={`flex min-w-40 flex-1 items-center justify-between gap-2 rounded-md border border-border px-3 py-2 text-left text-sm transition ${tomDaVaga(v)} ${clicavel ? "hover:border-foreground/30" : "cursor-default"}`}
-                          >
-                            <span className="flex items-center gap-2">
-                              <span className="text-xs text-muted-foreground">{ROTULO_TURNO[t]}</span>
-                              <span className="tabular-nums font-medium">
-                                {v.ocupadas}/{v.capacidade}
+                <div className="overflow-x-auto">
+                  <div
+                    className="grid min-w-[720px] gap-1.5 p-3"
+                    style={{ gridTemplateColumns: "4.5rem repeat(7, minmax(0, 1fr))" }}
+                  >
+                    <span />
+                    {dias.map((dia) => {
+                      const ehHoje = dia === hoje;
+                      return (
+                        <div
+                          key={dia}
+                          className={`rounded-md px-2 py-1 text-center text-xs font-semibold tabular-nums ${ehHoje ? "bg-primary/10 text-primary" : dia < hoje ? "text-muted-foreground/60" : "text-muted-foreground"}`}
+                        >
+                          {rotuloDia(dia)}
+                          {ehHoje ? <span className="ml-1 text-[10px] font-normal uppercase">hoje</span> : null}
+                        </div>
+                      );
+                    })}
+                    {TURNOS_AGENDA.map((t) => (
+                      <div key={t} className="contents">
+                        <span className="flex items-center text-xs font-medium text-muted-foreground">{ROTULO_TURNO[t]}</span>
+                        {dias.map((dia) => {
+                          const v = porJanela.get(`${dia}|${t}`);
+                          if (!v) return <span key={dia} />;
+                          // Todo turno que EXISTE abre: vazio também — é onde se
+                          // marca. Só o que o calendário fechou fica inerte.
+                          const clicavel = !fechadoNoCalendario(v);
+                          const ativo = janela?.dia === dia && janela.turno === t;
+                          const pct = v.capacidade > 0 ? Math.min(100, Math.round((v.ocupadas / v.capacidade) * 100)) : 0;
+                          return (
+                            <button
+                              key={dia}
+                              type="button"
+                              disabled={!clicavel}
+                              onClick={() => abrir(dia, t)}
+                              aria-label={`${ROTULO_TURNO[t]} de ${rotuloDia(dia)}: ${v.ocupadas} de ${v.capacidade}, ${textoBloqueio(v)}`}
+                              className={`flex min-h-[4.5rem] flex-col justify-between gap-1 rounded-md border px-2.5 py-2 text-left text-sm transition ${tomDaVaga(v)} ${
+                                ativo ? "border-primary ring-2 ring-primary/30" : "border-border"
+                              } ${clicavel ? "hover:border-foreground/30" : "cursor-default opacity-80"}`}
+                            >
+                              <span className="flex items-center justify-between gap-1">
+                                <span className="text-base font-semibold tabular-nums">
+                                  {fechadoNoCalendario(v) ? "—" : `${v.ocupadas}/${v.capacidade}`}
+                                </span>
+                                {v.bloqueio && !fechadoNoCalendario(v) && v.bloqueio !== "antecedencia" ? (
+                                  <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
+                                ) : null}
                               </span>
-                              {/* A planilha tinha uma aba pra cada tipo; aqui é uma linha só. */}
-                              {v.ocupadas > 0 ? (
-                                <span className="text-xs text-muted-foreground">
-                                  {v.instalacao} inst · {v.reparo} rep
+                              {!fechadoNoCalendario(v) ? (
+                                <span className="block h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
+                                  <span className="block h-full rounded-full bg-current opacity-70" style={{ width: `${pct}%` }} />
                                 </span>
                               ) : null}
-                            </span>
-                            <span className="flex items-center gap-1 text-xs">
-                              {v.bloqueio &&
-                              v.bloqueio !== "dia_nao_atendido" &&
-                              v.bloqueio !== "feriado" &&
-                              v.bloqueio !== "antecedencia" ? (
-                                <AlertTriangle className="size-3.5" aria-hidden />
-                              ) : null}
-                              {textoBloqueio(v)}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </li>
-                  ))}
-                </ul>
+                              <span className="flex items-center justify-between gap-1 text-[11px] leading-tight">
+                                <span className="truncate">{textoBloqueio(v)}</span>
+                                {v.ocupadas > 0 ? (
+                                  <span className="shrink-0 text-muted-foreground">
+                                    {v.instalacao}i · {v.reparo}r
+                                  </span>
+                                ) : null}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -267,9 +347,18 @@ export function AgendaPage() {
             />
           ) : null}
 
-          {janela ? (
-            <Card>
-              <CardContent className="p-0">
+          <AnimatePresence>
+            {janela ? (
+              <motion.aside
+                key="rota"
+                initial={shouldReduceMotion ? false : { x: 32, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={shouldReduceMotion ? undefined : { x: 32, opacity: 0 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+                aria-label="Rota do turno"
+                className="fixed inset-y-0 right-0 z-40 flex w-full flex-col overflow-y-auto border-l border-border bg-background shadow-2xl sm:max-w-md"
+              >
+
                 <header className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
                   <div className="flex items-center gap-2">
                     <CalendarDays className="size-4 text-muted-foreground" aria-hidden />
@@ -379,7 +468,13 @@ export function AgendaPage() {
                               ) : null}
                             </p>
                             <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-                              <span>{os?.tipoOs?.descricao ?? "—"}</span>
+                              {/* A categoria ISPhub, como na Fila; o texto cru do SGP só se não houver. */}
+                              <span
+                                className="font-medium"
+                                style={os?.tipoOs?.categoria ? { color: os.tipoOs.categoria.cor } : undefined}
+                              >
+                                {os?.tipoOs?.categoria?.nome ?? os?.tipoOs?.descricao ?? "—"}
+                              </span>
                               {os?.bairro || os?.pop ? (
                                 <span className="inline-flex items-center gap-1">
                                   <MapPin className="size-3" aria-hidden />
@@ -411,22 +506,101 @@ export function AgendaPage() {
                             ))}
                           </select>
 
-                          <button
-                            type="button"
-                            onClick={() => void desmarcar(p)}
-                            aria-label={`Desmarcar ${os?.clienteNome ?? p.sgpOsId}`}
-                            className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-destructive"
-                          >
-                            Desmarcar
-                          </button>
+                          {confirmandoId === p.id ? (
+                            <span className="flex items-center gap-1 text-xs">
+                              <span className="text-muted-foreground">Desmarcar?</span>
+                              <button
+                                type="button"
+                                onClick={() => void desmarcar(p)}
+                                className="rounded-md bg-destructive px-2 py-1 font-medium text-destructive-foreground hover:opacity-90"
+                              >
+                                Sim
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmandoId(null)}
+                                className="rounded-md px-2 py-1 text-muted-foreground hover:bg-muted"
+                              >
+                                Não
+                              </button>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmandoId(p.id)}
+                              aria-label={`Desmarcar ${os?.clienteNome ?? p.sgpOsId}`}
+                              className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-destructive"
+                            >
+                              Desmarcar
+                            </button>
+                          )}
                         </li>
                       );
                     })}
                   </ol>
                 )}
-              </CardContent>
-            </Card>
-          ) : null}
+              
+                <section className="border-t border-border">
+                  <header className="flex items-center gap-2 px-4 pb-2 pt-3">
+                    <CalendarPlus className="size-4 text-muted-foreground" aria-hidden />
+                    <h3 className="text-sm font-semibold">Adicionar OS neste turno</h3>
+                    {candidatas ? (
+                      <span className="text-xs text-muted-foreground">
+                        {candidatas.filter((c) => !c.diaAgenda).length} sem visita
+                      </span>
+                    ) : null}
+                  </header>
+                  <div className="px-4 pb-3">
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+                      <Input
+                        value={buscaOs}
+                        onChange={(e) => setBuscaOs(e.target.value)}
+                        placeholder="Cliente, protocolo, contrato ou nº da OS"
+                        aria-label="Buscar OS sem visita"
+                        className="pl-8"
+                      />
+                    </div>
+                  </div>
+                  {candidatas === null ? (
+                    <div className="flex flex-col gap-2 px-4 pb-4">
+                      {[0, 1, 2].map((i) => (
+                        <Skeleton key={i} className="h-10 w-full" />
+                      ))}
+                    </div>
+                  ) : candidatasVisiveis.length === 0 ? (
+                    <p className="px-4 pb-4 text-sm text-muted-foreground">
+                      {buscaOs ? "Nenhuma OS sem visita com esse texto." : "Todas as OS abertas já têm visita marcada."}
+                    </p>
+                  ) : (
+                    <ul className="divide-y divide-border">
+                      {candidatasVisiveis.map((c) => (
+                        <li key={c.id} className="flex items-center gap-3 px-4 py-2">
+                          <span className="size-2 shrink-0 rounded-full" style={{ background: c.provedor.cor }} aria-hidden />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium">{c.clienteNome ?? `OS ${c.sgpOsId}`}</p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              OS #{c.sgpOsId}
+                              {c.categoria ? ` · ${c.categoria.nome}` : ""}
+                              {c.endereco?.bairro || c.pop ? ` · ${c.endereco?.bairro ?? c.pop}` : ""}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={marcandoId !== null}
+                            onClick={() => void marcarNaJanela(c)}
+                            className="rounded-md border border-primary/40 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50"
+                          >
+                            {marcandoId === c.id ? "Marcando…" : "Marcar"}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              </motion.aside>
+            ) : null}
+          </AnimatePresence>
         </div>
       </AnimatedPage>
     </AppShell>
