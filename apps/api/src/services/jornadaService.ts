@@ -272,7 +272,7 @@ export async function trocarViatura(
  * e o ESTADO (nao ha turno aberto pra fechar). Normalmente significa que o
  * tecnico tocou duas vezes, entao a mensagem fala a lingua dele.
  */
-export async function encerrarJornada(usuarioId: string, geo: Geo = {}): Promise<Jornada> {
+export async function encerrarJornada(usuarioId: string, geo: Geo = {}, odometro?: number | null): Promise<Jornada> {
   const aberta = await prisma.jornadaTecnico.findFirst({
     where: { usuarioId, fimEm: null },
     orderBy: { inicioEm: "desc" },
@@ -290,7 +290,9 @@ export async function encerrarJornada(usuarioId: string, geo: Geo = {}): Promise
     // Encerrar o turno fecha a ocupacao junto: ninguem continua "dentro da
     // viatura" depois de bater a saida. Devolve null quando nao havia — quem
     // foi a pe encerra igual, e isso nao e erro.
-    await encerrarDentroDaTransacao(tx, usuarioId, "jornada", geo);
+    // O km do retorno fecha a ocupacao com `odometroFim` — antes o app nunca
+    // mandava, e o cache do veiculo so subia por abastecimento.
+    await encerrarDentroDaTransacao(tx, usuarioId, "jornada", geo, odometro);
     return serializar(j);
   });
 }

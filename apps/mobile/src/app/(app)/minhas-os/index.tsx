@@ -40,6 +40,7 @@ import { agruparPorTurno, escolherProxima, maisRecentesPrimeiro, ordenarSlaFirst
 import { abrirNoWaze } from "@/features/minhas-os/navegacao";
 import { useEscalaDoDia, useJornada, useMinhaViatura, useRelogioServidor } from "@/features/jornada/api";
 import { FolhaViatura, type EscolhaViatura } from "@/features/jornada/viatura";
+import { FolhaChecklist } from "@/features/jornada/checklist";
 import { FolhaEscolhaAcesso } from "@/features/acesso/folha-escolha";
 
 interface FilaResp {
@@ -129,6 +130,8 @@ export default function MinhasOs() {
   // So "trocar" sobrou: o carro que quebra no meio do dia continua sendo
   // decisao de quem esta na rua.
   const [folha, setFolha] = useState<"trocar" | null>(null);
+  // Checklist da viatura: pedido ao sair (se a escala deu carro) e ao encerrar (se esta num carro).
+  const [checklist, setChecklist] = useState<"saida" | "retorno" | null>(null);
   const minhaViatura = useMinhaViatura();
   const escala = useEscalaDoDia();
   const rotuloViatura = minhaViatura.data
@@ -192,7 +195,8 @@ export default function MinhasOs() {
     // com o celular na mao no fim do dia — merece um passo a mais.
     Alert.alert("Encerrar jornada?", `Você está em serviço há ${tempoJornada ?? "pouco"}.`, [
       { text: "Continuar trabalhando", style: "cancel" },
-      { text: "Encerrar", style: "destructive", onPress: () => encerrar.mutate() },
+      // Com viatura, o encerramento passa pelo checklist de retorno (km, combustivel, avarias).
+      { text: "Encerrar", style: "destructive", onPress: () => (minhaViatura.data ? setChecklist("retorno") : encerrar.mutate(undefined)) },
     ]);
   }
 
@@ -240,7 +244,8 @@ export default function MinhasOs() {
               escalado depois que o turno abre. Perguntar aqui daria a impressao
               de que a escolha ainda e do tecnico.
             */
-            onIniciar={() => iniciar.mutate(undefined)}
+            // Escalado com carro: checklist de saida antes (km e foto do painel). A pe: inicia direto.
+            onIniciar={() => (escala.data?.veiculoId ? setChecklist("saida") : iniciar.mutate(undefined))}
             onEncerrar={confirmarEncerrar}
             onTrocarViatura={jornada ? () => setFolha("trocar") : undefined}
           />
@@ -263,6 +268,27 @@ export default function MinhasOs() {
             certo pra pergunta de qualquer forma.
           */}
           <FolhaEscolhaAcesso visivel={preferencia === null} onEscolher={(p) => void definirPreferencia(p)} />
+
+          <FolhaChecklist
+            visivel={checklist !== null}
+            momento={checklist ?? "saida"}
+            viatura={
+              checklist === "retorno"
+                ? rotuloViatura
+                : escala.data?.veiculoPlaca
+                  ? formatarPlaca(escala.data.veiculoPlaca)
+                  : null
+            }
+            kmAnterior={minhaViatura.data?.odometroInicio ?? null}
+            ocupado={iniciar.isPending || encerrar.isPending}
+            onFechar={() => setChecklist(null)}
+            onConfirmar={({ odometro, checklist: dados }) => {
+              const momento = checklist;
+              setChecklist(null);
+              if (momento === "retorno") encerrar.mutate({ odometro, checklist: dados });
+              else iniciar.mutate({ odometro, checklist: dados });
+            }}
+          />
 
           <FolhaViatura
             visivel={folha !== null}

@@ -1,4 +1,4 @@
-import type { StatusVeiculo, TipoVeiculo } from "@isphub/shared";
+import type { EstadoManutencao, PlanoManutencaoDto, StatusVeiculo, TipoVeiculo } from "@isphub/shared";
 import { api } from "@/lib/apiClient";
 
 /**
@@ -62,6 +62,37 @@ export const veiculosApi = {
   criar: (dados: VeiculoInput) => api.post<VeiculoFrota>("/frota/veiculos", dados),
 
   editar: (id: string, dados: VeiculoInput) => api.patch<VeiculoFrota>(`/frota/veiculos/${id}`, dados),
+};
+
+export interface PlanoComEstado extends PlanoManutencaoDto {
+  estado: EstadoManutencao;
+}
+
+/** Manutencao preventiva por veiculo: planos com o estado derivado do odometro atual. */
+export const manutencaoApi = {
+  listar: (veiculoId: string) => api.get<{ odometroKm: number | null; planos: PlanoComEstado[] }>(`/frota/veiculos/${veiculoId}/manutencoes`),
+  criar: (veiculoId: string, d: { tipo: string; intervaloKm?: number | null; intervaloDias?: number | null; ultimaKm?: number | null; ultimaEm?: string | null }) =>
+    api.post<{ odometroKm: number | null; planos: PlanoComEstado[] }>(`/frota/veiculos/${veiculoId}/manutencoes`, d),
+  concluir: (id: string, km?: number | null) =>
+    api.post<{ odometroKm: number | null; planos: PlanoComEstado[] }>(`/frota/manutencoes/${id}/concluir`, km != null ? { km } : {}),
+  remover: (id: string) => api.delete<void>(`/frota/manutencoes/${id}`),
+};
+
+export interface ChecklistResumo {
+  id: string;
+  momento: "saida" | "retorno";
+  odometroKm: number | null;
+  combustivelPct: number | null;
+  avarias: string | null;
+  temFoto: boolean;
+  criadoEm: string;
+  usuarioNome: string;
+  ocupacaoId: string;
+}
+
+export const checklistApi = {
+  listar: (veiculoId: string) => api.get<ChecklistResumo[]>(`/frota/veiculos/${veiculoId}/checklists`),
+  urlFoto: (id: string) => `/frota/checklists/${id}/foto`,
 };
 
 export interface VeiculoNoMapa {

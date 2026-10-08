@@ -21,6 +21,8 @@ export interface LinhaEscala {
   /** Faltou (marcado pelo supervisor). */
   ausenteEm: string | null;
   motivoAusencia: string | null;
+  /** "Troca de óleo vencida há 320 km" — aviso, nao bloqueio. */
+  manutencaoVencida: string[];
 }
 
 /** `2026-09-01` — o dia como o servidor espera (DATE, sem hora nem fuso). */

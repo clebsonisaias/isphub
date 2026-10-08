@@ -6,6 +6,7 @@ import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { obterGeoOuNada } from "@/features/localizacao";
 import type { EscolhaViatura } from "./viatura";
+import type { ChecklistViatura } from "./checklist";
 
 /** A ocupacao aberta do proprio tecnico, como `GET /frota/minha-viatura` devolve. */
 export interface OcupacaoAtual {
@@ -95,12 +96,12 @@ export function useJornada() {
   };
 
   const iniciar = useMutation({
-    mutationFn: async (viatura?: EscolhaViatura) => {
+    mutationFn: async (args?: { viatura?: EscolhaViatura; odometro?: number | null; checklist?: ChecklistViatura | null }) => {
       const geo = await obterGeoOuNada();
       return apiFetch<RespostaComViatura>("/jornada/iniciar", {
         method: "POST",
         token,
-        body: { ...(geo ?? {}), ...(viatura ?? {}) },
+        body: { ...(geo ?? {}), ...(args?.viatura ?? {}), odometro: args?.odometro ?? undefined, checklist: args?.checklist ?? undefined },
       });
     },
     onSuccess: aoMudarComViatura,
@@ -128,9 +129,13 @@ export function useJornada() {
   });
 
   const encerrar = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (args?: { odometro?: number | null; checklist?: ChecklistViatura | null }) => {
       const geo = await obterGeoOuNada();
-      return apiFetch<JornadaResposta>("/jornada/encerrar", { method: "POST", token, body: geo ?? {} });
+      return apiFetch<JornadaResposta>("/jornada/encerrar", {
+        method: "POST",
+        token,
+        body: { ...(geo ?? {}), odometro: args?.odometro ?? undefined, checklist: args?.checklist ?? undefined },
+      });
     },
     onSuccess: aoMudar,
     onError: avisarFalha("encerrar a jornada"),

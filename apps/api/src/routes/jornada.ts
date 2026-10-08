@@ -4,6 +4,8 @@ import { PAPEIS_OCUPACAO, TURNOS_AGENDA, UserRole, type JornadaResposta, type Te
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import * as escala from "../services/escalaService.js";
+import { registrarChecklist } from "../services/checklistService.js";
+import { ocupacaoAtual } from "../services/ocupacaoService.js";
 import {
   encerrarJornada,
   iniciarJornada,
@@ -73,6 +75,17 @@ const viaturaSchema = z.object({
     .optional(),
 });
 
+/** Checklist da viatura (saida/retorno). Tudo opcional: o turno abre igual sem ele. */
+const checklistSchema = z
+  .object({
+    combustivelPct: z.number().int().min(0).max(100).nullish(),
+    avarias: z.string().trim().max(400).nullish(),
+    // ~1 MB em base64 = 1,4 M chars; o service confere os bytes reais.
+    fotoPainel: z.string().max(1_500_000).nullish(),
+    fotoMime: z.enum(["image/jpeg", "image/png", "image/webp"]).nullish(),
+  })
+  .nullish();
+
 jornadaRouter.get(
   "/atual",
   asyncHandler(async (req, res) => {
@@ -86,7 +99,16 @@ jornadaRouter.post(
     const corpo = req.body ?? {};
     const geo = geoSchema.parse(corpo);
     const viatura = viaturaSchema.parse(corpo);
-    res.json(respostaComViatura(await iniciarJornada(req.user!.sub, geo, viatura)));
+    const cl = checklistSchema.parse(corpo.checklist);
+    const r = await iniciarJornada(req.user!.sub, geo, viatura);
+    // Checklist DEPOIS de a jornada existir e so quando ha viatura: falhar na
+    // foto nao pode impedir o turno de abrir.
+    if (r.ocupacao && (viatura.odometro != null || cl)) {
+      await registrarChecklist({ ocupacaoId: r.ocupacao.id, momento: "saida", odometroKm: viatura.odometro, geo, checklist: cl }).catch((e) =>
+        console.warn("[jornada] checklist de saida nao gravado:", e),
+      );
+    }
+    res.json(respostaComViatura(r));
   }),
 );
 
@@ -109,8 +131,19 @@ jornadaRouter.patch(
 jornadaRouter.post(
   "/encerrar",
   asyncHandler(async (req, res) => {
-    const geo = geoSchema.parse(req.body ?? {});
-    res.json(resposta(await encerrarJornada(req.user!.sub, geo)));
+    const corpo = req.body ?? {};
+    const geo = geoSchema.parse(corpo);
+    const { odometro } = z.object({ odometro: z.number().int().min(0).max(9_999_999).nullish() }).parse(corpo);
+    const cl = checklistSchema.parse(corpo.checklist);
+    // A ocupacao aberta ANTES de encerrar: depois ela ja fechou e nao ha como acha-la.
+    const ocupacao = await ocupacaoAtual(req.user!.sub);
+    const j = await encerrarJornada(req.user!.sub, geo, odometro);
+    if (ocupacao && (odometro != null || cl)) {
+      await registrarChecklist({ ocupacaoId: ocupacao.id, momento: "retorno", odometroKm: odometro, geo, checklist: cl }).catch((e) =>
+        console.warn("[jornada] checklist de retorno nao gravado:", e),
+      );
+    }
+    res.json(resposta(j));
   }),
 );
 

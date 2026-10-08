@@ -1484,6 +1484,8 @@ model Veiculo {
   abastecimentos Abastecimento[]
   ocupacoes      OcupacaoVeiculo[]
   deslocamentos  DeslocamentoOs[]
+  manutencoes    PlanoManutencao[]
+  checklists     ChecklistViatura[]
   vinculos       VinculoRastreador[]
   eventos        EventoRastreador[]
   viagens        Viagem[]
@@ -2101,6 +2103,55 @@ model AgendaConfig {
   atualizadoEm DateTime @updatedAt
 
   @@map("agenda_config")
+}
+
+/// Manutencao preventiva por km e/ou por dias: "troca de oleo a cada 10.000 km".
+/// `ultimaKm`/`ultimaEm` = quando foi feita pela ultima vez; o vencimento e
+/// derivado do odometro atual do veiculo (ver `estadoManutencao`).
+model PlanoManutencao {
+  id        String  @id @default(uuid())
+  veiculoId String
+  veiculo   Veiculo @relation(fields: [veiculoId], references: [id], onDelete: Cascade)
+
+  tipo          String @db.VarChar(40)
+  intervaloKm   Int?
+  intervaloDias Int?
+  ultimaKm      Int?
+  ultimaEm      DateTime?
+
+  ativo Boolean @default(true)
+  /// Trava do sino: nulo = ainda nao avisado; zera ao concluir.
+  avisadoEm DateTime?
+
+  criadoEm DateTime @default(now())
+
+  @@index([veiculoId, ativo])
+  @@map("planos_manutencao")
+}
+
+/// Foto do painel, km, combustivel e avarias na saida e no retorno da viatura.
+/// Preso a ocupacao: e "este tecnico, neste carro, neste turno".
+model ChecklistViatura {
+  id         String  @id @default(uuid())
+  ocupacaoId String
+  veiculoId  String
+  veiculo    Veiculo @relation(fields: [veiculoId], references: [id], onDelete: Cascade)
+  usuarioId  String
+
+  /// saida | retorno
+  momento        String @db.VarChar(10)
+  odometroKm     Int?
+  combustivelPct Int?
+  avarias        String? @db.VarChar(400)
+  fotoPainel     Bytes?
+  fotoMime       String? @db.VarChar(40)
+  lat            Float?
+  lng            Float?
+  criadoEm       DateTime @default(now())
+
+  @@index([veiculoId, criadoEm])
+  @@index([ocupacaoId])
+  @@map("checklists_viatura")
 }
 
 /// A viatura esteve no endereco da OS concluida? Derivado e recalculavel.

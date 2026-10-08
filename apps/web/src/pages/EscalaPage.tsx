@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarX2, Shuffle, Truck, Users, UserX } from "lucide-react";
+import { CalendarX2, Shuffle, Truck, Users, UserX, Wrench } from "lucide-react";
 import { PAPEIS_OCUPACAO, ROTULO_TURNO, TURNOS_AGENDA, type PapelOcupacao, type TurnoAgenda } from "@isphub/shared";
 import { agendaApi, type PropostaRedistribuicao } from "@/lib/agendaApi";
 import { Link } from "react-router-dom";
@@ -186,6 +186,12 @@ export function EscalaPage() {
                             A PÉ (decisão) e não escalado (ninguém decidiu). Achatar
                             os dois últimos esconderia quem ficou de fora.
                           */}
+                          {e?.manutencaoVencida?.length ? (
+                            <p className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400" title="O carro roda, mas a revisão passou do prazo. Decida se sai assim.">
+                              <Wrench className="size-3" aria-hidden />
+                              {e.manutencaoVencida.join(" · ")}
+                            </p>
+                          ) : null}
                           <p className="text-xs text-muted-foreground">
                             {!e ? (
                               "Sem escala para este dia"

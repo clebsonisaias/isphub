@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
+import { manutencaoApi, checklistApi, type ChecklistResumo, type PlanoComEstado } from "@/lib/veiculosApi";
+import { api } from "@/lib/apiClient";
 import {
   STATUS_VEICULO,
   STATUS_VEICULO_ROTULO,
@@ -418,6 +420,13 @@ function DialogVeiculo({
           </div>
         </div>
 
+        {veiculo ? (
+          <>
+            <ManutencaoDoVeiculo veiculoId={veiculo.id} />
+            <ChecklistsDoVeiculo veiculoId={veiculo.id} />
+          </>
+        ) : null}
+
         <DialogFooter>
           <Button variant="ghost" onClick={onFechar} disabled={salvando}>
             Cancelar
@@ -428,5 +437,150 @@ function DialogVeiculo({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+
+const SITUACAO_ROTULO = { ok: "em dia", vence_em_breve: "vence em breve", vencida: "vencida", sem_base: "sem base" } as const;
+const SITUACAO_TOM = {
+  ok: "bg-success/10 text-success",
+  vence_em_breve: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
+  vencida: "bg-destructive/10 text-destructive",
+  sem_base: "bg-secondary text-muted-foreground",
+} as const;
+
+/**
+ * Manutencao preventiva do veiculo: cada plano com o que falta (km/dias) e o
+ * botao "Feita". O odometro atual e a MAIOR leitura que o sistema tem
+ * (cadastro, abastecimento, checklist) — o checklist da saida e o que o mantem
+ * vivo, ja que o rastreador nao tem odometro.
+ */
+function ManutencaoDoVeiculo({ veiculoId }: { veiculoId: string }) {
+  const { toast } = useToast();
+  const [dados, setDados] = useState<{ odometroKm: number | null; planos: PlanoComEstado[] } | null>(null);
+  const [tipo, setTipo] = useState("");
+  const [intervaloKm, setIntervaloKm] = useState("");
+  const [intervaloDias, setIntervaloDias] = useState("");
+  const [ultimaKm, setUltimaKm] = useState("");
+  const [salvando, setSalvando] = useState(false);
+
+  const carregar = useCallback(() => {
+    manutencaoApi
+      .listar(veiculoId)
+      .then(setDados)
+      .catch((e) => toast({ titulo: "Não foi possível carregar a manutenção", descricao: mensagem(e), variante: "erro" }));
+  }, [veiculoId, toast]);
+  useEffect(carregar, [carregar]);
+
+  async function criar() {
+    setSalvando(true);
+    try {
+      setDados(
+        await manutencaoApi.criar(veiculoId, {
+          tipo: tipo.trim(),
+          intervaloKm: intervaloKm ? Number(intervaloKm) : null,
+          intervaloDias: intervaloDias ? Number(intervaloDias) : null,
+          ultimaKm: ultimaKm ? Number(ultimaKm) : null,
+        }),
+      );
+      setTipo("");
+      setIntervaloKm("");
+      setIntervaloDias("");
+      setUltimaKm("");
+    } catch (e) {
+      toast({ titulo: "Não foi possível criar o plano", descricao: mensagem(e), variante: "erro" });
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-2 border-t border-border pt-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Manutenção preventiva</p>
+        <span className="text-xs text-muted-foreground">
+          odômetro atual: {dados?.odometroKm != null ? `${dados.odometroKm.toLocaleString("pt-BR")} km` : "sem leitura"}
+        </span>
+      </div>
+      {dados === null ? (
+        <Skeleton className="h-8 w-full" />
+      ) : dados.planos.length === 0 ? (
+        <p className="text-xs text-muted-foreground">Nenhum plano. Cadastre abaixo (ex.: Troca de óleo a cada 10.000 km).</p>
+      ) : (
+        <ul className="divide-y divide-border rounded-md border border-border text-sm">
+          {dados.planos.map((p) => (
+            <li key={p.id} className="flex flex-wrap items-center gap-2 px-3 py-2">
+              <span className="min-w-0 flex-1 font-medium">{p.tipo}</span>
+              <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${SITUACAO_TOM[p.estado.situacao]}`}>{SITUACAO_ROTULO[p.estado.situacao]}</span>
+              <span className="text-xs text-muted-foreground">
+                {p.estado.restanteKm != null ? `${p.estado.restanteKm >= 0 ? "faltam" : "passou"} ${Math.abs(p.estado.restanteKm).toLocaleString("pt-BR")} km` : ""}
+                {p.estado.restanteKm != null && p.estado.restanteDias != null ? " · " : ""}
+                {p.estado.restanteDias != null ? `${p.estado.restanteDias >= 0 ? "faltam" : "passou"} ${Math.abs(p.estado.restanteDias)} dias` : ""}
+              </span>
+              <Button variant="outline" size="sm" onClick={() => void manutencaoApi.concluir(p.id).then(setDados).catch((e) => toast({ titulo: "Não foi possível marcar", descricao: mensagem(e), variante: "erro" }))}>
+                Feita
+              </Button>
+              <button type="button" onClick={() => void manutencaoApi.remover(p.id).then(carregar)} className="text-xs text-muted-foreground hover:text-destructive" aria-label={`Remover ${p.tipo}`}>
+                remover
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <Input value={tipo} onChange={(e) => setTipo(e.target.value)} placeholder="Tipo (óleo, pneus…)" aria-label="Tipo de manutenção" className="col-span-2" />
+        <Input value={intervaloKm} onChange={(e) => setIntervaloKm(e.target.value)} placeholder="a cada km" inputMode="numeric" aria-label="Intervalo em km" />
+        <Input value={intervaloDias} onChange={(e) => setIntervaloDias(e.target.value)} placeholder="a cada dias" inputMode="numeric" aria-label="Intervalo em dias" />
+        <Input value={ultimaKm} onChange={(e) => setUltimaKm(e.target.value)} placeholder="última em km" inputMode="numeric" aria-label="Km da última" />
+      </div>
+      <Button variant="outline" size="sm" className="w-fit" disabled={salvando || tipo.trim().length < 2 || (!intervaloKm && !intervaloDias)} onClick={() => void criar()}>
+        {salvando ? "Salvando…" : "Adicionar plano"}
+      </Button>
+    </section>
+  );
+}
+
+/** Os ultimos checklists (saida/retorno) da viatura: km, combustivel, avarias e a foto do painel. */
+function ChecklistsDoVeiculo({ veiculoId }: { veiculoId: string }) {
+  const [itens, setItens] = useState<ChecklistResumo[] | null>(null);
+  useEffect(() => {
+    checklistApi.listar(veiculoId).then(setItens).catch(() => setItens([]));
+  }, [veiculoId]);
+  if (itens === null) return <Skeleton className="h-8 w-full" />;
+  if (itens.length === 0) return null;
+  return (
+    <section className="flex flex-col gap-2 border-t border-border pt-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Checklists (30 dias)</p>
+      <ul className="divide-y divide-border rounded-md border border-border text-sm">
+        {itens.slice(0, 10).map((c) => (
+          <li key={c.id} className="flex flex-wrap items-center gap-2 px-3 py-2">
+            <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${c.momento === "saida" ? "bg-primary/10 text-primary" : "bg-secondary text-muted-foreground"}`}>
+              {c.momento === "saida" ? "Saída" : "Retorno"}
+            </span>
+            <span className="text-xs text-muted-foreground">{new Date(c.criadoEm).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+            <span className="min-w-0 flex-1 truncate text-xs">{c.usuarioNome}</span>
+            <span className="tabular-nums">{c.odometroKm != null ? `${c.odometroKm.toLocaleString("pt-BR")} km` : "—"}</span>
+            {c.combustivelPct != null ? <span className="text-xs text-muted-foreground">⛽ {c.combustivelPct}%</span> : null}
+            {c.avarias ? <span className="text-xs text-destructive" title={c.avarias}>avarias</span> : null}
+            {c.temFoto ? (
+              // <a href> nao manda Authorization: baixa o blob autenticado e abre numa aba.
+              <button
+                type="button"
+                onClick={() =>
+                  void api.getBlob(checklistApi.urlFoto(c.id)).then((b) => {
+                    const url = URL.createObjectURL(b);
+                    window.open(url, "_blank", "noopener");
+                    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                  })
+                }
+                className="text-xs text-primary underline-offset-2 hover:underline"
+              >
+                foto
+              </button>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

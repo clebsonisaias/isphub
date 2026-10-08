@@ -1,6 +1,7 @@
 import { PapelOcupacao, type EscalaDoDia, type TurnoAgenda } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../middleware/errorHandler.js";
+import { manutencoesVencidas } from "./manutencaoService.js";
 
 /**
  * A ESCALA do dia — quem vai em qual viatura, com quem.
@@ -74,6 +75,12 @@ export async function escalaDoDia(dia: Date) {
       usuario: { select: { id: true, nome: true, nomeExibicao: true } },
     },
   });
+  // Manutencao vencida AVISA, nao bloqueia: o carro ainda roda; quem decide
+  // se sai assim e o supervisor, olhando o aviso na linha.
+  const vencidasPorVeiculo = new Map<string, string[]>();
+  for (const vid of new Set(linhas.map((l) => l.veiculoId).filter((x): x is string => !!x))) {
+    vencidasPorVeiculo.set(vid, await manutencoesVencidas(vid));
+  }
   return linhas.map((l) => ({
     id: l.id,
     usuarioId: l.usuario.id,
@@ -85,6 +92,7 @@ export async function escalaDoDia(dia: Date) {
     turnos: l.turnos,
     ausenteEm: l.ausenteEm ? l.ausenteEm.toISOString() : null,
     motivoAusencia: l.motivoAusencia,
+    manutencaoVencida: l.veiculoId ? (vencidasPorVeiculo.get(l.veiculoId) ?? []) : [],
   }));
 }
 
@@ -125,6 +133,8 @@ export async function escalar(args: {
     // Escalar alguem pra um carro inativo produz uma escala que ninguem pode
     // cumprir, e o tecnico so descobre na hora de sair.
     if (v.status === "inativo") throw new HttpError(409, "Veiculo inativo nao pode ser escalado");
+    // Em manutencao tambem: escalar produziria um turno sem carro na hora de sair.
+    if (v.status === "manutencao") throw new HttpError(409, "Veiculo em manutencao nao pode ser escalado");
   }
 
   return prisma.escalaJornada.upsert({

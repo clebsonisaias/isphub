@@ -8,6 +8,8 @@ import * as veiculos from "../services/veiculoService.js";
 import * as ocupacao from "../services/ocupacaoService.js";
 import * as rastreadores from "../services/rastreadorService.js";
 import * as rastreamento from "../services/rastreamentoService.js";
+import * as manutencao from "../services/manutencaoService.js";
+import * as checklist from "../services/checklistService.js";
 import * as bi from "../services/biFrotaService.js";
 import { prisma } from "../lib/prisma.js";
 
@@ -381,6 +383,82 @@ frotaRouter.get(
     const fim = ate ? new Date(ate) : new Date();
     const inicio = de ? new Date(de) : new Date(fim.getTime() - 24 * 60 * 60_000);
     res.json(await rastreamento.diaDoVeiculo(req.params.id, inicio, fim));
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// MANUTENCAO PREVENTIVA E CHECKLIST
+// ---------------------------------------------------------------------------
+
+frotaRouter.get(
+  "/veiculos/:id/manutencoes",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    await assertAcesso(req, req.params.id);
+    res.json(await manutencao.listarPlanos(req.params.id));
+  }),
+);
+
+frotaRouter.post(
+  "/veiculos/:id/manutencoes",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    await assertAcesso(req, req.params.id);
+    const b = z
+      .object({
+        tipo: z.string().trim().min(2).max(40),
+        intervaloKm: z.number().int().min(100).max(500_000).nullish(),
+        intervaloDias: z.number().int().min(1).max(3650).nullish(),
+        ultimaKm: z.number().int().min(0).max(9_999_999).nullish(),
+        ultimaEm: z.string().date().nullish(),
+      })
+      .parse(req.body);
+    await manutencao.criarPlano({ veiculoId: req.params.id, ...b, ultimaEm: b.ultimaEm ? new Date(`${b.ultimaEm}T12:00:00Z`) : null });
+    res.status(201).json(await manutencao.listarPlanos(req.params.id));
+  }),
+);
+
+/** "Feita": carimba km (o informado, senao o odometro atual) e data de hoje. */
+frotaRouter.post(
+  "/manutencoes/:id/concluir",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    const { km } = z.object({ km: z.number().int().min(0).max(9_999_999).nullish() }).parse(req.body ?? {});
+    const p = await manutencao.concluirPlano(req.params.id, km);
+    res.json(await manutencao.listarPlanos(p.veiculoId));
+  }),
+);
+
+frotaRouter.delete(
+  "/manutencoes/:id",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    await manutencao.removerPlano(req.params.id);
+    res.status(204).end();
+  }),
+);
+
+frotaRouter.get(
+  "/veiculos/:id/checklists",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    await assertAcesso(req, req.params.id);
+    const { de, ate } = z.object({ de: z.string().datetime().optional(), ate: z.string().datetime().optional() }).parse(req.query);
+    const fim = ate ? new Date(ate) : new Date();
+    const inicio = de ? new Date(de) : new Date(fim.getTime() - 30 * 24 * 60 * 60_000);
+    res.json(await checklist.listarChecklists(req.params.id, inicio, fim));
+  }),
+);
+
+frotaRouter.get(
+  "/checklists/:id/foto",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    const f = await checklist.fotoDoChecklist(req.params.id);
+    if (!f) throw new HttpError(404, "Sem foto");
+    res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
+    res.setHeader("Content-Type", f.mime);
+    res.send(Buffer.from(f.bytes));
   }),
 );
 
