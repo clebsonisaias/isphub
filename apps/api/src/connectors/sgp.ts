@@ -1259,6 +1259,19 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
         return { tipo: "indeterminado", motivo: `falha na consulta: ${motivo}` };
       }
 
+      /*
+       * `[]` e a resposta deste SGP pra id que NAO existe mais: ele lista e a
+       * lista vem vazia, em vez de 404. Visto em producao (NetGo, out/2026):
+       * 9 OS sumiram da varredura de abertas, e a consulta por id devolvia
+       * `[]` pra todas — entre elas uma chamada "TESTE APAGAR". Com o
+       * tratamento de "indeterminado", ficavam abertas aqui pra sempre.
+       *
+       * Vira AUSENTE, nao fechamento direto: o sync ainda exige 3 ciclos
+       * seguidos (DESAPARECIMENTOS_PRA_CANCELAR) antes de cancelar, entao um
+       * `[]` transitorio nao derruba nada.
+       */
+      if (Array.isArray(data) && data.length === 0) return { tipo: "ausente" };
+
       const item = registroDeOs(data);
       if (!item) {
         /*

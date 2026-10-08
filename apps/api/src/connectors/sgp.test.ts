@@ -1837,6 +1837,15 @@ describe("obterStatusOs — a pergunta ESTRITA (usada pra reconciliar OS fora da
     expect(await createSgpConnector(creds).obterStatusOs("999")).toEqual({ tipo: "ausente" });
   });
 
+  it("lista VAZIA ([]) => 'ausente': e como este SGP diz que o id nao existe mais", async () => {
+    // Producao (NetGo, out/2026): 9 OS sumiram da varredura e a consulta por id
+    // devolvia [] pra todas — uma delas chamada "TESTE APAGAR". Tratado como
+    // indeterminado, ficavam abertas aqui pra sempre. O sync ainda exige 3
+    // ciclos de ausencia antes de cancelar, entao [] transitorio nao derruba.
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
+    expect(await createSgpConnector(creds).obterStatusOs("211300")).toEqual({ tipo: "ausente" });
+  });
+
   it("OS CRUA (o formato real do SGP em producao) => encontrada", async () => {
     /*
      * REGRESSAO DE PRODUCAO, com as chaves de verdade.
