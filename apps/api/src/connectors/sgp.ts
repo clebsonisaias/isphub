@@ -1064,6 +1064,15 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
       assertSgpEscritaOk(data, path);
     },
 
+    async unscheduleOs(sgpOsId: string): Promise<void> {
+      const path = `/api/os/update/id/${encodeURIComponent(sgpOsId)}/`;
+      // `null` e a forma JSON de "sem data". NAO testado contra um SGP real
+      // (como o proprio scheduleOs): se o SGP ignorar o campo, a data velha
+      // fica la — e e por isso que a agenda ISPhub, nao o ERP, e a verdade.
+      const data = await sgpPostJson(creds, path, { data_hora_agendamento: null });
+      assertSgpEscritaOk(data, path);
+    },
+
     async updateOsStatus(sgpOsId: string, statusCode: number): Promise<void> {
       const path = `/api/os/update/id/${encodeURIComponent(sgpOsId)}/`;
       try {

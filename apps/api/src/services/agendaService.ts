@@ -718,6 +718,36 @@ export async function enviarAoSgp(agendamentoId: string): Promise<boolean> {
 }
 
 /**
+ * Limpa no SGP a data de uma marcacao que foi CANCELADA aqui.
+ *
+ * Mesmo desenho de `enviarAoSgp`: roda depois de a resposta ja ter saido, e
+ * nunca desfaz o cancelamento — o SGP fora do ar nao pode impedir o
+ * supervisor de desmarcar. So age se a marcacao esta mesmo cancelada, pra
+ * uma remarcacao concorrente nao ter a data nova apagada por engano.
+ */
+export async function limparNoSgp(agendamentoId: string): Promise<boolean> {
+  const a = await prisma.agendamento.findUnique({
+    where: { id: agendamentoId },
+    select: { sgpOsId: true, provedorId: true, status: true },
+  });
+  if (!a || a.status !== "cancelado") return false;
+
+  const erp = await prisma.erpConfig.findFirst({
+    where: { provedorId: a.provedorId, ativo: true },
+    select: { tipo: true, url: true, app: true, tokenCifrado: true },
+  });
+  if (!erp) return false;
+
+  try {
+    await buildConnector(erp).unscheduleOs(a.sgpOsId);
+    return true;
+  } catch (e) {
+    console.warn(`[agenda] limpar data da OS ${a.sgpOsId} no SGP falhou:`, e);
+    return false;
+  }
+}
+
+/**
  * Confirma as marcacoes que o SGP realmente absorveu.
  *
  * Roda no sync, sobre o que ACABOU de ser lido do SGP. E o unico jeito honesto

@@ -333,6 +333,13 @@ export interface ErpConnector {
   scheduleOs(sgpOsId: string, quando: Date): Promise<void>;
 
   /**
+   * Limpa a data/hora agendada da OS no ERP — o espelho de `scheduleOs` para
+   * quando a visita e DESMARCADA aqui. Sem isto, quem olha so o ERP continua
+   * vendo uma visita que nao vai acontecer. Mesmo best-effort de `scheduleOs`.
+   */
+  unscheduleOs(sgpOsId: string): Promise<void>;
+
+  /**
    * Ficha completa da OS no ERP. Complementa o espelho local (que abre a tela
    * na hora); isto chega depois com o que o espelho nao tem — plano,
    * credenciais PPPoE, ponto de referencia. `null` quando o ERP nao devolve a

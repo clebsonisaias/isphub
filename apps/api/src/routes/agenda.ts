@@ -105,7 +105,10 @@ agendaRouter.delete(
   "/:id",
   requireRole(UserRole.ADMIN, UserRole.GESTOR),
   asyncHandler(async (req, res) => {
-    res.json(await agenda.cancelar(req.params.id));
+    const cancelado = await agenda.cancelar(req.params.id);
+    res.json(cancelado);
+    // Depois da resposta, como no marcar: o SGP alcanca a agenda, nao o contrario.
+    void agenda.limparNoSgp(cancelado.id);
   }),
 );
 

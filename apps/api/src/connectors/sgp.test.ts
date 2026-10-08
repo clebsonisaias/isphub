@@ -388,6 +388,7 @@ describe("createSgpConnector", () => {
     const escritas: [string, (c: ReturnType<typeof createSgpConnector>) => Promise<unknown>][] = [
       ["setOnTheWay (JSON)", (c) => c.setOnTheWay("555")],
       ["updateOsStatus (JSON)", (c) => c.updateOsStatus("555", 1)],
+      ["unscheduleOs (JSON)", (c) => c.unscheduleOs("555")],
       ["addOsNote (form)", (c) => c.addOsNote("555", "nota")],
       ["provisionarOnu (form)", (c) => c.provisionarOnu("olt-1", { slot: "1", pon: "2", serial: "SN1", mode: 2 })],
     ];
@@ -433,6 +434,20 @@ describe("createSgpConnector", () => {
     expect(typeof body.os_status).toBe("number");
     expect(body.app).toBe(creds.app);
     expect(body.token).toBe(creds.token);
+  });
+
+  it("unscheduleOs manda data_hora_agendamento NULA em JSON — e so isso", async () => {
+    // Desmarcar aqui tem que apagar la: senao o provedor segue vendo no ERP
+    // uma visita que nao vai acontecer.
+    fetchMock.mockResolvedValueOnce(jsonResponse({ msg: "OS alterada com sucesso", os_id: 555 }));
+
+    await createSgpConnector(creds).unscheduleOs("555");
+
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/api/os/update/id/555/");
+    expect(options.headers["Content-Type"]).toBe("application/json");
+    const body = JSON.parse(options.body as string);
+    expect(body).toEqual({ app: creds.app, token: creds.token, data_hora_agendamento: null });
   });
 
   it("updateOsStatus manda SO os_status (+ credencial) — nada de data/checkin/assinatura", async () => {

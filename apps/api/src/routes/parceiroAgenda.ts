@@ -287,5 +287,6 @@ parceiroAgendaRouter.delete(
     if (!m) throw new HttpError(404, "Nao ha marcacao para esta OS");
     if (m.status === "marcado") await agenda.cancelar(m.id);
     res.status(204).end();
+    if (m.status === "marcado") void agenda.limparNoSgp(m.id);
   }),
 );
