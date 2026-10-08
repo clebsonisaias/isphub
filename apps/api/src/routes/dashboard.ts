@@ -3,14 +3,19 @@ import {
   OsStatus,
   OS_STATUS_ABERTOS,
   UserRole,
+  type DashboardAgenda,
   type DashboardMetrics,
   type DashboardRetiradas,
+  diaBrHoje,
+  somarDias,
   type MeuDiaResumo,
   diaBrasileiro,
 } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireRole } from "../middleware/auth.js";
+import { z } from "zod";
+import * as agenda from "../services/agendaService.js";
 import { calcularSla } from "../services/slaService.js";
 import { escopoOsWhere } from "../services/escopoService.js";
 import { produtividade } from "../services/meuDiaService.js";
@@ -234,5 +239,51 @@ dashboardRouter.get(
 
     const resumo: MeuDiaResumo = { ...contagens, produtividade: produtividade(contagens) };
     res.json(resumo);
+  }),
+);
+
+/**
+ * A agenda pelo olhar do gestor: quanto da semana ja esta tomado, o que ainda
+ * depende de alguem (cliente que nao confirmou, SGP que nao refletiu) e quem
+ * esta marcando. O ranking por funcionario le `marcadoPor` (e-mail de quem
+ * marcou no painel, nome da atendente vindo do AtendAI); quando nao ha nome, a
+ * origem responde — "atendai_ia" e o bot.
+ */
+dashboardRouter.get(
+  "/agenda",
+  requireRole(UserRole.ADMIN, UserRole.GESTOR),
+  asyncHandler(async (req, res) => {
+    const { dias } = z.object({ dias: z.coerce.number().int().min(1).max(365).default(30) }).parse(req.query);
+    const hoje = diaBrHoje();
+    const fimSemana = somarDias(hoje, 6);
+    const desde = new Date(Date.now() - dias * 86_400_000);
+
+    const [ocupacao, semConfirmacaoCliente, pendentesSgp, linhas] = await Promise.all([
+      agenda.grade({ de: hoje, ate: fimSemana }),
+      prisma.agendamento.count({
+        where: { status: "marcado", dia: { gte: agenda.dataDoDia(hoje), lte: agenda.dataDoDia(fimSemana) }, confirmadoEm: null },
+      }),
+      // Mesmo recorte de `confirmarComSgp`: so conta o que ja tem OS ligada,
+      // porque marcacao orfa nem teve chance de ser lida de volta.
+      prisma.agendamento.count({
+        where: { status: "marcado", sgpConfirmadoEm: null, ordemServicoId: { not: null }, dia: { gte: agenda.dataDoDia(hoje) } },
+      }),
+      prisma.agendamento.groupBy({
+        by: ["marcadoPor", "origem", "status"],
+        where: { criadoEm: { gte: desde } },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const resposta: DashboardAgenda = {
+      dias,
+      ocupacao,
+      semConfirmacaoCliente,
+      pendentesSgp,
+      porFuncionario: agenda.resumirMarcacoes(
+        linhas.map((l) => ({ marcadoPor: l.marcadoPor, origem: l.origem, status: l.status, total: l._count._all })),
+      ),
+    };
+    res.json(resposta);
   }),
 );

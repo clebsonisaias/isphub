@@ -1,4 +1,4 @@
-import type { TurnoAgenda } from "./agenda.js";
+import type { TurnoAgenda, VagaTurno } from "./agenda.js";
 import type { OsPrioridade, OsStatus } from "./status.js";
 import type { UserRole } from "./roles.js";
 
@@ -145,6 +145,10 @@ export interface OrdemServico {
   diaAgenda?: string | null;
   /** Id da marcacao ativa — e o que `DELETE /agenda/:id` (desmarcar) espera. */
   agendamentoId?: string | null;
+  /** Quando o CLIENTE confirmou a visita (lembrete). Nulo = ainda nao respondeu. */
+  visitaConfirmadaEm?: string | null;
+  /** Quando o SGP do provedor refletiu a data marcada. Nulo = pendente la. */
+  visitaSgpConfirmadaEm?: string | null;
   /** Tecnico ISPhub atribuido (despacho feito dentro do ISPhub). */
   tecnicoId?: string | null;
   tecnicoNome?: string | null;
@@ -229,9 +233,11 @@ export interface FilaFiltros {
   equipe?: EquipeFiltro;
   /** Busca livre (cliente, protocolo, endereco). */
   busca?: string;
-  /** ISO date range. */
+  /** ISO date range (sobre `dataAgendamento` do SGP). */
   de?: string;
   ate?: string;
+  /** `AAAA-MM-DD`: so OS com visita MARCADA na agenda ISPhub neste dia. */
+  diaAgenda?: string;
   page?: number;
   pageSize?: number;
 }
@@ -326,6 +332,19 @@ export interface MeuDiaResumo {
 }
 
 /** Metricas das OS de equipe externa (retirada/cancelamento) — ver DashboardMetrics.retiradas. */
+/** A agenda vista pelo gestor: ocupacao da semana, pendencias e quem marcou. */
+export interface DashboardAgenda {
+  /** Janela, em dias, do ranking `porFuncionario`. */
+  dias: number;
+  /** Grade de hoje + 6 dias (dia x turno), com bloqueios e ocupacao. */
+  ocupacao: VagaTurno[];
+  /** Marcadas nos proximos 7 dias que o cliente ainda nao confirmou. */
+  semConfirmacaoCliente: number;
+  /** Marcadas cuja data o SGP do provedor ainda nao refletiu. */
+  pendentesSgp: number;
+  porFuncionario: { marcadoPor: string; origem: string; marcadas: number; canceladas: number }[];
+}
+
 export interface DashboardRetiradas {
   abertas: number;
   concluidas: number;

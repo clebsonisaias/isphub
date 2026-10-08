@@ -113,6 +113,8 @@ export function buildFilaQuery(filtros: FilaFiltros): string {
    */
   if (filtros.de) p.set("de", filtros.de);
   if (filtros.ate) p.set("ate", filtros.ate);
+  // A agenda ISPhub (visita marcada no painel), que vence a data do SGP.
+  if (filtros.diaAgenda) p.set("diaAgenda", filtros.diaAgenda);
   const s = p.toString();
   return s ? `?${s}` : "";
 }

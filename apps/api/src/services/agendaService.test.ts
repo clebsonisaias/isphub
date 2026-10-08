@@ -9,6 +9,7 @@ import {
   inicioDoTurno,
   montarGrade,
   proximasVagas,
+  resumirMarcacoes,
   somarDias,
   turnoBrDe,
   vagaDe,
@@ -408,5 +409,26 @@ describe("podeClienteRemarcar — as regras do autoatendimento", () => {
 
   it("a recusa é 409 — é regra de negócio, não erro do sistema", () => {
     expect(podeClienteRemarcar({ ...base, atual: null })?.status).toBe(409);
+  });
+});
+
+describe("resumirMarcacoes — quem esta marcando", () => {
+  it("soma por funcionario, separa cancelada de marcada e ordena pelo que esta de pe", () => {
+    const r = resumirMarcacoes([
+      { marcadoPor: "maria@isp.com", origem: "isphub", status: "marcado", total: 7 },
+      { marcadoPor: "maria@isp.com", origem: "isphub", status: "cancelado", total: 2 },
+      { marcadoPor: "joao@isp.com", origem: "isphub", status: "marcado", total: 9 },
+      { marcadoPor: null, origem: "atendai_ia", status: "marcado", total: 4 },
+    ]);
+    expect(r.map((x) => [x.marcadoPor, x.marcadas, x.canceladas])).toEqual([
+      ["joao@isp.com", 9, 0],
+      ["maria@isp.com", 7, 2],
+      ["atendai_ia", 4, 0],
+    ]);
+  });
+
+  it("sem nome, a origem responde — o bot aparece como 'atendai_ia', nao como vazio", () => {
+    const [bot] = resumirMarcacoes([{ marcadoPor: "  ", origem: "atendai_ia", status: "marcado", total: 1 }]);
+    expect(bot.marcadoPor).toBe("atendai_ia");
   });
 });

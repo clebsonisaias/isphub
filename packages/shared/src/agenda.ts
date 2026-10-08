@@ -112,3 +112,94 @@ export const HORA_INICIO_TURNO: Record<TurnoAgenda, number> = { manha: 8, tarde:
 export function turnoDaHora(horaLocal: number): TurnoAgenda {
   return horaLocal < 12 ? "manha" : "tarde";
 }
+
+// ---------------------------------------------------------------------------
+// Datas do dia civil brasileiro. -03:00 FIXO, a mesma decisao de `dia.ts`.
+// Moraram em apps/api/services/agendaService.ts ate 07/10/2026; vieram pro
+// shared porque web e mobile precisam da MESMA resposta pra "que dia e hoje" —
+// `new Date()` do navegador vira o dia numa hora diferente do servidor.
+// ---------------------------------------------------------------------------
+
+const OFFSET_BR_MIN = -180;
+
+/** `AAAA-MM-DD` do dia CIVIL brasileiro que contem `instante`. */
+export function diaBrDe(instante: Date): string {
+  const local = new Date(instante.getTime() + OFFSET_BR_MIN * 60_000);
+  return local.toISOString().slice(0, 10);
+}
+
+/** O dia de hoje no Brasil, `AAAA-MM-DD`. */
+export function diaBrHoje(agora: Date = new Date()): string {
+  return diaBrDe(agora);
+}
+
+/**
+ * `AAAA-MM-DD` como o Postgres guarda um DATE (meia-noite UTC). Literal de
+ * proposito: interpretar como instante local trocaria o dia por um vizinho.
+ */
+export function dataDoDia(dia: string): Date {
+  return new Date(`${dia}T00:00:00.000Z`);
+}
+
+/** Soma dias a um `AAAA-MM-DD`, sem passar por fuso nenhum. */
+export function somarDias(dia: string, n: number): string {
+  const d = dataDoDia(dia);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Dia da semana (0=domingo) de um `AAAA-MM-DD`. */
+export function diaDaSemana(dia: string): number {
+  return dataDoDia(dia).getUTCDay();
+}
+
+/** A segunda-feira da semana que contem `dia`. Domingo pertence a semana que TERMINA nele. */
+export function inicioDaSemana(dia: string): string {
+  const dow = diaDaSemana(dia);
+  return somarDias(dia, dow === 0 ? -6 : 1 - dow);
+}
+
+// ---------------------------------------------------------------------------
+// Visita de uma OS (dia + turno da agenda ISPhub), como Fila, Mapa e app leem.
+// ---------------------------------------------------------------------------
+
+export interface ComVisita {
+  diaAgenda?: string | null;
+  turnoAgenda?: TurnoAgenda | null;
+  ordemRota?: number | null;
+}
+
+export type JanelaVisita = "hoje" | "amanha" | "semana" | "depois" | "passada";
+
+/** Em que janela relativa a `hoje` cai um dia de visita. `semana` = ate 7 dias a frente. */
+export function janelaVisita(dia: string, hoje: string): JanelaVisita {
+  if (dia < hoje) return "passada";
+  if (dia === hoje) return "hoje";
+  if (dia === somarDias(hoje, 1)) return "amanha";
+  if (dia <= somarDias(hoje, 7)) return "semana";
+  return "depois";
+}
+
+/** Chave de agrupamento: `"dia|turno"`, ou `"sem_visita"`. */
+export function chaveVisita(item: ComVisita): string {
+  return item.diaAgenda && item.turnoAgenda ? `${item.diaAgenda}|${item.turnoAgenda}` : "sem_visita";
+}
+
+const ORDEM_TURNO: Record<TurnoAgenda, number> = { manha: 0, tarde: 1 };
+
+/**
+ * Ordem da agenda: dia, depois turno, depois a posicao na rota (sem rota vai
+ * pro fim do turno). Quem nao tem visita vai pro fim de tudo. Devolve 0 em
+ * empate — quem chama desempata (urgencia, hora).
+ */
+export function compararVisita(a: ComVisita, b: ComVisita): number {
+  const va = a.diaAgenda && a.turnoAgenda;
+  const vb = b.diaAgenda && b.turnoAgenda;
+  if (!va && !vb) return 0;
+  if (!va) return 1;
+  if (!vb) return -1;
+  if (a.diaAgenda! !== b.diaAgenda!) return a.diaAgenda! < b.diaAgenda! ? -1 : 1;
+  const t = ORDEM_TURNO[a.turnoAgenda!] - ORDEM_TURNO[b.turnoAgenda!];
+  if (t !== 0) return t;
+  return (a.ordemRota ?? Number.POSITIVE_INFINITY) - (b.ordemRota ?? Number.POSITIVE_INFINITY);
+}

@@ -50,6 +50,8 @@ const filtrosSchema = z.object({
   busca: z.string().max(120).optional(),
   de: z.string().datetime().optional(),
   ate: z.string().datetime().optional(),
+  /** So OS com visita MARCADA na agenda ISPhub neste dia — a agenda do tecnico. */
+  diaAgenda: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   page: z.coerce.number().int().min(1).default(1),
   // Max mais alto que o padrao de paginacao para suportar o Mapa, que precisa
   // de todas as OS geolocalizadas de uma vez (sem paginacao visual propria).
@@ -85,6 +87,11 @@ filaRouter.get(
     if (f.tecnicoId && req.user!.role !== UserRole.TECNICO) osWhere.tecnicoId = f.tecnicoId;
     if (f.categoriaId === "sem_categoria") osWhere.tipoOs = { categoriaId: null };
     else if (f.categoriaId) osWhere.tipoOs = { categoriaId: f.categoriaId };
+    if (f.diaAgenda) {
+      // A agenda ISPhub, nao a data do SGP: visita marcada aqui aparece no
+      // mesmo instante, sem esperar o write-back nem o proximo sync.
+      osWhere.agendamento = { dia: new Date(`${f.diaAgenda}T00:00:00.000Z`), status: "marcado" };
+    }
     if (f.de || f.ate) {
       osWhere.dataAgendamento = {};
       if (f.de) osWhere.dataAgendamento.gte = new Date(f.de);
@@ -118,7 +125,7 @@ filaRouter.get(
           tecnico: true,
           // A rota do dia: o supervisor ordena na agenda e o app do tecnico le
           // daqui. Na planilha essa coluna existia e morria na planilha.
-          agendamento: { select: { id: true, ordemRota: true, turno: true, status: true, dia: true } },
+          agendamento: { select: { id: true, ordemRota: true, turno: true, status: true, dia: true, confirmadoEm: true, sgpConfirmadoEm: true } },
         },
         orderBy: [{ dataAgendamento: "asc" }, { criadoEm: "desc" }],
         take: LIMITE_FILA,
@@ -182,6 +189,9 @@ filaRouter.get(
       turnoAgenda: os.agendamento?.status === "marcado" ? os.agendamento.turno : null,
       diaAgenda: os.agendamento?.status === "marcado" ? os.agendamento.dia.toISOString().slice(0, 10) : null,
       agendamentoId: os.agendamento?.status === "marcado" ? os.agendamento.id : null,
+      visitaConfirmadaEm: os.agendamento?.status === "marcado" ? (os.agendamento.confirmadoEm?.toISOString() ?? null) : null,
+      visitaSgpConfirmadaEm:
+        os.agendamento?.status === "marcado" ? (os.agendamento.sgpConfirmadoEm?.toISOString() ?? null) : null,
       tecnicoId: os.tecnicoId,
       tecnicoNome: os.tecnico?.nome ?? null,
       tecnicoSgpNome: os.tecnicoSgpNome,

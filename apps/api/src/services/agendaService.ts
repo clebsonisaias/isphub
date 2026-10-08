@@ -1,6 +1,10 @@
 import {
+  dataDoDia,
+  diaBrDe,
+  diaDaSemana,
   feriadoNacional,
   HORA_INICIO_TURNO,
+  somarDias,
   TURNOS_AGENDA,
   turnoDaHora,
   type AgendaConfigDto,
@@ -29,39 +33,14 @@ import { buildConnector } from "./erpConnectorService.js";
 /** -03:00 fixo, a mesma decisao de `shared/dia.ts` e de `connectors/sgp.ts`. */
 const OFFSET_BR_MIN = -180;
 
-/** `AAAA-MM-DD` do dia CIVIL brasileiro que contem `instante`. */
-export function diaBrDe(instante: Date): string {
-  const local = new Date(instante.getTime() + OFFSET_BR_MIN * 60_000);
-  return local.toISOString().slice(0, 10);
-}
+// As funcoes de dia civil moram no shared (web e mobile usam as mesmas);
+// reexportadas aqui porque o resto da API e os testes sempre importaram daqui.
+export { diaBrDe, dataDoDia, somarDias, diaDaSemana };
 
 /** O turno brasileiro de um instante — usado pra reconciliar o que veio do SGP. */
 export function turnoBrDe(instante: Date): TurnoAgenda {
   const local = new Date(instante.getTime() + OFFSET_BR_MIN * 60_000);
   return turnoDaHora(local.getUTCHours());
-}
-
-/**
- * `AAAA-MM-DD` como o Postgres guarda um DATE (meia-noite UTC).
- *
- * A conversao e literal de proposito: o dia 2026-09-10 e o dia 2026-09-10 em
- * qualquer fuso. Interpretar a string como instante local trocaria o dia
- * inteiro por um vizinho, uma vez a cada 24 horas.
- */
-export function dataDoDia(dia: string): Date {
-  return new Date(`${dia}T00:00:00.000Z`);
-}
-
-/** Soma dias a um `AAAA-MM-DD`, sem passar por fuso nenhum. */
-export function somarDias(dia: string, n: number): string {
-  const d = dataDoDia(dia);
-  d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
-}
-
-/** Dia da semana (0=domingo) de um `AAAA-MM-DD`. */
-export function diaDaSemana(dia: string): number {
-  return dataDoDia(dia).getUTCDay();
 }
 
 /** O instante UTC em que um turno de um dia COMECA. */
@@ -615,6 +594,9 @@ export async function doTurno(dia: string, turno: TurnoAgenda) {
           numero: true,
           cidade: true,
           pop: true,
+          // Pro mapa da rota desenhar a parada sem passar pela fila (e seu teto).
+          lat: true,
+          lng: true,
           tecnico: { select: { id: true, nome: true, nomeExibicao: true } },
           tipoOs: { select: { descricao: true, categoria: { select: { nome: true, cor: true } } } },
         },
@@ -874,4 +856,38 @@ async function avisarSupervisao(agendamentoId: string, dia: string, turno: Turno
     // cliente ja ouviu como confirmada.
     console.warn("[agenda] nao consegui avisar a supervisao da remarcacao:", e);
   }
+}
+
+/** Uma linha do `groupBy` de marcacoes por quem marcou. */
+export interface LinhaMarcacao {
+  marcadoPor: string | null;
+  origem: string;
+  status: string;
+  total: number;
+}
+
+export interface MarcacoesPorFuncionario {
+  /** Quem marcou; sem nome (ex.: bot) cai na origem — "atendai_ia", "sgp". */
+  marcadoPor: string;
+  origem: string;
+  marcadas: number;
+  canceladas: number;
+}
+
+/**
+ * Soma as marcacoes por funcionario, do maior pro menor. "Marcada" conta o que
+ * esta de pe; "cancelada" o que foi desmarcado depois — os dois numeros
+ * importam: muita marcacao com muito cancelamento e outro problema.
+ */
+export function resumirMarcacoes(linhas: LinhaMarcacao[]): MarcacoesPorFuncionario[] {
+  const acc = new Map<string, MarcacoesPorFuncionario>();
+  for (const l of linhas) {
+    const quem = l.marcadoPor?.trim() || l.origem;
+    const chave = `${quem}|${l.origem}`;
+    const atual = acc.get(chave) ?? { marcadoPor: quem, origem: l.origem, marcadas: 0, canceladas: 0 };
+    if (l.status === "cancelado") atual.canceladas += l.total;
+    else atual.marcadas += l.total;
+    acc.set(chave, atual);
+  }
+  return [...acc.values()].sort((a, b) => b.marcadas - a.marcadas || b.canceladas - a.canceladas);
 }

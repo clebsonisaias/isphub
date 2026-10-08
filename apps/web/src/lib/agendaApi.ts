@@ -47,6 +47,8 @@ export interface ParadaAgenda {
     numero: string | null;
     cidade: string | null;
     pop: string | null;
+    lat: number | null;
+    lng: number | null;
     tecnico: { id: string; nome: string; nomeExibicao: string | null } | null;
     tipoOs: { descricao: string | null; categoria: { nome: string; cor: string } | null } | null;
   } | null;
