@@ -29,6 +29,8 @@ function motivoCurto(v: VagaTurno): string {
       return "Sem atendimento";
     case "turno_nao_atendido":
       return "Só manhã";
+    case "sem_equipe":
+      return "Sem equipe";
     case "antecedencia":
       return "Prazo curto";
     default:

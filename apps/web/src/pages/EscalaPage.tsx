@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Truck, Users, UserX } from "lucide-react";
-import { PAPEIS_OCUPACAO, type PapelOcupacao } from "@isphub/shared";
+import { CalendarX2, Shuffle, Truck, Users, UserX } from "lucide-react";
+import { PAPEIS_OCUPACAO, ROTULO_TURNO, TURNOS_AGENDA, type PapelOcupacao, type TurnoAgenda } from "@isphub/shared";
+import { agendaApi, type PropostaRedistribuicao } from "@/lib/agendaApi";
+import { Link } from "react-router-dom";
 import { AppShell } from "@/components/AppShell";
 import { AnimatedPage } from "@/components/AnimatedPage";
 import { Card, CardContent } from "@/components/ui/card";
@@ -29,6 +31,11 @@ export function EscalaPage() {
   const [escala, setEscala] = useState<LinhaEscala[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState<string | null>(null);
+  // Redistribuicao de quem faltou: proposta por turno, editavel antes de aplicar.
+  const [redistribuindo, setRedistribuindo] = useState<{ usuarioId: string; nome: string } | null>(null);
+  const [propostas, setPropostas] = useState<Record<TurnoAgenda, PropostaRedistribuicao | null>>({ manha: null, tarde: null });
+  const [escolhas, setEscolhas] = useState<Record<string, string>>({});
+  const [aplicando, setAplicando] = useState(false);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -59,14 +66,65 @@ export function EscalaPage() {
     [escala],
   );
 
-  async function mudar(usuarioId: string, veiculoId: string | null, papel: PapelOcupacao) {
+  async function mudar(usuarioId: string, veiculoId: string | null, papel: PapelOcupacao, turnos?: TurnoAgenda[]) {
     setSalvando(usuarioId);
     try {
-      setEscala(await escalaApi.escalar({ usuarioId, dia, veiculoId, papel }));
+      setEscala(await escalaApi.escalar({ usuarioId, dia, veiculoId, papel, turnos: turnos ?? porUsuario.get(usuarioId)?.turnos }));
     } catch {
       toast({ variante: "erro", titulo: "Não foi possível salvar a escala." });
     } finally {
       setSalvando(null);
+    }
+  }
+
+  /** Meio período: tira ou poe um turno; nunca deixa os dois de fora (isso e "sem escala"). */
+  function alternarTurno(e: LinhaEscala, turno: TurnoAgenda) {
+    const atuais = new Set(e.turnos);
+    if (atuais.has(turno)) atuais.delete(turno);
+    else atuais.add(turno);
+    if (atuais.size === 0) return;
+    void mudar(e.usuarioId, e.veiculoId, e.papel, TURNOS_AGENDA.filter((t) => atuais.has(t)));
+  }
+
+  async function falta(e: LinhaEscala, ausente: boolean) {
+    setSalvando(e.usuarioId);
+    try {
+      setEscala(await escalaApi.ausencia(e.usuarioId, { dia, ausente }));
+      if (ausente) await abrirRedistribuicao(e.usuarioId, e.nome);
+      else if (redistribuindo?.usuarioId === e.usuarioId) setRedistribuindo(null);
+    } catch {
+      toast({ variante: "erro", titulo: "Não foi possível registrar a falta." });
+    } finally {
+      setSalvando(null);
+    }
+  }
+
+  async function abrirRedistribuicao(usuarioId: string, nome: string) {
+    setRedistribuindo({ usuarioId, nome });
+    try {
+      const [manha, tarde] = await Promise.all(TURNOS_AGENDA.map((t) => agendaApi.redistribuicao(dia, t, usuarioId)));
+      setPropostas({ manha, tarde });
+      const iniciais: Record<string, string> = {};
+      for (const p of [...manha.paradas, ...tarde.paradas]) if (p.tecnicoSugeridoId) iniciais[p.agendamentoId] = p.tecnicoSugeridoId;
+      setEscolhas(iniciais);
+    } catch {
+      toast({ variante: "erro", titulo: "Não foi possível montar a redistribuição." });
+      setRedistribuindo(null);
+    }
+  }
+
+  async function aplicarRedistribuicao() {
+    const itens = Object.entries(escolhas).map(([agendamentoId, tecnicoId]) => ({ agendamentoId, tecnicoId }));
+    if (itens.length === 0) return;
+    setAplicando(true);
+    try {
+      const r = await agendaApi.redistribuir(itens);
+      toast({ variante: "sucesso", titulo: "Paradas redistribuídas", descricao: `${r.aplicadas} ${r.aplicadas === 1 ? "parada trocou" : "paradas trocaram"} de técnico.` });
+      setRedistribuindo(null);
+    } catch {
+      toast({ variante: "erro", titulo: "Não foi possível aplicar." });
+    } finally {
+      setAplicando(false);
     }
   }
 
@@ -146,6 +204,26 @@ export function EscalaPage() {
                           </p>
                         </div>
 
+                        {e ? (
+                          <div className="flex items-center gap-1" role="group" aria-label={`Turnos de ${t.nome}`}>
+                            {TURNOS_AGENDA.map((turno) => {
+                              const ligado = e.turnos.includes(turno);
+                              return (
+                                <button
+                                  key={turno}
+                                  type="button"
+                                  disabled={ocupado || !!e.ausenteEm}
+                                  aria-pressed={ligado}
+                                  onClick={() => alternarTurno(e, turno)}
+                                  className={`rounded-md border px-2 py-1 text-xs ${ligado ? "border-primary/40 bg-primary/10 font-medium text-primary" : "border-border text-muted-foreground hover:bg-muted"} disabled:opacity-50`}
+                                >
+                                  {ROTULO_TURNO[turno]}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+
                         <select
                           aria-label={`Viatura de ${t.nome}`}
                           disabled={ocupado}
@@ -183,6 +261,38 @@ export function EscalaPage() {
                           </select>
                         ) : null}
 
+                        {e ? (
+                          e.ausenteEm ? (
+                            <span className="inline-flex items-center gap-1.5 text-xs">
+                              <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 font-medium text-destructive">
+                                <CalendarX2 className="size-3" aria-hidden />
+                                Faltou
+                              </span>
+                              <button type="button" disabled={ocupado} onClick={() => void falta(e, false)} className="text-muted-foreground underline-offset-2 hover:underline">
+                                voltou
+                              </button>
+                              <button
+                                type="button"
+                                disabled={ocupado}
+                                onClick={() => void abrirRedistribuicao(e.usuarioId, e.nome)}
+                                className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 hover:bg-muted"
+                              >
+                                <Shuffle className="size-3" aria-hidden />
+                                Redistribuir
+                              </button>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={ocupado}
+                              onClick={() => void falta(e, true)}
+                              className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-destructive"
+                            >
+                              Faltou
+                            </button>
+                          )
+                        ) : null}
+
                         <span className="w-5 text-muted-foreground" aria-hidden>
                           {e?.veiculoId ? <Truck className="size-4" /> : e ? <UserX className="size-4" /> : null}
                         </span>
@@ -193,6 +303,92 @@ export function EscalaPage() {
               )}
             </CardContent>
           </Card>
+
+          {redistribuindo ? (
+            <Card>
+              <CardContent className="flex flex-col gap-3 p-4">
+                <header className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h2 className="flex items-center gap-2 text-sm font-semibold">
+                      <Shuffle className="size-4 text-muted-foreground" aria-hidden />
+                      Paradas de {redistribuindo.nome} em {dia.split("-").reverse().slice(0, 2).join("/")}
+                    </h2>
+                    <p className="text-xs text-muted-foreground">
+                      Sugestão por menor carga entre os escalados do turno. Troque quem quiser antes de aplicar; o que não couber vai para remarcação.
+                    </p>
+                  </div>
+                  <button type="button" onClick={() => setRedistribuindo(null)} className="text-xs text-muted-foreground hover:text-foreground">
+                    fechar
+                  </button>
+                </header>
+
+                {TURNOS_AGENDA.map((turno) => {
+                  const p = propostas[turno];
+                  if (!p) return <Skeleton key={turno} className="h-10 w-full" />;
+                  if (p.paradas.length === 0) return null;
+                  return (
+                    <div key={turno} className="flex flex-col gap-1.5">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {ROTULO_TURNO[turno]} · {p.paradas.length} {p.paradas.length === 1 ? "parada" : "paradas"}
+                        {p.tetoPorTecnico != null ? ` · até ${p.tetoPorTecnico} por técnico` : ""}
+                      </p>
+                      <ul className="divide-y divide-border rounded-md border border-border">
+                        {p.paradas.map((parada) => (
+                          <li key={parada.agendamentoId} className="flex flex-wrap items-center gap-3 px-3 py-2 text-sm">
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate font-medium">{parada.clienteNome ?? `OS ${parada.sgpOsId}`}</p>
+                              <p className="truncate text-xs text-muted-foreground">
+                                OS #{parada.sgpOsId}
+                                {parada.regiao ? ` · ${parada.regiao}` : ""}
+                              </p>
+                            </div>
+                            <select
+                              aria-label={`Quem assume ${parada.clienteNome ?? parada.sgpOsId}`}
+                              value={escolhas[parada.agendamentoId] ?? ""}
+                              onChange={(ev) =>
+                                setEscolhas((atual) => {
+                                  const prox = { ...atual };
+                                  if (ev.target.value) prox[parada.agendamentoId] = ev.target.value;
+                                  else delete prox[parada.agendamentoId];
+                                  return prox;
+                                })
+                              }
+                              className="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                            >
+                              <option value="">Remarcar depois</option>
+                              {p.candidatos.map((c) => (
+                                <option key={c.tecnicoId} value={c.tecnicoId}>
+                                  {c.nome} ({c.carga} no turno)
+                                </option>
+                              ))}
+                            </select>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                })}
+
+                {propostas.manha && propostas.tarde && propostas.manha.paradas.length + propostas.tarde.paradas.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Nenhuma parada marcada para essa pessoa neste dia.</p>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void aplicarRedistribuicao()}
+                      disabled={aplicando || Object.keys(escolhas).length === 0}
+                      className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                    >
+                      {aplicando ? "Aplicando…" : `Aplicar ${Object.keys(escolhas).length} troca(s)`}
+                    </button>
+                    <Link to="/agenda" className="text-xs text-primary underline-offset-2 hover:underline">
+                      Remarcar o que sobrou na agenda
+                    </Link>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
         </div>
       </AnimatedPage>
     </AppShell>

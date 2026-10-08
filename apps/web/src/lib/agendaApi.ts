@@ -9,6 +9,20 @@ import { api } from "./apiClient";
  * segunda tem uma resposta que a primeira nunca teve — um limite.
  */
 
+export interface PropostaRedistribuicao {
+  paradas: {
+    agendamentoId: string;
+    ordemServicoId: string;
+    sgpOsId: string;
+    clienteNome: string | null;
+    regiao: string | null;
+    tecnicoSugeridoId: string | null;
+  }[];
+  candidatos: { tecnicoId: string; nome: string; carga: number }[];
+  tetoPorTecnico: number | null;
+  semDestino: string[];
+}
+
 export interface GradeResposta {
   config: AgendaConfigDto;
   vagas: VagaTurno[];
@@ -108,6 +122,12 @@ export const agendaApi = {
     api.get<{ ordem: string[]; metros: number; metrosAtual: number; semCoordenada: number; comOrigem: boolean }>(
       `/agenda/turno/sugestao?dia=${dia}&turno=${turno}`,
     ),
+
+  /** Quem assume as paradas de quem faltou — proposta, nao grava. */
+  redistribuicao: (dia: string, turno: TurnoAgenda, usuarioId: string) =>
+    api.get<PropostaRedistribuicao>(`/agenda/redistribuicao?dia=${dia}&turno=${turno}&usuarioId=${usuarioId}`),
+  redistribuir: (itens: { agendamentoId: string; tecnicoId: string }[]) =>
+    api.post<{ aplicadas: number }>("/agenda/redistribuir", { itens }),
 
   /** A rota inteira de uma vez: arrastar uma parada renumera todas. */
   definirRota: (dia: string, turno: TurnoAgenda, ids: string[]) =>

@@ -179,6 +179,8 @@ export function formatarTrabalhado(inicioEm: string, pausas: PausaJornada[], ate
  */
 export interface EscalaDoDia {
   escalado: boolean;
+  /** Em quais turnos a pessoa trabalha hoje. Vazio quando nao escalado. */
+  turnos: ("manha" | "tarde")[];
   veiculoId: string | null;
   veiculoPlaca: string | null;
   papel: "motorista" | "passageiro";

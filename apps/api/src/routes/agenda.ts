@@ -4,6 +4,7 @@ import { TURNOS_AGENDA, ORIGENS_AGENDAMENTO, UserRole, metrosDaOrdem, sugerirOrd
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import * as agenda from "../services/agendaService.js";
+import { aplicarRedistribuicao, propostaRedistribuicao } from "../services/redistribuicaoService.js";
 
 /**
  * A agenda de OS — o que a operacao mantinha numa planilha no Drive.
@@ -84,6 +85,28 @@ agendaRouter.get(
     const lista = paradas.map((p) => ({ id: p.id, lat: p.ordemServico?.lat ?? null, lng: p.ordemServico?.lng ?? null }));
     const sugestao = sugerirOrdem(lista, origem);
     res.json({ ...sugestao, metrosAtual: metrosDaOrdem(lista, origem), comOrigem: origem !== null });
+  }),
+);
+
+/** Quem faltou tinha paradas: a proposta de quem assume cada uma. Nao grava. */
+agendaRouter.get(
+  "/redistribuicao",
+  requireRole(UserRole.ADMIN, UserRole.GESTOR),
+  asyncHandler(async (req, res) => {
+    const q = z.object({ dia: DIA, turno: z.enum(TURNOS_AGENDA), usuarioId: z.string().uuid() }).parse(req.query);
+    res.json(await propostaRedistribuicao(q.dia, q.turno, q.usuarioId));
+  }),
+);
+
+/** Aplica a redistribuicao aprovada pelo supervisor. */
+agendaRouter.post(
+  "/redistribuir",
+  requireRole(UserRole.ADMIN, UserRole.GESTOR),
+  asyncHandler(async (req, res) => {
+    const b = z
+      .object({ itens: z.array(z.object({ agendamentoId: z.string().uuid(), tecnicoId: z.string().uuid() })).min(1).max(100) })
+      .parse(req.body);
+    res.json({ aplicadas: await aplicarRedistribuicao(b.itens, req.user!.sub) });
   }),
 );
 
@@ -214,6 +237,8 @@ adminAgendaRouter.put(
         // Origem da rota sugerida. Os dois juntos ou os dois nulos.
         baseLat: z.number().min(-90).max(90).nullable(),
         baseLng: z.number().min(-180).max(180).nullable(),
+        // Nulo = capacidade fixa; preenchido, a escala do dia manda.
+        vagasPorTecnico: z.number().int().min(1).max(50).nullable(),
       })
       .partial()
       .parse(req.body);

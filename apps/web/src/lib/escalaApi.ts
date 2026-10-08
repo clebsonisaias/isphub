@@ -1,5 +1,5 @@
 import { api } from "./apiClient";
-import type { PapelOcupacao } from "@isphub/shared";
+import type { PapelOcupacao, TurnoAgenda } from "@isphub/shared";
 
 /**
  * A escala do dia — quem vai em qual viatura, com quem.
@@ -16,6 +16,11 @@ export interface LinhaEscala {
   veiculoPlaca: string | null;
   veiculoApelido: string | null;
   papel: PapelOcupacao;
+  /** Dia inteiro = ["manha","tarde"]; meio período = um só. */
+  turnos: TurnoAgenda[];
+  /** Faltou (marcado pelo supervisor). */
+  ausenteEm: string | null;
+  motivoAusencia: string | null;
 }
 
 /** `2026-09-01` — o dia como o servidor espera (DATE, sem hora nem fuso). */
@@ -26,8 +31,12 @@ export function diaISO(d: Date): string {
 export const escalaApi = {
   doDia: (dia: string) => api.get<LinhaEscala[]>(`/jornada/escalas?dia=${dia}`),
 
-  escalar: (d: { usuarioId: string; dia: string; veiculoId: string | null; papel: PapelOcupacao }) =>
+  escalar: (d: { usuarioId: string; dia: string; veiculoId: string | null; papel: PapelOcupacao; turnos?: TurnoAgenda[] }) =>
     api.put<LinhaEscala[]>("/jornada/escalas", d),
+
+  /** Faltou / voltou. */
+  ausencia: (usuarioId: string, d: { dia: string; ausente: boolean; motivo?: string | null }) =>
+    api.post<LinhaEscala[]>(`/jornada/escalas/${usuarioId}/ausencia`, d),
 
   desescalar: (usuarioId: string, dia: string) =>
     api.delete<LinhaEscala[]>(`/jornada/escalas/${usuarioId}?dia=${dia}`),

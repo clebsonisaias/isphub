@@ -279,6 +279,7 @@ export function AgendaPage() {
                 {config.vagasManha} manhã · {config.vagasTarde} tarde
                 {config.vagasDia != null ? ` · ${config.vagasDia}/dia` : ""}
                 {config.tetoRegiao != null ? ` · ${config.tetoRegiao} por região` : ""}
+                {config.vagasPorTecnico != null ? ` · ${config.vagasPorTecnico} por técnico (escala)` : ""}
               </button>
             ) : null}
           </header>
@@ -346,7 +347,10 @@ export function AgendaPage() {
                                 </span>
                               ) : null}
                               <span className="flex items-center justify-between gap-1 text-[11px] leading-tight">
-                                <span className="truncate">{textoBloqueio(v)}</span>
+                                <span className="truncate">
+                                  {textoBloqueio(v)}
+                                  {v.tecnicosEscalados != null && !v.bloqueio ? ` · ${v.tecnicosEscalados} téc.` : ""}
+                                </span>
                                 {v.ocupadas > 0 ? (
                                   <span className="shrink-0 text-muted-foreground">
                                     {v.instalacao}i · {v.reparo}r
@@ -708,6 +712,7 @@ function LimitesDaAgenda({
   const [remarcacoes, setRemarcacoes] = useState(config.remarcacoesMaxCliente);
   const [baseLat, setBaseLat] = useState<string>(config.baseLat != null ? String(config.baseLat) : "");
   const [baseLng, setBaseLng] = useState<string>(config.baseLng != null ? String(config.baseLng) : "");
+  const [porTecnico, setPorTecnico] = useState<number | "">(config.vagasPorTecnico ?? "");
   const [salvando, setSalvando] = useState(false);
 
   const nomesDias = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
@@ -727,6 +732,7 @@ function LimitesDaAgenda({
         // Os dois juntos ou nenhum: metade de uma coordenada nao e origem.
         baseLat: baseLat.trim() && baseLng.trim() ? Number(baseLat) : null,
         baseLng: baseLat.trim() && baseLng.trim() ? Number(baseLng) : null,
+        vagasPorTecnico: porTecnico === "" ? null : Number(porTecnico),
       });
     } finally {
       setSalvando(false);
@@ -761,6 +767,21 @@ function LimitesDaAgenda({
               onChange={(e) => setManha(Number(e.target.value))}
               className="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
             />
+          </label>
+          <label className="flex flex-col gap-1.5 text-xs">
+            <span className="font-medium text-foreground">Vagas por técnico (pela escala)</span>
+            <input
+              type="number"
+              min={1}
+              max={50}
+              value={porTecnico}
+              onChange={(e) => setPorTecnico(e.target.value === "" ? "" : Number(e.target.value))}
+              placeholder="vazio = só as vagas fixas"
+              className="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+            />
+            <span className="text-muted-foreground">
+              Preenchido, cada turno oferece no máximo escalados × este número (sem passar das vagas fixas). Dia sem escala continua com as fixas.
+            </span>
           </label>
           <label className="flex flex-col gap-1.5 text-xs">
             <span className="font-medium text-foreground">Base da equipe (latitude)</span>

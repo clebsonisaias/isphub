@@ -655,6 +655,16 @@ model EscalaJornada {
 
   papel PapelOcupacao @default(motorista)
 
+  /// Em quais turnos a pessoa trabalha neste dia. Dia inteiro = os dois.
+  turnos TurnoAgenda[] @default([manha, tarde])
+
+  /// Faltou. Marcado pelo supervisor; o job de "escalado sem jornada" so AVISA.
+  ausenteEm      DateTime?
+  motivoAusencia String?   @db.VarChar(120)
+
+  /// Turnos em que o aviso "escalado e sem jornada" ja saiu — trava do job.
+  avisosSemJornada TurnoAgenda[] @default([])
+
   /// O dia a que a escala se refere. DATE e nao timestamp: escala e do dia
   /// inteiro, e guardar hora convidaria a comparar instantes com fuso.
   dia DateTime @db.Date
@@ -2078,6 +2088,10 @@ model AgendaConfig {
   /// De onde a equipe sai — origem da rota sugerida. Nulo = usa a 1a parada.
   baseLat Float?
   baseLng Float?
+
+  /// Visitas que UM tecnico faz por turno. Preenchido, a capacidade do turno
+  /// vira min(vagas fixas, escalados x isto); nulo = so as vagas fixas valem.
+  vagasPorTecnico Int?
 
   atualizadoEm DateTime @updatedAt
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AgendaConfigDto } from "@isphub/shared";
+import { capacidadeDerivada, planejarRedistribuicao, type AgendaConfigDto } from "@isphub/shared";
 import type { ExcecaoAgendaDto } from "@isphub/shared";
 import {
   chaveJanela,
@@ -27,6 +27,7 @@ const CONFIG: AgendaConfigDto = {
   remarcacoesMaxCliente: 2,
   baseLat: null,
   baseLng: null,
+  vagasPorTecnico: null,
 };
 
 /** Quarta-feira, 10/09/2026, 07:00 em Natal (10:00 UTC). */
@@ -432,5 +433,66 @@ describe("resumirMarcacoes — quem esta marcando", () => {
   it("sem nome, a origem responde — o bot aparece como 'atendai_ia', nao como vazio", () => {
     const [bot] = resumirMarcacoes([{ marcadoPor: "  ", origem: "atendai_ia", status: "marcado", total: 1 }]);
     expect(bot.marcadoPor).toBe("atendai_ia");
+  });
+});
+
+describe("capacidade pela escala", () => {
+  const PELA_ESCALA: AgendaConfigDto = { ...CONFIG, vagasManha: 15, vagasTarde: 15, vagasPorTecnico: 5 };
+
+  it("capacidadeDerivada: min(fixa, escalados x por tecnico); sem escala ou sem config, vale a fixa", () => {
+    expect(capacidadeDerivada(15, 2, 5)).toBe(10);
+    expect(capacidadeDerivada(15, 4, 5)).toBe(15); // nunca acima da fixa
+    expect(capacidadeDerivada(15, null, 5)).toBe(15); // dia sem escala cadastrada
+    expect(capacidadeDerivada(15, 2, null)).toBe(15); // modo fixo
+    expect(capacidadeDerivada(15, 0, 5)).toBe(0);
+  });
+
+  it("vagaDe com 2 escalados oferece 10 e anuncia os tecnicos; sem escala no dia, 15 e nulo", () => {
+    const com = vagaDe({ dia: QUARTA, turno: "tarde", config: PELA_ESCALA, escalados: 2, agora: QUARTA_7H });
+    expect(com).toMatchObject({ capacidade: 10, livres: 10, tecnicosEscalados: 2, bloqueio: null });
+    const sem = vagaDe({ dia: QUARTA, turno: "tarde", config: PELA_ESCALA, agora: QUARTA_7H });
+    expect(sem).toMatchObject({ capacidade: 15, tecnicosEscalados: null });
+  });
+
+  it("escala existe e ninguem no turno: bloqueio 'sem_equipe', nao 'lotado'", () => {
+    const v = vagaDe({ dia: QUARTA, turno: "tarde", config: PELA_ESCALA, escalados: 0, agora: QUARTA_7H });
+    expect(v.bloqueio).toBe("sem_equipe");
+    expect(v.livres).toBe(0);
+  });
+
+  it("montarGrade passa a escala por janela: so os dias com entrada no mapa mudam", () => {
+    const escalados = new Map([[chaveJanela("2026-09-11", "manha"), 1], [chaveJanela("2026-09-11", "tarde"), 0]]);
+    const g = montarGrade({ de: "2026-09-11", ate: "2026-09-12", config: PELA_ESCALA, ocupacoes: new Map(), escalados, agora: QUARTA_7H });
+    const porChave = new Map(g.map((v) => [`${v.dia}|${v.turno}`, v]));
+    expect(porChave.get("2026-09-11|manha")).toMatchObject({ capacidade: 5, tecnicosEscalados: 1 });
+    expect(porChave.get("2026-09-11|tarde")).toMatchObject({ bloqueio: "sem_equipe" });
+    expect(porChave.get("2026-09-12|manha")).toMatchObject({ capacidade: 15, tecnicosEscalados: null });
+  });
+});
+
+describe("planejarRedistribuicao — quem assume as paradas de quem faltou", () => {
+  it("cada parada vai pra quem tem menos carga, e o teto por tecnico segura", () => {
+    const plano = planejarRedistribuicao({
+      paradas: ["p1", "p2", "p3", "p4"],
+      candidatos: [
+        { tecnicoId: "ana", carga: 2 },
+        { tecnicoId: "bia", carga: 0 },
+      ],
+      tetoPorTecnico: 3,
+    });
+    // bia 0->1->2->3 recebe tres; ana (2) recebe uma e bate no teto 3; nada sobra.
+    expect(plano.atribuicoes.map((a) => a.tecnicoId)).toEqual(["bia", "bia", "ana", "bia"]);
+    expect(plano.semDestino).toEqual([]);
+  });
+
+  it("sem candidato com vaga, a parada vai pra 'sem destino' (remarcar)", () => {
+    const plano = planejarRedistribuicao({ paradas: ["p1", "p2"], candidatos: [{ tecnicoId: "ana", carga: 3 }], tetoPorTecnico: 3 });
+    expect(plano.atribuicoes).toEqual([]);
+    expect(plano.semDestino).toEqual(["p1", "p2"]);
+  });
+
+  it("sem teto, tudo cai em quem tem menos, alternando", () => {
+    const plano = planejarRedistribuicao({ paradas: ["p1", "p2", "p3"], candidatos: [{ tecnicoId: "a", carga: 0 }, { tecnicoId: "b", carga: 0 }], tetoPorTecnico: null });
+    expect(plano.atribuicoes.map((a) => a.tecnicoId)).toEqual(["a", "b", "a"]);
   });
 });

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { PAPEIS_OCUPACAO, UserRole, type JornadaResposta, type TecnicoEmJornada } from "@isphub/shared";
+import { PAPEIS_OCUPACAO, TURNOS_AGENDA, UserRole, type JornadaResposta, type TecnicoEmJornada } from "@isphub/shared";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import * as escala from "../services/escalaService.js";
@@ -155,6 +155,8 @@ const escalarSchema = z.object({
   /** Nulo = escalado A PE. Diferente de nao escalado, que e nao ter linha. */
   veiculoId: z.string().uuid().nullable(),
   papel: z.enum(PAPEIS_OCUPACAO).default("motorista"),
+  /** Dia inteiro por padrao; meio periodo = um so. */
+  turnos: z.array(z.enum(TURNOS_AGENDA)).min(1).max(2).default(["manha", "tarde"]),
 });
 
 /** O quadro do dia — a tela do supervisor. */
@@ -178,9 +180,24 @@ jornadaRouter.put(
       dia: new Date(`${b.dia}T00:00:00Z`),
       veiculoId: b.veiculoId,
       papel: b.papel,
+      turnos: b.turnos,
       definidoPor: req.user!.sub,
     });
     res.json(await escala.escalaDoDia(new Date(`${b.dia}T00:00:00Z`)));
+  }),
+);
+
+/** Faltou / voltou. Devolve o quadro do dia. */
+jornadaRouter.post(
+  "/escalas/:usuarioId/ausencia",
+  requireRole(UserRole.ADMIN, UserRole.GESTOR),
+  asyncHandler(async (req, res) => {
+    const b = z
+      .object({ dia: z.string().date(), ausente: z.boolean(), motivo: z.string().trim().max(120).nullish() })
+      .parse(req.body);
+    const d = new Date(`${b.dia}T00:00:00Z`);
+    await escala.marcarAusencia({ usuarioId: req.params.usuarioId, dia: d, ausente: b.ausente, motivo: b.motivo });
+    res.json(await escala.escalaDoDia(d));
   }),
 );
 

@@ -1,4 +1,4 @@
-import { PapelOcupacao, type EscalaDoDia } from "@isphub/shared";
+import { PapelOcupacao, type EscalaDoDia, type TurnoAgenda } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../middleware/errorHandler.js";
 
@@ -31,11 +31,11 @@ export async function escalaDoTecnico(usuarioId: string, dia: Date): Promise<Esc
   const d = diaDe(dia);
   const escala = await prisma.escalaJornada.findUnique({
     where: { usuarioId_dia: { usuarioId, dia: d } },
-    select: { veiculoId: true, papel: true, veiculo: { select: { placa: true } } },
+    select: { veiculoId: true, papel: true, turnos: true, veiculo: { select: { placa: true } } },
   });
 
   if (!escala) {
-    return { escalado: false, veiculoId: null, veiculoPlaca: null, papel: "motorista", parceiros: [] };
+    return { escalado: false, turnos: [], veiculoId: null, veiculoPlaca: null, papel: "motorista", parceiros: [] };
   }
 
   const parceiros = escala.veiculoId
@@ -49,6 +49,7 @@ export async function escalaDoTecnico(usuarioId: string, dia: Date): Promise<Esc
 
   return {
     escalado: true,
+    turnos: escala.turnos,
     veiculoId: escala.veiculoId,
     veiculoPlaca: escala.veiculo?.placa ?? null,
     papel: escala.papel,
@@ -65,6 +66,9 @@ export async function escalaDoDia(dia: Date) {
     select: {
       id: true,
       papel: true,
+      turnos: true,
+      ausenteEm: true,
+      motivoAusencia: true,
       veiculoId: true,
       veiculo: { select: { placa: true, apelido: true } },
       usuario: { select: { id: true, nome: true, nomeExibicao: true } },
@@ -78,7 +82,25 @@ export async function escalaDoDia(dia: Date) {
     veiculoPlaca: l.veiculo?.placa ?? null,
     veiculoApelido: l.veiculo?.apelido ?? null,
     papel: l.papel,
+    turnos: l.turnos,
+    ausenteEm: l.ausenteEm ? l.ausenteEm.toISOString() : null,
+    motivoAusencia: l.motivoAusencia,
   }));
+}
+
+/**
+ * Marca (ou desfaz) a falta de um escalado. E gesto humano: o job de
+ * "escalado sem jornada" so avisa — marcar falta sozinho esconderia o atraso
+ * de quem chegou 20 min depois.
+ */
+export async function marcarAusencia(args: { usuarioId: string; dia: Date; ausente: boolean; motivo?: string | null }) {
+  const d = diaDe(args.dia);
+  const existe = await prisma.escalaJornada.findUnique({ where: { usuarioId_dia: { usuarioId: args.usuarioId, dia: d } }, select: { id: true } });
+  if (!existe) throw new HttpError(404, "Esta pessoa nao esta escalada neste dia");
+  await prisma.escalaJornada.update({
+    where: { id: existe.id },
+    data: args.ausente ? { ausenteEm: new Date(), motivoAusencia: args.motivo ?? null } : { ausenteEm: null, motivoAusencia: null },
+  });
 }
 
 /**
@@ -91,9 +113,11 @@ export async function escalar(args: {
   dia: Date;
   veiculoId: string | null;
   papel: PapelOcupacao;
+  turnos?: TurnoAgenda[];
   definidoPor: string;
 }) {
   const d = diaDe(args.dia);
+  const turnos = args.turnos && args.turnos.length > 0 ? args.turnos : (["manha", "tarde"] as TurnoAgenda[]);
 
   if (args.veiculoId) {
     const v = await prisma.veiculo.findUnique({ where: { id: args.veiculoId }, select: { status: true } });
@@ -105,8 +129,8 @@ export async function escalar(args: {
 
   return prisma.escalaJornada.upsert({
     where: { usuarioId_dia: { usuarioId: args.usuarioId, dia: d } },
-    create: { usuarioId: args.usuarioId, dia: d, veiculoId: args.veiculoId, papel: args.papel, definidoPor: args.definidoPor },
-    update: { veiculoId: args.veiculoId, papel: args.papel, definidoPor: args.definidoPor },
+    create: { usuarioId: args.usuarioId, dia: d, veiculoId: args.veiculoId, papel: args.papel, turnos, definidoPor: args.definidoPor },
+    update: { veiculoId: args.veiculoId, papel: args.papel, turnos, definidoPor: args.definidoPor },
     select: { id: true },
   });
 }

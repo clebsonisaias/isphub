@@ -54,6 +54,8 @@ export interface AgendaConfigDto {
   /** De onde a equipe sai de manha — origem da rota sugerida. Nulo = sem origem (a 1a parada vira origem). */
   baseLat: number | null;
   baseLng: number | null;
+  /** Visitas que um tecnico faz por turno. Preenchido, a capacidade segue a escala; nulo = fixa. */
+  vagasPorTecnico: number | null;
 }
 
 /** Um dia que foge da regra do calendario, como o servico o entrega. */
@@ -73,6 +75,8 @@ export type BloqueioVaga =
   | "dia_nao_atendido"
   /** O dia atende, mas nao neste turno — sabado a tarde. */
   | "turno_nao_atendido"
+  /** A escala do dia existe e ninguem esta escalado neste turno. */
+  | "sem_equipe"
   | "feriado"
   | "antecedencia";
 
@@ -101,6 +105,22 @@ export interface VagaTurno {
    * por que; com o motivo ao lado, ninguem precisa perguntar.
    */
   motivoBloqueio: string | null;
+  /**
+   * Quantos tecnicos a escala poe neste turno. Nulo = a capacidade e a fixa
+   * (sem escala cadastrada no dia, ou `vagasPorTecnico` desligado).
+   */
+  tecnicosEscalados?: number | null;
+}
+
+/**
+ * Capacidade de um turno quando a escala manda: min(fixa, escalados x por
+ * tecnico). Sem `vagasPorTecnico` ou sem escala no dia (`escalados` nulo),
+ * vale a fixa — a escala costuma ser feita na vespera, e a grade de daqui a
+ * dez dias nao pode nascer zerada.
+ */
+export function capacidadeDerivada(fixa: number, escalados: number | null | undefined, vagasPorTecnico: number | null): number {
+  if (vagasPorTecnico == null || escalados == null) return fixa;
+  return Math.min(fixa, escalados * vagasPorTecnico);
 }
 
 /** Hora local (BR) em que cada turno comeca. Usada pra antecedencia e write-back. */

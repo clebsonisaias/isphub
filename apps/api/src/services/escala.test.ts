@@ -4,6 +4,7 @@ import { diaDe, viaturaEfetiva } from "./escalaService.js";
 
 const escalado = (veiculoId: string | null, papel: EscalaDoDia["papel"] = "motorista"): EscalaDoDia => ({
   escalado: true,
+  turnos: ["manha", "tarde"],
   veiculoId,
   veiculoPlaca: veiculoId ? "SUP0001" : null,
   papel,
@@ -11,6 +12,7 @@ const escalado = (veiculoId: string | null, papel: EscalaDoDia["papel"] = "motor
 });
 const semEscala: EscalaDoDia = {
   escalado: false,
+  turnos: [],
   veiculoId: null,
   veiculoPlaca: null,
   papel: "motorista",

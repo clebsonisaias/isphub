@@ -1,4 +1,5 @@
 import {
+  capacidadeDerivada,
   dataDoDia,
   diaBrDe,
   diaDaSemana,
@@ -81,11 +82,14 @@ export function vagaDe(args: {
   ocupadasDia?: number;
   /** A excecao cadastrada pra este dia, quando houver. */
   excecao?: ExcecaoAgendaDto | undefined;
+  /** Tecnicos escalados neste turno. Nulo/ausente = sem escala no dia (vale a fixa). */
+  escalados?: number | null;
   agora: Date;
 }): VagaTurno {
   const { dia, turno, config, agora, excecao } = args;
   const ocupacao = args.ocupacao ?? VAZIA;
-  const capacidade = capacidadeDe(turno, config);
+  const capacidade = capacidadeDerivada(capacidadeDe(turno, config), args.escalados, config.vagasPorTecnico);
+  const pelaEscala = config.vagasPorTecnico != null && args.escalados != null;
   const ocupadasDia = args.ocupadasDia ?? ocupacao.total;
 
   /*
@@ -111,6 +115,10 @@ export function vagaDe(args: {
     // ponytail: regra fixa (decisao de 07/10/2026). Se a tarde de sabado
     // passar a variar, vira `diasSoManha Int[]` na AgendaConfig.
     bloqueio = "turno_nao_atendido";
+  } else if (pelaEscala && capacidade === 0) {
+    // A escala do dia existe e ninguem esta neste turno: nao e "lotado", e
+    // "sem equipe" — a atendente precisa saber que escalar alguem abre a vaga.
+    bloqueio = "sem_equipe";
   } else if (inicioDoTurno(dia, turno).getTime() - agora.getTime() < config.antecedenciaMin * 60_000) {
     bloqueio = "antecedencia";
   } else if (config.vagasDia != null && ocupadasDia >= config.vagasDia) {
@@ -149,6 +157,7 @@ export function vagaDe(args: {
     ocupadasRegiao: ocupacao.regiao,
     ocupadasDia,
     motivoBloqueio,
+    tecnicosEscalados: pelaEscala ? (args.escalados ?? null) : null,
   };
 }
 
@@ -165,6 +174,8 @@ export function montarGrade(args: {
   ocupacoes: Map<string, Ocupacao>;
   /** `AAAA-MM-DD` -> excecao. Ausente = so o calendario automatico vale. */
   excecoes?: Map<string, ExcecaoAgendaDto>;
+  /** `dia|turno` -> tecnicos escalados. Dia sem entrada = sem escala (vale a fixa). */
+  escalados?: Map<string, number>;
   agora: Date;
 }): VagaTurno[] {
   const grade: VagaTurno[] = [];
@@ -183,6 +194,7 @@ export function montarGrade(args: {
           ocupacao: args.ocupacoes.get(chaveJanela(dia, turno)),
           ocupadasDia,
           excecao: args.excecoes?.get(dia),
+          escalados: args.escalados?.get(chaveJanela(dia, turno)),
           agora: args.agora,
         }),
       );
@@ -203,6 +215,7 @@ export function proximasVagas(args: {
   config: AgendaConfigDto;
   ocupacoes: Map<string, Ocupacao>;
   excecoes?: Map<string, ExcecaoAgendaDto>;
+  escalados?: Map<string, number>;
   quantas: number;
 }): VagaTurno[] {
   const inicio = diaBrDe(args.agora);
@@ -213,6 +226,7 @@ export function proximasVagas(args: {
     config: args.config,
     ocupacoes: args.ocupacoes,
     excecoes: args.excecoes,
+    escalados: args.escalados,
     agora: args.agora,
   })
     .filter((v) => v.bloqueio === null && v.livres > 0)
@@ -245,6 +259,7 @@ export async function lerConfig(): Promise<AgendaConfigDto> {
     remarcacoesMaxCliente: c.remarcacoesMaxCliente,
     baseLat: c.baseLat,
     baseLng: c.baseLng,
+    vagasPorTecnico: c.vagasPorTecnico,
   };
 }
 
@@ -305,11 +320,34 @@ export async function excecoesEntre(de: string, ate: string): Promise<Map<string
   );
 }
 
+/**
+ * Tecnicos escalados por `dia|turno` no intervalo. Conta so quem esta de pe
+ * (sem ausencia) e ativo. Dia sem nenhuma linha de escala NAO entra no mapa —
+ * e assim que a grade sabe que ali vale a capacidade fixa.
+ */
+export async function escaladosEntre(de: string, ate: string): Promise<Map<string, number>> {
+  const linhas = await prisma.escalaJornada.findMany({
+    where: { dia: { gte: dataDoDia(de), lte: dataDoDia(ate) }, usuario: { ativo: true, role: "tecnico" } },
+    select: { dia: true, turnos: true, ausenteEm: true },
+  });
+  const mapa = new Map<string, number>();
+  for (const l of linhas) {
+    const dia = l.dia.toISOString().slice(0, 10);
+    // O dia passa a existir no mapa mesmo com todo mundo ausente: zero e uma
+    // resposta ("sem equipe"), ausencia de entrada e outra ("sem escala").
+    for (const t of TURNOS_AGENDA) mapa.set(chaveJanela(dia, t), mapa.get(chaveJanela(dia, t)) ?? 0);
+    if (l.ausenteEm) continue;
+    for (const t of l.turnos) mapa.set(chaveJanela(dia, t), (mapa.get(chaveJanela(dia, t)) ?? 0) + 1);
+  }
+  return mapa;
+}
+
 export async function grade(args: { de: string; ate: string; regiao?: string | null; agora?: Date }) {
-  const [config, ocupacoes, excecoes] = await Promise.all([
-    lerConfig(),
+  const config = await lerConfig();
+  const [ocupacoes, excecoes, escalados] = await Promise.all([
     ocupacoesEntre(args.de, args.ate, args.regiao),
     excecoesEntre(args.de, args.ate),
+    config.vagasPorTecnico != null ? escaladosEntre(args.de, args.ate) : undefined,
   ]);
   return montarGrade({
     de: args.de,
@@ -317,6 +355,7 @@ export async function grade(args: { de: string; ate: string; regiao?: string | n
     config,
     ocupacoes,
     excecoes,
+    escalados,
     agora: args.agora ?? new Date(),
   });
 }
@@ -338,11 +377,12 @@ export async function proximasVagasDoBanco(args: {
   const config = await lerConfig();
   const hoje = diaBrDe(agora);
   const ate = somarDias(hoje, config.horizonteDias);
-  const [ocupacoes, excecoes] = await Promise.all([
+  const [ocupacoes, excecoes, escalados] = await Promise.all([
     ocupacoesEntre(hoje, ate, args.regiao),
     excecoesEntre(hoje, ate),
+    config.vagasPorTecnico != null ? escaladosEntre(hoje, ate) : undefined,
   ]);
-  return proximasVagas({ agora, config, ocupacoes, excecoes, quantas: args.quantas });
+  return proximasVagas({ agora, config, ocupacoes, excecoes, escalados, quantas: args.quantas });
 }
 
 /** As excecoes cadastradas a partir de hoje — a lista da tela do supervisor. */
@@ -454,6 +494,7 @@ export async function marcar(args: MarcarArgs) {
   // A excecao do dia entra na checagem: sem ela, marcar direto (sem passar
   // pela oferta) furaria o feriado — e e exatamente assim que o AtendAI marca.
   const excecoes = await excecoesEntre(args.dia, args.dia);
+  const escalados = config.vagasPorTecnico != null ? await escaladosEntre(args.dia, args.dia) : undefined;
 
   return prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`agenda:${args.dia}:${args.turno}`}))`;
@@ -482,6 +523,7 @@ export async function marcar(args: MarcarArgs) {
           0,
         ),
         excecao: excecoes.get(args.dia),
+        escalados: escalados?.get(chaveJanela(args.dia, args.turno)),
         agora: new Date(),
       });
       if (vaga.bloqueio) throw new HttpError(409, motivoRecusa(vaga.bloqueio));
@@ -533,6 +575,8 @@ export function motivoRecusa(bloqueio: BloqueioVaga): string {
       return "Nao ha atendimento neste dia da semana.";
     case "turno_nao_atendido":
       return "Sabado so tem atendimento de manha — escolha a manha ou outro dia.";
+    case "sem_equipe":
+      return "Ninguem escalado neste turno — escale alguem ou escolha outro dia.";
     case "feriado":
       return "Nao ha atendimento neste dia (feriado).";
     case "antecedencia":
