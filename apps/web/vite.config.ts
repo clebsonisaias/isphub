@@ -30,15 +30,19 @@ export default defineConfig({
         // Vendors estaveis em chunks proprios: mudam so quando a dependencia
         // sobe, entao o navegador reaproveita entre deploys. As paginas ja
         // se separam sozinhas pelo lazy() do App.
-        // Forma de funcao: o Vite 8 (rolldown) nao aceita mais o objeto.
-        manualChunks(id) {
-          if (!id.includes("node_modules")) return;
-          const pacote = id.split(/[\\/]node_modules[\\/]/).pop()?.split(/[\\/]/).slice(0, id.includes("/node_modules/@") ? 2 : 1).join("/") ?? "";
-          if (["leaflet", "react-leaflet"].includes(pacote)) return "leaflet";
-          if (["gsap", "@gsap/react", "framer-motion", "motion-dom", "motion-utils"].includes(pacote)) return "motion";
-          if (["react", "react-dom", "react-router", "react-router-dom", "scheduler"].includes(pacote)) return "react";
-          // Sem isto cada icone vira um chunk de 300 bytes (50 requisicoes).
-          if (pacote === "lucide-react") return "icons";
+        // Rolldown (Vite 8): `manualChunks` em funcao arrastava modulos de app
+        // pro chunk do leaflet e o index passava a pre-carrega-lo em toda
+        // pagina. `advancedChunks` agrupa SO o que casa no teste.
+        advancedChunks: {
+          groups: [
+            { name: "motion", test: /[\\/]node_modules[\\/](gsap|@gsap|framer-motion|motion-dom|motion-utils)[\\/]/ },
+            // React primeiro: e o grupo que todo chunk importa — se outro vier antes,
+            // o rolldown pode acomodar o core do React nele e o index pre-carrega-lo.
+            { name: "react", test: /[\\/]node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/ },
+            { name: "leaflet", test: /[\\/]node_modules[\\/](leaflet|react-leaflet|@react-leaflet)[\\/]/ },
+            // Sem isto cada icone vira um chunk de 300 bytes (50 requisicoes).
+            { name: "icons", test: /[\\/]node_modules[\\/]lucide-react[\\/]/ },
+          ],
         },
       },
     },
