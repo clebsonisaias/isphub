@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { TURNOS_AGENDA, ORIGENS_AGENDAMENTO, UserRole } from "@isphub/shared";
+import { TURNOS_AGENDA, ORIGENS_AGENDAMENTO, UserRole, metrosDaOrdem, sugerirOrdem } from "@isphub/shared";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import * as agenda from "../services/agendaService.js";
@@ -67,6 +67,23 @@ agendaRouter.get(
   asyncHandler(async (req, res) => {
     const { dia, turno } = z.object({ dia: DIA, turno: z.enum(TURNOS_AGENDA) }).parse(req.query);
     res.json(await agenda.doTurno(dia, turno));
+  }),
+);
+
+/**
+ * `GET /agenda/turno/sugestao` — a ordem sugerida pra rota de uma janela.
+ * NAO grava: quem grava e `PUT /rota`, quando o supervisor aceita.
+ */
+agendaRouter.get(
+  "/turno/sugestao",
+  requireRole(UserRole.ADMIN, UserRole.GESTOR),
+  asyncHandler(async (req, res) => {
+    const { dia, turno } = z.object({ dia: DIA, turno: z.enum(TURNOS_AGENDA) }).parse(req.query);
+    const [paradas, config] = await Promise.all([agenda.doTurno(dia, turno), agenda.lerConfig()]);
+    const origem = config.baseLat != null && config.baseLng != null ? { lat: config.baseLat, lng: config.baseLng } : null;
+    const lista = paradas.map((p) => ({ id: p.id, lat: p.ordemServico?.lat ?? null, lng: p.ordemServico?.lng ?? null }));
+    const sugestao = sugerirOrdem(lista, origem);
+    res.json({ ...sugestao, metrosAtual: metrosDaOrdem(lista, origem), comOrigem: origem !== null });
   }),
 );
 
@@ -194,6 +211,9 @@ adminAgendaRouter.put(
         horizonteDias: z.number().int().min(1).max(90),
         antecedenciaMin: z.number().int().min(0).max(10_080),
         remarcacoesMaxCliente: z.number().int().min(0).max(10),
+        // Origem da rota sugerida. Os dois juntos ou os dois nulos.
+        baseLat: z.number().min(-90).max(90).nullable(),
+        baseLng: z.number().min(-180).max(180).nullable(),
       })
       .partial()
       .parse(req.body);

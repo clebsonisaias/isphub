@@ -2,8 +2,7 @@ import {
   rotuloVeiculo,
   decidirOcupacao,
   type OrigemOcupacao,
-  type PapelOcupacao,
-} from "@isphub/shared";
+  type PapelOcupacao, OsStatus } from "@isphub/shared";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../middleware/errorHandler.js";
@@ -359,6 +358,30 @@ export interface VeiculoDaOs {
  * de execucao da OS (min/max dos eventos) com as ocupacoes do tecnico dela. Uma
  * FK obrigatoria seria uma quarta verdade a manter em dia.
  */
+/** Transicoes que delimitam a execucao: sair, chegar/comecar, terminar. */
+const STATUS_DE_EXECUCAO = [OsStatus.EM_DESLOCAMENTO, OsStatus.EM_EXECUCAO, OsStatus.CONCLUIDA];
+
+/**
+ * A janela em que a OS foi EXECUTADA: do primeiro "a caminho"/"em execucao"
+ * ao "concluida". So transicoes de status contam — uma anotacao feita dois
+ * dias antes ou uma foto anexada depois nao sao execucao, e alargavam a
+ * janela a ponto de cruzar com o carro errado.
+ *
+ * `null` quando a OS nao tem nenhuma dessas transicoes (ex.: fechada direto
+ * no SGP sem passar pelo app).
+ */
+export async function janelaExecucao(ordemServicoId: string): Promise<{ inicio: Date; fim: Date } | null> {
+  const eventos = await prisma.osEvento.findMany({
+    where: { ordemServicoId, statusPara: { in: STATUS_DE_EXECUCAO } },
+    orderBy: { criadoEm: "asc" },
+    select: { criadoEm: true, statusPara: true },
+  });
+  if (eventos.length === 0) return null;
+  const inicio = eventos[0]!.criadoEm;
+  const concluida = [...eventos].reverse().find((e) => e.statusPara === "concluida");
+  return { inicio, fim: concluida?.criadoEm ?? eventos[eventos.length - 1]!.criadoEm };
+}
+
 export async function veiculosDaOs(ordemServicoId: string): Promise<VeiculoDaOs[]> {
   const explicitas = await prisma.ocupacaoVeiculo.findMany({
     where: { ordemServicoId },
@@ -375,13 +398,11 @@ export async function veiculosDaOs(ordemServicoId: string): Promise<VeiculoDaOs[
   });
   if (!os?.tecnicoId) return [];
 
-  const janela = await prisma.osEvento.aggregate({
-    where: { ordemServicoId },
-    _min: { criadoEm: true },
-    _max: { criadoEm: true },
-  });
-  const de = janela._min.criadoEm ?? os.criadoEm;
-  const ate = janela._max.criadoEm ?? os.atualizadoEm;
+  // Janela de EXECUCAO; sem transicao nenhuma, cai no intervalo de vida da OS
+  // no espelho (comportamento antigo), que e o melhor palpite que resta.
+  const janela = await janelaExecucao(ordemServicoId);
+  const de = janela?.inicio ?? os.criadoEm;
+  const ate = janela?.fim ?? os.atualizadoEm;
 
   // Sobreposicao de intervalos: comeca antes do fim E termina depois do inicio.
   const derivadas = await prisma.ocupacaoVeiculo.findMany({

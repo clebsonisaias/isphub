@@ -55,6 +55,11 @@ export const ordensServicoApi = {
   anotar: (id: string, texto: string) => api.post<OrdemServico>(`/ordens-servico/${id}/anotacoes`, { texto }),
   atribuir: (id: string, tecnicoId: string) => api.post<OrdemServico>(`/ordens-servico/${id}/atribuir`, { tecnicoId }),
   eventos: (id: string) => api.get<OsEvento[]>(`/ordens-servico/${id}/eventos`),
+  /** Quanto a viatura rodou ate esta OS. `null` quando nao ha janela de execucao. */
+  deslocamento: (id: string) =>
+    api.get<{ metros: number; pontos: number; fonte: "gps" | "estimado" | "sem_dados"; inicioEm: string; fimEm: string } | null>(
+      `/ordens-servico/${id}/deslocamento`,
+    ),
   /** Ficha lida ao vivo do SGP (plano, PPPoE, ponto de referencia). `null` se o SGP nao devolver. */
   fichaSgp: (id: string) => api.get<OsFichaSgp | null>(`/ordens-servico/${id}/ficha-sgp`),
   evidencias: {

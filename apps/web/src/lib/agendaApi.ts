@@ -103,6 +103,12 @@ export const agendaApi = {
 
   desmarcar: (id: string) => api.delete<{ id: string }>(`/agenda/${id}`),
 
+  /** A ordem sugerida por proximidade (nao grava — `definirRota` grava quando o supervisor aceita). */
+  sugestao: (dia: string, turno: TurnoAgenda) =>
+    api.get<{ ordem: string[]; metros: number; metrosAtual: number; semCoordenada: number; comOrigem: boolean }>(
+      `/agenda/turno/sugestao?dia=${dia}&turno=${turno}`,
+    ),
+
   /** A rota inteira de uma vez: arrastar uma parada renumera todas. */
   definirRota: (dia: string, turno: TurnoAgenda, ids: string[]) =>
     api.put<ParadaAgenda[]>("/agenda/rota", { dia, turno, ids }),

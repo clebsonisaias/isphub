@@ -326,6 +326,7 @@ model OrdemServico {
   /// Ocupacoes abertas ESPECIFICAMENTE pra esta OS — o caso raro. O normal e
   /// descobrir o veiculo cruzando a janela de execucao com as ocupacoes do
   /// tecnico; ver `veiculosDaOs`.
+  deslocamento DeslocamentoOs?
   ocupacoes    OcupacaoVeiculo[]
   /// A marcacao na agenda da ISPhub, quando existe. Chega DEPOIS da OS em
   /// alguns casos e ANTES dela em outros — ver o comentario em `Agendamento`.
@@ -1471,6 +1472,7 @@ model Veiculo {
 
   abastecimentos Abastecimento[]
   ocupacoes      OcupacaoVeiculo[]
+  deslocamentos  DeslocamentoOs[]
   vinculos       VinculoRastreador[]
   eventos        EventoRastreador[]
   viagens        Viagem[]
@@ -2073,9 +2075,37 @@ model AgendaConfig {
   /// ping-pong as custas da rota de quem ja saiu pra rua.
   remarcacoesMaxCliente Int @default(2)
 
+  /// De onde a equipe sai — origem da rota sugerida. Nulo = usa a 1a parada.
+  baseLat Float?
+  baseLng Float?
+
   atualizadoEm DateTime @updatedAt
 
   @@map("agenda_config")
+}
+
+/// Quanto a viatura rodou ATE uma OS: do fim da parada anterior (ou inicio da
+/// jornada) ao inicio desta. Derivado e recalculavel — por isso tabela propria,
+/// e nao coluna no espelho da OS.
+model DeslocamentoOs {
+  id             String       @id @default(uuid())
+  ordemServicoId String       @unique
+  ordemServico   OrdemServico @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
+
+  veiculoId String?
+  veiculo   Veiculo? @relation(fields: [veiculoId], references: [id], onDelete: SetNull)
+
+  inicioEm DateTime
+  fimEm    DateTime
+  metros   Int
+  pontos   Int
+  /// gps = soma dos trechos; estimado = reta x fator de rua; sem_dados = nao deu pra medir.
+  fonte String
+
+  calculadoEm DateTime @default(now())
+
+  @@index([veiculoId, inicioEm])
+  @@map("deslocamentos_os")
 }
 
 /// Uma OS marcada num dia + turno. E a FONTE DA VERDADE da agenda.

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { AlertTriangle, ArrowDown, ArrowUp, CalendarDays, CalendarOff, CalendarPlus, CheckCircle2, ChevronLeft, ChevronRight, CloudOff, MapPin, Phone, RefreshCw, Search, Settings2, Trash2, X } from "lucide-react";
-import { ROTULO_TURNO, TURNOS_AGENDA, diaBrHoje, inicioDaSemana, somarDias, type AgendaConfigDto, type FilaItem, type TurnoAgenda, type VagaTurno } from "@isphub/shared";
+import { AlertTriangle, ArrowDown, ArrowUp, CalendarDays, CalendarOff, CalendarPlus, CheckCircle2, ChevronLeft, ChevronRight, CloudOff, MapPin, Phone, RefreshCw, Route, Search, Settings2, Trash2, X } from "lucide-react";
+import { ROTULO_TURNO, TURNOS_AGENDA, diaBrHoje, formatarKm, inicioDaSemana, somarDias, type AgendaConfigDto, type FilaItem, type TurnoAgenda, type VagaTurno } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
 import { AnimatedPage } from "@/components/AnimatedPage";
 import { Card, CardContent } from "@/components/ui/card";
@@ -57,6 +57,9 @@ export function AgendaPage() {
   const [candidatas, setCandidatas] = useState<FilaItem[] | null>(null);
   const [buscaOs, setBuscaOs] = useState("");
   const [marcandoId, setMarcandoId] = useState<string | null>(null);
+  // Sugestao de ordem por proximidade: calculada sob demanda, aplicada so no "Aplicar".
+  const [sugestao, setSugestao] = useState<{ ordem: string[]; metros: number; metrosAtual: number; semCoordenada: number; comOrigem: boolean } | null>(null);
+  const [sugerindo, setSugerindo] = useState(false);
   const shouldReduceMotion = useReducedMotion();
 
   const carregarGrade = useCallback(async () => {
@@ -92,6 +95,7 @@ export function AgendaPage() {
   function abrir(dia: string, turno: TurnoAgenda) {
     setJanela({ dia, turno });
     setConfirmandoId(null);
+    setSugestao(null);
     void carregarParadas(dia, turno);
     // As candidatas valem pra qualquer janela; buscar uma vez por painel aberto.
     if (candidatas === null) {
@@ -168,6 +172,32 @@ export function AgendaPage() {
     } catch {
       toast({ variante: "erro", titulo: "Não foi possível salvar a rota." });
       void carregarParadas(janela.dia, janela.turno);
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  async function sugerir() {
+    if (!janela) return;
+    setSugerindo(true);
+    try {
+      setSugestao(await agendaApi.sugestao(janela.dia, janela.turno));
+    } catch {
+      toast({ variante: "erro", titulo: "Não foi possível calcular a sugestão." });
+    } finally {
+      setSugerindo(false);
+    }
+  }
+
+  async function aplicarSugestao() {
+    if (!janela || !sugestao) return;
+    setSalvando(true);
+    try {
+      setParadas(await agendaApi.definirRota(janela.dia, janela.turno, sugestao.ordem));
+      setSugestao(null);
+      toast({ variante: "sucesso", titulo: "Rota reordenada", descricao: `≈ ${formatarKm(sugestao.metros)} de percurso` });
+    } catch {
+      toast({ variante: "erro", titulo: "Não foi possível salvar a rota." });
     } finally {
       setSalvando(false);
     }
@@ -376,6 +406,47 @@ export function AgendaPage() {
                     <X className="size-4" aria-hidden />
                   </button>
                 </header>
+
+                {/*
+                  Sugestao de ordem: o sistema propoe, o supervisor decide. Mostra
+                  os dois percursos lado a lado — sem o numero da ordem atual, a
+                  sugestao nao tem contra o que ser julgada.
+                */}
+                {paradas.length > 1 ? (
+                  <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => void sugerir()}
+                      disabled={sugerindo || salvando}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 font-medium hover:bg-muted disabled:opacity-50"
+                    >
+                      <Route className="size-3.5" aria-hidden />
+                      {sugerindo ? "Calculando…" : "Sugerir ordem"}
+                    </button>
+                    {sugestao ? (
+                      <>
+                        <span className="text-muted-foreground">
+                          atual ≈ <span className="font-medium text-foreground">{formatarKm(sugestao.metrosAtual)}</span> · sugerida ≈{" "}
+                          <span className="font-medium text-foreground">{formatarKm(sugestao.metros)}</span>
+                          {sugestao.semCoordenada > 0 ? ` · ${sugestao.semCoordenada} sem localização (vão pro fim)` : ""}
+                          {!sugestao.comOrigem ? " · sem base cadastrada" : ""}
+                        </span>
+                        {sugestao.ordem.join() !== paradas.map((p) => p.id).join() ? (
+                          <button
+                            type="button"
+                            onClick={() => void aplicarSugestao()}
+                            disabled={salvando}
+                            className="rounded-md bg-primary px-2.5 py-1.5 font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                          >
+                            Aplicar
+                          </button>
+                        ) : (
+                          <span className="text-muted-foreground">já está na melhor ordem</span>
+                        )}
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 {carregandoParadas ? (
                   <div className="flex flex-col gap-2 p-4">
@@ -635,6 +706,8 @@ function LimitesDaAgenda({
   const [antecedencia, setAntecedencia] = useState(config.antecedenciaMin);
   const [horizonte, setHorizonte] = useState(config.horizonteDias);
   const [remarcacoes, setRemarcacoes] = useState(config.remarcacoesMaxCliente);
+  const [baseLat, setBaseLat] = useState<string>(config.baseLat != null ? String(config.baseLat) : "");
+  const [baseLng, setBaseLng] = useState<string>(config.baseLng != null ? String(config.baseLng) : "");
   const [salvando, setSalvando] = useState(false);
 
   const nomesDias = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
@@ -651,6 +724,9 @@ function LimitesDaAgenda({
         antecedenciaMin: antecedencia,
         horizonteDias: horizonte,
         remarcacoesMaxCliente: remarcacoes,
+        // Os dois juntos ou nenhum: metade de uma coordenada nao e origem.
+        baseLat: baseLat.trim() && baseLng.trim() ? Number(baseLat) : null,
+        baseLng: baseLat.trim() && baseLng.trim() ? Number(baseLng) : null,
       });
     } finally {
       setSalvando(false);
@@ -683,6 +759,29 @@ function LimitesDaAgenda({
               max={500}
               value={manha}
               onChange={(e) => setManha(Number(e.target.value))}
+              className="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+            />
+          </label>
+          <label className="flex flex-col gap-1.5 text-xs">
+            <span className="font-medium text-foreground">Base da equipe (latitude)</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={baseLat}
+              onChange={(e) => setBaseLat(e.target.value)}
+              placeholder="-5.8580"
+              className="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+            />
+            <span className="text-muted-foreground">De onde a equipe sai — origem da rota sugerida.</span>
+          </label>
+          <label className="flex flex-col gap-1.5 text-xs">
+            <span className="font-medium text-foreground">Base da equipe (longitude)</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={baseLng}
+              onChange={(e) => setBaseLng(e.target.value)}
+              placeholder="-35.3530"
               className="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
             />
           </label>

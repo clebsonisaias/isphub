@@ -26,7 +26,8 @@ import { ordensServicoApi, tecnicosApi, type TecnicoResumo } from "@/lib/filaApi
 import { ApiError } from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-import { CalendarDays, CalendarX2, Navigation } from "lucide-react";
+import { CalendarDays, CalendarX2, Navigation, Route } from "lucide-react";
+import { formatarKm } from "@isphub/shared";
 import { MarcarVisitaDialog } from "@/components/MarcarVisitaDialog";
 import { agendaApi, rotuloVisita } from "@/lib/agendaApi";
 
@@ -58,6 +59,19 @@ export function OrdemServicoDetailDialog({
   // Dois toques pra desmarcar: o primeiro so pergunta. Inline, sem outro
   // dialogo em cima de um dialogo.
   const [confirmandoDesmarcar, setConfirmandoDesmarcar] = useState(false);
+  // Quanto a viatura rodou ate aqui — so existe depois de a OS ter sido executada.
+  const [deslocamento, setDeslocamento] = useState<{ metros: number; fonte: "gps" | "estimado" | "sem_dados" } | null>(null);
+  useEffect(() => {
+    if (!podeDespachar) return;
+    let vivo = true;
+    ordensServicoApi
+      .deslocamento(os.id)
+      .then((d) => vivo && setDeslocamento(d && d.fonte !== "sem_dados" ? d : null))
+      .catch(() => {});
+    return () => {
+      vivo = false;
+    };
+  }, [podeDespachar, os.id, os.status]);
 
   async function handleDesmarcar() {
     if (!os.agendamentoId) return;
@@ -321,6 +335,16 @@ export function OrdemServicoDetailDialog({
                     {os.diaAgenda && os.turnoAgenda && (
                       <span className="text-sm text-muted-foreground">
                         Visita: <span className="font-medium text-foreground">{rotuloVisita(os.diaAgenda, os.turnoAgenda)}</span>
+                      </span>
+                    )}
+                    {deslocamento && (
+                      <span
+                        className="inline-flex items-center gap-1 text-sm text-muted-foreground"
+                        title={deslocamento.fonte === "gps" ? "Medido pelo rastreador da viatura" : "Estimado pela distância em linha reta"}
+                      >
+                        <Route className="size-3.5" aria-hidden />
+                        Deslocamento até aqui: <span className="font-medium text-foreground">{formatarKm(deslocamento.metros)}</span>
+                        {deslocamento.fonte === "estimado" ? <span className="text-xs">(estimado)</span> : null}
                       </span>
                     )}
                     {os.agendamentoId &&

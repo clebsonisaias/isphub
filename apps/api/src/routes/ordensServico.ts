@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { OsStatus, UserRole, ehCodigoStatusContrato, type CodigoStatusContrato } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
+import { calcularDeslocamentoOs, deslocamentoDaOs } from "../services/deslocamentoService.js";
 import { geoSchema } from "../lib/geo.js";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
@@ -139,6 +140,20 @@ ordensServicoRouter.post(
     const { tecnicoId } = atribuirSchema.parse(req.body);
     const os = await writeback.atribuirTecnico(req.params.id, tecnicoId, req.user!.sub);
     res.json(os);
+  }),
+);
+
+/**
+ * Quanto a viatura rodou ate esta OS. `?calcular=1` (admin/gestor) força o
+ * recalculo — serve pra OS que fechou agora e ainda nao entrou no job.
+ */
+ordensServicoRouter.get(
+  "/:id/deslocamento",
+  asyncHandler(async (req, res) => {
+    await assertAcesso(req, req.params.id);
+    const forcar = req.query.calcular === "1" && (req.user!.role === UserRole.ADMIN || req.user!.role === UserRole.GESTOR);
+    const atual = forcar ? null : await deslocamentoDaOs(req.params.id);
+    res.json(atual ?? (await calcularDeslocamentoOs(req.params.id)));
   }),
 );
 

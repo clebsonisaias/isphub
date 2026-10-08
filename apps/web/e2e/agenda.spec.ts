@@ -301,3 +301,60 @@ test("a Fila agrupa por visita e o card mostra o dia e o turno da agenda", async
 
   await desmarcarTudo(request, token, [marcado.id]);
 });
+
+test("a rota aceita uma ordem sugerida por proximidade, e o supervisor decide aplicar", async ({ page, request }) => {
+  const token = await entrar(page);
+  await request.put(`${API}/admin/agenda`, {
+    headers: auth(token),
+    data: { vagasManha: 15, vagasTarde: 15, vagasDia: null, tetoRegiao: null, antecedenciaMin: 120, baseLat: -5.86, baseLng: -35.35 },
+  });
+  await semVisita(request, token, "e2e-os-1");
+  const alvo = await diaLivre(request, token);
+  const provedorId = (await (await request.get(`${API}/provedores`, { headers: auth(token) })).json())[0].id;
+  // Sobra de execução abortada: a órfã deste teste ainda marcada ocuparia a vaga.
+  const sobra = await (await request.get(`${API}/agenda/turno?dia=${alvo.dia}&turno=${alvo.turno}`, { headers: auth(token) })).json();
+  await desmarcarTudo(request, token, sobra.filter((s: { sgpOsId: string }) => s.sgpOsId === "e2e-rota-sugestao").map((s: { id: string }) => s.id));
+  const antes = sobra.filter((s: { sgpOsId: string }) => s.sgpOsId !== "e2e-rota-sugestao").length;
+  // Duas paradas: a OS do seed (com coordenada) e uma órfã (sem OS no espelho, logo sem coordenada).
+  const criados: string[] = [];
+  for (const sgpOsId of ["e2e-os-1", "e2e-rota-sugestao"]) {
+    const r = await request.post(`${API}/agenda`, {
+      headers: auth(token),
+      data: { provedorId, sgpOsId, dia: alvo.dia, turno: alvo.turno, regiao: "Centro" },
+    });
+    criados.push((await r.json()).id);
+  }
+
+  const turnoRotulo = alvo.turno === "manha" ? "Manhã" : "Tarde";
+  await page.goto("/agenda");
+  const qualquerCelula = page.getByRole("button", { name: /^(Manhã|Tarde) de .*: \d+ de \d+/ });
+  await expect(qualquerCelula.first()).toBeVisible();
+  const celula = page.getByRole("button", { name: new RegExp(`^${turnoRotulo} de ${rotuloDia(alvo.dia)}:`) });
+  for (let i = 0; i < 3 && (await celula.count()) === 0; i++) {
+    await page.getByRole("button", { name: "Próxima semana" }).click();
+    await expect(qualquerCelula.first()).toBeVisible();
+  }
+  await celula.click();
+  const painel = page.getByRole("complementary", { name: "Rota do turno" });
+  await expect(painel.locator("ol > li")).toHaveCount(antes + 2);
+
+  await painel.getByRole("button", { name: "Sugerir ordem" }).click();
+  // Os dois percursos aparecem lado a lado; a parada sem localização é declarada.
+  await expect(painel.getByText(/atual ≈/)).toBeVisible();
+  // Sobras de outros testes podem somar órfãs; o que importa é a parada sem localização ser declarada.
+  await expect(painel.getByText(/\d+ sem localização/)).toBeVisible();
+  // Com uma coordenada só, a ordem sugerida é "com coordenada primeiro": ou já está, ou dá pra aplicar.
+  const aplicar = painel.getByRole("button", { name: "Aplicar" });
+  if (await aplicar.count()) {
+    await aplicar.click();
+    await expect(painel.getByText(/Rota reordenada|já está na melhor ordem/).first()).toBeVisible({ timeout: 10_000 }).catch(() => {});
+  }
+  // Quem tem coordenada vem antes de quem não tem: a órfã nunca fica na frente da OS do seed.
+  const textos = await painel.locator("ol > li").allTextContents();
+  const posOs = textos.findIndex((t) => t.includes("Cliente E2E"));
+  const posOrfa = textos.findIndex((t) => t.includes("e2e-rota-sugestao"));
+  expect(posOs).toBeGreaterThanOrEqual(0);
+  expect(posOrfa).toBeGreaterThan(posOs);
+
+  await desmarcarTudo(request, token, criados);
+});

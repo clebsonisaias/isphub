@@ -25,6 +25,8 @@ const CONFIG: AgendaConfigDto = {
   horizonteDias: 14,
   antecedenciaMin: 120,
   remarcacoesMaxCliente: 2,
+  baseLat: null,
+  baseLng: null,
 };
 
 /** Quarta-feira, 10/09/2026, 07:00 em Natal (10:00 UTC). */

@@ -7,6 +7,7 @@ import { startOsNovaAlertScheduler } from "./jobs/osNovaAlertScheduler.js";
 import { startRastreamentoScheduler } from "./jobs/rastreamentoScheduler.js";
 import { startFrotaAlertaScheduler } from "./jobs/frotaAlertaScheduler.js";
 import { startRecorrenciaScheduler } from "./jobs/recorrenciaScheduler.js";
+import { startDeslocamentoScheduler } from "./jobs/deslocamentoScheduler.js";
 import { fecharTodasConexoes } from "./services/realtimeHub.js";
 
 const app = createApp();
@@ -19,6 +20,7 @@ const server = app.listen(env.PORT, () => {
   startRecorrenciaScheduler();
   startRastreamentoScheduler();
   startFrotaAlertaScheduler();
+  startDeslocamentoScheduler();
 });
 
 /**

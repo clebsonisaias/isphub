@@ -51,6 +51,9 @@ export interface AgendaConfigDto {
   antecedenciaMin: number;
   /** Quantas vezes o proprio cliente pode remarcar sozinho. */
   remarcacoesMaxCliente: number;
+  /** De onde a equipe sai de manha — origem da rota sugerida. Nulo = sem origem (a 1a parada vira origem). */
+  baseLat: number | null;
+  baseLng: number | null;
 }
 
 /** Um dia que foge da regra do calendario, como o servico o entrega. */

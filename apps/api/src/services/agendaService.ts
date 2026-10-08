@@ -243,6 +243,8 @@ export async function lerConfig(): Promise<AgendaConfigDto> {
     horizonteDias: c.horizonteDias,
     antecedenciaMin: c.antecedenciaMin,
     remarcacoesMaxCliente: c.remarcacoesMaxCliente,
+    baseLat: c.baseLat,
+    baseLng: c.baseLng,
   };
 }
 
