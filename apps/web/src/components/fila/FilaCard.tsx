@@ -111,10 +111,11 @@ export function FilaCard({ item, onClick }: { item: FilaItem; onClick: () => voi
         }
       }}
       style={{ borderLeftColor: rail, borderLeftWidth: 4 }}
-      className="fila-item group flex w-full cursor-pointer overflow-hidden rounded-xl border border-border bg-card text-left shadow-soft-sm transition-all hover:border-primary/40 hover:shadow-soft-md motion-safe:hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="fila-item group flex w-full cursor-pointer flex-col overflow-hidden rounded-xl border border-border bg-card text-left shadow-soft-sm transition-all hover:border-primary/40 hover:shadow-soft-md motion-safe:hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-row"
     >
-      {/* Rail de urgência: id, quando, SLA */}
-      <div className="flex w-36 shrink-0 flex-col gap-1 border-r border-border/60 bg-secondary/30 p-2.5 sm:w-44">
+      {/* Rail de urgência: id, quando, SLA. No celular vira uma faixa no topo —
+          como coluna ele comia 144px dos 375 e os selos quebravam em 4 linhas. */}
+      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border/60 bg-secondary/30 px-3 py-2 sm:w-44 sm:flex-col sm:flex-nowrap sm:items-start sm:gap-1 sm:border-b-0 sm:border-r sm:p-2.5">
         <div className="flex items-center gap-1.5">
           <span className="text-xs font-semibold tracking-tight text-muted-foreground">#{item.sgpOsId}</span>
           {chegouAgora(item) && (
@@ -129,9 +130,9 @@ export function FilaCard({ item, onClick }: { item: FilaItem; onClick: () => voi
             </span>
           )}
         </div>
-        <div className="leading-tight">
+        <div className="flex flex-wrap items-baseline gap-x-1.5 leading-tight sm:block">
           <p className="text-[0.62rem] uppercase tracking-wide text-muted-foreground/70">{destaque.rotulo}</p>
-          <p className="text-base font-bold tabular-nums text-foreground">{destaque.grande ?? fmtHora(destaque.iso)}</p>
+          <p className="text-sm font-bold tabular-nums text-foreground sm:text-base">{destaque.grande ?? fmtHora(destaque.iso)}</p>
           <p className="truncate text-xs text-muted-foreground">{destaque.pequeno ?? fmtData(destaque.iso)}</p>
           {item.diaAgenda && (
             // Duas pendencias que fazem o supervisor ligar: cliente confirmou? SGP reflete?
