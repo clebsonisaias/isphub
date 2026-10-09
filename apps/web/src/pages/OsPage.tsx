@@ -6,6 +6,7 @@ import { AnimatedPage } from "@/components/AnimatedPage";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ErrorState";
 import { OrdemServicoDetalhe } from "@/components/OrdemServicoDetalhe";
+import { OsTimeline } from "@/components/OsTimeline";
 import { ordensServicoApi } from "@/lib/filaApi";
 import { ApiError } from "@/lib/apiClient";
 import { ArrowLeft } from "lucide-react";
@@ -19,6 +20,8 @@ export function OsPage() {
   const { id = "" } = useParams();
   const [os, setOs] = useState<FilaItem | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  // Sobe a cada acao no detalhe: remonta o historico da coluna da direita.
+  const [versao, setVersao] = useState(0);
 
   const carregar = useCallback(async () => {
     try {
@@ -36,7 +39,7 @@ export function OsPage() {
   return (
     <AppShell>
       <AnimatedPage>
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-4 lg:p-6">
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-4 lg:max-w-6xl lg:p-6">
           <Link to="/" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
             <ArrowLeft className="size-4" aria-hidden />
             Painel
@@ -44,9 +47,19 @@ export function OsPage() {
           {erro ? (
             <ErrorState message={erro} onRetry={() => void carregar()} />
           ) : os ? (
-            <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 shadow-soft-sm sm:p-6">
-              {/* As acoes ja atualizam o eco local dentro do detalhe; nada a re-buscar aqui. */}
-              <OrdemServicoDetalhe key={os.id} item={os} onMudanca={() => {}} />
+            // Em tela larga, o historico sai da aba e fica ao lado: quem abre a
+            // pagina (e nao o dialogo) quer ver o que ja aconteceu enquanto age.
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
+              <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 shadow-soft-sm sm:p-6">
+                <OrdemServicoDetalhe key={os.id} item={os} onMudanca={() => setVersao((v) => v + 1)} />
+              </div>
+              <aside
+                aria-label="Histórico da OS"
+                className="hidden rounded-xl border border-border bg-card p-4 shadow-soft-sm lg:sticky lg:top-20 lg:block lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto"
+              >
+                <h2 className="mb-3 text-sm font-semibold">Histórico</h2>
+                <OsTimeline key={versao} ordemServicoId={os.id} />
+              </aside>
             </div>
           ) : (
             <div className="flex flex-col gap-3">

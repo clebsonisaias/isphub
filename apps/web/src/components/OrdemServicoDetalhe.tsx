@@ -28,7 +28,7 @@ import { ordensServicoApi, tecnicosApi, type TecnicoResumo } from "@/lib/filaApi
 import { ApiError } from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-import { CalendarDays, CalendarX2, ExternalLink, MapPinCheck, MapPinOff, Navigation, Route } from "lucide-react";
+import { CalendarDays, CalendarX2, CheckCircle2, ExternalLink, MapPinCheck, MapPinOff, Navigation, Play, Route } from "lucide-react";
 import { formatarKm } from "@isphub/shared";
 import { MarcarVisitaDialog } from "@/components/MarcarVisitaDialog";
 import { agendaApi, rotuloVisita } from "@/lib/agendaApi";
@@ -158,10 +158,10 @@ export function OrdemServicoDetalhe({
     }
   }
 
-  async function handleMudarStatus() {
+  async function handleMudarStatus(alvo: OsStatus = novoStatus) {
     setAcaoEmCurso("status");
     try {
-      const atualizado = await ordensServicoApi.mudarStatus(os.id, novoStatus);
+      const atualizado = await ordensServicoApi.mudarStatus(os.id, alvo);
       setOs((prev) => ({ ...prev, status: atualizado.status as OsStatus }));
       toast({ titulo: "Status atualizado", variante: "sucesso" });
       marcarMudanca();
@@ -171,6 +171,17 @@ export function OrdemServicoDetalhe({
       setAcaoEmCurso(null);
     }
   }
+
+  // O próximo passo natural do fluxo. Concluída/cancelada não têm próximo:
+  // reabrir é exceção e fica no select.
+  const proximoPasso =
+    os.status === OsStatus.ABERTA || os.status === OsStatus.PENDENTE
+      ? { rotulo: "Marcar a caminho", Icone: Navigation, executar: () => void handleACaminho() }
+      : os.status === OsStatus.EM_DESLOCAMENTO
+        ? { rotulo: "Iniciar atendimento", Icone: Play, executar: () => void handleMudarStatus(OsStatus.EM_EXECUCAO) }
+        : os.status === OsStatus.EM_EXECUCAO
+          ? { rotulo: "Concluir atendimento", Icone: CheckCircle2, executar: () => void handleMudarStatus(OsStatus.CONCLUIDA) }
+          : null;
 
   async function handleAnotar() {
     if (!textoAnotacao.trim()) return;
@@ -305,17 +316,35 @@ export function OrdemServicoDetalhe({
 
           <div className="mt-4 flex flex-col gap-4 border-t border-border pt-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ações</p>
-            <div className="flex flex-wrap items-center gap-2">
+            {/*
+              Um botão grande para o PRÓXIMO passo do fluxo (a caminho →
+              iniciar → concluir): é o que se faz 9 em cada 10 vezes, e antes
+              exigia escolher no select e depois clicar em "Atualizar status".
+              O select fica embaixo, discreto, pra quem precisa pular etapa,
+              cancelar ou reabrir.
+            */}
+            {proximoPasso ? (
               <Button
-                variant="outline"
-                size="sm"
-                onClick={handleACaminho}
-                disabled={acaoEmCurso !== null || !OS_STATUS_ABERTOS.includes(os.status)}
+                variant="brand"
+                onClick={proximoPasso.executar}
+                disabled={acaoEmCurso !== null}
+                className="h-11 w-full text-base sm:w-auto sm:self-start sm:px-6"
               >
-                <Navigation className="size-3.5" />
-                {acaoEmCurso === "acaminho" ? "Enviando..." : "Marcar a caminho"}
+                <proximoPasso.Icone className="size-4" />
+                {acaoEmCurso ? "Enviando..." : proximoPasso.rotulo}
               </Button>
-
+            ) : null}
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              {/* "A caminho" de novo continua possível com a OS já em
+                  deslocamento ou execução (técnico saiu, voltou à rua): a API
+                  aceita e grava a posição de saída. Só não é o botão grande. */}
+              {proximoPasso?.rotulo !== "Marcar a caminho" && OS_STATUS_ABERTOS.includes(os.status) ? (
+                <Button variant="outline" size="sm" onClick={() => void handleACaminho()} disabled={acaoEmCurso !== null}>
+                  <Navigation className="size-3.5" />
+                  Marcar a caminho
+                </Button>
+              ) : null}
+              <span className="text-muted-foreground">Outro status:</span>
               <Select
                 /*
                  * Sem rotulo, este <select> so era alcancavel por
@@ -326,7 +355,7 @@ export function OrdemServicoDetalhe({
                 aria-label="Novo status da OS"
                 value={novoStatus}
                 onChange={(e) => setNovoStatus(e.target.value as OsStatus)}
-                className="bg-secondary/40 px-2"
+                className="h-9 w-auto bg-secondary/40 px-2"
               >
                 {Object.values(OsStatus).map((s) => (
                   <option key={s} value={s}>
@@ -335,9 +364,9 @@ export function OrdemServicoDetalhe({
                 ))}
               </Select>
               <Button
-                variant="brand"
+                variant="outline"
                 size="sm"
-                onClick={handleMudarStatus}
+                onClick={() => void handleMudarStatus()}
                 disabled={acaoEmCurso !== null || novoStatus === os.status}
               >
                 {acaoEmCurso === "status" ? "Atualizando..." : "Atualizar status"}
