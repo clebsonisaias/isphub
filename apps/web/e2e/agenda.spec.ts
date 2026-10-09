@@ -78,7 +78,8 @@ test("turno lotado some da oferta em vez de virar aviso", async ({ page, request
   // Na tela o turno aparece cheio, com o motivo escrito.
   await page.goto("/agenda");
   const turno = page.getByRole("button", { name: new RegExp(`${alvo.turno === "manha" ? "Manhã" : "Tarde"}.*2 de 2`, "i") });
-  await expect(turno.first()).toContainText("Lotado");
+  // A célula escreve "Turno lotado" (textoBloqueio); o teste é do motivo, não da caixa.
+  await expect(turno.first()).toContainText(/lotado/i);
 
   // Devolve a grade real e a vaga, pra não contaminar outras execuções.
   await request.put(`${API}/admin/agenda`, {
