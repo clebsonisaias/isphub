@@ -223,7 +223,7 @@ export function DashboardPage() {
                   <MiniStat label="Pendentes no SGP" value={agenda.pendentesSgp} critico />
                   <MiniStat label="Sem presença (7 dias)" value={agenda.semPresenca7d} critico />
                 </div>
-                <Link to="/agenda" className="inline-flex w-fit items-center gap-1 text-sm font-medium text-primary hover:underline">
+                <Link to="/agenda" className="inline-flex min-h-10 w-fit items-center gap-1 text-sm font-medium text-primary hover:underline">
                   Abrir a agenda <ArrowRight className="size-3.5" />
                 </Link>
               </CardContent>

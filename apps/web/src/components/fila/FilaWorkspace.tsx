@@ -572,11 +572,14 @@ export function FilaWorkspace({
               )}
             </div>
 
+            {/* `min-w-0` nos dois selects: a largura mínima de um <select> é a
+                da opção mais longa ("Por visita (dia · turno · rota)"), e com
+                flex-1 os dois juntos passavam 5px de 375px — a página rolava. */}
             <div className="flex gap-2">
               <Select
                 value={ordenacao}
                 onChange={(e) => setOrdenacao(e.target.value as OrdenacaoFila)}
-                className="flex-1 sm:flex-initial"
+                className="min-w-0 flex-1 sm:flex-initial"
                 aria-label="Ordenar por"
               >
                 <option value="urgencia">Mais urgentes primeiro</option>
@@ -588,7 +591,7 @@ export function FilaWorkspace({
               <Select
                 value={pageSize}
                 onChange={(e) => setPageSize(Number(e.target.value))}
-                className="flex-1 sm:flex-initial"
+                className="min-w-0 flex-1 sm:flex-initial"
                 aria-label="Itens por página"
               >
                 {TAMANHOS_PAGINA.map((n) => (
