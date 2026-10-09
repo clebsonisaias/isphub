@@ -26,7 +26,6 @@ import {
   Aviso,
   BarraProgresso,
   CardJornada,
-  GradeAtalhos,
   Kpi,
   LinhaAgenda,
   ProximaOs,
@@ -378,18 +377,6 @@ export default function MinhasOs() {
                 </Muted>
               ) : null}
             </Card>
-          </Secao>
-
-          {/* --- O que não merece aba --- */}
-          <Secao titulo="Atalhos">
-            <GradeAtalhos
-              itens={[
-                { id: "os", label: "Minhas OS", icone: "list", onPress: () => {}, badge: naFila },
-                { id: "onu", label: "Provisionar", icone: "wifi", onPress: () => router.push("/provisionamento") },
-                { id: "chat", label: "Suporte", icone: "message-circle", onPress: () => router.push("/chat") },
-                { id: "perfil", label: "Perfil", icone: "user", onPress: () => router.push("/perfil") },
-              ]}
-            />
           </Secao>
 
           {/* --- A fila inteira, que continua sendo o trabalho --- */}

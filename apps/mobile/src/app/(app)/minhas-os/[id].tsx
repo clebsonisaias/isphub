@@ -3,7 +3,7 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { ActivityIndicator, Linking, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
-import { OS_STATUS_LABEL, OsStatus, type OrdemServico } from "@isphub/shared";
+import { OS_STATUS_LABEL, OsStatus, temDestino, type OrdemServico } from "@isphub/shared";
 import { useAuth } from "@/lib/auth";
 import { useModuloHabilitado } from "@/lib/config";
 import { apiFetch } from "@/lib/api";
@@ -148,13 +148,15 @@ export default function DetalheOs() {
                   <FichaSgpComoChegar ficha={ficha} />
                 </View>
               </View>
-              <Button
-                label="Abrir no Waze"
-                variant="secondary"
-                size="sm"
-                icon={<Feather name="navigation" size={14} color={colors.brandInk} />}
-                onPress={abrirMapa}
-              />
+              {temDestino(os.endereco) ? (
+                <Button
+                  label="Abrir no Waze"
+                  variant="secondary"
+                  size="sm"
+                  icon={<Feather name="navigation" size={14} color={colors.brandInk} />}
+                  onPress={abrirMapa}
+                />
+              ) : null}
             </Card>
 
             {/* Contato: avisar que está a caminho vem ANTES da ficha técnica —

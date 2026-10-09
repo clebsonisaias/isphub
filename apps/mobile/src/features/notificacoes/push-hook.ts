@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { Platform } from "react-native";
 import * as Notifications from "expo-notifications";
 import { useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
@@ -20,7 +21,7 @@ export function usePush() {
   // Registro: uma vez por sessao. A API e idempotente, mas repetir a cada
   // render seria uma escrita no banco por render.
   useEffect(() => {
-    if (!token || jaRegistrou.current) return;
+    if (!token || jaRegistrou.current || Platform.OS === "web") return;
     jaRegistrou.current = true;
     void (async () => {
       const expoToken = await obterTokenPush();
@@ -35,7 +36,9 @@ export function usePush() {
   }, [token]);
 
   useEffect(() => {
-    if (!token) return;
+    // Na web (expo start --web, usado pra revisar telas) a API de avisos nao
+    // existe e o getLastNotificationResponse derrubava o app inteiro.
+    if (!token || Platform.OS === "web") return;
 
     // Aviso recebido com o app ABERTO: nao navega (seria sequestrar a tela de
     // quem esta no meio de uma OS), so invalida as queries pra lista/thread

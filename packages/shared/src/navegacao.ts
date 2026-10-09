@@ -42,3 +42,13 @@ export function linkWaze(endereco: Partial<Endereco> | null | undefined): string
     .join(" ");
   return `https://waze.com/ul?q=${encodeURIComponent(texto)}&navigate=yes`;
 }
+
+/**
+ * Ha para onde navegar? Coordenada OU algum pedaco de endereco. Sem nada disso
+ * o `linkWaze` monta `q=` vazio e o Waze abre sem destino — o botao vira uma
+ * promessa quebrada. A tela esconde o botao em vez de oferecer isso.
+ */
+export function temDestino(endereco: Partial<Endereco> | null | undefined): boolean {
+  if (endereco?.lat != null && endereco?.lng != null) return true;
+  return [endereco?.logradouro, endereco?.numero, endereco?.bairro, endereco?.cidade].some((p) => !!p?.trim());
+}
