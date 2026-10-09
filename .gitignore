@@ -35,3 +35,6 @@ apps/api/uploads/
 
 # Ferramental local do Claude Code (settings, worktrees) — nao versionado
 .claude/
+
+# Grafo de conhecimento gerado pelo graphify (local, regenerável)
+graphify-out/
