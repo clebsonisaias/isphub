@@ -52,8 +52,11 @@ const INTERVALO_POLLING_NAO_LIDAS_MS = 45_000;
  * `labelCurto` e so pro rodape do mobile: com sete abas em 375px cada uma fica
  * com ~53px, e "Provisionar"/"Administração" preenchiam a fatia inteira — os
  * rotulos vizinhos se encostavam e liam como uma palavra so. O nome COMPLETO
- * continua no `aria-label` e volta a aparecer no desktop, entao nada muda pro
- * leitor de tela nem pra arvore de acessibilidade.
+ * continua como TEXTO do link (num span so pra leitor de tela), entao nada
+ * muda pra arvore de acessibilidade. Nao e `aria-label` de proposito: os
+ * seletores `getByLabel('Número'|'Dia'|'De')` dos formularios casavam, por
+ * substring, com "Frota em números", "Escala do dia" e "Agenda de visitas"
+ * — oito e2e de financeiro e frota caiam em modo estrito por causa da nav.
  */
 /**
  * `soDesktop` tira o item da ABA FIXA do rodape (mas nao da navegacao): a mesma
@@ -776,9 +779,6 @@ export function AppShell({ children }: { children: ReactNode }) {
                     to={to}
                     title={label}
                     data-nav-item
-                    // Nome acessivel e sempre o completo, mesmo quando o rotulo
-                    // visivel esta abreviado no rodape.
-                    aria-label={labelCurto ? label : undefined}
                     /*
                      * `lg:hidden` quando nao coube: some da LINHA e reaparece
                      * dentro de "Mais". Abaixo de `lg` continua visivel — ali o
@@ -802,10 +802,14 @@ export function AppShell({ children }: { children: ReactNode }) {
                       ~780px que a linha tem; como "Admin"/"ONU" custam ~155px,
                       e a diferenca entre os 8 itens caberem na linha ou dois
                       deles irem pro menu "Mais" — um clique a mais em algo que
-                      cabia. O nome COMPLETO continua no `aria-label` e no
+                      cabia. O nome COMPLETO continua como texto (sr-only) e no
                       `title`, entao leitor de tela, tooltip e testes nao mudam.
+                      Ver a nota em `labelCurto` sobre por que nao e aria-label.
                     */}
-                    <span className="relative">{labelCurto ?? label}</span>
+                    <span className="relative" aria-hidden={labelCurto ? true : undefined}>
+                      {labelCurto ?? label}
+                    </span>
+                    {labelCurto && <span className="sr-only">{label}</span>}
                   </Link>
                 );
               })}
