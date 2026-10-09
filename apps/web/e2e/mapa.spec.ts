@@ -205,13 +205,18 @@ test("rota de um turno: pinos numerados pela ordem da rota, e só as visitas daq
   const API = "http://localhost:4000";
 
   const fila = await (await request.get(`${API}/fila?grupo=abertos&equipe=interna`, { headers: auth })).json();
-  const os = fila.itens.find((i: { sgpOsId: string }) => i.sgpOsId === "e2e-os-1");
-  if (os?.agendamentoId) await request.delete(`${API}/agenda/${os.agendamentoId}`, { headers: auth });
+  // Qualquer OS aberta com coordenada (o pino precisa de lat/lng). Nao fixa
+  // e2e-os-1: o isphub.spec a conclui antes na mesma execucao, e ai ela some
+  // da fila de abertas.
+  type Item = { sgpOsId: string; provedorId: string; agendamentoId?: string | null; endereco: { lat: number | null } };
+  const os = (fila.itens as Item[]).find((i) => i.endereco.lat != null);
+  if (!os) throw new Error("seed sem OS aberta geolocalizada");
+  if (os.agendamentoId) await request.delete(`${API}/agenda/${os.agendamentoId}`, { headers: auth });
   const [vaga] = await (await request.get(`${API}/agenda/proximas?quantas=1`, { headers: auth })).json();
   const marcado = await (
     await request.post(`${API}/agenda`, {
       headers: auth,
-      data: { provedorId: os.provedorId, sgpOsId: "e2e-os-1", dia: vaga.dia, turno: vaga.turno, regiao: "Centro" },
+      data: { provedorId: os.provedorId, sgpOsId: os.sgpOsId, dia: vaga.dia, turno: vaga.turno, regiao: "Centro" },
     })
   ).json();
 
