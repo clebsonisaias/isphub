@@ -385,7 +385,7 @@ function navItemClass(ativo: boolean): string {
     // `lg:shrink-0` + `whitespace-nowrap`: agora que o nav rola (ver a nota no
     // <nav>), a pilula nao pode ser comprimida nem quebrar o rotulo em duas
     // linhas — ela sai de vista rolando, inteira, e volta do mesmo jeito.
-    "group relative flex flex-1 flex-col items-center justify-center gap-0.5 whitespace-nowrap rounded-lg px-1 py-2 text-[0.65rem] font-medium transition-colors lg:flex-none lg:shrink-0 lg:flex-row lg:gap-1.5 lg:rounded-full lg:px-3 lg:py-1.5 lg:text-sm pointer-coarse:min-h-11",
+    "group relative flex min-w-16 flex-1 flex-col items-center justify-center gap-0.5 whitespace-nowrap rounded-lg px-1 py-2 text-[0.65rem] font-medium transition-colors lg:min-w-0 lg:flex-none lg:shrink-0 lg:flex-row lg:gap-1.5 lg:rounded-full lg:px-3 lg:py-1.5 lg:text-sm pointer-coarse:min-h-11",
     ativo
       ? "text-primary"
       : "text-muted-foreground hover:text-foreground lg:hover:bg-secondary/60",
@@ -751,8 +751,14 @@ export function AppShell({ children }: { children: ReactNode }) {
                * Com `min-w-0` o nav cede espaco e, se ainda faltar, rola dentro
                * de si — nada sai da tela e os controles da direita ficam
                * sempre no lugar.
+               *
+               * No celular a barra do rodape rola do mesmo jeito: com 13 itens
+               * (admin) em 375px, `flex-1` comprimia cada aba a 36px — abaixo
+               * do piso de 40 do dedo — e as ultimas cinco saiam da tela sem
+               * rolagem. Cada aba tem `min-w-16` e a barra rola; com poucos
+               * itens (tecnico) o `flex-1` segue preenchendo a largura.
                */
-              className="fixed inset-x-0 bottom-0 z-30 flex items-stretch justify-around border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:static lg:inset-auto lg:z-auto lg:min-w-0 lg:flex-1 lg:items-center lg:justify-start lg:gap-1 lg:overflow-x-auto lg:border-t-0 lg:bg-transparent lg:pb-0 lg:backdrop-blur-none lg:scrollbar-none"
+              className="fixed inset-x-0 bottom-0 z-30 flex items-stretch overflow-x-auto border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md scrollbar-none lg:static lg:inset-auto lg:z-auto lg:min-w-0 lg:flex-1 lg:items-center lg:gap-1 lg:border-t-0 lg:bg-transparent lg:pb-0 lg:backdrop-blur-none"
               aria-label="Navegação principal"
               /*
                * `false` enquanto a medicao nao concluiu — nesse instante a
