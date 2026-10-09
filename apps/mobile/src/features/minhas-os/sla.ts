@@ -14,7 +14,9 @@ export function fmtDuracao(min: number): string {
 export function textoSla(sla: SlaInfo): string {
   if (sla.semaforo === "sem_sla" || sla.minutosRestantes == null) return "Sem prazo";
   if (sla.minutosRestantes < 0) return `Estourado · ${fmtDuracao(-sla.minutosRestantes)}`;
-  return fmtDuracao(sla.minutosRestantes);
+  // "faltam" e nao o numero solto: "84d 12h" verde nao dizia se era prazo,
+  // idade da OS ou tempo de deslocamento.
+  return `faltam ${fmtDuracao(sla.minutosRestantes)}`;
 }
 
 const PESO: Record<string, number> = { vermelho: 0, amarelo: 1, verde: 2, sem_sla: 3 };

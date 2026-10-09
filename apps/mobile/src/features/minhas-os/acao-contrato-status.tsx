@@ -73,8 +73,11 @@ export function AcaoContratoStatus({
 
       {acaoUnica ? (
         <Button
+          // Secundario: o botao principal da tela e o do fluxo da OS (rodape);
+          // dois botoes cheios da mesma cor disputavam o polegar.
+          variant="secondary"
           label={executando ? "Aplicando…" : acaoUnica === 1 ? "Reativar contrato" : `Mudar para ${STATUS_CONTRATO[acaoUnica]}`}
-          icon={<Feather name="zap" size={16} color={colors.ink} />}
+          icon={<Feather name="zap" size={16} color={colors.brandInk} />}
           loading={executando}
           onPress={() => confirmar(acaoUnica)}
         />

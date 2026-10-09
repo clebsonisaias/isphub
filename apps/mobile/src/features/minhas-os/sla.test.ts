@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { FilaItem } from "@isphub/shared";
-import { chaveVisita, compararVisita, inicioDaSemana, janelaVisita, rotuloDataHora } from "@isphub/shared";
-import { agruparPorTurno, escolherProxima, maisRecentesPrimeiro, ordenarPorHorario } from "./sla";
+import { chaveVisita, compararVisita, inicioDaSemana, janelaVisita, rotuloDataHora, rotuloQuando } from "@isphub/shared";
+import { agruparPorTurno, escolherProxima, maisRecentesPrimeiro, ordenarPorHorario, textoSla } from "./sla";
 
 /** So os campos que a ordenacao le — o resto do FilaItem nao participa. */
 function os(id: string, dataAgendamento: string | null, ordemRota: number | null = null): FilaItem {
@@ -174,5 +174,24 @@ describe("rotuloDataHora", () => {
   });
   it("data inválida vira travessão", () => {
     expect(rotuloDataHora("lixo", agora)).toBe("—");
+  });
+});
+
+describe("rotuloQuando", () => {
+  const agora = new Date("2026-10-09T12:00:00Z"); // sexta 09/10, 09:00 em Brasília
+  it("hoje e amanhã pelo dia de Brasília", () => {
+    expect(rotuloQuando("2026-10-09T15:00:00Z", agora)).toBe("hoje · 12:00");
+    expect(rotuloQuando("2026-10-10T11:30:00Z", agora)).toBe("amanhã · 08:30");
+  });
+  it("mais longe mostra o dia", () => {
+    expect(rotuloQuando("2026-12-31T15:00:00Z", agora)).toBe("qui 31/12 · 12:00");
+  });
+});
+
+describe("textoSla", () => {
+  it("diz que é prazo restante, não um número solto", () => {
+    expect(textoSla({ semaforo: "verde", minutosRestantes: 90 } as never)).toMatch(/^faltam /);
+    expect(textoSla({ semaforo: "vermelho", minutosRestantes: -30 } as never)).toMatch(/^Estourado/);
+    expect(textoSla({ semaforo: "sem_sla", minutosRestantes: null } as never)).toBe("Sem prazo");
   });
 });

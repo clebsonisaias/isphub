@@ -17,6 +17,8 @@ import { colors } from "@/theme/tokens";
  * so vira tab o modulo `habilitado ∩ implementado` (ver modulo-registry).
  * Guarda de auth: sem token -> login. Core sempre presente (fallback em useModulos).
  */
+const TITULO_ABA: Partial<Record<string, string>> = { "chat-clientes": "Clientes" };
+
 export default function AppLayout() {
   const { token, carregando } = useAuth();
   const { modulos } = useModulos();
@@ -56,7 +58,9 @@ export default function AppLayout() {
           key={m.id}
           name={ROTAS_MODULO[m.id]!.rota}
           options={{
-            title: m.nome,
+            // O nome do modulo e o do admin ("Conversas com clientes"); na
+            // aba ele saia cortado em "Conversas ...".
+            title: TITULO_ABA[m.id] ?? m.nome,
             tabBarIcon: ({ color, size }) => <ModuloIcon id={m.id} color={color} size={size} />,
             // Sem isto o tecnico so descobria mensagem nova ABRINDO a aba —
             // `useNaoLidas` ja existia e nao era consumido em lugar nenhum.

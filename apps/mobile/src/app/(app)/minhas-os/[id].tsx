@@ -3,7 +3,8 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { ActivityIndicator, Linking, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
-import { OS_STATUS_LABEL, OsStatus, temDestino, type OrdemServico } from "@isphub/shared";
+import { OS_STATUS_LABEL, OsStatus, ehAtivo, rotuloDoTexto, temDestino, type OrdemServico } from "@isphub/shared";
+import { Aviso } from "@/components/painel-dia";
 import { useAuth } from "@/lib/auth";
 import { useModuloHabilitado } from "@/lib/config";
 import { apiFetch } from "@/lib/api";
@@ -116,6 +117,15 @@ export default function DetalheOs() {
               </View>
               <Title>{os.clienteNome ?? "Cliente não identificado"}</Title>
             </View>
+
+            {/* Antes de tudo: o contrato fora do normal muda o que se faz na
+                visita. Era uma linha cinza perto do fim da tela, depois de
+                ~900px de ficha técnica. */}
+            {os.contratoStatus && !ehAtivo(os.contratoStatus) ? (
+              <Aviso
+                texto={`Contrato ${rotuloDoTexto(os.contratoStatus)}. O cliente pode estar sem serviço por isso — confira antes de mexer no equipamento.`}
+              />
+            ) : null}
 
             {/*
               Ordem da tela = ordem do trabalho em campo: por que estou indo →

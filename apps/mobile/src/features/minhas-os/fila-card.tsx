@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import type { FilaItem } from "@isphub/shared";
+import { ehAtivo, rotuloDoTexto, rotuloQuando, type FilaItem } from "@isphub/shared";
 import { colors, corSla, font, radius, space } from "@/theme/tokens";
 import { textoSla } from "./sla";
 import { ConexaoBadge } from "./conexao-badge";
@@ -18,16 +18,15 @@ function selo(item: FilaItem): { bg: string; fg: string } {
   }
 }
 
-function fmtHora(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? null : d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-}
 
 /** Card SLA-first da fila: a faixa lateral e o selo sao a UNICA cor. */
 export function FilaCard({ item, onPress }: { item: FilaItem; onPress: () => void }) {
   const s = selo(item);
-  const hora = fmtHora(item.dataAgendamento ?? item.dataCadastro ?? item.criadoEm);
+  // "hoje · 12:00" / "qui 31/12 · 12:00": so a hora nao dizia se era hoje ou
+  // daqui a semanas.
+  const quando = item.dataAgendamento ?? item.dataCadastro ?? item.criadoEm;
+  const hora = quando ? rotuloQuando(quando) : null;
+  const contratoIrregular = !!item.contratoStatus && !ehAtivo(item.contratoStatus);
   const local = item.endereco.logradouro
     ? `${item.endereco.logradouro}${item.endereco.bairro ? ` — ${item.endereco.bairro}` : ""}`
     : item.endereco.cidade
@@ -67,10 +66,17 @@ export function FilaCard({ item, onPress }: { item: FilaItem; onPress: () => voi
           {local}
         </Text>
       ) : null}
+      {/* Mesmo aviso da web: contrato fora do normal e motivo pra ligar antes
+          de sair, nao pra descobrir na porta. */}
+      {contratoIrregular ? (
+        <Text style={styles.contrato} numberOfLines={1}>
+          ⚠ Contrato {rotuloDoTexto(item.contratoStatus)}
+        </Text>
+      ) : null}
 
       <View style={styles.metaRow}>
         <View style={styles.metaLeft}>
-          {hora ? <Text style={styles.hora}>{hora}</Text> : null}
+          {hora ? <Text style={styles.hora} numberOfLines={1}>{hora}</Text> : null}
           <ConexaoBadge provedorId={item.provedorId} contratoId={item.contratoId} />
         </View>
         <View style={[styles.selo, { backgroundColor: s.bg }]}>
@@ -100,6 +106,7 @@ const styles = StyleSheet.create({
   categoria: { fontSize: font.size.lg, fontWeight: "700", color: colors.ink, letterSpacing: -0.2 },
   cliente: { fontSize: font.size.base, fontWeight: "600", color: colors.ink },
   addr: { fontSize: font.size.sm, color: colors.ink2 },
+  contrato: { fontSize: font.size.sm, fontWeight: "700", color: colors.slaAmber },
   metaRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 8, gap: space.sm },
   metaLeft: { flexDirection: "row", alignItems: "center", gap: space.sm, flexShrink: 1 },
   hora: { fontSize: font.size.sm, color: colors.ink2, fontWeight: "600" },

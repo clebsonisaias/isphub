@@ -198,6 +198,22 @@ export function rotuloDataHora(iso: string, agora: Date = new Date()): string {
   return `${SEMANA_CURTA[local.getUTCDay()]} ${dd}/${mm}${ano === anoAtual ? "" : `/${ano}`} · ${hh}:${mi}`;
 }
 
+/**
+ * "hoje · 12:00", "amanhã · 08:30" ou, mais longe, o `rotuloDataHora` completo.
+ * Pra quem decide pela hora ("12:00" sozinho nao diz se e hoje ou daqui a 80
+ * dias — o app do tecnico mostrava exatamente isso).
+ */
+export function rotuloQuando(iso: string, agora: Date = new Date()): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "—";
+  const dia = diaBrDe(new Date(t));
+  const hoje = diaBrDe(agora);
+  const hora = rotuloDataHora(iso, agora).split(" · ")[1];
+  if (dia === hoje) return `hoje · ${hora}`;
+  if (dia === somarDias(hoje, 1)) return `amanhã · ${hora}`;
+  return rotuloDataHora(iso, agora);
+}
+
 /** A segunda-feira da semana que contem `dia`. Domingo pertence a semana que TERMINA nele. */
 export function inicioDaSemana(dia: string): string {
   const dow = diaDaSemana(dia);

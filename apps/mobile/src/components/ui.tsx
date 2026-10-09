@@ -112,8 +112,11 @@ export function Card({ children, style, ...rest }: ViewProps) {
   );
 }
 
-export function Field(props: TextInputProps) {
-  return <TextInput placeholderTextColor={colors.muted} style={styles.field} {...props} />;
+export function Field({ style, ...props }: TextInputProps) {
+  // `style` do chamador SOMA ao do campo. Antes vinha no spread depois e
+  // substituia: a anotacao da OS (que so pede minHeight) perdia borda e fundo
+  // e virava texto solto no meio da tela.
+  return <TextInput placeholderTextColor={colors.muted} {...props} style={[styles.field, style]} />;
 }
 
 // ---- Pill (badge de status/dado, tinta suave) ----

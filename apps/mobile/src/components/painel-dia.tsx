@@ -79,7 +79,9 @@ export function Kpi({
  */
 export function BarraProgresso({ pct, label }: { pct: number; label: string }) {
   const seguro = Math.max(0, Math.min(100, pct));
-  const tom = seguro >= 70 ? colors.slaGreen : seguro >= 40 ? colors.slaAmber : colors.slaRed;
+  // Cor da marca, nao semaforo: o dia comeca em 0%, e um "0%" vermelho as 8h
+  // acusava o tecnico de algo que ainda nem tinha como ter acontecido.
+  const tom = colors.brand;
   return (
     <View accessible accessibilityLabel={`${label}: ${seguro} por cento`}>
       <View style={estilo.progLinha}>
@@ -108,9 +110,11 @@ export function ProximaOs({
   endereco,
   horario,
   prioridadeAlta,
+  alerta,
   distancia,
   onVer,
   onIniciar,
+  onLigar,
   acaoLabel = "Iniciar deslocamento",
 }: {
   titulo: string;
@@ -118,9 +122,14 @@ export function ProximaOs({
   endereco?: string | null;
   horario?: string | null;
   prioridadeAlta?: boolean;
+  /** Algo a saber ANTES de sair (ex.: contrato inativo). */
+  alerta?: string | null;
   distancia?: string | null;
   onVer: () => void;
-  onIniciar: () => void;
+  /** Sem destino pra navegar, nao ha acao principal: "Ver OS" assume. */
+  onIniciar?: () => void;
+  /** Avisar o cliente que esta a caminho sem abrir a OS. So com telefone. */
+  onLigar?: () => void;
   acaoLabel?: string;
 }) {
   return (
@@ -134,6 +143,7 @@ export function ProximaOs({
             app — uma OS ALTA chegava indistinguivel das outras. */}
         {prioridadeAlta ? <Pill label="Prioridade ALTA" tone="red" /> : null}
       </View>
+      {alerta ? <Aviso texto={alerta} /> : null}
 
       <Text style={estilo.proxTitulo} numberOfLines={2}>
         {titulo}
@@ -147,15 +157,26 @@ export function ProximaOs({
       </View>
 
       <View style={estilo.proxAcoes}>
+        {onLigar ? (
+          <Pressable
+            onPress={onLigar}
+            accessibilityRole="button"
+            accessibilityLabel="Ligar para o cliente"
+            style={({ pressed }) => [estilo.btnIcone, pressed && { opacity: 0.7 }]}
+          >
+            <Feather name="phone" size={18} color={colors.brandInk} />
+          </Pressable>
+        ) : null}
         <Pressable
           onPress={onVer}
           accessibilityRole="button"
           accessibilityLabel="Ver a ordem de serviço"
-          style={({ pressed }) => [estilo.btnSec, pressed && { opacity: 0.7 }]}
+          style={({ pressed }) => [onIniciar ? estilo.btnSec : estilo.btnPri, pressed && { opacity: 0.7 }]}
         >
-          <Feather name="eye" size={16} color={colors.brandInk} />
-          <Text style={estilo.btnSecTxt}>Ver OS</Text>
+          <Feather name="eye" size={16} color={onIniciar ? colors.brandInk : colors.onBrand} />
+          <Text style={onIniciar ? estilo.btnSecTxt : estilo.btnPriTxt}>Ver OS</Text>
         </Pressable>
+        {onIniciar ? (
         <Pressable
           onPress={onIniciar}
           accessibilityRole="button"
@@ -167,6 +188,7 @@ export function ProximaOs({
             {acaoLabel}
           </Text>
         </Pressable>
+        ) : null}
       </View>
     </Card>
   );
@@ -610,6 +632,16 @@ const estilo = StyleSheet.create({
     backgroundColor: colors.card,
   },
   btnSecTxt: { fontSize: font.size.base, fontWeight: font.weight.bold, color: colors.brandInk },
+  btnIcone: {
+    width: 48,
+    minHeight: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.line2,
+    backgroundColor: colors.card,
+  },
   btnPri: {
     flex: 1.4,
     minHeight: 48,

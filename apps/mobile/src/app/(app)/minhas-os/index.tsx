@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "expo-router";
-import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Linking, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import {
   OsPrioridade,
@@ -9,7 +9,11 @@ import {
   ROTULO_TURNO,
   TURNOS_AGENDA,
   diaBrHoje,
+  ehAtivo,
   filtroDoDia,
+  rotuloDoTexto,
+  rotuloQuando,
+  temDestino,
   formatarDuracao,
   formatarTrabalhado,
   pausaAberta,
@@ -309,10 +313,16 @@ export default function MinhasOs() {
               titulo={`OS #${proxima.sgpOsId}${proxima.tipoDescricao ? ` — ${proxima.tipoDescricao}` : ""}`}
               cliente={proxima.clienteNome ?? "Cliente não identificado"}
               endereco={enderecoCurto(proxima)}
-              horario={proxima.dataAgendamento ? `Agendada para ${hora(proxima.dataAgendamento)}` : null}
+              horario={proxima.dataAgendamento ? `Agendada para ${rotuloQuando(proxima.dataAgendamento)}` : null}
               prioridadeAlta={proxima.prioridade === OsPrioridade.ALTA}
+              alerta={
+                proxima.contratoStatus && !ehAtivo(proxima.contratoStatus)
+                  ? `Contrato ${rotuloDoTexto(proxima.contratoStatus)} — confira antes de sair.`
+                  : null
+              }
               onVer={() => router.push(`/minhas-os/${proxima.id}`)}
-              onIniciar={() => abrirNoWaze(proxima.endereco)}
+              onIniciar={temDestino(proxima.endereco) ? () => abrirNoWaze(proxima.endereco) : undefined}
+              onLigar={proxima.telefone ? () => void Linking.openURL(`tel:${proxima.telefone!.replace(/[^\d+]/g, "")}`) : undefined}
               acaoLabel="Abrir no Waze"
             />
           ) : (
@@ -327,10 +337,13 @@ export default function MinhasOs() {
           <Secao titulo="Meu dia">
             <Card style={{ gap: space.md }}>
               <View style={styles.kpis}>
-                <Kpi valor={m?.programadas ?? 0} label="Programadas" tom="brand" icone="calendar" />
-                <Kpi valor={m?.concluidas ?? 0} label="Concluídas" tom="verde" icone="check-circle" />
-                <Kpi valor={m?.pendentes ?? 0} label="Em andamento" tom="ambar" icone="clock" />
-                <Kpi valor={m?.naoRealizadas ?? 0} label="Não realizadas" tom="vermelho" icone="x-circle" />
+                {/* Neutros; cor so quando o numero significa algo. Quatro blocos
+                    coloridos com zero, as 8h, eram so decoracao — e "Não
+                    realizadas" vermelho em 0 assustava sem motivo. */}
+                <Kpi valor={m?.programadas ?? 0} label="Programadas" icone="calendar" />
+                <Kpi valor={m?.concluidas ?? 0} label="Concluídas" tom={(m?.concluidas ?? 0) > 0 ? "verde" : "neutro"} icone="check-circle" />
+                <Kpi valor={m?.pendentes ?? 0} label="Em andamento" icone="clock" />
+                <Kpi valor={m?.naoRealizadas ?? 0} label="Não realizadas" tom={(m?.naoRealizadas ?? 0) > 0 ? "vermelho" : "neutro"} icone="x-circle" />
               </View>
               <BarraProgresso pct={m?.produtividade ?? 0} label="Produtividade do dia" />
             </Card>
