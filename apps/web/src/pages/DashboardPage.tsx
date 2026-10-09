@@ -24,10 +24,11 @@ function mensagem(err: unknown): string {
 }
 
 /**
- * Bloco de KPI colorido — a marca do "painel vivo": numero gigante em Sora,
- * fundo cheio na cor do que ele representa (indigo/verde/azul), exceto SLA
- * estourado, que so vira bloco vermelho quando > 0 (destructive e RESERVADO
- * pro sinal — aqui e literalmente o sinal, nao decoracao; em 0 fica neutro).
+ * Bloco de KPI. Neutro por padrao — a cor do que ele representa fica so no
+ * icone. Fundo cheio era decoracao competindo com o unico numero que pede
+ * acao: "Provedores 23" em azul gritava mais que "SLA estourado", que ficava
+ * branco. Agora so o SLA ganha fundo, e so quando > 0 (destructive e
+ * RESERVADO pro sinal; mesma regra do card da fila: cor e urgencia).
  *
  * `variacao`/sparkline: a API (DashboardMetrics) ainda nao expoe historico
  * (nenhuma serie temporal no tipo) — o prop existe pronto pra quando existir,
@@ -49,17 +50,20 @@ function KpiTile({
 }) {
   const critico = tone === "critico";
   const emAlerta = critico && value > 0;
-  const toneClasses =
+  const toneClasses = emAlerta
+    ? "border border-destructive/30 bg-destructive/10 text-destructive"
+    : "border border-border bg-card text-foreground";
+  const labelToneClasses = emAlerta ? "text-destructive/80" : "text-muted-foreground";
+  const iconeClasses =
     tone === "indigo"
-      ? "bg-primary text-primary-foreground"
+      ? "bg-primary/10 text-primary"
       : tone === "green"
-        ? "bg-accent-green text-accent-green-foreground"
+        ? "bg-success/10 text-success"
         : tone === "blue"
-          ? "bg-accent-blue text-accent-blue-foreground"
+          ? "bg-accent-blue/10 text-accent-blue"
           : emAlerta
-            ? "border border-destructive/30 bg-destructive/10 text-destructive"
-            : "border border-border bg-card text-foreground";
-  const labelToneClasses = tone === "critico" ? (emAlerta ? "text-destructive/80" : "text-muted-foreground") : "opacity-85";
+            ? "bg-destructive/15 text-destructive"
+            : "bg-secondary text-muted-foreground";
 
   return (
     <Card className={`dash-top-card overflow-hidden opacity-0 ${toneClasses}`}>
@@ -68,12 +72,14 @@ function KpiTile({
           <p className={`text-xs font-medium uppercase tracking-wide ${labelToneClasses}`}>{label}</p>
           <CountUp value={value} className="mt-1 block font-display text-4xl font-bold" />
           {variacaoPct != null && (
-            <span className="mt-1 inline-block text-xs font-medium opacity-85">
+            <span className="mt-1 inline-block text-xs font-medium text-muted-foreground">
               {variacaoPct >= 0 ? "▲" : "▼"} {Math.abs(variacaoPct)}% vs. período anterior
             </span>
           )}
         </div>
-        <Icon className="size-5 shrink-0 opacity-70" />
+        <span className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${iconeClasses}`}>
+          <Icon className="size-4.5" aria-hidden />
+        </span>
       </CardContent>
     </Card>
   );
