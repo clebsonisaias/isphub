@@ -1,3 +1,4 @@
+import { rotuloDataHora } from "@isphub/shared";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { Categoria, ErpConfigPublic, Provedor, TipoOs } from "@isphub/shared";
@@ -175,7 +176,7 @@ function SgpConfigForm({ provedorId }: { provedorId: string }) {
                 ) : (
                   <XCircle className="size-3.5 text-destructive" />
                 )}
-                última sync: {new Date(config.ultimaSyncEm).toLocaleString("pt-BR")}
+                última sync: {rotuloDataHora(config.ultimaSyncEm)}
               </span>
             )}
           </div>
@@ -541,7 +542,7 @@ function AtendaiConfigForm({ provedorId }: { provedorId: string }) {
                   <code className="text-xs">{config.chaveEntradaPrefixo}…</code>
                   <span className="ml-auto text-xs text-muted-foreground">
                     {config.chaveEntradaUsoEm
-                      ? `usada em ${new Date(config.chaveEntradaUsoEm).toLocaleString("pt-BR")}`
+                      ? `usada em ${rotuloDataHora(config.chaveEntradaUsoEm)}`
                       : "nunca usada"}
                   </span>
                 </div>
@@ -634,7 +635,7 @@ function ChaveParceiroCard({ provedorId }: { provedorId: string }) {
               <code className="text-xs">{chave.prefixo}…</code>
               {chave.rotulo && <span className="rounded-full bg-secondary px-2 py-0.5 text-xs">{chave.rotulo}</span>}
               <span className="ml-auto text-xs text-muted-foreground">
-                {chave.usoEm ? `usada em ${new Date(chave.usoEm).toLocaleString("pt-BR")}` : "nunca usada"}
+                {chave.usoEm ? `usada em ${rotuloDataHora(chave.usoEm)}` : "nunca usada"}
               </span>
             </div>
           ) : (

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FilaItem } from "@isphub/shared";
-import { chaveVisita, compararVisita, inicioDaSemana, janelaVisita } from "@isphub/shared";
+import { chaveVisita, compararVisita, inicioDaSemana, janelaVisita, rotuloDataHora } from "@isphub/shared";
 import { agruparPorTurno, escolherProxima, maisRecentesPrimeiro, ordenarPorHorario } from "./sla";
 
 /** So os campos que a ordenacao le — o resto do FilaItem nao participa. */
@@ -156,5 +156,23 @@ describe("agruparPorTurno", () => {
     ]);
     expect(g.manha.map((x) => x.id)).toEqual(["m1", "m2", "sgp-manha"]);
     expect(g.tarde.map((x) => x.id)).toEqual(["t", "sgp-tarde"]);
+  });
+});
+
+describe("rotuloDataHora", () => {
+  const agora = new Date("2026-10-09T12:00:00Z");
+  it("mostra dia da semana, dia/mês e hora de Brasília, sem segundos", () => {
+    // 12:30Z = 09:30 em Brasília; 09/10/2026 é sexta.
+    expect(rotuloDataHora("2026-10-09T12:30:45Z", agora)).toBe("sex 09/10 · 09:30");
+  });
+  it("vira o dia pelo fuso BR, não pelo UTC", () => {
+    // 01:00Z do dia 10 ainda é 22:00 do dia 09 em Brasília.
+    expect(rotuloDataHora("2026-10-10T01:00:00Z", agora)).toBe("sex 09/10 · 22:00");
+  });
+  it("só mostra o ano quando não é o corrente", () => {
+    expect(rotuloDataHora("2025-12-31T15:00:00Z", agora)).toBe("qua 31/12/2025 · 12:00");
+  });
+  it("data inválida vira travessão", () => {
+    expect(rotuloDataHora("lixo", agora)).toBe("—");
   });
 });

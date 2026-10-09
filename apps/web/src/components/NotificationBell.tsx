@@ -1,3 +1,4 @@
+import { rotuloDataHora } from "@isphub/shared";
 import { useEffect, useState } from "react";
 import type { Notificacao } from "@isphub/shared";
 import { Button } from "@/components/ui/button";
@@ -113,7 +114,7 @@ export function NotificationBell() {
                   <span className={cn(!n.lida && "font-medium")}>{n.mensagem}</span>
                 </span>
                 <span className="pl-3.5 text-xs text-muted-foreground">
-                  {new Date(n.criadoEm).toLocaleString("pt-BR")}
+                  {rotuloDataHora(n.criadoEm)}
                 </span>
               </button>
             ))

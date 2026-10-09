@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  rotuloDataHora,
   FORMA_PAGAMENTO_ROTULO,
   ORIGEM_ROTULO,
   formatarCompetencia,
@@ -287,7 +288,7 @@ export function LancamentoDetalheDialog({
                     {ev.autorNome && <span className="text-muted-foreground"> por {ev.autorNome}</span>}
                     <span className="text-muted-foreground">
                       {" "}
-                      · {new Date(ev.criadoEm).toLocaleString("pt-BR")}
+                      · {rotuloDataHora(ev.criadoEm)}
                     </span>
                     {ev.detalhe && Object.keys(ev.detalhe).length > 0 && (
                       <p className="mt-0.5 font-mono text-xs text-muted-foreground">

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
+  rotuloDataHora,
   formatarCustoPorKm,
   formatarMoeda,
   litrosOciosos,
@@ -446,7 +447,7 @@ function BlocoAuditoria({ auditoria, carregando }: { auditoria: BiAuditoria | nu
                 veiculoId: r.veiculoId,
                 placa: r.placa ?? "sem veículo vinculado",
                 direita: `${MOTIVO_MUDO[r.motivo]}${
-                  r.desde ? ` · desde ${new Date(r.desde).toLocaleString("pt-BR")}` : ""
+                  r.desde ? ` · desde ${rotuloDataHora(r.desde)}` : ""
                 }`,
               }))}
               total={auditoria.rastreadoresMudos.length}

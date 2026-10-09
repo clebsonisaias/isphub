@@ -1,3 +1,4 @@
+import { rotuloDataHora } from "@isphub/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import type { SmtpConfigPublic } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
@@ -231,7 +232,7 @@ export function SmtpPage() {
                     <XCircle className="mt-px size-4 shrink-0 text-destructive" aria-hidden />
                   )}
                   <span className="text-muted-foreground">
-                    Último teste em {new Date(config.ultimaVerificacaoEm).toLocaleString("pt-BR")} —{" "}
+                    Último teste em {rotuloDataHora(config.ultimaVerificacaoEm)} —{" "}
                     <span className={config.ultimaVerificacaoOk ? "text-foreground" : "text-destructive"}>
                       {config.ultimaVerificacaoMensagem}
                     </span>

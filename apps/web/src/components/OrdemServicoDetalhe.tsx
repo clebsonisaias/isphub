@@ -1,6 +1,7 @@
 import { useEffect, useState, type ElementType } from "react";
 import { Link } from "react-router-dom";
 import {
+  rotuloDataHora,
   OS_STATUS_LABEL,
   OS_STATUS_ABERTOS,
   OsStatus,
@@ -279,11 +280,11 @@ export function OrdemServicoDetalhe({
             <Info label="Localização (POP)" value={os.pop} />
             <Info
               label="Aberta em"
-              value={os.dataCadastro ? new Date(os.dataCadastro).toLocaleString("pt-BR") : undefined}
+              value={os.dataCadastro ? rotuloDataHora(os.dataCadastro) : undefined}
             />
             <Info
               label="Agendamento"
-              value={os.dataAgendamento ? new Date(os.dataAgendamento).toLocaleString("pt-BR") : undefined}
+              value={os.dataAgendamento ? rotuloDataHora(os.dataAgendamento) : undefined}
             />
             <Info label="Registrado por" value={os.usuario} />
           </div>

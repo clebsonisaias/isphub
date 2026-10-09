@@ -1,3 +1,4 @@
+import { rotuloDataHora } from "@isphub/shared";
 import { useEffect, useState } from "react";
 import type { OsEvento } from "@isphub/shared";
 import { ordensServicoApi } from "@/lib/filaApi";
@@ -76,7 +77,7 @@ export function OsTimeline({ ordemServicoId }: { ordemServicoId: string }) {
               <p className="text-sm text-foreground">{e.descricao}</p>
               <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
                 <span>
-                  {e.autorNome ?? "Sistema"} · {new Date(e.criadoEm).toLocaleString("pt-BR")}
+                  {e.autorNome ?? "Sistema"} · {rotuloDataHora(e.criadoEm)}
                 </span>
                 {/*
                   Onde o tecnico estava quando registrou isto. Sem o link o dado

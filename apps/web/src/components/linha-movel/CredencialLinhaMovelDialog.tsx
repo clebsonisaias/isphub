@@ -1,3 +1,4 @@
+import { rotuloDataHora } from "@isphub/shared";
 import { useCallback, useEffect, useState } from "react";
 import type { TesteConexao } from "@isphub/shared";
 import {
@@ -120,7 +121,7 @@ export function CredencialLinhaMovelDialog({
             <dd className="truncate font-mono text-xs">{atual.baseUrl}</dd>
             <dt className="text-muted-foreground">Último teste</dt>
             <dd>
-              {atual.ultimoTesteEm ? new Date(atual.ultimoTesteEm).toLocaleString("pt-BR") : "—"}
+              {atual.ultimoTesteEm ? rotuloDataHora(atual.ultimoTesteEm) : "—"}
               {atual.ultimoTesteOk === false && <span className="ml-1 text-destructive">(falhou)</span>}
             </dd>
             {atual.ultimoTesteMensagem && (

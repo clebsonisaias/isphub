@@ -176,6 +176,28 @@ export function diaDaSemana(dia: string): number {
   return dataDoDia(dia).getUTCDay();
 }
 
+const SEMANA_CURTA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+
+/**
+ * "qui 31/12 · 09:00" — o jeito unico de mostrar um instante na tela. O ano so
+ * aparece quando nao e o corrente ("qui 31/12/2025 · 09:00"). Hora de Brasilia
+ * (-03:00 fixo), nao a do navegador: o tecnico em viagem e o servidor em UTC
+ * tem de ler o mesmo horario que o supervisor. Substitui o `toLocaleString`
+ * cru, que mostrava segundos e mudava de formato conforme o navegador.
+ */
+export function rotuloDataHora(iso: string, agora: Date = new Date()): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "—";
+  const local = new Date(t + OFFSET_BR_MIN * 60_000);
+  const dd = String(local.getUTCDate()).padStart(2, "0");
+  const mm = String(local.getUTCMonth() + 1).padStart(2, "0");
+  const ano = local.getUTCFullYear();
+  const anoAtual = new Date(agora.getTime() + OFFSET_BR_MIN * 60_000).getUTCFullYear();
+  const hh = String(local.getUTCHours()).padStart(2, "0");
+  const mi = String(local.getUTCMinutes()).padStart(2, "0");
+  return `${SEMANA_CURTA[local.getUTCDay()]} ${dd}/${mm}${ano === anoAtual ? "" : `/${ano}`} · ${hh}:${mi}`;
+}
+
 /** A segunda-feira da semana que contem `dia`. Domingo pertence a semana que TERMINA nele. */
 export function inicioDaSemana(dia: string): string {
   const dow = diaDaSemana(dia);

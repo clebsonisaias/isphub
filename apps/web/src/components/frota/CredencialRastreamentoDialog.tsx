@@ -1,3 +1,4 @@
+import { rotuloDataHora } from "@isphub/shared";
 import { useCallback, useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -117,7 +118,7 @@ export function CredencialRastreamentoDialog({
             <dd className="tabular-nums">{atual.intervaloPollingSegundos}s</dd>
             <dt className="text-muted-foreground">Última coleta</dt>
             <dd>
-              {atual.ultimaColetaEm ? new Date(atual.ultimaColetaEm).toLocaleString("pt-BR") : "—"}
+              {atual.ultimaColetaEm ? rotuloDataHora(atual.ultimaColetaEm) : "—"}
               {atual.ultimaColetaOk === false && (
                 <span className="ml-1 text-destructive">(falhou)</span>
               )}
