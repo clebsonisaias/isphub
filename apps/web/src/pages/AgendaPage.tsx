@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { AlertTriangle, ArrowDown, ArrowUp, CalendarDays, CalendarOff, CalendarPlus, CheckCircle2, ChevronLeft, ChevronRight, CloudOff, MapPin, Phone, RefreshCw, Route, Search, Settings2, Trash2, X } from "lucide-react";
-import { ROTULO_TURNO, TURNOS_AGENDA, diaBrHoje, formatarKm, inicioDaSemana, somarDias, type AgendaConfigDto, type FilaItem, type TurnoAgenda, type VagaTurno } from "@isphub/shared";
+import { ROTULO_TURNO, TURNOS_AGENDA, turnoDaHora, diaBrHoje, formatarKm, inicioDaSemana, somarDias, type AgendaConfigDto, type FilaItem, type TurnoAgenda, type VagaTurno } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
 import { AnimatedPage } from "@/components/AnimatedPage";
 import { Card, CardContent } from "@/components/ui/card";
@@ -73,8 +73,8 @@ export function AgendaPage() {
     if (gradeQuery.error) toast({ variante: "erro", titulo: "Não foi possível carregar a agenda." });
   }, [gradeQuery.error, toast]);
   // Toda escrita (marcar, desmarcar, limites) chama isto: invalida TODAS as
-  // semanas em cache, e so a montada re-busca.
-  const carregarGrade = useCallback(() => queryClient.invalidateQueries({ queryKey: ["agenda", "grade"] }), [queryClient]);
+  // semanas e turnos em cache (inclui a "Rota de agora"), e so o montado re-busca.
+  const carregarGrade = useCallback(() => queryClient.invalidateQueries({ queryKey: ["agenda"] }), [queryClient]);
   const { data: tecnicos = [] } = useQuery<TecnicoResumo[]>({ queryKey: ["tecnicos"], queryFn: () => tecnicosApi.listar(), staleTime: 5 * 60_000 });
 
   const carregarParadas = useCallback(
@@ -90,6 +90,13 @@ export function AgendaPage() {
     },
     [toast],
   );
+
+  // Fechar a gaveta re-busca a "Rota de agora": reordenar escreve só nas
+  // paradas locais da gaveta, sem passar por carregarGrade.
+  function fecharJanela() {
+    setJanela(null);
+    void queryClient.invalidateQueries({ queryKey: ["agenda", "turno"] });
+  }
 
   function abrir(dia: string, turno: TurnoAgenda) {
     setJanela({ dia, turno });
@@ -316,6 +323,23 @@ export function AgendaPage() {
                         {dias.map((dia) => {
                           const v = porJanela.get(`${dia}|${t}`);
                           if (!v) return <span key={dia} />;
+                          // Dia que já passou: esmaecido, sem "Prazo curto" (que
+                          // ali é ruído — é óbvio que não dá mais pra marcar).
+                          // Só abre se houve visita, pra rever a rota feita.
+                          if (dia < hoje) {
+                            return (
+                              <button
+                                key={dia}
+                                type="button"
+                                disabled={v.ocupadas === 0}
+                                onClick={() => abrir(dia, t)}
+                                aria-label={`${ROTULO_TURNO[t]} de ${rotuloDia(dia)}: ${v.ocupadas} de ${v.capacidade}, dia passado`}
+                                className="flex min-h-[4.5rem] flex-col justify-center rounded-md border border-dashed border-border/60 px-2.5 py-2 text-left text-sm text-muted-foreground/60 transition enabled:hover:border-foreground/30 disabled:cursor-default"
+                              >
+                                <span className="tabular-nums">{v.ocupadas > 0 ? `${v.ocupadas} visita${v.ocupadas === 1 ? "" : "s"}` : "—"}</span>
+                              </button>
+                            );
+                          }
                           // Todo turno que EXISTE abre: vazio também — é onde se
                           // marca. Só o que o calendário fechou fica inerte.
                           const clicavel = !fechadoNoCalendario(v);
@@ -367,6 +391,8 @@ export function AgendaPage() {
             </CardContent>
           </Card>
 
+          <RotaDeAgora hoje={hoje} onAbrir={abrir} />
+
           {editandoLimites && config ? (
             <LimitesDaAgenda
               config={config}
@@ -402,7 +428,7 @@ export function AgendaPage() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setJanela(null)}
+                    onClick={() => fecharJanela()}
                     aria-label="Fechar rota"
                     className="rounded-md p-1 text-muted-foreground hover:bg-muted"
                   >
@@ -1043,5 +1069,65 @@ function ExcecoesDoCalendario() {
         <p className="text-xs text-muted-foreground">Nenhum dia cadastrado além dos feriados nacionais.</p>
       )}
     </div>
+  );
+}
+
+/**
+ * A rota do turno em curso, em leitura, embaixo da grade. Quem abre a Agenda
+ * de manhã quer saber primeiro "quem está indo aonde agora" — e a metade de
+ * baixo da tela ficava vazia até alguém clicar num turno. Não abre a gaveta
+ * sozinha: no celular ela cobre a tela inteira e esconderia a grade.
+ */
+function RotaDeAgora({ hoje, onAbrir }: { hoje: string; onAbrir: (dia: string, turno: TurnoAgenda) => void }) {
+  const horaBr = (new Date().getUTCHours() + 21) % 24;
+  const turno = turnoDaHora(horaBr);
+  const { data: paradas } = useQuery({
+    queryKey: ["agenda", "turno", hoje, turno],
+    queryFn: () => agendaApi.doTurno(hoje, turno),
+  });
+  if (!paradas) return null;
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-3 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="flex items-center gap-2 text-sm font-semibold">
+            <Route className="size-4 text-primary" aria-hidden />
+            Rota de agora · {ROTULO_TURNO[turno]} de hoje
+          </h2>
+          {paradas.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => onAbrir(hoje, turno)}
+              className="inline-flex min-h-10 items-center gap-1 text-sm font-medium text-primary hover:underline"
+            >
+              Abrir a rota <ChevronRight className="size-4" aria-hidden />
+            </button>
+          ) : null}
+        </div>
+        {paradas.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nenhuma visita marcada para este turno.</p>
+        ) : (
+          <ol className="flex flex-col divide-y divide-border">
+            {paradas.map((p, i) => {
+              const os = p.ordemServico;
+              return (
+                <li key={p.id} className="flex items-center gap-3 py-2 text-sm">
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold tabular-nums text-primary">
+                    {p.ordemRota ?? i + 1}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">
+                    <span className="font-medium">{os?.clienteNome ?? p.sgpOsId}</span>
+                    {os?.bairro ? <span className="text-muted-foreground"> · {os.bairro}</span> : null}
+                  </span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {os?.tecnico ? (os.tecnico.nomeExibicao ?? os.tecnico.nome) : "sem técnico"}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+      </CardContent>
+    </Card>
   );
 }
