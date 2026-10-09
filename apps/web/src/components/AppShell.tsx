@@ -205,6 +205,18 @@ const NAV_ITEMS: {
   },
 ];
 
+/**
+ * As abas FIXAS da barra do rodape no celular, em ordem de preferencia: ficam
+ * as 4 primeiras que o perfil enxerga, e o resto vai pro "Mais" do rodape.
+ * Supervisor: Painel, Agenda, Mapa, Chat. Tecnico: Painel, Mapa, Chat,
+ * Clientes. Provedor: Painel, Mapa, Retiradas, Dashboard.
+ *
+ * Com 13 abas (admin) a barra rolava de lado: resolvia o estouro, mas ninguem
+ * descobre a 10a aba rolando. Quatro fixas + "Mais" e o padrao de app.
+ */
+const FIXOS_RODAPE = ["/", "/agenda", "/mapa", "/chat", "/retiradas", "/dashboard", "/chat-clientes"];
+const MAX_ABAS_RODAPE = 5;
+
 /** Largura reservada pro botao "Mais" quando ha excesso (medida do proprio botao). */
 const LARGURA_BOTAO_MAIS = 86;
 /** `lg:gap-1` do nav. */
@@ -372,12 +384,12 @@ function useQuantosCabem(qtdItens: number, navRef: React.RefObject<HTMLElement |
  * conseguia ir pro menu "Mais". Resultado medido: a linha do cabecalho
  * estourava em TODAS as larguras de desktop, de 1024 a 1920.
  */
-function classeVisibilidade(soNoExcesso: boolean, soDesktop: boolean): string {
+function classeVisibilidade(soNoExcesso: boolean, foraDoRodape: boolean): string {
   // Fora da barra do rodape E ja empurrado pro "Mais": nao aparece em lugar
   // nenhum como item de linha (o menu "Mais" o renderiza por conta propria).
-  if (soDesktop && soNoExcesso) return "hidden";
+  if (foraDoRodape && soNoExcesso) return "hidden";
   // Fora da barra do rodape, mas cabe na linha do desktop.
-  if (soDesktop) return "hidden lg:flex";
+  if (foraDoRodape) return "hidden lg:flex";
   // Coube no rodape; some so da LINHA do desktop e reaparece no "Mais".
   if (soNoExcesso) return "lg:hidden";
   return "";
@@ -570,19 +582,23 @@ function UserMenu({
 /**
  * "Mais" — os itens de navegacao que nao couberam na linha.
  *
- * So existe no desktop (`hidden lg:flex`): abaixo de `lg` a navegacao e a
- * barra fixa do rodape e TODOS os itens aparecem la. Nao ha duplicacao de link
- * na arvore de acessibilidade — o Popover do Radix so monta o conteudo quando
- * aberto, e um item que esta aqui esta escondido da linha (`lg:hidden`).
+ * Duas instancias: a da linha do desktop (`hidden lg:flex`, com o que nao
+ * coube) e a do rodape do celular (`rodape`, `lg:hidden`, com o que nao e aba
+ * fixa — ver FIXOS_RODAPE). Nunca as duas visiveis juntas, e o Popover do
+ * Radix so monta o conteudo quando aberto: nao ha link duplicado na arvore
+ * de acessibilidade.
  */
 function NavExcesso({
   itens,
   caminhoAtual,
   naoLidasChat,
+  rodape = false,
 }: {
   itens: { to: string; label: string; icon: typeof LayoutGrid }[];
   caminhoAtual: string;
   naoLidasChat: number;
+  /** Variante da barra do celular (`lg:hidden`), com cara de aba. */
+  rodape?: boolean;
 }) {
   const [aberto, setAberto] = useState(false);
   // Se a pagina ATUAL esta escondida aqui dentro, o botao precisa dizer isso —
@@ -597,21 +613,34 @@ function NavExcesso({
         <button
           type="button"
           aria-label={`Mais seções (${itens.length})`}
-          className={cn(
-            // `pointer-coarse:min-h-11` como os demais itens: em tablet
-            // paisagem (1024px COM toque) o botao ficava 76x32px, abaixo do
-            // minimo de 44px.
-            "hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition-colors lg:flex pointer-coarse:min-h-11",
-            contemAtual
-              ? "bg-primary/12 text-foreground"
-              : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
-          )}
+          className={
+            rodape
+              ? cn(navItemClass(contemAtual), "lg:hidden")
+              : cn(
+                  // `pointer-coarse:min-h-11` como os demais itens: em tablet
+                  // paisagem (1024px COM toque) o botao ficava 76x32px, abaixo do
+                  // minimo de 44px.
+                  "hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition-colors lg:flex pointer-coarse:min-h-11",
+                  contemAtual
+                    ? "bg-primary/12 text-foreground"
+                    : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
+                )
+          }
         >
-          <MoreHorizontal className="size-4 shrink-0" />
-          Mais
+          {rodape ? (
+            <>
+              <NavIcon Icon={MoreHorizontal} ativo={contemAtual} />
+              <span className="relative">Mais</span>
+            </>
+          ) : (
+            <>
+              <MoreHorizontal className="size-4 shrink-0" />
+              Mais
+            </>
+          )}
         </button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-52 p-1.5">
+      <PopoverContent align="end" side={rodape ? "top" : undefined} className="w-52 p-1.5">
         {itens.map(({ to, label, icon: Icon }) => {
           const ativo = to === "/admin" ? caminhoAtual.startsWith("/admin") : caminhoAtual === to;
           return (
@@ -676,6 +705,15 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const { cabem, medido: navMedido } = useQuantosCabem(itensNav.length, navRef);
   const noExcesso = itensNav.slice(cabem);
+  // Rodape do celular: se tudo cabe (tecnico, provedor), mostra tudo; senao,
+  // as abas fixas do perfil e o resto no "Mais". `soDesktop` nunca entra.
+  const doRodape = itensNav.filter((i) => !i.soDesktop);
+  const fixosRodape = new Set(
+    doRodape.length <= MAX_ABAS_RODAPE
+      ? doRodape.map((i) => i.to)
+      : FIXOS_RODAPE.filter((to) => doRodape.some((i) => i.to === to)).slice(0, MAX_ABAS_RODAPE - 1),
+  );
+  const maisRodape = doRodape.filter((i) => !fixosRodape.has(i.to));
 
   useEffect(() => {
     if (!usuario || usuario.role === UserRole.PROVEDOR) return;
@@ -755,13 +793,11 @@ export function AppShell({ children }: { children: ReactNode }) {
                * de si — nada sai da tela e os controles da direita ficam
                * sempre no lugar.
                *
-               * No celular a barra do rodape rola do mesmo jeito: com 13 itens
-               * (admin) em 375px, `flex-1` comprimia cada aba a 36px — abaixo
-               * do piso de 40 do dedo — e as ultimas cinco saiam da tela sem
-               * rolagem. Cada aba tem `min-w-16` e a barra rola; com poucos
-               * itens (tecnico) o `flex-1` segue preenchendo a largura.
+               * No celular a barra do rodape tem no maximo 5 abas: as fixas do
+               * perfil + "Mais" (ver FIXOS_RODAPE). Com as 13 do admin em 375px,
+               * `flex-1` comprimia cada aba a 36px e as ultimas saiam da tela.
                */
-              className="fixed inset-x-0 bottom-0 z-30 flex items-stretch overflow-x-auto border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md scrollbar-none lg:static lg:inset-auto lg:z-auto lg:min-w-0 lg:flex-1 lg:items-center lg:gap-1 lg:border-t-0 lg:bg-transparent lg:pb-0 lg:backdrop-blur-none"
+              className="fixed inset-x-0 bottom-0 z-30 flex items-stretch justify-around border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:static lg:inset-auto lg:z-auto lg:min-w-0 lg:flex-1 lg:items-center lg:justify-start lg:gap-1 lg:overflow-x-auto lg:border-t-0 lg:bg-transparent lg:pb-0 lg:backdrop-blur-none lg:scrollbar-none"
               aria-label="Navegação principal"
               /*
                * `false` enquanto a medicao nao concluiu — nesse instante a
@@ -784,7 +820,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                      * dentro de "Mais". Abaixo de `lg` continua visivel — ali o
                      * nav e a barra do rodape, com layout proprio.
                      */
-                    className={cn(navItemClass(ativo), classeVisibilidade(soNoExcesso, !!soDesktop))}
+                    className={cn(navItemClass(ativo), classeVisibilidade(soNoExcesso, !!soDesktop || !fixosRodape.has(to)))}
                   >
                     {ativo && (
                       <NavActivePill
@@ -819,6 +855,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                   caminhoAtual={location.pathname}
                   naoLidasChat={naoLidasChat}
                 />
+              )}
+              {maisRodape.length > 0 && (
+                <NavExcesso itens={maisRodape} caminhoAtual={location.pathname} naoLidasChat={naoLidasChat} rodape />
               )}
             </nav>
           )}
