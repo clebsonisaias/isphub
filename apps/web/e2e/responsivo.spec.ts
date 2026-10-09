@@ -129,7 +129,10 @@ async function medir(page: Page) {
       const escondeX = estilo.overflowX === "hidden" || estilo.overflowX === "clip";
       if (escondeX && el.scrollWidth > el.clientWidth + 2 && el.clientWidth > 0) {
         // `truncate` (text-overflow: ellipsis) e corte INTENCIONAL e sinalizado.
-        if (estilo.textOverflow !== "ellipsis") {
+        // `sr-only` tambem: caixa de 1x1 recortada de proposito, so pra leitor
+        // de tela (e o nome completo das abas da nav vive assim).
+        const soLeitorDeTela = el.clientWidth <= 1 && el.clientHeight <= 1;
+        if (estilo.textOverflow !== "ellipsis" && !soLeitorDeTela) {
           cortados.push(`${nomear(el)} → conteudo ${el.scrollWidth}px numa caixa de ${el.clientWidth}px`);
         }
       }
