@@ -56,6 +56,14 @@ export interface AgendaConfigDto {
   baseLng: number | null;
   /** Visitas que um tecnico faz por turno. Preenchido, a capacidade segue a escala; nulo = fixa. */
   vagasPorTecnico: number | null;
+  /** Fatia do teto diario (`vagasDia`) reservada a retirada, nao vaga extra. 0 = so a sobra do dia. */
+  vagasRetiradaDia?: number;
+  /** Liga o job que marca sozinho instalacao e reparo. Desligado por padrao. */
+  autoAgendaAtiva?: boolean;
+  /** Teto de marcacoes que o job faz por rodada (trava contra enxurrada). */
+  autoAgendaMaxRodada?: number;
+  /** Vagas por dia guardadas pra "sem conexao"; liberadas na vespera. 0 = sem reserva. */
+  vagasUrgenciaDia?: number;
 }
 
 /** Um dia que foge da regra do calendario, como o servico o entrega. */

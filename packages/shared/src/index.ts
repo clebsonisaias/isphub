@@ -17,6 +17,7 @@ export * from "./frota.js";
 export * from "./geodesia.js";
 export * from "./deslocamento.js";
 export * from "./rota.js";
+export * from "./autoAgenda.js";
 export * from "./redistribuicao.js";
 export * from "./presenca.js";
 export * from "./manutencao.js";

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { AlertTriangle, ArrowDown, ArrowUp, CalendarDays, CalendarOff, CalendarPlus, CheckCircle2, ChevronLeft, ChevronRight, CloudOff, MapPin, Phone, RefreshCw, Route, Search, Settings2, Trash2, X } from "lucide-react";
-import { ROTULO_TURNO, TURNOS_AGENDA, turnoDaHora, diaBrHoje, formatarKm, inicioDaSemana, somarDias, type AgendaConfigDto, type FilaItem, type TurnoAgenda, type VagaTurno } from "@isphub/shared";
+import { AlertTriangle, ArrowDown, Wand2, ArrowUp, CalendarDays, CalendarOff, CalendarPlus, CheckCircle2, ChevronLeft, ChevronRight, CloudOff, MapPin, Phone, RefreshCw, Route, Search, Settings2, Trash2, X } from "lucide-react";
+import { ROTULO_TURNO, TURNOS_AGENDA, turnoDaHora, diaBrHoje, formatarKm, inicioDaSemana, somarDias, type AgendaConfigDto, type FilaItem, type ResultadoAuto, type TurnoAgenda, type VagaTurno } from "@isphub/shared";
+import type { SaudeAgendador } from "@/lib/agendaApi";
 import { AppShell } from "@/components/AppShell";
 import { AnimatedPage } from "@/components/AnimatedPage";
 import { Card, CardContent } from "@/components/ui/card";
@@ -58,6 +59,11 @@ export function AgendaPage() {
   // Sugestao de ordem por proximidade: calculada sob demanda, aplicada so no "Aplicar".
   const [sugestao, setSugestao] = useState<{ ordem: string[]; metros: number; metrosAtual: number; semCoordenada: number; comOrigem: boolean } | null>(null);
   const [sugerindo, setSugerindo] = useState(false);
+  // Proposta automatica de dia/turno: so leitura, o supervisor revisa.
+  const [proposta, setProposta] = useState<ResultadoAuto | null>(null);
+  const [propondo, setPropondo] = useState(false);
+  const [saude, setSaude] = useState<SaudeAgendador | null>(null);
+  const [aplicando, setAplicando] = useState(false);
   const shouldReduceMotion = useReducedMotion();
 
   const queryClient = useQueryClient();
@@ -195,6 +201,55 @@ export function AgendaPage() {
     }
   }
 
+  async function propor() {
+    setPropondo(true);
+    try {
+      const [p, sd] = await Promise.all([agendaApi.propostaAuto(), agendaApi.saudeAuto().catch(() => null)]);
+      setProposta(p);
+      setSaude(sd);
+    } catch {
+      toast({ variante: "erro", titulo: "Não foi possível calcular a proposta de agenda." });
+    } finally {
+      setPropondo(false);
+    }
+  }
+
+  /** Grava as primeiras `n` propostas (um dia de trabalho) depois de o supervisor confirmar. */
+  async function aplicarLote(n: number) {
+    if (!proposta) return;
+    const lote = proposta.propostas.slice(0, n);
+    if (lote.length === 0 || !window.confirm(`Marcar ${lote.length} visitas na agenda? O técnico continua sendo escolhido por você.`)) return;
+    setAplicando(true);
+    try {
+      const r = await agendaApi.aplicarAuto(lote);
+      toast({
+        variante: r.recusadas.length ? "info" : "sucesso",
+        titulo: `${r.aplicadas.length} marcadas${r.recusadas.length ? `, ${r.recusadas.length} recusadas (a vaga mudou)` : ""}.`,
+      });
+      await carregarGrade();
+      await propor();
+    } catch {
+      toast({ variante: "erro", titulo: "Não foi possível aplicar o lote." });
+    } finally {
+      setAplicando(false);
+    }
+  }
+
+  async function desfazerLote() {
+    if (!window.confirm("Desfazer o que o agendador marcou hoje? Visitas que o cliente já confirmou ficam.")) return;
+    setAplicando(true);
+    try {
+      const r = await agendaApi.desfazerAuto();
+      toast({ variante: "sucesso", titulo: `${r.desfeitas} desfeitas${r.mantidasConfirmadas ? `, ${r.mantidasConfirmadas} mantidas (cliente confirmou)` : ""}.` });
+      await carregarGrade();
+      await propor();
+    } catch {
+      toast({ variante: "erro", titulo: "Não foi possível desfazer o lote." });
+    } finally {
+      setAplicando(false);
+    }
+  }
+
   async function aplicarSugestao() {
     if (!janela || !sugestao) return;
     setSalvando(true);
@@ -285,10 +340,31 @@ export function AgendaPage() {
                 {config.vagasManha} manhã · {config.vagasTarde} tarde
                 {config.vagasDia != null ? ` · ${config.vagasDia}/dia` : ""}
                 {config.tetoRegiao != null ? ` · ${config.tetoRegiao} por região` : ""}
+                {config.vagasRetiradaDia ? ` · ${config.vagasRetiradaDia} reservadas à retirada` : ""}
                 {config.vagasPorTecnico != null ? ` · ${config.vagasPorTecnico} por técnico (escala)` : ""}
               </button>
             ) : null}
+            <button
+              type="button"
+              onClick={() => void propor()}
+              disabled={propondo}
+              className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+            >
+              <Wand2 className="size-3.5" aria-hidden />
+              {propondo ? "Calculando…" : "Propor agenda"}
+            </button>
           </header>
+
+          {proposta ? (
+            <PropostaAuto
+              proposta={proposta}
+              saude={saude}
+              ocupado={aplicando}
+              aoAplicar={(n) => void aplicarLote(n)}
+              aoDesfazer={() => void desfazerLote()}
+              aoFechar={() => setProposta(null)}
+            />
+          ) : null}
 
           <Card>
             <CardContent className="p-0">
@@ -738,6 +814,10 @@ function LimitesDaAgenda({
   const [baseLat, setBaseLat] = useState<string>(config.baseLat != null ? String(config.baseLat) : "");
   const [baseLng, setBaseLng] = useState<string>(config.baseLng != null ? String(config.baseLng) : "");
   const [porTecnico, setPorTecnico] = useState<number | "">(config.vagasPorTecnico ?? "");
+  const [retiradaDia, setRetiradaDia] = useState<number | "">(config.vagasRetiradaDia ?? 0);
+  const [autoAtiva, setAutoAtiva] = useState(config.autoAgendaAtiva ?? false);
+  const [autoMax, setAutoMax] = useState<number | "">(config.autoAgendaMaxRodada ?? 20);
+  const [urgenciaDia, setUrgenciaDia] = useState<number | "">(config.vagasUrgenciaDia ?? 0);
   const [salvando, setSalvando] = useState(false);
 
   const nomesDias = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
@@ -758,6 +838,10 @@ function LimitesDaAgenda({
         baseLat: baseLat.trim() && baseLng.trim() ? Number(baseLat) : null,
         baseLng: baseLat.trim() && baseLng.trim() ? Number(baseLng) : null,
         vagasPorTecnico: porTecnico === "" ? null : Number(porTecnico),
+        vagasRetiradaDia: retiradaDia === "" ? 0 : Number(retiradaDia),
+        autoAgendaAtiva: autoAtiva,
+        autoAgendaMaxRodada: autoMax === "" ? 20 : Number(autoMax),
+        vagasUrgenciaDia: urgenciaDia === "" ? 0 : Number(urgenciaDia),
       });
     } finally {
       setSalvando(false);
@@ -807,6 +891,55 @@ function LimitesDaAgenda({
             <span className="text-muted-foreground">
               Preenchido, cada turno oferece no máximo escalados × este número (sem passar das vagas fixas). Dia sem escala continua com as fixas.
             </span>
+          </label>
+          <label className="flex flex-col gap-1.5 text-xs">
+            <span className="font-medium text-foreground">Retirada: fatia reservada por dia</span>
+            <input
+              type="number"
+              min={0}
+              max={500}
+              value={retiradaDia}
+              onChange={(e) => setRetiradaDia(e.target.value === "" ? "" : Number(e.target.value))}
+              className="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+            />
+            <span className="text-muted-foreground">
+              Parte do que o dia comporta guardada para retirada de kit — não é vaga extra. 0 = a retirada só usa a sobra.
+            </span>
+          </label>
+          <label className="flex flex-col gap-1.5 text-xs">
+            <span className="font-medium text-foreground">Urgência: vagas guardadas por dia</span>
+            <input
+              type="number"
+              min={0}
+              max={500}
+              value={urgenciaDia}
+              onChange={(e) => setUrgenciaDia(e.target.value === "" ? "" : Number(e.target.value))}
+              className="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+            />
+            <span className="text-muted-foreground">
+              Guardadas para "sem conexão" nos dias além de amanhã; na véspera voltam para as demais. 0 = sem reserva.
+            </span>
+          </label>
+          <label className="flex items-start gap-2 text-xs">
+            <input type="checkbox" checked={autoAtiva} onChange={(e) => setAutoAtiva(e.target.checked)} className="mt-0.5" />
+            <span>
+              <span className="font-medium text-foreground">Agendamento automático de instalação e reparo</span>
+              <span className="block text-muted-foreground">
+                A cada 10 min marca sozinho. A retirada nunca sai sozinha, só por lote aprovado. O técnico continua sendo escolhido por você.
+              </span>
+            </span>
+          </label>
+          <label className="flex flex-col gap-1.5 text-xs">
+            <span className="font-medium text-foreground">Máximo de marcações por rodada</span>
+            <input
+              type="number"
+              min={1}
+              max={200}
+              value={autoMax}
+              onChange={(e) => setAutoMax(e.target.value === "" ? "" : Number(e.target.value))}
+              className="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+            />
+            <span className="text-muted-foreground">Trava contra enxurrada se algo sair errado.</span>
           </label>
           <label className="flex flex-col gap-1.5 text-xs">
             <span className="font-medium text-foreground">Base da equipe (latitude)</span>
@@ -1127,6 +1260,117 @@ function RotaDeAgora({ hoje, onAbrir }: { hoje: string; onAbrir: (dia: string, t
             })}
           </ol>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Revisao da proposta automatica. Nao grava nada e nao escolhe tecnico: mostra o
+ * que o motor sugere, por dia, e o que ficou de fora. Aplicar em lote e outra fase.
+ */
+function PropostaAuto({
+  proposta,
+  saude,
+  ocupado,
+  aoAplicar,
+  aoDesfazer,
+  aoFechar,
+}: {
+  proposta: ResultadoAuto;
+  saude: SaudeAgendador | null;
+  ocupado: boolean;
+  aoAplicar: (n: number) => void;
+  aoDesfazer: () => void;
+  aoFechar: () => void;
+}) {
+  const [quantas, setQuantas] = useState(30);
+  const porDia = new Map<string, ResultadoAuto["propostas"]>();
+  for (const p of proposta.propostas) porDia.set(p.dia, [...(porDia.get(p.dia) ?? []), p]);
+  return (
+    <Card>
+      <CardContent className="p-0">
+        <header className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
+          <Wand2 className="size-4 text-muted-foreground" aria-hidden />
+          <h2 className="text-sm font-semibold">Proposta de agenda</h2>
+          <span className="text-xs text-muted-foreground">
+            {proposta.propostas.length} propostas · {proposta.revisao.length} para revisão · {proposta.semVaga.length} sem vaga no horizonte
+          </span>
+          <button type="button" onClick={aoFechar} aria-label="Fechar proposta" className="ml-auto rounded p-1 text-muted-foreground hover:bg-muted">
+            <X className="size-4" aria-hidden />
+          </button>
+        </header>
+        {saude ? (
+          <p className="border-b border-border px-4 py-2 text-xs text-muted-foreground">
+            Agendador {saude.ativa ? "ligado" : "desligado"}
+            {saude.rodadaAtrasada ? " · ⚠ sem rodar há mais de 30 min" : ""}
+            {saude.ultimaRodada ? ` · última rodada: ${saude.ultimaRodada.marcadas} marcadas, ${saude.ultimaRodada.recusadas} recusadas${saude.ultimaRodada.erro ? ` (erro: ${saude.ultimaRodada.erro})` : ""}` : ""}
+            {` · ${saude.vagasOciosasAmanha} vagas ociosas amanhã · ${saude.semConfirmacaoAmanha} sem confirmação amanhã · ${saude.pendentesNoSgp} pendentes no SGP · ${saude.osAbertasHaMaisDe7Dias} OS abertas há mais de 7 dias`}
+          </p>
+        ) : null}
+        {proposta.propostas.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2 text-xs">
+            <label className="flex items-center gap-1.5">
+              Aplicar as primeiras
+              <input
+                type="number"
+                min={1}
+                max={200}
+                value={quantas}
+                onChange={(e) => setQuantas(Math.max(1, Math.min(200, Number(e.target.value) || 1)))}
+                className="w-16 rounded-md border border-border bg-background px-2 py-1"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={ocupado}
+              onClick={() => aoAplicar(quantas)}
+              className="rounded-md bg-primary px-2.5 py-1.5 font-medium text-primary-foreground disabled:opacity-50"
+            >
+              {ocupado ? "Aplicando…" : "Aplicar lote"}
+            </button>
+            <button type="button" disabled={ocupado} onClick={aoDesfazer} className="rounded-md border border-border px-2.5 py-1.5 font-medium hover:bg-muted disabled:opacity-50">
+              Desfazer lote de hoje
+            </button>
+          </div>
+        ) : null}
+        {proposta.propostas.length === 0 ? (
+          <p className="px-4 py-4 text-sm text-muted-foreground">Nenhuma OS para propor agora.</p>
+        ) : (
+          <div className="max-h-96 overflow-y-auto">
+            {[...porDia.entries()].map(([dia, itens]) => (
+              <section key={dia}>
+                <h3 className="sticky top-0 bg-muted/60 px-4 py-1.5 text-xs font-semibold backdrop-blur">
+                  {rotuloDiaAgenda(dia)} · {itens.length}
+                </h3>
+                <ul className="divide-y divide-border">
+                  {itens.map((p) => (
+                    <li key={`${p.provedorId}-${p.sgpOsId}`} className="flex items-center gap-3 px-4 py-2">
+                      <span className="w-12 shrink-0 text-xs font-medium">{ROTULO_TURNO[p.turno]}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">
+                          {p.clienteNome ?? `OS ${p.sgpOsId}`} <span className="text-xs font-normal text-muted-foreground">OS #{p.sgpOsId}{p.regiao ? ` · ${p.regiao}` : ""}</span>
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">{p.motivo}</p>
+                      </div>
+                      {p.fila === "retirada" ? <span className="rounded bg-muted px-1.5 py-0.5 text-xs">retirada</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </div>
+        )}
+        {proposta.revisao.length > 0 ? (
+          <details className="border-t border-border px-4 py-2 text-xs">
+            <summary className="cursor-pointer font-medium">{proposta.revisao.length} OS para revisão manual</summary>
+            <ul className="mt-2 space-y-1 text-muted-foreground">
+              {proposta.revisao.slice(0, 50).map((r) => (
+                <li key={`${r.provedorId}-${r.sgpOsId}`}>OS #{r.sgpOsId} — {r.motivo}</li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
       </CardContent>
     </Card>
   );

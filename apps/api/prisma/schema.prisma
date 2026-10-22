@@ -2100,6 +2100,20 @@ model AgendaConfig {
   /// vira min(vagas fixas, escalados x isto); nulo = so as vagas fixas valem.
   vagasPorTecnico Int?
 
+  /// FATIA do teto diario (`vagasDia`) reservada a fila de retirada, nao vaga
+  /// extra: retirada + demais nunca passam de `vagasDia`. 0 = a retirada so usa
+  /// a sobra do dia.
+  vagasRetiradaDia Int @default(0)
+
+  /// Liga o job que marca sozinho instalacao e reparo. Desligado por padrao: o
+  /// agendador so passa a agir quando alguem liga.
+  autoAgendaAtiva Boolean @default(false)
+  /// Teto de marcacoes por rodada do job — trava contra enxurrada se algo errar.
+  autoAgendaMaxRodada Int @default(20)
+  /// Vagas por dia guardadas pra "sem conexao" que ainda nao chegou; liberadas
+  /// pras demais OS na vespera. 0 = sem reserva.
+  vagasUrgenciaDia Int @default(0)
+
   atualizadoEm DateTime @updatedAt
 
   @@map("agenda_config")
@@ -2238,6 +2252,11 @@ model Agendamento {
   regiao String?
 
   status StatusAgendamento @default(marcado)
+
+  /// Qual fila consome a vaga: `normal` (instalacao/reparo, cota do turno) ou
+  /// `retirada` (cota propria por dia, `AgendaConfig.vagasRetiradaDia`). A
+  /// retirada nao disputa vaga de instalacao/reparo, entao nao entra em `total`.
+  fila String @default("normal")
 
   /// A ordem da visita no dia, definida pelo supervisor. E a coluna "Ordem da
   /// Rota" da planilha — que la morria na planilha; aqui ela chega no app do

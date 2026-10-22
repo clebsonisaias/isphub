@@ -61,9 +61,11 @@ export interface Ocupacao {
   reparo: number;
   /** Na regiao consultada. `null` quando a consulta nao pediu regiao. */
   regiao: number | null;
+  /** Quantas das ocupadas (`total`) sao da fila de retirada. */
+  retirada?: number;
 }
 
-const VAZIA: Ocupacao = { total: 0, instalacao: 0, reparo: 0, regiao: null };
+const VAZIA: Ocupacao = { total: 0, instalacao: 0, reparo: 0, regiao: null, retirada: 0 };
 
 /**
  * O estado de UMA janela. E o coracao da regra, e e puro.
@@ -260,6 +262,10 @@ export async function lerConfig(): Promise<AgendaConfigDto> {
     baseLat: c.baseLat,
     baseLng: c.baseLng,
     vagasPorTecnico: c.vagasPorTecnico,
+    vagasRetiradaDia: c.vagasRetiradaDia,
+    autoAgendaAtiva: c.autoAgendaAtiva,
+    autoAgendaMaxRodada: c.autoAgendaMaxRodada,
+    vagasUrgenciaDia: c.vagasUrgenciaDia,
   };
 }
 
@@ -281,6 +287,7 @@ export async function ocupacoesEntre(de: string, ate: string, regiao?: string | 
       dia: true,
       turno: true,
       regiao: true,
+      fila: true,
       ordemServico: { select: { tipoOs: { select: { categoria: { select: { nome: true } } } } } },
     },
   });
@@ -288,7 +295,10 @@ export async function ocupacoesEntre(de: string, ate: string, regiao?: string | 
   const mapa = new Map<string, Ocupacao>();
   for (const l of linhas) {
     const chave = chaveJanela(l.dia.toISOString().slice(0, 10), l.turno);
-    const atual = mapa.get(chave) ?? { total: 0, instalacao: 0, reparo: 0, regiao: regiao ? 0 : null };
+    const atual = mapa.get(chave) ?? { total: 0, instalacao: 0, reparo: 0, regiao: regiao ? 0 : null, retirada: 0 };
+    // A retirada ocupa vaga do turno como qualquer visita; `retirada` so diz
+    // quantas das ocupadas sao dela (a fatia reservada e calculada em cima disso).
+    if (l.fila === "retirada") atual.retirada = (atual.retirada ?? 0) + 1;
     atual.total += 1;
     // Instalacao x reparo e so pro painel (a planilha tinha uma aba pra cada);
     // o TETO e compartilhado, porque sao os mesmos tecnicos nos dois tipos.
@@ -423,6 +433,8 @@ export interface MarcarArgs {
   origem: string;
   marcadoPor?: string | null;
   observacao?: string | null;
+  /** Fila que consome a vaga; omitida, nao mexe no que a marcacao ja tinha. */
+  fila?: "normal" | "retirada";
 }
 
 /**
@@ -543,6 +555,7 @@ export async function marcar(args: MarcarArgs) {
       origem: args.origem,
       marcadoPor: args.marcadoPor ?? null,
       observacao: args.observacao ?? null,
+      fila: args.fila,
       status: "marcado" as const,
       ordemServicoId: os?.id ?? null,
       // Remarcar invalida a confirmacao anterior: o SGP ainda tem a data velha.
@@ -597,7 +610,7 @@ async function ocupacoesNaTransacao(
   const mapa = new Map<string, Ocupacao>();
   for (const l of linhas) {
     const chave = chaveJanela(dia, l.turno);
-    const atual = mapa.get(chave) ?? { total: 0, instalacao: 0, reparo: 0, regiao: regiao ? 0 : null };
+    const atual = mapa.get(chave) ?? { total: 0, instalacao: 0, reparo: 0, regiao: regiao ? 0 : null, retirada: 0 };
     atual.total += 1;
     if (regiao && l.regiao === regiao) atual.regiao = (atual.regiao ?? 0) + 1;
     mapa.set(chave, atual);

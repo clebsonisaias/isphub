@@ -11,6 +11,7 @@ import { startDeslocamentoScheduler } from "./jobs/deslocamentoScheduler.js";
 import { startEscalaAlertaScheduler } from "./jobs/escalaAlertaScheduler.js";
 import { startAuditoriaVisitaScheduler } from "./jobs/auditoriaVisitaScheduler.js";
 import { startManutencaoAlertaScheduler } from "./jobs/manutencaoAlertaScheduler.js";
+import { startAutoAgendaScheduler } from "./jobs/autoAgendaScheduler.js";
 import { fecharTodasConexoes } from "./services/realtimeHub.js";
 
 const app = createApp();
@@ -27,6 +28,7 @@ const server = app.listen(env.PORT, () => {
   startEscalaAlertaScheduler();
   startAuditoriaVisitaScheduler();
   startManutencaoAlertaScheduler();
+  startAutoAgendaScheduler();
 });
 
 /**

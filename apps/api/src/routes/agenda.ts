@@ -4,6 +4,12 @@ import { TURNOS_AGENDA, ORIGENS_AGENDAMENTO, UserRole, metrosDaOrdem, sugerirOrd
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import * as agenda from "../services/agendaService.js";
+import {
+  aplicarPropostas,
+  desfazerLoteAuto,
+  proporAgendaDoBanco,
+  saudeDoAgendador,
+} from "../services/autoAgendaService.js";
 import { aplicarRedistribuicao, propostaRedistribuicao } from "../services/redistribuicaoService.js";
 
 /**
@@ -85,6 +91,61 @@ agendaRouter.get(
     const lista = paradas.map((p) => ({ id: p.id, lat: p.ordemServico?.lat ?? null, lng: p.ordemServico?.lng ?? null }));
     const sugestao = sugerirOrdem(lista, origem);
     res.json({ ...sugestao, metrosAtual: metrosDaOrdem(lista, origem), comOrigem: origem !== null });
+  }),
+);
+
+/**
+ * `GET /agenda/auto/proposta` — dia e turno propostos pra OS abertas sem visita.
+ * NAO grava e NAO atribui tecnico: o supervisor revisa, e so a Fase 3 aplica.
+ * `propostas` e a lista `{sgpOsId, dia, turno, regiao, motivo}`; `revisao` sao as
+ * OS que precisam de gente (sem categoria...), `semVaga` as que nao couberam.
+ */
+agendaRouter.get(
+  "/auto/proposta",
+  requireRole(UserRole.ADMIN, UserRole.GESTOR),
+  asyncHandler(async (_req, res) => {
+    res.json(await proporAgendaDoBanco());
+  }),
+);
+
+const propostaParaAplicar = z.object({
+  provedorId: z.string().min(1),
+  sgpOsId: z.string().min(1),
+  dia: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  turno: z.enum(TURNOS_AGENDA),
+  regiao: z.string().nullable().optional(),
+  fila: z.enum(["normal", "retirada"]).optional(),
+});
+
+/**
+ * `POST /agenda/auto/aplicar` — grava as propostas que o supervisor aprovou.
+ * Cada uma passa por `marcar()` de novo, entao o que nao cabe mais volta em
+ * `recusadas` (nao e erro). Nao atribui tecnico.
+ */
+agendaRouter.post(
+  "/auto/aplicar",
+  requireRole(UserRole.ADMIN, UserRole.GESTOR),
+  asyncHandler(async (req, res) => {
+    const { propostas } = z.object({ propostas: z.array(propostaParaAplicar).min(1).max(200) }).parse(req.body);
+    res.json(await aplicarPropostas(propostas, req.user?.email ?? "supervisor"));
+  }),
+);
+
+/** `POST /agenda/auto/desfazer` — desfaz o que o agendador marcou hoje (menos o que o cliente ja confirmou). */
+agendaRouter.post(
+  "/auto/desfazer",
+  requireRole(UserRole.ADMIN, UserRole.GESTOR),
+  asyncHandler(async (_req, res) => {
+    res.json(await desfazerLoteAuto());
+  }),
+);
+
+/** `GET /agenda/auto/saude` — o painel pra confiar (ou nao) no agendador. */
+agendaRouter.get(
+  "/auto/saude",
+  requireRole(UserRole.ADMIN, UserRole.GESTOR),
+  asyncHandler(async (_req, res) => {
+    res.json(await saudeDoAgendador());
   }),
 );
 
@@ -239,6 +300,12 @@ adminAgendaRouter.put(
         baseLng: z.number().min(-180).max(180).nullable(),
         // Nulo = capacidade fixa; preenchido, a escala do dia manda.
         vagasPorTecnico: z.number().int().min(1).max(50).nullable(),
+        // Fatia do dia reservada a retirada; 0 = so a sobra.
+        vagasRetiradaDia: z.number().int().min(0).max(500),
+        // Chave do agendador automatico, teto por rodada e reserva de urgencia.
+        autoAgendaAtiva: z.boolean(),
+        autoAgendaMaxRodada: z.number().int().min(1).max(200),
+        vagasUrgenciaDia: z.number().int().min(0).max(500),
       })
       .partial()
       .parse(req.body);

@@ -16,7 +16,8 @@
     "test": "vitest run",
     "seed:bi": "tsx src/seed-bi.ts",
     "seed:prod": "tsx src/seed-produtividade.ts",
-    "verifica:agenda": "tsx src/verifica-agenda.ts"
+    "verifica:agenda": "tsx src/verifica-agenda.ts",
+    "verifica:auto-agenda": "tsx src/verifica-auto-agenda.ts"
   },
   "dependencies": {
     "@isphub/shared": "*",

@@ -1,4 +1,4 @@
-import { ROTULO_TURNO, type AgendaConfigDto, type OsStatus, type TurnoAgenda, type VagaTurno } from "@isphub/shared";
+import { ROTULO_TURNO, type AgendaConfigDto, type ResultadoAuto, type OsStatus, type TurnoAgenda, type VagaTurno } from "@isphub/shared";
 import { api } from "./apiClient";
 
 /**
@@ -86,6 +86,19 @@ export function diaISO(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+export interface SaudeAgendador {
+  ativa: boolean;
+  ultimaRodada: { quando: string; marcadas: number; recusadas: number; erro: string | null } | null;
+  rodadaAtrasada: boolean;
+  vagasOciosasAmanha: number;
+  pendentesNoSgp: number;
+  semConfirmacaoAmanha: number;
+  osAbertasHaMaisDe7Dias: number;
+  propostasPendentes: number;
+  emRevisao: number;
+  semVaga: number;
+}
+
 export const agendaApi = {
   grade: (params?: { de?: string; ate?: string; regiao?: string }) => {
     const q = new URLSearchParams();
@@ -122,6 +135,21 @@ export const agendaApi = {
     api.get<{ ordem: string[]; metros: number; metrosAtual: number; semCoordenada: number; comOrigem: boolean }>(
       `/agenda/turno/sugestao?dia=${dia}&turno=${turno}`,
     ),
+
+  /** Dia e turno propostos pras OS sem visita (nao grava — a aplicacao e outra fase). */
+  propostaAuto: () => api.get<ResultadoAuto>("/agenda/auto/proposta"),
+
+  /** Grava as propostas que o supervisor aprovou; o que nao cabe mais volta em `recusadas`. */
+  aplicarAuto: (propostas: ResultadoAuto["propostas"]) =>
+    api.post<{ aplicadas: unknown[]; recusadas: { sgpOsId: string; motivo: string }[] }>("/agenda/auto/aplicar", {
+      propostas: propostas.map(({ provedorId, sgpOsId, dia, turno, regiao, fila }) => ({ provedorId, sgpOsId, dia, turno, regiao, fila })),
+    }),
+
+  /** Desfaz o que o agendador marcou hoje (menos o que o cliente ja confirmou). */
+  desfazerAuto: () => api.post<{ desfeitas: number; mantidasConfirmadas: number }>("/agenda/auto/desfazer", {}),
+
+  /** O painel pra confiar no agendador: ultima rodada, vagas ociosas, pendencias. */
+  saudeAuto: () => api.get<SaudeAgendador>("/agenda/auto/saude"),
 
   /** Quem assume as paradas de quem faltou — proposta, nao grava. */
   redistribuicao: (dia: string, turno: TurnoAgenda, usuarioId: string) =>
