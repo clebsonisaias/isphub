@@ -4,6 +4,7 @@ import { TURNOS_AGENDA, ORIGENS_AGENDAMENTO, UserRole, metrosDaOrdem, sugerirOrd
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import * as agenda from "../services/agendaService.js";
+import { rodarPlanilha, ultimaRodadaPlanilha } from "../services/planilhaSyncService.js";
 import {
   aplicarPropostas,
   desfazerLoteAuto,
@@ -146,6 +147,24 @@ agendaRouter.get(
   requireRole(UserRole.ADMIN, UserRole.GESTOR),
   asyncHandler(async (_req, res) => {
     res.json(await saudeDoAgendador());
+  }),
+);
+
+/** `GET /agenda/planilha` — resumo da ultima rodada do robo da planilha (nulo antes da 1a). */
+agendaRouter.get(
+  "/planilha",
+  requireRole(UserRole.ADMIN, UserRole.GESTOR),
+  asyncHandler(async (_req, res) => {
+    res.json(ultimaRodadaPlanilha());
+  }),
+);
+
+/** `POST /agenda/planilha/rodar` — roda o robo agora, sem esperar os 15 min. */
+agendaRouter.post(
+  "/planilha/rodar",
+  requireRole(UserRole.ADMIN, UserRole.GESTOR),
+  asyncHandler(async (_req, res) => {
+    res.json(await rodarPlanilha());
   }),
 );
 

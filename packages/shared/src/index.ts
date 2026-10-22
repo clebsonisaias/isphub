@@ -18,6 +18,7 @@ export * from "./geodesia.js";
 export * from "./deslocamento.js";
 export * from "./rota.js";
 export * from "./autoAgenda.js";
+export * from "./planilhaSync.js";
 export * from "./redistribuicao.js";
 export * from "./presenca.js";
 export * from "./manutencao.js";
