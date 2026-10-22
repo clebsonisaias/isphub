@@ -64,6 +64,10 @@ const envSchema = z.object({
   PLANILHA_SYNC_PROVEDOR: z.string().optional(),
   /** Segredo do Apps Script que envia a planilha a `POST /api/planilha/receber` (32+ caracteres). */
   PLANILHA_SYNC_TOKEN: z.string().optional(),
+  /** E-mails Google (separados por virgula) cujo Apps Script pode enviar a planilha, pela identidade. */
+  PLANILHA_SYNC_EMAILS: z.string().optional(),
+  /** Opcional: fixa o cliente OAuth (aud) do Apps Script aceito. */
+  PLANILHA_SYNC_AUD: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

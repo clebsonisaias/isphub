@@ -4,19 +4,37 @@
  * Roda nos servidores do Google, com a conta de quem já enxerga a planilha:
  * a cada 15 min pega o .xlsx do Drive e manda cru para o ISPhub, que aplica na
  * agenda (ver apps/api/src/services/planilhaSyncService.ts). Não precisa de
- * conta de serviço nem do Mac ligado.
+ * conta de serviço, de segredo nem do Mac ligado: o script se identifica com o
+ * login Google de quem o instalou (ScriptApp.getIdentityToken), e o ISPhub só
+ * aceita os e-mails de PLANILHA_SYNC_EMAILS.
  *
  * Instalação (uma vez):
- *  1. script.google.com -> Novo projeto -> apague o conteúdo e cole este arquivo.
- *  2. Configurações do projeto (engrenagem) -> Propriedades do script -> adicionar:
- *       FILE_ID       1S4xjdOFJb3xeb3SVgyCbvSO9DlF17huA
- *       ISPHUB_URL    https://api.isphub.net.br/api/planilha/receber
- *       ISPHUB_TOKEN  (o valor de PLANILHA_SYNC_TOKEN no Coolify, app isphub-api)
- *  3. No editor, escolha a função `instalar` e clique em Executar. Autorize com
- *     a sua conta (ler o Drive e acessar serviço externo).
- *  4. Em Execuções, a 1ª rodada mostra a resposta do ISPhub.
+ *  1. script.google.com -> Novo projeto -> cole este arquivo em Código.gs.
+ *  2. Configurações do projeto -> marque "Mostrar arquivo de manifesto
+ *     appsscript.json no editor" -> no editor, troque o appsscript.json pelo
+ *     bloco MANIFESTO abaixo.
+ *  3. Configurações do projeto -> Propriedades do script -> adicionar:
+ *       FILE_ID     1S4xjdOFJb3xeb3SVgyCbvSO9DlF17huA
+ *       ISPHUB_URL  https://api.isphub.net.br/api/planilha/receber
+ *  4. No editor, escolha a função `instalar` e clique em Executar; autorize
+ *     com a sua conta.
+ *  5. Em Execuções, a 1ª rodada mostra a resposta do ISPhub.
  *
  * Para parar (quando a planilha deixar de ser usada): rode `desinstalar`.
+ *
+ * MANIFESTO (appsscript.json):
+ * {
+ *   "timeZone": "America/Fortaleza",
+ *   "exceptionLogging": "STACKDRIVER",
+ *   "runtimeVersion": "V8",
+ *   "oauthScopes": [
+ *     "https://www.googleapis.com/auth/drive.readonly",
+ *     "https://www.googleapis.com/auth/script.external_request",
+ *     "https://www.googleapis.com/auth/script.scriptapp",
+ *     "openid",
+ *     "https://www.googleapis.com/auth/userinfo.email"
+ *   ]
+ * }
  */
 
 const PROP = PropertiesService.getScriptProperties();
@@ -24,9 +42,8 @@ const PROP = PropertiesService.getScriptProperties();
 function enviar() {
   const fileId = PROP.getProperty('FILE_ID');
   const url = PROP.getProperty('ISPHUB_URL');
-  const token = PROP.getProperty('ISPHUB_TOKEN');
-  if (!fileId || !url || !token) {
-    throw new Error('Configure FILE_ID, ISPHUB_URL e ISPHUB_TOKEN em Propriedades do script.');
+  if (!fileId || !url) {
+    throw new Error('Configure FILE_ID e ISPHUB_URL em Propriedades do script.');
   }
 
   const arquivo = DriveApp.getFileById(fileId);
@@ -41,7 +58,8 @@ function enviar() {
     method: 'post',
     contentType: 'application/octet-stream',
     payload: arquivo.getBlob().getBytes(),
-    headers: { Authorization: 'Bearer ' + token },
+    // Token assinado pelo Google com o e-mail de quem roda o script; vale ~1 h.
+    headers: { Authorization: 'Bearer ' + ScriptApp.getIdentityToken() },
     muteHttpExceptions: true,
   });
   const texto = r.getContentText();
