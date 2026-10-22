@@ -26,6 +26,7 @@ import { configRouter, adminModulosRouter } from "./routes/config.js";
 import { eventosRouter } from "./routes/eventos.js";
 import { agendaRouter, adminAgendaRouter } from "./routes/agenda.js";
 import { parceiroAgendaRouter } from "./routes/parceiroAgenda.js";
+import { planilhaReceberRouter } from "./routes/planilhaReceber.js";
 import { syncMinhasRouter } from "./routes/syncMinhas.js";
 import { chatRouter } from "./routes/chat.js";
 import { canaisWhatsappRouter } from "./routes/canaisWhatsapp.js";
@@ -87,6 +88,11 @@ export function createApp() {
   // motivo e mesma ordem do bloco acima — montado ANTES do parser global,
   // senao o body-parser ja marcou `req._body` e este json() nunca roda.
   app.use("/financeiro/lancamentos/:id/comprovante", express.json({ limit: "5mb" }));
+
+  // Robo da planilha: o Apps Script manda o .xlsx CRU (octet-stream, ate 5MB).
+  // Rota publica com segredo proprio; montada antes do parser global pelo mesmo
+  // motivo dos blocos acima.
+  app.use("/api/planilha", planilhaReceberRouter);
 
   // Limite global apertado. O corpo grande so e legitimo em anexos (foto/audio
   // em base64), que tem rota propria — nao ha motivo pra /auth/login aceitar 5MB.

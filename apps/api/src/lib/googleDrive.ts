@@ -58,12 +58,6 @@ async function chamar(conta: ContaServico, url: string): Promise<Response> {
 
 const BASE = "https://www.googleapis.com/drive/v3/files";
 
-/** Quando o arquivo mudou pela ultima vez — o robo pula a rodada se nao mudou. */
-export async function modificadoEm(conta: ContaServico, arquivoId: string): Promise<string> {
-  const r = await chamar(conta, `${BASE}/${encodeURIComponent(arquivoId)}?fields=modifiedTime&supportsAllDrives=true`);
-  return ((await r.json()) as { modifiedTime: string }).modifiedTime;
-}
-
 /** Bytes do arquivo como esta no Drive (o .xlsx cru). */
 export async function baixar(conta: ContaServico, arquivoId: string): Promise<Buffer> {
   const r = await chamar(conta, `${BASE}/${encodeURIComponent(arquivoId)}?alt=media&supportsAllDrives=true`);

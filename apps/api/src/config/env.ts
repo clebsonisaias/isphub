@@ -54,14 +54,16 @@ const envSchema = z.object({
   /** Remetente ("ISPhub <nao-responda@dominio>"). Cai pro SMTP_USER se faltar. */
   SMTP_FROM: z.string().optional(),
   /**
-   * Robo planilha -> ISPhub (ponte ate a planilha de agendamento parar). As tres
-   * juntas ligam o robo; faltando uma, ele nao faz nada. `GOOGLE_SA_JSON` e o JSON
+   * Robo planilha -> ISPhub (ponte ate a planilha de agendamento parar). Modo
+   * conta de servico: as tres abaixo juntas. Modo Apps Script: PROVEDOR + TOKEN. `GOOGLE_SA_JSON` e o JSON
    * da conta de servico do Google (so leitura no Drive); `PLANILHA_SYNC_PROVEDOR`
    * e o nome do provedor no ISPhub (ex.: "NetGo").
    */
   GOOGLE_SA_JSON: z.string().optional(),
   PLANILHA_SYNC_FILE_ID: z.string().optional(),
   PLANILHA_SYNC_PROVEDOR: z.string().optional(),
+  /** Segredo do Apps Script que envia a planilha a `POST /api/planilha/receber` (32+ caracteres). */
+  PLANILHA_SYNC_TOKEN: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

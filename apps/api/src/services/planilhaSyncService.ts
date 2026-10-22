@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   OBSERVACAO_PLANILHA,
   ORIGEM_PLANILHA,
@@ -12,7 +13,7 @@ import {
   type TurnoAgenda,
 } from "@isphub/shared";
 import { env } from "../config/env.js";
-import { baixar, modificadoEm, type ContaServico } from "../lib/googleDrive.js";
+import { baixar, type ContaServico } from "../lib/googleDrive.js";
 import { prisma } from "../lib/prisma.js";
 import { lerAbas, type Celula } from "../lib/xlsx.js";
 import { HttpError } from "../middleware/errorHandler.js";
@@ -21,11 +22,16 @@ import * as agenda from "./agendaService.js";
 /**
  * Robo planilha -> ISPhub (ponte ate a planilha parar de ser usada).
  *
- * Le o .xlsx do Drive, decide cada linha com `decidirLinha` (shared) e grava
- * pelo MESMO `agenda.marcar()` de todo mundo — teto, feriado e sabado-so-manha
- * valem igual. Nao usa chave de parceiro: "Ligar agendamento" no painel nao o
- * derruba. Sem as 3 envs (GOOGLE_SA_JSON, PLANILHA_SYNC_FILE_ID,
- * PLANILHA_SYNC_PROVEDOR) nao faz nada.
+ * Decide cada linha com `decidirLinha` (shared) e grava pelo MESMO
+ * `agenda.marcar()` de todo mundo — teto, feriado e sabado-so-manha valem
+ * igual. Nao usa chave de parceiro: "Ligar agendamento" no painel nao o derruba.
+ *
+ * O .xlsx chega por dois caminhos, que caem no mesmo `processarPlanilha`:
+ *  - **Apps Script** na conta Google de quem ja enxerga a planilha manda o
+ *    arquivo a cada 15 min pra `POST /api/planilha/receber` (o caminho usado na
+ *    NetGo: a organizacao bloqueia chave de conta de servico);
+ *  - **conta de servico** (GOOGLE_SA_JSON + PLANILHA_SYNC_FILE_ID): o proprio job
+ *    baixa do Drive.
  */
 
 /** Mais que isto numa rodada = algo errado (arquivo trocado, coluna deslocada): para e avisa. */
@@ -36,7 +42,7 @@ type Item = { os: string; motivo: string };
 export interface RodadaPlanilha {
   quando: Date;
   ativo: boolean;
-  /** Motivo de nao ter lido nada nesta rodada ("planilha sem alteração"). */
+  /** Motivo de nao ter processado nada nesta rodada ("planilha sem alteração"). */
   pulada: string | null;
   lidas: number;
   marcadas: string[];
@@ -50,9 +56,14 @@ export interface RodadaPlanilha {
 
 let ultima: RodadaPlanilha | null = null;
 export const ultimaRodadaPlanilha = () => ultima;
-let ultimoModificado: string | null = null;
+let ultimoHash = "";
 let ultimoAviso = "";
 let rodando = false;
+
+const vazia = (quando: Date, ativo: boolean): RodadaPlanilha => ({
+  quando, ativo, pulada: null, lidas: 0,
+  marcadas: [], desmarcadas: [], recusadas: [], conflitos: [], ignoradas: [], trava: null, erro: null,
+});
 
 const norm = (s: unknown) =>
   String(s ?? "")
@@ -100,12 +111,6 @@ export function linhasDaPlanilha(abas: Map<string, Celula[][]>): LinhaPlanilha[]
   return saida;
 }
 
-function configuracao(): { conta: ContaServico; arquivoId: string; provedor: string } | null {
-  if (!env.GOOGLE_SA_JSON || !env.PLANILHA_SYNC_FILE_ID || !env.PLANILHA_SYNC_PROVEDOR) return null;
-  const conta = JSON.parse(env.GOOGLE_SA_JSON) as ContaServico;
-  return { conta, arquivoId: env.PLANILHA_SYNC_FILE_ID, provedor: env.PLANILHA_SYNC_PROVEDOR };
-}
-
 /** Avisa admin/gestor so quando o problema MUDA — senao seria um aviso a cada 15 min. */
 async function avisarSeMudou(r: RodadaPlanilha) {
   const partes = [
@@ -127,30 +132,25 @@ async function avisarSeMudou(r: RodadaPlanilha) {
   });
 }
 
-export async function rodarPlanilha(agora = new Date()): Promise<RodadaPlanilha | null> {
-  if (rodando) return ultima;
+/** Aplica um .xlsx ja em memoria. Mesmo arquivo da rodada anterior (por hash) = nada a fazer. */
+export async function processarPlanilha(buf: Buffer, provedorNome: string, agora = new Date()): Promise<RodadaPlanilha> {
+  if (rodando) return ultima ?? vazia(agora, true);
   rodando = true;
-  const r: RodadaPlanilha = {
-    quando: agora, ativo: false, pulada: null, lidas: 0,
-    marcadas: [], desmarcadas: [], recusadas: [], conflitos: [], ignoradas: [], trava: null, erro: null,
-  };
+  const r = vazia(agora, true);
   try {
-    const cfg = configuracao();
-    if (!cfg) return (ultima = r);
-    r.ativo = true;
-
-    const mod = await modificadoEm(cfg.conta, cfg.arquivoId);
-    if (mod === ultimoModificado && ultima) {
+    const hash = createHash("sha256").update(buf).digest("hex");
+    // Erro ou trava na anterior: processa de novo mesmo sem mudanca (pode ter sido o banco).
+    if (hash === ultimoHash && ultima && !ultima.erro && !ultima.trava) {
       return (ultima = { ...ultima, quando: agora, pulada: "planilha sem alteração" });
     }
 
     const provedor = await prisma.provedor.findFirst({
-      where: { nome: { equals: cfg.provedor, mode: "insensitive" } },
+      where: { nome: { equals: provedorNome, mode: "insensitive" } },
       select: { id: true },
     });
-    if (!provedor) throw new Error(`provedor "${cfg.provedor}" não existe no ISPhub`);
+    if (!provedor) throw new Error(`provedor "${provedorNome}" não existe no ISPhub`);
 
-    const linhas = consolidarLinhas(linhasDaPlanilha(lerAbas(await baixar(cfg.conta, cfg.arquivoId))));
+    const linhas = consolidarLinhas(linhasDaPlanilha(lerAbas(buf)));
     r.lidas = linhas.length;
     const oss = linhas.map((l) => l.os).filter((o): o is string => o != null);
 
@@ -222,13 +222,24 @@ export async function rodarPlanilha(agora = new Date()): Promise<RodadaPlanilha 
       }
     }
     // So marca como "visto" o que foi processado inteiro: erro ou trava tentam de novo.
-    ultimoModificado = mod;
+    ultimoHash = hash;
     return (ultima = r);
   } catch (e) {
     r.erro = e instanceof Error ? e.message : String(e);
     return (ultima = r);
   } finally {
     rodando = false;
-    if (ultima?.ativo) await avisarSeMudou(ultima).catch((e) => console.error("[planilha-sync] aviso falhou:", e));
+    if (ultima) await avisarSeMudou(ultima).catch((e) => console.error("[planilha-sync] aviso falhou:", e));
+  }
+}
+
+/** Modo conta de servico: o job baixa do Drive. Sem as envs, nao faz nada. */
+export async function rodarPlanilha(agora = new Date()): Promise<RodadaPlanilha | null> {
+  if (!env.GOOGLE_SA_JSON || !env.PLANILHA_SYNC_FILE_ID || !env.PLANILHA_SYNC_PROVEDOR) return ultima;
+  try {
+    const buf = await baixar(JSON.parse(env.GOOGLE_SA_JSON) as ContaServico, env.PLANILHA_SYNC_FILE_ID);
+    return await processarPlanilha(buf, env.PLANILHA_SYNC_PROVEDOR, agora);
+  } catch (e) {
+    return (ultima = { ...vazia(agora, true), erro: e instanceof Error ? e.message : String(e) });
   }
 }
