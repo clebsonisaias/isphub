@@ -175,6 +175,34 @@ paths:
             feriado, prazo curto. Ofereça outra janela de `GET /vagas`.
         "401": { description: Chave ausente ou inválida. }
 
+  /api/parceiro/v1/agenda/os/{sgpOsId}:
+    get:
+      tags: [API de agendamento]
+      summary: Andamento operacional de uma OS
+      description: >
+        Responde "cadê meu técnico?". Escopo vem da chave; sem listagem. Do
+        técnico sai só o primeiro nome. Não há ETA: `inicioEm` é o início do turno.
+      security: [{ chaveParceiro: [] }]
+      operationId: parceiroAgendaOs
+      parameters:
+        - { name: sgpOsId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Status da OS e, se houver visita marcada, dia/turno.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [aberta, pendente, em_deslocamento, em_execucao, concluida, cancelada] }
+                  tecnicoPrimeiroNome: { type: string, nullable: true }
+                  dia: { type: string, format: date, nullable: true }
+                  turno: { type: string, enum: [manha, tarde], nullable: true }
+                  inicioEm: { type: string, format: date-time, nullable: true }
+                  ordemRota: { type: integer, nullable: true }
+        "401": { description: Chave ausente ou inválida. }
+        "404": { description: OS não encontrada (ou de outro provedor). }
+
   /api/parceiro/v1/agenda/marcacao/{sgpOsId}:
     get:
       tags: [API de agendamento]

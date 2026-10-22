@@ -6,6 +6,7 @@ import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireChaveParceiro } from "../middleware/chaveParceiro.js";
 import { prisma } from "../lib/prisma.js";
 import * as agenda from "../services/agendaService.js";
+import { montarOsStatus } from "../lib/osStatusParceiro.js";
 
 /**
  * A porta da AGENDA pra sistemas parceiros — hoje, o AtendAI do provedor.
@@ -159,6 +160,32 @@ parceiroAgendaRouter.get(
       confirmada: m.confirmadoEm != null,
       remarcacoesCliente: m.remarcacoesCliente,
     });
+  }),
+);
+
+/**
+ * `GET /os/:sgpOsId` — andamento operacional de UMA OS (status, dia/turno,
+ * primeiro nome do tecnico, posicao na rota).
+ *
+ * E o que responde "cade meu tecnico?": o SGP so sabe aberta/fechada. Busca
+ * sempre pelo par (chave, sgpOsId) — nao existe listagem — e 404 tanto para OS
+ * inexistente quanto de outro provedor, pra nao revelar que ela existe.
+ * ponytail: sem ETA (o ISPhub nao calcula chegada); `inicioEm` e o inicio do turno.
+ */
+parceiroAgendaRouter.get(
+  "/os/:sgpOsId",
+  asyncHandler(async (req, res) => {
+    const os = await prisma.ordemServico.findUnique({
+      where: { provedorId_sgpOsId: { provedorId: req.provedorParceiroId!, sgpOsId: req.params.sgpOsId } },
+      select: {
+        status: true,
+        tecnicoSgpNome: true,
+        tecnico: { select: { nome: true } },
+        agendamento: { select: { dia: true, turno: true, status: true, ordemRota: true } },
+      },
+    });
+    if (!os) throw new HttpError(404, "OS nao encontrada");
+    res.json(montarOsStatus(os, agenda.inicioDoTurno));
   }),
 );
 

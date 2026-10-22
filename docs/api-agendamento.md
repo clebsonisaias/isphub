@@ -36,6 +36,7 @@ Quem chama não precisa reimplementar nada disso, só tratar o 409:
 |---|---|---|
 | GET | `/vagas?regiao=&quantas=6` | próximas janelas que cabem |
 | POST | `/marcar` | marca ou remarca a visita de uma OS |
+| GET | `/os/{sgpOsId}` | andamento da OS: status, primeiro nome do técnico, dia/turno, ordem na rota (sem ETA) |
 | GET | `/marcacao/{sgpOsId}` | o que está marcado para a OS (ou `null`) |
 | DELETE | `/marcacao/{sgpOsId}` | desmarca |
 | POST | `/marcacao/{sgpOsId}/confirmar` | cliente confirmou |
