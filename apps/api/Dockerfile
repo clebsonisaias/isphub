@@ -39,9 +39,10 @@ RUN npm run build -w @isphub/api
 # ate uma conta desligada; `seed-tecnico.js` faz o mesmo com `tecnico123`.
 # Nenhum dos dois esta no CMD, mas nao ha motivo pra existirem aqui — se alguem
 # ganhar execucao de comando no container, viram persistencia de admin pronta.
-# `verifica-agenda.js` faz deleteMany em provedores/OS — script de banco
-# descartavel, nao tem o que fazer num container de producao.
-RUN rm -f apps/api/dist/e2e-seed.js apps/api/dist/seed-tecnico.js apps/api/dist/verifica-agenda.js
+# `verifica-agenda.js` e `verifica-auto-agenda.js` fazem deleteMany em
+# provedores/OS — scripts de banco descartavel, nao tem o que fazer num
+# container de producao.
+RUN rm -f apps/api/dist/e2e-seed.js apps/api/dist/seed-tecnico.js apps/api/dist/verifica-agenda.js apps/api/dist/verifica-auto-agenda.js
 
 WORKDIR /repo/apps/api
 
