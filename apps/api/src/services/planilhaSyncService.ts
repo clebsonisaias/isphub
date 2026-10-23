@@ -362,6 +362,51 @@ export async function processarPlanilha(buf: Buffer, provedorNome: string, agora
   }
 }
 
+/** Uma linha de log por rodada — sem ela, um envio que falhava era invisivel (23/10/2026). */
+export function resumoRodada(r: RodadaPlanilha): string {
+  if (r.erro) return `erro: ${r.erro}`;
+  if (r.trava) return `trava: ${r.trava}`;
+  if (r.pulada) return r.pulada;
+  return [
+    `lidas=${r.lidas}`,
+    `marcadas=${r.marcadas.length}`,
+    `desmarcadas=${r.desmarcadas.length}`,
+    `atribuidas=${r.atribuidas.length}`,
+    `tecnicosCriados=${r.tecnicosCriados.length}`,
+    `detalhes=${r.detalhesAtualizados}`,
+    `conflitos=${r.conflitos.length}`,
+    `recusadas=${r.recusadas.length}`,
+  ].join(" ");
+}
+
+let pendente: { buf: Buffer; provedor: string } | null = null;
+
+/**
+ * Recebe a planilha e processa em SEGUNDO PLANO. A rodada leva 7–9 s na VPS e o
+ * Apps Script desiste em ~8 s: processando dentro do pedido, metade dos envios
+ * caia por "tempo limite" e nada era aplicado. Se ja houver rodada em andamento,
+ * guarda so o arquivo mais novo e roda logo em seguida (o do meio nao importa:
+ * a planilha mais nova ja contem tudo).
+ */
+export function agendarPlanilha(buf: Buffer, provedorNome: string): "processando" | "na_fila" {
+  if (rodando) {
+    pendente = { buf, provedor: provedorNome };
+    return "na_fila";
+  }
+  void executarEmSegundoPlano(buf, provedorNome);
+  return "processando";
+}
+
+async function executarEmSegundoPlano(buf: Buffer, provedorNome: string): Promise<void> {
+  const r = await processarPlanilha(buf, provedorNome);
+  console.log(`[planilha-sync] recebida: ${resumoRodada(r)}`);
+  if (pendente) {
+    const p = pendente;
+    pendente = null;
+    void executarEmSegundoPlano(p.buf, p.provedor);
+  }
+}
+
 /** Modo conta de servico: o job baixa do Drive. Sem as envs, nao faz nada. */
 export async function rodarPlanilha(agora = new Date()): Promise<RodadaPlanilha | null> {
   if (!env.GOOGLE_SA_JSON || !env.PLANILHA_SYNC_FILE_ID || !env.PLANILHA_SYNC_PROVEDOR) return ultima;

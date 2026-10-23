@@ -13,7 +13,7 @@ import {
   type LinhaPlanilha,
   type MarcacaoAtual,
 } from "@isphub/shared";
-import { linhasDaPlanilha, tecnicosDaPlanilha } from "./planilhaSyncService.js";
+import { linhasDaPlanilha, resumoRodada, tecnicosDaPlanilha, type RodadaPlanilha } from "./planilhaSyncService.js";
 
 const hoje = "2026-10-22";
 const linha = (o: Partial<LinhaPlanilha> = {}): LinhaPlanilha => ({
@@ -180,5 +180,19 @@ describe("detalhes da planilha (tecnico, ordem, observacao)", () => {
     const abas = new Map([["Configuracoes", [["Parâmetro", "Valor"], [], ["Técnicos (IRLA)", "Atendentes"], ["Alderi", "Anna Clara"], ["Dison", "Marília"], ["Técnico 16"], [null], ["Fora da lista"]]]]);
     expect(tecnicosDaPlanilha(abas)).toEqual(["Alderi", "Dison"]);
     expect(tecnicosDaPlanilha(new Map())).toEqual([]);
+  });
+});
+
+describe("log da rodada", () => {
+  const base: RodadaPlanilha = {
+    quando: new Date(), ativo: true, pulada: null, lidas: 340, marcadas: ["1"], desmarcadas: [], recusadas: [],
+    conflitos: [{ os: "2", motivo: "x" }], ignoradas: [], trava: null, erro: null,
+    tecnicosCriados: ["Alderi"], atribuidas: [{ os: "3", tecnico: "Dison" }], detalhesAtualizados: 2,
+  };
+  it("resume contagens; erro, trava e pulada tem prioridade", () => {
+    expect(resumoRodada(base)).toBe("lidas=340 marcadas=1 desmarcadas=0 atribuidas=1 tecnicosCriados=1 detalhes=2 conflitos=1 recusadas=0");
+    expect(resumoRodada({ ...base, erro: "banco fora" })).toBe("erro: banco fora");
+    expect(resumoRodada({ ...base, trava: "31 mudancas" })).toBe("trava: 31 mudancas");
+    expect(resumoRodada({ ...base, pulada: "planilha sem alteração" })).toBe("planilha sem alteração");
   });
 });

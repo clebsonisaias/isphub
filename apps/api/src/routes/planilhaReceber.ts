@@ -4,7 +4,7 @@ import rateLimit from "express-rate-limit";
 import { env } from "../config/env.js";
 import { verificarIdTokenGoogle } from "../lib/googleIdToken.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
-import { processarPlanilha } from "../services/planilhaSyncService.js";
+import { agendarPlanilha, resumoRodada, ultimaRodadaPlanilha } from "../services/planilhaSyncService.js";
 
 /**
  * `POST /api/planilha/receber` — o Apps Script da conta Google que enxerga a
@@ -59,18 +59,11 @@ planilhaReceberRouter.post(
       res.status(400).json({ error: "corpo vazio: mande o .xlsx cru (application/octet-stream)" });
       return;
     }
-    const r = await processarPlanilha(buf, env.PLANILHA_SYNC_PROVEDOR);
-    // So numeros de OS e motivos — nada de nome/telefone de cliente sai daqui.
-    res.json({
-      pulada: r.pulada,
-      lidas: r.lidas,
-      marcadas: r.marcadas,
-      desmarcadas: r.desmarcadas,
-      recusadas: r.recusadas,
-      conflitos: r.conflitos,
-      ignoradas: r.ignoradas.length,
-      trava: r.trava,
-      erro: r.erro,
-    });
+    // Responde ja e processa em segundo plano: o Apps Script desiste em ~8 s e a
+    // rodada leva 7–9 s. `erro`/`trava` nulos aqui = "recebido"; o resultado da
+    // rodada sai no log e em GET /agenda/planilha (e problema vira notificacao).
+    const estado = agendarPlanilha(buf, env.PLANILHA_SYNC_PROVEDOR);
+    const anterior = ultimaRodadaPlanilha();
+    res.json({ recebido: true, estado, erro: null, trava: null, rodadaAnterior: anterior ? resumoRodada(anterior) : null });
   }),
 );
