@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
 import { TURNOS_AGENDA, ORIGENS_AGENDAMENTO, UserRole, metrosDaOrdem, sugerirOrdem } from "@isphub/shared";
+import { prisma } from "../lib/prisma.js";
+import { HttpError } from "../middleware/errorHandler.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import * as agenda from "../services/agendaService.js";
@@ -17,8 +19,8 @@ import { aplicarRedistribuicao, propostaRedistribuicao } from "../services/redis
  * A agenda de OS — o que a operacao mantinha numa planilha no Drive.
  *
  * Leitura e aberta a todo mundo logado (o tecnico precisa saber o proprio dia,
- * e a atendente precisa saber o que oferecer); ESCRITA e de ADMIN/GESTOR,
- * porque marcar consome vaga de rua. O atendimento (AtendAI) entra por uma
+ * e a atendente precisa saber o que oferecer); ESCRITA e de ADMIN/GESTOR e, so
+ * marcar/desmarcar no proprio provedor, do ATENDENTE. O atendimento (AtendAI) entra por uma
  * porta propria, autenticada por chave — nao por esta.
  */
 export const agendaRouter = Router();
@@ -74,9 +76,18 @@ agendaRouter.get(
   "/turno",
   asyncHandler(async (req, res) => {
     const { dia, turno } = z.object({ dia: DIA, turno: z.enum(TURNOS_AGENDA) }).parse(req.query);
-    res.json(await agenda.doTurno(dia, turno));
+    // Atendente so ve as paradas (nome, telefone, endereco) do proprio provedor.
+    const provedorId = req.user!.role === UserRole.ATENDENTE ? (req.user!.provedorId ?? "__nenhum__") : undefined;
+    res.json(await agenda.doTurno(dia, turno, provedorId));
   }),
 );
+
+/** Atendente marca e desmarca so no proprio provedor. */
+function exigirProvedorDoAtendente(user: Express.Request["user"], provedorId: string) {
+  if (user?.role === UserRole.ATENDENTE && user.provedorId !== provedorId) {
+    throw new HttpError(403, "Acesso restrito ao proprio provedor");
+  }
+}
 
 /**
  * `GET /agenda/turno/sugestao` — a ordem sugerida pra rota de uma janela.
@@ -208,9 +219,10 @@ const marcarSchema = z.object({
  */
 agendaRouter.post(
   "/",
-  requireRole(UserRole.ADMIN, UserRole.GESTOR),
+  requireRole(UserRole.ADMIN, UserRole.GESTOR, UserRole.ATENDENTE),
   asyncHandler(async (req, res) => {
     const b = marcarSchema.parse(req.body);
+    exigirProvedorDoAtendente(req.user, b.provedorId);
     const marcado = await agenda.marcar({ ...b, marcadoPor: req.user!.email });
     // Responde ANTES do write-back: a marcacao ja e verdade aqui, e o ERP do
     // provedor fora do ar nao pode virar espera na tela de quem esta ao
@@ -223,8 +235,13 @@ agendaRouter.post(
 /** `DELETE /agenda/:id` — desmarca. A vaga volta pra grade. */
 agendaRouter.delete(
   "/:id",
-  requireRole(UserRole.ADMIN, UserRole.GESTOR),
+  requireRole(UserRole.ADMIN, UserRole.GESTOR, UserRole.ATENDENTE),
   asyncHandler(async (req, res) => {
+    if (req.user!.role === UserRole.ATENDENTE) {
+      const m = await prisma.agendamento.findUnique({ where: { id: req.params.id }, select: { provedorId: true } });
+      if (!m) throw new HttpError(404, "Agendamento nao encontrado");
+      exigirProvedorDoAtendente(req.user, m.provedorId);
+    }
     const cancelado = await agenda.cancelar(req.params.id);
     res.json(cancelado);
     // Depois da resposta, como no marcar: o SGP alcanca a agenda, nao o contrario.

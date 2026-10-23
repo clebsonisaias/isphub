@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { UserRole } from "@isphub/shared";
+import { UserRole, escopadoPorProvedor } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
@@ -39,14 +39,14 @@ usuariosRouter.get(
   }),
 );
 
-/** provedorId so faz sentido pra role=provedor; para os demais papeis fica sempre null. */
+/** provedorId so faz sentido pra provedor e atendente; para os demais papeis fica sempre null. */
 function normalizarProvedorId(role: UserRole, provedorId?: string | null): string | null {
-  return role === UserRole.PROVEDOR ? (provedorId ?? null) : null;
+  return escopadoPorProvedor(role) ? (provedorId ?? null) : null;
 }
 
 function validarProvedorObrigatorio(role: UserRole, provedorId: string | null) {
-  if (role === UserRole.PROVEDOR && !provedorId) {
-    throw new HttpError(400, "provedorId e obrigatorio para o papel provedor");
+  if (escopadoPorProvedor(role) && !provedorId) {
+    throw new HttpError(400, "provedorId e obrigatorio para os papeis provedor e atendente");
   }
 }
 

@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
-import type { UserRole } from "@isphub/shared";
+import { UserRole } from "@isphub/shared";
 import { verifyToken, type JwtPayload } from "../services/authService.js";
 import { obterEstadoSessao } from "../services/sessaoService.js";
 import { HttpError } from "./errorHandler.js";
@@ -50,8 +50,33 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
   }
 
   req.user = payload;
+  if (payload.role === UserRole.ATENDENTE && !atendentePode(req.method, req.originalUrl)) {
+    return next(new HttpError(403, "Atendente nao tem acesso a este recurso"));
+  }
   tocarPresenca(payload.sub);
   next();
+}
+
+/**
+ * O que o ATENDENTE alcanca — negacao por padrao. Ele ve a fila e as OS do
+ * proprio provedor (o escopo fica em escopoService) e marca/desmarca visita;
+ * qualquer rota nova fica FECHADA pra ele ate entrar aqui. A checagem fina
+ * (so o proprio provedor) continua nas rotas.
+ */
+const PERMITIDO_ATENDENTE: [RegExp, RegExp][] = [
+  [/./, /^\/auth(\/|$)/],
+  [/./, /^\/notificacoes(\/|$)/],
+  [/^GET$/, /^\/(fila|hora|eventos|config)(\/|$)/],
+  [/^GET$/, /^\/provedores(\/[^/]+)?$/],
+  [/^GET$/, /^\/ordens-servico\/[^/]+(\/(ficha-sgp|eventos))?$/],
+  [/^GET$/, /^\/agenda\/(vagas|proximas|turno)$/],
+  [/^POST$/, /^\/agenda\/?$/],
+  [/^DELETE$/, /^\/agenda\/[^/]+$/],
+];
+
+export function atendentePode(metodo: string, url: string): boolean {
+  const caminho = url.split("?")[0]!;
+  return PERMITIDO_ATENDENTE.some(([m, c]) => m.test(metodo) && c.test(caminho));
 }
 
 /**

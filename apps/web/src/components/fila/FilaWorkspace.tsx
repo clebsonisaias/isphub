@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { OS_STATUS_ABERTOS, UserRole, diaBrHoje, type Categoria, type EquipeFiltro, type FilaItem, type Provedor } from "@isphub/shared";
+import { OS_STATUS_ABERTOS, UserRole, diaBrHoje, escopadoPorProvedor, type Categoria, type EquipeFiltro, type FilaItem, type Provedor } from "@isphub/shared";
 import { rotuloDiaAgenda } from "@/lib/agendaApi";
 import { AppShell } from "@/components/AppShell";
 import { Input } from "@/components/ui/input";
@@ -136,7 +136,8 @@ export function FilaWorkspace({
 }: FilaWorkspaceProps) {
   const { usuario } = useAuth();
   const { toast } = useToast();
-  const ehProvedor = usuario?.role === UserRole.PROVEDOR;
+  // Atendente, como o provedor, so enxerga um provedor: sem seletor de provedores.
+  const ehProvedor = !!usuario && escopadoPorProvedor(usuario.role);
   const ehTecnico = usuario?.role === UserRole.TECNICO;
 
   const queryClient = useQueryClient();

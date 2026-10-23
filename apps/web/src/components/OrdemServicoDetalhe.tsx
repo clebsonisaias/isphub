@@ -57,6 +57,8 @@ export function OrdemServicoDetalhe({
   const Descricao: ElementType = emDialogo ? DialogDescription : "p";
   const { usuario } = useAuth();
   const podeDespachar = usuario?.role === UserRole.ADMIN || usuario?.role === UserRole.GESTOR;
+  // Atendente so marca/remarca/desmarca visita: sem status, tecnico nem anotacao.
+  const ehAtendente = usuario?.role === UserRole.ATENDENTE;
   const { toast } = useToast();
   const [os, setOs] = useState(item);
   const [tecnicos, setTecnicos] = useState<TecnicoResumo[]>([]);
@@ -277,6 +279,7 @@ export function OrdemServicoDetalhe({
           <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
             <Info label="Contrato" value={os.contratoId} />
             <Info label="Técnico" value={os.tecnicoNome} />
+            {os.apoioNomes?.length ? <Info label="Apoio" value={os.apoioNomes.join(", ")} /> : null}
             {podeDespachar && viaturas.length > 0 ? (
               <Info
                 label={viaturas.length > 1 ? "Viaturas" : "Viatura"}
@@ -323,7 +326,7 @@ export function OrdemServicoDetalhe({
               O select fica embaixo, discreto, pra quem precisa pular etapa,
               cancelar ou reabrir.
             */}
-            {proximoPasso ? (
+            {!ehAtendente && proximoPasso ? (
               <Button
                 variant="brand"
                 onClick={proximoPasso.executar}
@@ -334,6 +337,7 @@ export function OrdemServicoDetalhe({
                 {acaoEmCurso ? "Enviando..." : proximoPasso.rotulo}
               </Button>
             ) : null}
+            {!ehAtendente && (
             <div className="flex flex-wrap items-center gap-2 text-sm">
               {/* "A caminho" de novo continua possível com a OS já em
                   deslocamento ou execução (técnico saiu, voltou à rua): a API
@@ -372,10 +376,13 @@ export function OrdemServicoDetalhe({
                 {acaoEmCurso === "status" ? "Atualizando..." : "Atualizar status"}
               </Button>
             </div>
+            )}
 
-            {podeDespachar && (
+            {(podeDespachar || ehAtendente) && (
               <div className="flex flex-col gap-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Despacho</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {ehAtendente ? "Visita" : "Despacho"}
+                </p>
                 {/* A visita vem ANTES do tecnico: primeiro cabe no dia, depois
                     alguem vai. A agenda (nao o SGP) e a fonte da verdade da data. */}
                 <div className="flex flex-wrap items-center gap-2">
@@ -445,6 +452,7 @@ export function OrdemServicoDetalhe({
                       </Button>
                     ))}
                 </div>
+                {podeDespachar && (
                 <div className="flex flex-wrap items-center gap-2">
                 <Select
                   aria-label="Atribuir técnico"
@@ -468,6 +476,7 @@ export function OrdemServicoDetalhe({
                   {acaoEmCurso === "atribuir" ? "Atribuindo..." : "Atribuir"}
                 </Button>
                 </div>
+                )}
               </div>
             )}
 
@@ -475,6 +484,7 @@ export function OrdemServicoDetalhe({
                 registrado na OS. Plano/sinal/PPPoE ficam na aba Conexão. */}
             <FichaSgpIdentificacao ficha={ficha} estado={estadoFicha} />
 
+            {!ehAtendente && (
             <div className="flex flex-col gap-2">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Anotação</p>
               <textarea
@@ -494,6 +504,7 @@ export function OrdemServicoDetalhe({
                 {acaoEmCurso === "anotacao" ? "Enviando..." : "Adicionar anotação"}
               </Button>
             </div>
+            )}
           </div>
         </TabsContent>
 

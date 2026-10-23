@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { UserRole } from "@isphub/shared";
+import { UserRole, escopadoPorProvedor } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
@@ -29,7 +29,7 @@ const provedorSchema = z.object({
 provedoresRouter.get(
   "/",
   asyncHandler(async (req, res) => {
-    const where = req.user!.role === UserRole.PROVEDOR ? { id: req.user!.provedorId ?? "" } : {};
+    const where = escopadoPorProvedor(req.user!.role) ? { id: req.user!.provedorId ?? "" } : {};
     const provedores = await prisma.provedor.findMany({ where, orderBy: { nome: "asc" } });
     res.json(provedores);
   }),
@@ -38,7 +38,7 @@ provedoresRouter.get(
 provedoresRouter.get(
   "/:id",
   asyncHandler(async (req, res) => {
-    if (req.user!.role === UserRole.PROVEDOR && req.user!.provedorId !== req.params.id) {
+    if (escopadoPorProvedor(req.user!.role) && req.user!.provedorId !== req.params.id) {
       throw new HttpError(403, "Acesso restrito ao proprio provedor");
     }
     const provedor = await prisma.provedor.findUnique({ where: { id: req.params.id } });

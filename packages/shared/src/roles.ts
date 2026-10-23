@@ -8,6 +8,12 @@ export enum UserRole {
   TECNICO = "tecnico",
   /** Cliente-provedor: acompanha apenas as proprias OS (portal, Fase 3). */
   PROVEDOR = "provedor",
+  /**
+   * Atendente do provedor: ve a fila e as OS do PROPRIO provedor e marca/
+   * remarca/desmarca visitas — mais nada. Toda rota fora da lista de
+   * `atendentePode` (middleware/auth.ts) responde 403 por padrao.
+   */
+  ATENDENTE = "atendente",
 }
 
 export const ALL_ROLES: UserRole[] = [
@@ -15,6 +21,7 @@ export const ALL_ROLES: UserRole[] = [
   UserRole.GESTOR,
   UserRole.TECNICO,
   UserRole.PROVEDOR,
+  UserRole.ATENDENTE,
 ];
 
 /** Papeis com acesso a visao unificada (todos os provedores). */
@@ -25,4 +32,10 @@ export const USER_ROLE_LABEL: Record<UserRole, string> = {
   [UserRole.GESTOR]: "Gestor",
   [UserRole.TECNICO]: "Tecnico",
   [UserRole.PROVEDOR]: "Provedor",
+  [UserRole.ATENDENTE]: "Atendente",
 };
+
+/** Papeis presos a UM provedor (provedorId obrigatorio): so enxergam o dele. */
+export function escopadoPorProvedor(role: UserRole | string): boolean {
+  return role === UserRole.PROVEDOR || role === UserRole.ATENDENTE;
+}

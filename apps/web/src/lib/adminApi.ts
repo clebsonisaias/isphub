@@ -102,8 +102,11 @@ export interface TecnicoIsphubResumo {
   ativo: boolean;
 }
 
+export type PapelSgp = "tecnico" | "atendente";
+
 export interface TecnicoSgpItem {
   id: string;
+  papel: PapelSgp;
   sgpId: string;
   nome: string | null;
   username: string | null;
@@ -112,10 +115,12 @@ export interface TecnicoSgpItem {
 }
 
 export const tecnicosSgpApi = {
-  listar: (provedorId: string) =>
-    api.get<{ itens: TecnicoSgpItem[]; tecnicos: TecnicoIsphubResumo[] }>(`/provedores/${provedorId}/tecnicos-sgp`),
-  sincronizar: (provedorId: string) =>
-    api.post<{ total: number; novos: number; vinculadosAutomaticamente: number }>(`/provedores/${provedorId}/tecnicos-sgp/sincronizar`),
+  listar: (provedorId: string, papel: PapelSgp = "tecnico") =>
+    api.get<{ itens: TecnicoSgpItem[]; tecnicos: TecnicoIsphubResumo[] }>(`/provedores/${provedorId}/tecnicos-sgp?papel=${papel}`),
+  sincronizar: (provedorId: string, papel: PapelSgp = "tecnico") =>
+    api.post<{ total: number; novos: number; vinculadosAutomaticamente: number }>(
+      `/provedores/${provedorId}/tecnicos-sgp/sincronizar?papel=${papel}`,
+    ),
   decidir: (
     provedorId: string,
     id: string,

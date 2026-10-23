@@ -13,6 +13,7 @@ import { buildConnector } from "./erpConnectorService.js";
 import { emitParaTodos, emitParaUsuario } from "./realtimeHub.js";
 import { sugerirCategoriaId } from "./categoriaMatch.js";
 import { confirmarComSgp, ligarOrfas, reconciliarDoSgp } from "./agendaService.js";
+import { espelharDespachoSgp } from "./tecnicosSgpService.js";
 
 /**
  * Motor de sincronizacao: puxa OS do SGP de um provedor e faz
@@ -20,10 +21,10 @@ import { confirmarComSgp, ligarOrfas, reconciliarDoSgp } from "./agendaService.j
  * periodico) quanto por um trigger manual (rota POST /provedores/:id/sync,
  * util para testes e para "sincronizar agora").
  *
- * Nao sincroniza tecnicos: tecnico e pessoal da ISPhub (usuario com
- * role=tecnico), nao do SGP do provedor. O tecnicoId da OS so e alterado
- * pelo despacho feito dentro do ISPhub (writebackService.atribuirTecnico) —
- * o sync nunca escreve nesse campo, so no informativo "tecnicoSgpNome".
+ * Tecnico: o upsert nunca escreve `tecnicoId`. O passo 2c espelha o que o SGP
+ * ja designou (responsavel e apoio, por login vinculado na aba "Tecnicos do
+ * SGP") via writebackService.atribuirTecnico; tecnico posto por gente no
+ * ISPhub vence.
  */
 
 /**
@@ -405,6 +406,7 @@ async function syncProvedorSemTrava(provedorId: string): Promise<{ ok: boolean; 
         dataCadastro: raw.dataCadastro ? new Date(raw.dataCadastro) : null,
         dataAgendamento: raw.dataAgendamento ? new Date(raw.dataAgendamento) : null,
         tecnicoSgpNome: raw.tecnicoSgpNome,
+        tecnicosAuxiliaresSgp: raw.tecnicosAuxiliaresSgp ?? [],
         /*
          * Ver a OS na varredura zera a contagem de sumicos. E o UNICO ponto de
          * reset, e ele e automatico: qualquer reaparecimento desarma o
@@ -469,6 +471,19 @@ async function syncProvedorSemTrava(provedorId: string): Promise<{ ok: boolean; 
       if (criadas > 0) console.log(`[sync] agenda: ${criadas} OS agendadas no SGP trazidas pra grade (provedor ${provedorId})`);
     } catch (e) {
       console.warn(`[sync] agenda: reconciliacao falhou no provedor ${provedorId}:`, e);
+    }
+
+    // --- 2c. Tecnico e apoio que a OS ja tem no SGP -> despacho daqui ---
+    try {
+      const d = await espelharDespachoSgp(provedorId);
+      if (d.atribuidas || d.apoiosAtualizados || d.conflitos) {
+        console.log(
+          `[sync] despacho do SGP: ${d.atribuidas} atribuida(s), ${d.apoiosAtualizados} apoio(s), ${d.conflitos} conflito(s); ` +
+            `sem vinculo: ${d.semVinculo.join(", ") || "-"} (provedor ${provedorId})`,
+        );
+      }
+    } catch (e) {
+      console.warn(`[sync] despacho do SGP falhou no provedor ${provedorId}:`, e);
     }
 
     // --- 3. Backfill do cadastro do cliente (endereco de rua + geo + telefone) ---

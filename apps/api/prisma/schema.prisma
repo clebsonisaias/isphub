@@ -17,6 +17,7 @@ enum UserRole {
   gestor
   tecnico
   provedor
+  atendente
 }
 
 enum ErpTipo {
@@ -277,9 +278,14 @@ model OrdemServico {
   /// dentro do ISPhub, nao vem do SGP.
   tecnicoId                String?
   tecnico                  Usuario?  @relation(fields: [tecnicoId], references: [id], onDelete: SetNull)
-  /// Nome do tecnico designado no SGP do provedor (informativo — o SGP e de
-  /// pessoal do provedor, nao do tecnico ISPhub que de fato executa a OS).
+  /// Login do tecnico responsavel no SGP (campo `responsavel`). Se o login
+  /// esta vinculado na aba "Tecnicos do SGP", vira o `tecnicoId` daqui
+  /// (tecnicosSgpService.espelharDespachoSgp).
   tecnicoSgpNome           String?
+  /// Logins do apoio no SGP (`tecnicos_auxiliares`), como vieram.
+  tecnicosAuxiliaresSgp    String[]  @default([])
+  /// O apoio no ISPhub: os logins acima ja traduzidos para usuarios.
+  apoios                   Usuario[] @relation("OsApoio")
   /// Marca quando o alerta de "SLA estourado" ja foi disparado pra esta OS —
   /// evita notificar de novo a cada tick do slaAlertScheduler.
   slaNotificadoEm          DateTime?
@@ -421,6 +427,7 @@ model Usuario {
 
   ordensServico OrdemServico[]
   atribuicoes   Atribuicao[]
+  osComoApoio         OrdemServico[] @relation("OsApoio")
   eventos       OsEvento[]
   notificacoes  Notificacao[]
   tecnicosSgp   TecnicoSgp[]
@@ -2343,6 +2350,9 @@ model TecnicoSgp {
   id           String   @id @default(uuid())
   provedorId   String
   provedor     Provedor @relation(fields: [provedorId], references: [id], onDelete: Cascade)
+  /// "tecnico" (lista de tecnicos do SGP) ou "atendente" (quem registra OS no SGP).
+  papel        String   @default("tecnico")
+  /// Tecnico: id do SGP. Atendente: o login (o SGP so expoe o login de quem registrou a OS).
   sgpId        String
   nome         String?
   username     String?
@@ -2353,7 +2363,7 @@ model TecnicoSgp {
   criadoEm     DateTime @default(now())
   atualizadoEm DateTime @updatedAt
 
-  @@unique([provedorId, sgpId])
+  @@unique([provedorId, papel, sgpId])
   @@index([usuarioId])
   @@map("tecnicos_sgp")
 }

@@ -677,6 +677,11 @@ export function AgendaPage() {
                               ) : null}
                               <span>{p.marcadoPor ? `por ${p.marcadoPor}` : `origem ${p.origem}`}</span>
                             </p>
+                            {os?.apoios?.length ? (
+                              <p className="mt-0.5 text-xs text-muted-foreground">
+                                Apoio: {os.apoios.map((a) => a.nomeExibicao ?? a.nome).join(", ")}
+                              </p>
+                            ) : null}
                             {observacaoVisivel(p.observacao) ? (
                               <p className="mt-0.5 flex items-start gap-1 text-xs text-amber-800 dark:text-amber-300">
                                 <StickyNote className="mt-0.5 size-3 shrink-0" aria-hidden />
@@ -1288,6 +1293,7 @@ function RotaDeAgora({ hoje, onAbrir }: { hoje: string; onAbrir: (dia: string, t
                   </span>
                   <span className="shrink-0 text-xs text-muted-foreground">
                     {os?.tecnico ? (os.tecnico.nomeExibicao ?? os.tecnico.nome) : "sem técnico"}
+                    {os?.apoios?.length ? ` + ${os.apoios.map((a) => a.nomeExibicao ?? a.nome).join(", ")}` : null}
                   </span>
                 </li>
               );

@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { UserRole, USER_ROLE_LABEL, type Provedor, type UsuarioPublic } from "@isphub/shared";
+import { UserRole, USER_ROLE_LABEL, escopadoPorProvedor, type Provedor, type UsuarioPublic } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
 import { AnimatedPage } from "@/components/AnimatedPage";
 import { AdminNav } from "@/components/admin/AdminNav";
@@ -129,7 +129,7 @@ export function UsuariosPage() {
                   <CardTitle className="truncate text-base">{u.nome}</CardTitle>
                   <CardDescription className="truncate">
                     {u.email} · {USER_ROLE_LABEL[u.role]}
-                    {u.role === UserRole.PROVEDOR ? ` · ${nomeProvedor(u.provedorId)}` : ""}
+                    {escopadoPorProvedor(u.role) ? ` · ${nomeProvedor(u.provedorId)}` : ""}
                     {!u.ativo && " · inativo"}
                   </CardDescription>
                 </div>
@@ -223,7 +223,7 @@ function UsuarioDialog({
           nome,
           email,
           role,
-          provedorId: role === UserRole.PROVEDOR ? provedorId || null : null,
+          provedorId: escopadoPorProvedor(role) ? provedorId || null : null,
           ativo,
         });
         toast({ titulo: "Usuário atualizado", variante: "sucesso" });
@@ -233,7 +233,7 @@ function UsuarioDialog({
           email,
           senha,
           role,
-          provedorId: role === UserRole.PROVEDOR ? provedorId || null : null,
+          provedorId: escopadoPorProvedor(role) ? provedorId || null : null,
         });
         toast({ titulo: "Usuário criado", variante: "sucesso" });
       }
@@ -245,7 +245,7 @@ function UsuarioDialog({
     }
   }
 
-  const invalido = !nome.trim() || !email.trim() || (role === UserRole.PROVEDOR && !provedorId) || (!editando && senha.length < 8);
+  const invalido = !nome.trim() || !email.trim() || (escopadoPorProvedor(role) && !provedorId) || (!editando && senha.length < 8);
 
   return (
     <Dialog open={aberto} onOpenChange={onOpenChange}>
@@ -296,7 +296,7 @@ function UsuarioDialog({
               ))}
             </Select>
           </div>
-          {role === UserRole.PROVEDOR && (
+          {escopadoPorProvedor(role) && (
             <div className="flex flex-col gap-2">
               <Label htmlFor="provedor">Provedor</Label>
               <Select

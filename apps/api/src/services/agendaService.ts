@@ -643,9 +643,9 @@ export async function cancelar(id: string) {
 }
 
 /** As marcacoes de uma janela, na ordem da rota. A lista do supervisor. */
-export async function doTurno(dia: string, turno: TurnoAgenda) {
+export async function doTurno(dia: string, turno: TurnoAgenda, provedorId?: string) {
   return prisma.agendamento.findMany({
-    where: { dia: dataDoDia(dia), turno, status: "marcado" },
+    where: { dia: dataDoDia(dia), turno, status: "marcado", ...(provedorId ? { provedorId } : {}) },
     orderBy: [{ ordemRota: { sort: "asc", nulls: "last" } }, { criadoEm: "asc" }],
     select: {
       id: true,
@@ -674,6 +674,7 @@ export async function doTurno(dia: string, turno: TurnoAgenda) {
           lat: true,
           lng: true,
           tecnico: { select: { id: true, nome: true, nomeExibicao: true } },
+          apoios: { select: { id: true, nome: true, nomeExibicao: true } },
           tipoOs: { select: { descricao: true, categoria: { select: { nome: true, cor: true } } } },
         },
       },

@@ -821,12 +821,17 @@ function normalizeOs(raw: Record<string, any>): RawOs {
     dataAgendamento: comFusoSgp(
       combineDateHora(raw, "data_agendamento", "hora_agendamento") ?? pickString(raw, "os_data_agendamento"),
     ),
-    // Tecnico designado no SGP (pessoal do provedor) — so informativo; o
-    // despacho de verdade e feito na ISPhub, com tecnicos proprios.
-    tecnicoSgpNome: pickString(raw, "os_tecnico_responsavel", "tecnico"),
+    // Tecnico e apoio designados no SGP, por LOGIN. A listagem chama de
+    // `responsavel`/`tecnicos_auxiliares`; o detalhe, de `os_tecnico_*`.
+    tecnicoSgpNome: pickString(raw, "responsavel", "os_tecnico_responsavel", "tecnico"),
+    tecnicosAuxiliaresSgp: loginsDe(pick(raw, "tecnicos_auxiliares", "os_tecnicos_auxiliares")),
   };
 }
 
+
+function loginsDe(v: unknown): string[] {
+  return Array.isArray(v) ? v.map((x) => String(x ?? "").trim()).filter(Boolean) : [];
+}
 
 function asArray(payload: any, ...possibleKeys: string[]): any[] {
   if (Array.isArray(payload)) return payload;

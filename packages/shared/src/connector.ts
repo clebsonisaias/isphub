@@ -45,8 +45,10 @@ export interface RawOs {
   usuario?: string | null;
   dataCadastro?: string | null;
   dataAgendamento?: string | null;
-  /** Nome do tecnico designado no SGP (pessoal do provedor) — so informativo. */
+  /** Login do tecnico responsavel no SGP. */
   tecnicoSgpNome?: string | null;
+  /** Logins do apoio (tecnicos auxiliares) no SGP. */
+  tecnicosAuxiliaresSgp?: string[];
 }
 
 export interface ListOsParams {

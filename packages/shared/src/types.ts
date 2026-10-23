@@ -152,6 +152,8 @@ export interface OrdemServico {
   /** Tecnico ISPhub atribuido (despacho feito dentro do ISPhub). */
   tecnicoId?: string | null;
   tecnicoNome?: string | null;
+  /** Apoio (ajudantes) da OS — espelhado do SGP. */
+  apoioNomes?: string[];
   /** Nome do tecnico designado no SGP do provedor — so informativo, nao e o tecnico ISPhub. */
   tecnicoSgpNome?: string | null;
   criadoEm: string;

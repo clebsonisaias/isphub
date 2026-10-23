@@ -23,6 +23,7 @@ export const INCLUDE_FILA = {
   provedor: true,
   tipoOs: { include: { categoria: true } },
   tecnico: true,
+  apoios: { select: { nome: true } },
   // A rota do dia: o supervisor ordena na agenda e o app do tecnico le
   // daqui. Na planilha essa coluna existia e morria na planilha.
   agendamento: { select: { id: true, ordemRota: true, turno: true, status: true, dia: true, confirmadoEm: true, sgpConfirmadoEm: true } },
@@ -88,6 +89,7 @@ export function paraFilaItem(os: Prisma.OrdemServicoGetPayload<{ include: typeof
       os.agendamento?.status === "marcado" ? (os.agendamento.sgpConfirmadoEm?.toISOString() ?? null) : null,
     tecnicoId: os.tecnicoId,
     tecnicoNome: os.tecnico?.nome ?? null,
+    apoioNomes: os.apoios.map((a) => a.nome),
     tecnicoSgpNome: os.tecnicoSgpNome,
     criadoEm: os.criadoEm.toISOString(),
     atualizadoEm: os.atualizadoEm.toISOString(),

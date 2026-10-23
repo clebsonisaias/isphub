@@ -104,6 +104,18 @@ describe("createSgpConnector", () => {
     ]);
   });
 
+  it("listServiceOrders le tecnico e apoio no formato REAL da listagem (responsavel / tecnicos_auxiliares)", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        paginacao: { total: 1 },
+        ordens_servicos: [{ id: 213346, status_id: 0, responsavel: "alderi", tecnicos_auxiliares: ["izarleson", " ", null] }],
+      }),
+    );
+    const { itens: [os] } = await createSgpConnector(creds).listServiceOrders();
+    expect(os.tecnicoSgpNome).toBe("alderi");
+    expect(os.tecnicosAuxiliaresSgp).toEqual(["izarleson"]);
+  });
+
   it("listServiceOrders normaliza campos, endereco e lat/lng a partir de endereco_ll", async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
@@ -137,6 +149,7 @@ describe("createSgpConnector", () => {
     expect(os.endereco.lat).toBeCloseTo(-5.79448);
     expect(os.endereco.lng).toBeCloseTo(-35.211);
     expect(os.tecnicoSgpNome).toBe("Joao Tecnico");
+    expect(os.tecnicosAuxiliaresSgp).toEqual([]);
 
     // Requisicao de listagem usa POST JSON (app+token no corpo), nao form-urlencoded.
     const [url, options] = fetchMock.mock.calls[0];

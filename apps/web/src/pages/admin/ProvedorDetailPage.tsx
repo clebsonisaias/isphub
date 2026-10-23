@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select } from "@/components/ui/select";
 import { atendaiConfigApi, categoriasApi, chaveParceiroApi, erpConfigApi, provedoresApi, syncApi, tecnicosSgpApi, tiposOsApi } from "@/lib/adminApi";
-import type { AtendaiConfigPublic, ChaveParceiroPublic, FuncaoCampo, TecnicoIsphubResumo, TecnicoSgpItem } from "@/lib/adminApi";
+import type { AtendaiConfigPublic, ChaveParceiroPublic, FuncaoCampo, PapelSgp, TecnicoIsphubResumo, TecnicoSgpItem } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
 import { ArrowLeft, CalendarDays, CheckCircle2, Copy, Download, KeyRound, Link2, RefreshCw, Sparkles, XCircle } from "lucide-react";
@@ -58,6 +58,7 @@ export function ProvedorDetailPage() {
           <TabsTrigger value="sgp">Integração SGP</TabsTrigger>
           <TabsTrigger value="tipos">Tipos de OS</TabsTrigger>
           <TabsTrigger value="tecnicos">Técnicos do SGP</TabsTrigger>
+          <TabsTrigger value="atendentes">Atendentes do SGP</TabsTrigger>
           <TabsTrigger value="atendai">AtendAI</TabsTrigger>
           <TabsTrigger value="api-agenda">API de agendamento</TabsTrigger>
         </TabsList>
@@ -68,7 +69,10 @@ export function ProvedorDetailPage() {
           <TiposOsManager provedorId={id} />
         </TabsContent>
         <TabsContent value="tecnicos">
-          <TecnicosSgpManager provedorId={id} />
+          <TecnicosSgpManager provedorId={id} papel="tecnico" />
+        </TabsContent>
+        <TabsContent value="atendentes">
+          <TecnicosSgpManager provedorId={id} papel="atendente" />
         </TabsContent>
         <TabsContent value="atendai">
           <AtendaiConfigForm provedorId={id} />
@@ -247,7 +251,35 @@ function SgpConfigForm({ provedorId }: { provedorId: string }) {
  * diferentes da equipe; por isso cada linha pede uma decisao: vincular a um
  * tecnico existente, criar um novo (sem login) ou ignorar — e a funcao.
  */
-function TecnicosSgpManager({ provedorId }: { provedorId: string }) {
+const TEXTO_SGP = {
+  tecnico: {
+    titulo: "Técnicos do SGP",
+    descricao:
+      "Quem o SGP deste provedor conhece. Vincule cada um a um técnico do ISPhub (ou crie um novo, sem acesso ao app), " +
+      "ignore quem não é técnico de campo e diga se é técnico ou auxiliar. Nome idêntico já vem vinculado; a lista se " +
+      "atualiza sozinha todo dia. Técnico vinculado já recebe aqui as OS em que o SGP o pôs como responsável ou apoio.",
+    coluna: "Técnico no ISPhub",
+    criar: "+ Criar técnico novo",
+    ignorar: "Não é técnico (ignorar)",
+    vazio: "Nenhum técnico trazido do SGP ainda",
+    contagem: "técnico(s) no SGP",
+  },
+  atendente: {
+    titulo: "Atendentes do SGP",
+    descricao:
+      "Quem registrou OS neste SGP nos últimos 60 dias (o SGP só informa o login). Vincule cada login a uma atendente " +
+      "do ISPhub (ou crie uma nova, sem acesso), e ignore quem não é atendente. A atendente vê só a fila deste provedor " +
+      "e marca, remarca ou desmarca visitas; não despacha nem mexe em configuração.",
+    coluna: "Atendente no ISPhub",
+    criar: "+ Criar atendente nova",
+    ignorar: "Não é atendente (ignorar)",
+    vazio: "Nenhum login trazido do SGP ainda",
+    contagem: "login(s) no SGP",
+  },
+} as const;
+
+function TecnicosSgpManager({ provedorId, papel }: { provedorId: string; papel: PapelSgp }) {
+  const texto = TEXTO_SGP[papel];
   const { toast } = useToast();
   const [itens, setItens] = useState<TecnicoSgpItem[]>([]);
   const [tecnicos, setTecnicos] = useState<TecnicoIsphubResumo[]>([]);
@@ -257,15 +289,15 @@ function TecnicosSgpManager({ provedorId }: { provedorId: string }) {
 
   const carregar = useCallback(async () => {
     try {
-      const r = await tecnicosSgpApi.listar(provedorId);
+      const r = await tecnicosSgpApi.listar(provedorId, papel);
       setItens(r.itens);
       setTecnicos(r.tecnicos);
     } catch (err) {
-      toast({ titulo: "Erro ao carregar técnicos do SGP", descricao: mensagem(err), variante: "erro" });
+      toast({ titulo: `Erro ao carregar ${texto.titulo.toLowerCase()}`, descricao: mensagem(err), variante: "erro" });
     } finally {
       setCarregando(false);
     }
-  }, [provedorId, toast]);
+  }, [provedorId, papel, texto, toast]);
 
   useEffect(() => {
     void carregar();
@@ -274,9 +306,9 @@ function TecnicosSgpManager({ provedorId }: { provedorId: string }) {
   async function buscar() {
     setBuscando(true);
     try {
-      const r = await tecnicosSgpApi.sincronizar(provedorId);
+      const r = await tecnicosSgpApi.sincronizar(provedorId, papel);
       toast({
-        titulo: `${r.total} técnico(s) no SGP`,
+        titulo: `${r.total} ${texto.contagem}`,
         descricao: `${r.novos} novo(s) na lista, ${r.vinculadosAutomaticamente} vinculado(s) sozinho(s) pelo nome.`,
         variante: "sucesso",
       });
@@ -301,7 +333,7 @@ function TecnicosSgpManager({ provedorId }: { provedorId: string }) {
   }
 
   function aoEscolherVinculo(item: TecnicoSgpItem, valor: string) {
-    if (valor === "__criar") void decidir(item, { criar: true, funcao: "tecnico" });
+    if (valor === "__criar") void decidir(item, papel === "tecnico" ? { criar: true, funcao: "tecnico" } : { criar: true });
     else if (valor === "__ignorar") void decidir(item, { ignorado: true });
     else void decidir(item, { usuarioId: valor || null, ...(item.ignorado ? { ignorado: false } : {}) });
   }
@@ -312,11 +344,9 @@ function TecnicosSgpManager({ provedorId }: { provedorId: string }) {
     <Card>
       <CardHeader className="flex-row items-center justify-between space-y-0">
         <div>
-          <CardTitle>Técnicos do SGP</CardTitle>
+          <CardTitle>{texto.titulo}</CardTitle>
           <CardDescription>
-            Quem o SGP deste provedor conhece. Vincule cada um a um técnico do ISPhub (ou crie um novo, sem acesso ao app),
-            ignore quem não é técnico de campo e diga se é técnico ou auxiliar. Nome idêntico já vem vinculado; a lista se
-            atualiza sozinha todo dia.
+            {texto.descricao}
             {aDecidir ? ` ${aDecidir} aguardando decisão.` : ""}
           </CardDescription>
         </div>
@@ -333,15 +363,15 @@ function TecnicosSgpManager({ provedorId }: { provedorId: string }) {
             ))}
           </div>
         ) : itens.length === 0 ? (
-          <EmptyState title="Nenhum técnico trazido do SGP ainda" description='Clique em "Buscar do SGP".' />
+          <EmptyState title={texto.vazio} description='Clique em "Buscar do SGP".' />
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>No SGP</TableHead>
                 <TableHead>Login</TableHead>
-                <TableHead>Técnico no ISPhub</TableHead>
-                <TableHead>Função</TableHead>
+                <TableHead>{texto.coluna}</TableHead>
+                {papel === "tecnico" ? <TableHead>Função</TableHead> : null}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -356,12 +386,12 @@ function TecnicosSgpManager({ provedorId }: { provedorId: string }) {
                         value={valor}
                         disabled={salvando === item.id}
                         onChange={(e) => aoEscolherVinculo(item, e.target.value)}
-                        aria-label={`Técnico do ISPhub para ${item.nome ?? item.username ?? item.sgpId}`}
+                        aria-label={`${texto.coluna} para ${item.nome ?? item.username ?? item.sgpId}`}
                         className={valor ? "bg-secondary/40 px-2" : "border-warning/40 bg-warning/10 px-2 text-warning"}
                       >
                         <option value="">— decidir —</option>
-                        <option value="__criar">+ Criar técnico novo</option>
-                        <option value="__ignorar">Não é técnico (ignorar)</option>
+                        <option value="__criar">{texto.criar}</option>
+                        <option value="__ignorar">{texto.ignorar}</option>
                         {tecnicos.map((t) => (
                           <option key={t.id} value={t.id}>
                             {t.nome}
@@ -369,6 +399,7 @@ function TecnicosSgpManager({ provedorId }: { provedorId: string }) {
                         ))}
                       </Select>
                     </TableCell>
+                    {papel === "tecnico" ? (
                     <TableCell>
                       <Select
                         value={item.usuario?.funcaoCampo ?? ""}
@@ -382,6 +413,7 @@ function TecnicosSgpManager({ provedorId }: { provedorId: string }) {
                         <option value="auxiliar">Auxiliar</option>
                       </Select>
                     </TableCell>
+                    ) : null}
                   </TableRow>
                 );
               })}

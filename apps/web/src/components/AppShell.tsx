@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, useReducedMotion } from "framer-motion";
-import { USER_ROLE_LABEL, UserRole, type ModuloId } from "@isphub/shared";
+import { USER_ROLE_LABEL, UserRole, escopadoPorProvedor, type ModuloId } from "@isphub/shared";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useModulosHabilitados } from "@/lib/modulos";
@@ -688,7 +688,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     const base = NAV_ITEMS.filter(
       (item) =>
         !!usuario &&
-        !item.ocultoPara.includes(usuario.role) &&
+        // Atendente: lista de PERMISSAO (so o Painel). Item novo nao aparece pra ela por engano.
+        (usuario.role === UserRole.ATENDENTE ? item.to === "/" : !item.ocultoPara.includes(usuario.role)) &&
         (!item.modulo || modulosHabilitados.has(item.modulo)),
     );
     if (usuario?.role === UserRole.ADMIN) {
@@ -716,7 +717,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const maisRodape = doRodape.filter((i) => !fixosRodape.has(i.to));
 
   useEffect(() => {
-    if (!usuario || usuario.role === UserRole.PROVEDOR) return;
+    if (!usuario || escopadoPorProvedor(usuario.role)) return;
     async function atualizar() {
       try {
         const { naoLidas } = await chatApi.naoLidas();

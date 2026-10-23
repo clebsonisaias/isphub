@@ -23,7 +23,7 @@ import { prisma } from "../lib/prisma.js";
 import { lerAbas, type Celula } from "../lib/xlsx.js";
 import { HttpError } from "../middleware/errorHandler.js";
 import * as agenda from "./agendaService.js";
-import { criarTecnicoSemLogin } from "./tecnicosSgpService.js";
+import { criarAtendenteSemLogin, criarTecnicoSemLogin } from "./tecnicosSgpService.js";
 import { atribuirTecnico } from "./writebackService.js";
 
 /**
@@ -61,6 +61,8 @@ export interface RodadaPlanilha {
   erro: string | null;
   /** Tecnicos da aba Configuracoes que nao existiam e foram cadastrados (sem login). */
   tecnicosCriados: string[];
+  /** Atendentes da aba Configuracoes que nao existiam e foram cadastrados (sem login). */
+  atendentesCriados: string[];
   /** OS que receberam (ou trocaram de) tecnico vindo da planilha. */
   atribuidas: { os: string; tecnico: string }[];
   /** Marcacoes da planilha que tiveram ordem da rota ou observacao atualizada. */
@@ -76,7 +78,7 @@ let rodando = false;
 const vazia = (quando: Date, ativo: boolean): RodadaPlanilha => ({
   quando, ativo, pulada: null, lidas: 0,
   marcadas: [], desmarcadas: [], recusadas: [], conflitos: [], ignoradas: [], trava: null, erro: null,
-  tecnicosCriados: [], atribuidas: [], detalhesAtualizados: 0,
+  tecnicosCriados: [], atendentesCriados: [], atribuidas: [], detalhesAtualizados: 0,
 });
 
 const norm = (s: unknown) =>
@@ -131,25 +133,29 @@ export function linhasDaPlanilha(abas: Map<string, Celula[][]>): LinhaPlanilha[]
   return saida;
 }
 
-/**
- * A lista "Tecnicos" da aba Configuracoes (coluna com esse cabecalho), sem as
- * vagas de reserva ("Tecnico 16"...). Aba ou coluna ausente = lista vazia.
- */
-export function tecnicosDaPlanilha(abas: Map<string, Celula[][]>): string[] {
+/** Uma lista da aba Configuracoes (a coluna cujo cabecalho comeca com `prefixo`), ate a 1a celula vazia. */
+function listaDeConfiguracoes(abas: Map<string, Celula[][]>, prefixo: string): string[] {
   const linhas = [...abas].find(([nome]) => norm(nome) === "configuracoes")?.[1] ?? [];
   for (let i = 0; i < linhas.length; i++) {
-    const col = (linhas[i] ?? []).findIndex((c) => norm(c).startsWith("tecnicos"));
+    const col = (linhas[i] ?? []).findIndex((c) => norm(c).startsWith(prefixo));
     if (col < 0) continue;
     const nomes: string[] = [];
     for (const l of linhas.slice(i + 1)) {
       const v = l?.[col] != null ? String(l[col]).trim() : "";
       if (!v) break;
-      if (!ehVagaDeReserva(v)) nomes.push(v);
+      nomes.push(v);
     }
     return nomes;
   }
   return [];
 }
+
+/** A lista "Tecnicos" da aba Configuracoes, sem as vagas de reserva ("Tecnico 16"...). */
+export const tecnicosDaPlanilha = (abas: Map<string, Celula[][]>) =>
+  listaDeConfiguracoes(abas, "tecnicos").filter((v) => !ehVagaDeReserva(v));
+
+/** A lista "Atendentes" da aba Configuracoes. */
+export const atendentesDaPlanilha = (abas: Map<string, Celula[][]>) => listaDeConfiguracoes(abas, "atendentes");
 
 /**
  * Cadastra SEM LOGIN os tecnicos da planilha que ainda nao existem (decisao de
@@ -168,6 +174,19 @@ async function garantirTecnicos(nomes: string[], r: RodadaPlanilha): Promise<Map
     r.tecnicosCriados.push(nome);
   }
   return porNome;
+}
+
+/** Cadastra SEM LOGIN, no provedor da planilha, as atendentes que ainda nao existem nele. */
+async function garantirAtendentes(nomes: string[], provedorId: string, r: RodadaPlanilha): Promise<void> {
+  const existentes = await prisma.usuario.findMany({ where: { role: UserRole.ATENDENTE, provedorId }, select: { nome: true } });
+  const chaves = new Set(existentes.map((u) => chaveNome(u.nome)));
+  for (const nome of nomes) {
+    const chave = chaveNome(nome);
+    if (!chave || chaves.has(chave)) continue;
+    await criarAtendenteSemLogin(nome, provedorId);
+    chaves.add(chave);
+    r.atendentesCriados.push(nome);
+  }
 }
 
 /**
@@ -340,6 +359,7 @@ export async function processarPlanilha(buf: Buffer, provedorNome: string, agora
       }
     }
     await aplicarDetalhes(provedor.id, linhas, await garantirTecnicos(tecnicosDaPlanilha(abas), r), r);
+    await garantirAtendentes(atendentesDaPlanilha(abas), provedor.id, r);
     // So marca como "visto" o que foi processado inteiro: erro ou trava tentam de novo.
     ultimoHash = hash;
     return (ultima = r);
@@ -363,6 +383,7 @@ export function resumoRodada(r: RodadaPlanilha): string {
     `desmarcadas=${r.desmarcadas.length}`,
     `atribuidas=${r.atribuidas.length}`,
     `tecnicosCriados=${r.tecnicosCriados.length}`,
+    `atendentesCriadas=${r.atendentesCriados.length}`,
     `detalhes=${r.detalhesAtualizados}`,
     `conflitos=${r.conflitos.length}`,
     `recusadas=${r.recusadas.length}`,

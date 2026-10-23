@@ -76,6 +76,7 @@ export interface ParadaAgenda {
     lat: number | null;
     lng: number | null;
     tecnico: { id: string; nome: string; nomeExibicao: string | null } | null;
+    apoios?: { id: string; nome: string; nomeExibicao: string | null }[];
     tipoOs: { descricao: string | null; categoria: { nome: string; cor: string } | null } | null;
   } | null;
 }
