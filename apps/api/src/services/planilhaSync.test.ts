@@ -74,6 +74,22 @@ describe("consolidar", () => {
     expect(r).toHaveLength(1);
     expect(r[0]).toMatchObject({ dia: "2026-10-24", turno: "manha" });
   });
+
+  it("linha ativa vence linha cancelada de outra data, em qualquer ordem (caso real da OS 213238)", () => {
+    const ativa24 = linha({ os: "213238", dia: "2026-10-24", turno: "manha", status: "" });
+    const cancelada22 = linha({ os: "213238", dia: "2026-10-22", turno: "tarde", status: "Cancelada" });
+    expect(consolidarLinhas([ativa24, cancelada22])[0]).toBe(ativa24);
+    expect(consolidarLinhas([cancelada22, ativa24])[0]).toBe(ativa24);
+  });
+
+  it("so encerradas: vale a ultima; duas ativas: vale a ultima", () => {
+    const conc = linha({ os: "1", status: "Concluída" });
+    const canc = linha({ os: "1", status: "Cancelada" });
+    expect(consolidarLinhas([conc, canc])[0]).toBe(canc);
+    const a = linha({ os: "2", dia: "2026-10-23" });
+    const b = linha({ os: "2", dia: "2026-10-25" });
+    expect(consolidarLinhas([a, b])[0]).toBe(b);
+  });
 });
 
 describe("decisao por linha", () => {

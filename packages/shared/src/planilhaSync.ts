@@ -86,17 +86,31 @@ export function ehDaPlanilha(m: Pick<MarcacaoAtual, "origem" | "observacao">): b
 }
 
 /**
- * A mesma OS em duas linhas (remarcada copiando a linha) — vale a ULTIMA, que e
- * a mais recente na ordem em que a atendente escreve.
+ * A mesma OS em mais de uma linha (remarcada copiando a linha). Linha ATIVA vence
+ * linha concluida/cancelada; entre ativas, vale a ultima (a mais recente na
+ * ordem em que a atendente escreve).
+ *
+ * "Ultima linha vence" puro desmarcou visita valida em producao (OS 213238,
+ * 22/10/2026): 24/10 ativa na linha 243, 22/10 Cancelada na linha 250 — a
+ * cancelada era de OUTRA data e nao dizia nada sobre a de 24/10.
  */
 export function consolidarLinhas(linhas: LinhaPlanilha[]): LinhaPlanilha[] {
-  const ultima = new Map<string, LinhaPlanilha>();
+  const ativa = (l: LinhaPlanilha) => {
+    const s = semAcento(l.status);
+    return !s.startsWith("conclu") && !s.startsWith("cancel");
+  };
+  const escolhida = new Map<string, LinhaPlanilha>();
   const semOs: LinhaPlanilha[] = [];
   for (const l of linhas) {
-    if (l.os) ultima.set(l.os, l);
-    else semOs.push(l);
+    if (!l.os) {
+      semOs.push(l);
+      continue;
+    }
+    const atual = escolhida.get(l.os);
+    // Ativa so e trocada por outra ativa; encerrada so por qualquer linha mais nova.
+    if (!atual || ativa(l) || !ativa(atual)) escolhida.set(l.os, l);
   }
-  return [...ultima.values(), ...semOs];
+  return [...escolhida.values(), ...semOs];
 }
 
 export function decidirLinha(args: {
