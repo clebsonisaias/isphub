@@ -1,6 +1,6 @@
 # Build de contexto = raiz do monorepo (workspaces npm precisam dos
 # package.json de todos os pacotes). Ver .dockerignore na raiz.
-FROM node:22-alpine
+FROM node:22.23.4-alpine
 
 WORKDIR /repo
 
