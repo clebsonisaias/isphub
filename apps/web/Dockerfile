@@ -1,5 +1,5 @@
 # Build de contexto = raiz do monorepo (workspaces npm). Ver .dockerignore.
-FROM node:22-alpine AS build
+FROM node:22.23.4-alpine AS build
 
 WORKDIR /repo
 COPY . .
@@ -13,7 +13,7 @@ RUN npm ci
 RUN npm run build -w @isphub/shared
 RUN npm run build -w @isphub/web
 
-FROM node:22-alpine
+FROM node:22.23.4-alpine
 WORKDIR /app
 RUN npm install -g serve
 COPY --from=build /repo/apps/web/dist ./dist
