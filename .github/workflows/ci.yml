@@ -44,8 +44,15 @@ jobs:
       - name: Typecheck (api · web · mobile · shared)
         run: npm run typecheck
 
+      # src/config/env.ts derruba o import sem DATABASE_URL, JWT_SECRET e
+      # CRYPTO_KEY, e 17 arquivos de teste caiam so por isso. Valores FALSOS,
+      # so para o schema passar: os testes mockam o Prisma e nao abrem banco.
       - name: Testes da API
         run: npm test -w @isphub/api
+        env:
+          DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/ci
+          JWT_SECRET: ci-somente-teste-0123456789
+          CRYPTO_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
 
       # Sao testes de logica pura (vitest, sem react-native): rodam em 1s e
       # ate aqui so passavam na maquina de quem lembrava de rodar.
