@@ -29,6 +29,7 @@ const FinanceiroFrotaPage = lazy(() => import("@/pages/FinanceiroFrotaPage").the
 const FrotaVeiculosPage = lazy(() => import("@/pages/FrotaVeiculosPage").then((m) => ({ default: m.FrotaVeiculosPage })));
 const EscalaPage = lazy(() => import("@/pages/EscalaPage").then((m) => ({ default: m.EscalaPage })));
 const AgendaPage = lazy(() => import("@/pages/AgendaPage").then((m) => ({ default: m.AgendaPage })));
+const DespachoPage = lazy(() => import("@/pages/DespachoPage").then((m) => ({ default: m.DespachoPage })));
 const FrotaBiPage = lazy(() => import("@/pages/FrotaBiPage").then((m) => ({ default: m.FrotaBiPage })));
 const ProdutividadePage = lazy(() => import("@/pages/ProdutividadePage").then((m) => ({ default: m.ProdutividadePage })));
 const FrotaMapaPage = lazy(() => import("@/pages/FrotaMapaPage").then((m) => ({ default: m.FrotaMapaPage })));
@@ -197,6 +198,15 @@ function App() {
                     entre dias — e quem responde por cada uma abre a tela em
                     momentos diferentes do dia.
                   */}
+                  {/* Despacho: fila sem visita + Quadro do dia (técnico x turno) + mapa com as viaturas. */}
+                  <Route
+                    path="/despacho"
+                    element={
+                      <RequireAuth roles={[UserRole.ADMIN, UserRole.GESTOR]}>
+                        <DespachoPage />
+                      </RequireAuth>
+                    }
+                  />
                   <Route
                     path="/agenda"
                     element={

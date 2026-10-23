@@ -37,6 +37,7 @@ import {
   Truck,
   CalendarClock,
   CalendarDays,
+  Route,
 } from "lucide-react";
 
 const INTERVALO_POLLING_NAO_LIDAS_MS = 45_000;
@@ -78,6 +79,7 @@ const NAV_ITEMS: {
   soDesktop?: boolean;
 }[] = [
   { to: "/", label: "Painel", icon: LayoutGrid, ocultoPara: [] },
+  { to: "/despacho", label: "Despacho", icon: Route, ocultoPara: [UserRole.PROVEDOR, UserRole.TECNICO] },
   { to: "/mapa", label: "Mapa", icon: Map, ocultoPara: [] },
   {
     to: "/chat",
