@@ -5,12 +5,16 @@ import {
   diaDaSemana,
   feriadoNacional,
   HORA_INICIO_TURNO,
+  mapSgpOsStatus,
+  OS_STATUS_ABERTOS,
   somarDias,
   TURNOS_AGENDA,
   turnoDaHora,
   type AgendaConfigDto,
   type BloqueioVaga,
   type ExcecaoAgendaDto,
+  type OsStatus,
+  type ResultadoStatusOs,
   type TurnoAgenda,
   type VagaTurno,
 } from "@isphub/shared";
@@ -514,6 +518,34 @@ export function podeClienteRemarcar(args: {
  * Se um dia a capacidade subir a ponto de a contencao pesar, particionar a
  * chave por regiao.
  */
+/**
+ * Visita só para OS que existe e está ABERTA — de qualquer tipo (regra do
+ * usuário, 23/10/2026). Devolve o motivo da recusa, ou nulo quando pode marcar.
+ *
+ * `espelho` = status da OS no espelho (nulo = ainda não chegou); `sgp` = o que o
+ * SGP diz quando ela não está no espelho (nulo = não consultado). SGP fora do ar
+ * ("indeterminado") passa: a OS acabou de ser aberta pelo próprio atendimento, e
+ * o sync confere depois — travar a conversa com o cliente por isso seria pior.
+ */
+export function motivoSemVisita(espelho: OsStatus | null, sgp: ResultadoStatusOs | null): string | null {
+  const aberta = (s: OsStatus) => OS_STATUS_ABERTOS.includes(s);
+  if (espelho) return aberta(espelho) ? null : "Esta OS já foi encerrada; só OS aberta recebe visita.";
+  if (!sgp || sgp.tipo === "indeterminado") return null;
+  if (sgp.tipo === "ausente") return "Esta OS não existe no SGP do provedor.";
+  return aberta(mapSgpOsStatus(sgp.statusBruto)) ? null : "Esta OS já foi encerrada no SGP; só OS aberta recebe visita.";
+}
+
+/** O status da OS direto no SGP do provedor (quando ela ainda não está no espelho). Nulo = sem SGP ativo. */
+export async function statusNoSgp(provedorId: string, sgpOsId: string): Promise<ResultadoStatusOs | null> {
+  const config = await prisma.erpConfig.findFirst({ where: { provedorId, tipo: "SGP", ativo: true } });
+  if (!config) return null;
+  try {
+    return await buildConnector(config).obterStatusOs(sgpOsId);
+  } catch (e) {
+    return { tipo: "indeterminado", motivo: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export async function marcar(args: MarcarArgs) {
   const config = await lerConfig();
   // A excecao do dia entra na checagem: sem ela, marcar direto (sem passar
@@ -560,8 +592,11 @@ export async function marcar(args: MarcarArgs) {
     // resolve depois — e por isso que dava pra marcar antes de a OS existir.
     const os = await tx.ordemServico.findUnique({
       where: { provedorId_sgpOsId: { provedorId: args.provedorId, sgpOsId: args.sgpOsId } },
-      select: { id: true },
+      select: { id: true, status: true },
     });
+    // 422 e nao 409: o AtendAI le 409 como "nao cabe" e reoferece vagas; aqui a OS e que nao serve.
+    const semVisita = motivoSemVisita((os?.status ?? null) as OsStatus | null, null);
+    if (semVisita) throw new HttpError(422, semVisita);
 
     const dados = {
       dia: dataDoDia(args.dia),

@@ -102,6 +102,16 @@ parceiroAgendaRouter.post(
   "/marcar",
   asyncHandler(async (req, res) => {
     const b = marcarSchema.parse(req.body);
+    // OS que ainda nao chegou ao espelho: confere no SGP se existe e esta aberta
+    // (a espelhada, o `marcar` confere). Visita e sempre de uma OS aberta.
+    const espelhada = await prisma.ordemServico.findUnique({
+      where: { provedorId_sgpOsId: { provedorId: req.provedorParceiroId!, sgpOsId: b.sgpOsId } },
+      select: { id: true },
+    });
+    if (!espelhada) {
+      const motivo = agenda.motivoSemVisita(null, await agenda.statusNoSgp(req.provedorParceiroId!, b.sgpOsId));
+      if (motivo) throw new HttpError(422, `OS ${b.sgpOsId}: ${motivo}`);
+    }
     const marcado = await agenda.marcar({
       provedorId: req.provedorParceiroId!,
       sgpOsId: b.sgpOsId,
