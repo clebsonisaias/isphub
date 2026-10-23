@@ -205,6 +205,9 @@ const NAV_ITEMS: {
   },
 ];
 
+/** O que a atendente ve na barra: lista de permissao, nao de exclusao. */
+const NAV_ATENDENTE = new Set(["/", "/agenda"]);
+
 /**
  * As abas FIXAS da barra do rodape no celular, em ordem de preferencia: ficam
  * as 4 primeiras que o perfil enxerga, e o resto vai pro "Mais" do rodape.
@@ -688,8 +691,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     const base = NAV_ITEMS.filter(
       (item) =>
         !!usuario &&
-        // Atendente: lista de PERMISSAO (so o Painel). Item novo nao aparece pra ela por engano.
-        (usuario.role === UserRole.ATENDENTE ? item.to === "/" : !item.ocultoPara.includes(usuario.role)) &&
+        // Atendente: lista de PERMISSAO (Painel e Agenda). Item novo nao aparece pra ela por engano.
+        (usuario.role === UserRole.ATENDENTE ? NAV_ATENDENTE.has(item.to) : !item.ocultoPara.includes(usuario.role)) &&
         (!item.modulo || modulosHabilitados.has(item.modulo)),
     );
     if (usuario?.role === UserRole.ADMIN) {

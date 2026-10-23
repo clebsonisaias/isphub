@@ -2,13 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { AlertTriangle, ArrowDown, StickyNote, Wand2, ArrowUp, CalendarDays, CalendarOff, CalendarPlus, CheckCircle2, ChevronLeft, ChevronRight, CloudOff, MapPin, Phone, RefreshCw, Route, Search, Settings2, Trash2, X } from "lucide-react";
-import { ROTULO_TURNO, TURNOS_AGENDA, turnoDaHora, diaBrHoje, formatarKm, inicioDaSemana, somarDias, type AgendaConfigDto, type FilaItem, type ResultadoAuto, type TurnoAgenda, type VagaTurno } from "@isphub/shared";
+import { ROTULO_TURNO, TURNOS_AGENDA, UserRole, turnoDaHora, diaBrHoje, formatarKm, inicioDaSemana, somarDias, type AgendaConfigDto, type FilaItem, type ResultadoAuto, type TurnoAgenda, type VagaTurno } from "@isphub/shared";
 import { observacaoVisivel, type SaudeAgendador } from "@/lib/agendaApi";
 import { AppShell } from "@/components/AppShell";
 import { AnimatedPage } from "@/components/AnimatedPage";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/context/ToastContext";
+import { useAuth } from "@/context/AuthContext";
 import { filaApi, ordensServicoApi, tecnicosApi, type TecnicoResumo } from "@/lib/filaApi";
 import { Input } from "@/components/ui/input";
 import { fechadoNoCalendario, textoBloqueio, tomDaVaga } from "@/lib/agendaUi";
@@ -42,6 +43,9 @@ function mensagem(err: unknown): string {
 
 export function AgendaPage() {
   const { toast } = useToast();
+  // Atendente usa a mesma agenda pra marcar e desmarcar; rota, tecnico e limites sao do supervisor.
+  const { usuario } = useAuth();
+  const supervisor = usuario?.role === UserRole.ADMIN || usuario?.role === UserRole.GESTOR;
   const [janela, setJanela] = useState<{ dia: string; turno: TurnoAgenda } | null>(null);
   const [paradas, setParadas] = useState<ParadaAgenda[]>([]);
   const [carregandoParadas, setCarregandoParadas] = useState(false);
@@ -82,7 +86,12 @@ export function AgendaPage() {
   // Toda escrita (marcar, desmarcar, limites) chama isto: invalida TODAS as
   // semanas e turnos em cache (inclui a "Rota de agora"), e so o montado re-busca.
   const carregarGrade = useCallback(() => queryClient.invalidateQueries({ queryKey: ["agenda"] }), [queryClient]);
-  const { data: tecnicos = [] } = useQuery<TecnicoResumo[]>({ queryKey: ["tecnicos"], queryFn: () => tecnicosApi.listar(), staleTime: 5 * 60_000 });
+  const { data: tecnicos = [] } = useQuery<TecnicoResumo[]>({
+    queryKey: ["tecnicos"],
+    queryFn: () => tecnicosApi.listar(),
+    staleTime: 5 * 60_000,
+    enabled: supervisor,
+  });
 
   const carregarParadas = useCallback(
     async (dia: string, turno: TurnoAgenda) => {
@@ -298,8 +307,9 @@ export function AgendaPage() {
             <div>
               <h1 className="text-xl font-semibold">Agenda de visitas</h1>
               <p className="text-sm text-muted-foreground">
-                Onde ainda cabe, e em que ordem visitar. Instalação e reparo dividem o mesmo teto — são os mesmos
-                técnicos.
+                {supervisor
+                  ? "Onde ainda cabe, e em que ordem visitar. Instalação e reparo dividem o mesmo teto — são os mesmos técnicos."
+                  : "Onde ainda cabe visita. Abra um turno para ver quem já está marcado e marcar ou desmarcar."}
               </p>
             </div>
             <div className="flex items-center gap-1 rounded-md border border-border bg-card p-0.5 text-sm">
@@ -331,7 +341,12 @@ export function AgendaPage() {
                 <ChevronRight className="size-4" aria-hidden />
               </button>
             </div>
-            {config ? (
+            {config && !supervisor ? (
+              <span className="flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
+                {config.vagasManha} manhã · {config.vagasTarde} tarde por dia
+              </span>
+            ) : null}
+            {config && supervisor ? (
               <button
                 type="button"
                 onClick={() => setEditandoLimites(true)}
@@ -345,15 +360,17 @@ export function AgendaPage() {
                 {config.vagasPorTecnico != null ? ` · ${config.vagasPorTecnico} por técnico (escala)` : ""}
               </button>
             ) : null}
-            <button
-              type="button"
-              onClick={() => void propor()}
-              disabled={propondo}
-              className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
-            >
-              <Wand2 className="size-3.5" aria-hidden />
-              {propondo ? "Calculando…" : "Propor agenda"}
-            </button>
+            {supervisor ? (
+              <button
+                type="button"
+                onClick={() => void propor()}
+                disabled={propondo}
+                className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+              >
+                <Wand2 className="size-3.5" aria-hidden />
+                {propondo ? "Calculando…" : "Propor agenda"}
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => setPainelAberto((v) => !v)}
@@ -510,7 +527,7 @@ export function AgendaPage() {
                   <div className="flex items-center gap-2">
                     <CalendarDays className="size-4 text-muted-foreground" aria-hidden />
                     <h2 className="text-sm font-semibold">
-                      Rota de {rotuloDia(janela.dia)} · {ROTULO_TURNO[janela.turno]}
+                      {supervisor ? "Rota de" : "Visitas de"} {rotuloDia(janela.dia)} · {ROTULO_TURNO[janela.turno]}
                     </h2>
                     {salvando ? <span className="text-xs text-muted-foreground">salvando…</span> : null}
                   </div>
@@ -529,7 +546,7 @@ export function AgendaPage() {
                   os dois percursos lado a lado — sem o numero da ordem atual, a
                   sugestao nao tem contra o que ser julgada.
                 */}
-                {paradas.length > 1 ? (
+                {supervisor && paradas.length > 1 ? (
                   <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2 text-xs">
                     <button
                       type="button"
@@ -584,6 +601,7 @@ export function AgendaPage() {
                             desktop quanto no celular na rua, e arrastar não
                             funciona com teclado nem com leitor de tela.
                           */}
+                          {supervisor ? (
                           <div className="flex flex-col">
                             <button
                               type="button"
@@ -604,6 +622,7 @@ export function AgendaPage() {
                               <ArrowDown className="size-3.5" aria-hidden />
                             </button>
                           </div>
+                          ) : null}
 
                           <span className="w-6 shrink-0 text-center text-sm font-semibold tabular-nums text-muted-foreground">
                             {i + 1}
@@ -690,6 +709,7 @@ export function AgendaPage() {
                             ) : null}
                           </div>
 
+                          {supervisor ? (
                           <select
                             aria-label={`Técnico de ${os?.clienteNome ?? p.sgpOsId}`}
                             disabled={!os}
@@ -704,6 +724,11 @@ export function AgendaPage() {
                               </option>
                             ))}
                           </select>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">
+                              {os?.tecnico ? (os.tecnico.nomeExibicao ?? os.tecnico.nome) : "sem técnico"}
+                            </span>
+                          )}
 
                           {confirmandoId === p.id ? (
                             <span className="flex items-center gap-1 text-xs">

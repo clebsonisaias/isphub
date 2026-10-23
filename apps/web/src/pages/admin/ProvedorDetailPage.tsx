@@ -263,6 +263,10 @@ const TEXTO_SGP = {
     ignorar: "Não é técnico (ignorar)",
     vazio: "Nenhum técnico trazido do SGP ainda",
     contagem: "técnico(s) no SGP",
+    colunaOs: "OS abertas",
+    dicaOs: "OS abertas em que o SGP põe este login como responsável ou apoio",
+    impacto: (n: number, os: number) =>
+      `Vincular ${n === 1 ? "o pendente" : `os ${n} pendentes`} coloca ${os === 1 ? "1 OS aberta" : `${os} OS abertas`} no despacho daqui.`,
   },
   atendente: {
     titulo: "Atendentes do SGP",
@@ -275,6 +279,10 @@ const TEXTO_SGP = {
     ignorar: "Não é atendente (ignorar)",
     vazio: "Nenhum login trazido do SGP ainda",
     contagem: "login(s) no SGP",
+    colunaOs: "OS em 60 dias",
+    dicaOs: "OS que este login registrou no SGP nos últimos 60 dias",
+    impacto: (n: number, os: number) =>
+      `${n === 1 ? "1 login sem decisão, que registrou" : `${n} logins sem decisão, que registraram`} ${os} OS nos últimos 60 dias.`,
   },
 } as const;
 
@@ -338,7 +346,12 @@ function TecnicosSgpManager({ provedorId, papel }: { provedorId: string; papel: 
     else void decidir(item, { usuarioId: valor || null, ...(item.ignorado ? { ignorado: false } : {}) });
   }
 
-  const aDecidir = itens.filter((i) => !i.usuario && !i.ignorado).length;
+  const pendentes = itens.filter((i) => !i.usuario && !i.ignorado);
+  const aDecidir = pendentes.length;
+  const osPendentes = pendentes.reduce((t, i) => t + i.os, 0);
+  // Pendentes primeiro, e o que mais pesa no topo; ignorados no fim.
+  const ordem = (i: TecnicoSgpItem) => (i.ignorado ? 2 : i.usuario ? 1 : 0);
+  const ordenados = [...itens].sort((a, b) => ordem(a) - ordem(b) || b.os - a.os);
 
   return (
     <Card>
@@ -347,8 +360,12 @@ function TecnicosSgpManager({ provedorId, papel }: { provedorId: string; papel: 
           <CardTitle>{texto.titulo}</CardTitle>
           <CardDescription>
             {texto.descricao}
-            {aDecidir ? ` ${aDecidir} aguardando decisão.` : ""}
           </CardDescription>
+          {aDecidir ? (
+            <p className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1 text-sm text-warning">
+              {osPendentes > 0 ? texto.impacto(aDecidir, osPendentes) : `${aDecidir} aguardando decisão.`}
+            </p>
+          ) : null}
         </div>
         <Button variant="outline" onClick={() => void buscar()} disabled={buscando} className="shrink-0">
           <Download className={buscando ? "animate-pulse" : ""} />
@@ -368,19 +385,27 @@ function TecnicosSgpManager({ provedorId, papel }: { provedorId: string; papel: 
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>No SGP</TableHead>
+                {papel === "tecnico" ? <TableHead>No SGP</TableHead> : null}
                 <TableHead>Login</TableHead>
+                <TableHead className="text-right" title={texto.dicaOs}>
+                  {texto.colunaOs}
+                </TableHead>
                 <TableHead>{texto.coluna}</TableHead>
                 {papel === "tecnico" ? <TableHead>Função</TableHead> : null}
               </TableRow>
             </TableHeader>
             <TableBody>
-              {itens.map((item) => {
+              {ordenados.map((item) => {
                 const valor = item.ignorado ? "__ignorar" : (item.usuario?.id ?? "");
                 return (
                   <TableRow key={item.id} className={item.ignorado ? "opacity-60" : undefined}>
-                    <TableCell>{item.nome ?? <span className="text-muted-foreground">(sem nome)</span>}</TableCell>
+                    {papel === "tecnico" ? (
+                      <TableCell>{item.nome ?? <span className="text-muted-foreground">(sem nome)</span>}</TableCell>
+                    ) : null}
                     <TableCell className="font-mono text-xs text-muted-foreground">{item.username ?? "—"}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {item.os > 0 ? item.os : <span className="text-muted-foreground">—</span>}
+                    </TableCell>
                     <TableCell>
                       <Select
                         value={valor}

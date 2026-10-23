@@ -112,6 +112,8 @@ export interface TecnicoSgpItem {
   username: string | null;
   ignorado: boolean;
   usuario: TecnicoIsphubResumo | null;
+  /** Técnico: OS abertas em que o login é responsável ou apoio no SGP. Atendente: OS registradas em 60 dias. */
+  os: number;
 }
 
 export const tecnicosSgpApi = {

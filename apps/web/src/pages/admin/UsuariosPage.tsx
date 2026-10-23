@@ -25,6 +25,9 @@ import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
 import { Plus, Pencil, KeyRound, Smartphone } from "lucide-react";
 
+/** Cadastrado pelo robo/SGP sem acesso: e-mail placeholder e senha que ninguem sabe. */
+const semAcesso = (u: UsuarioPublic) => u.email.endsWith("@sem-login.isphub.invalid");
+
 import { VincularLinhaDialog } from "@/components/linha-movel/VincularLinhaDialog";
 import { CredencialLinhaMovelDialog } from "@/components/linha-movel/CredencialLinhaMovelDialog";
 
@@ -95,7 +98,8 @@ export function UsuariosPage() {
         <div>
           <h1 className="text-2xl font-bold">Usuários</h1>
           <p className="text-sm text-muted-foreground">
-            Administradores, gestores, técnicos (login próprio — cada um vê só as OS atribuídas a ele) e provedores.
+            Administradores, gestores, técnicos (login próprio — cada um vê só as OS atribuídas a ele), atendentes
+            (marcam visitas no provedor delas) e provedores.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -128,7 +132,7 @@ export function UsuariosPage() {
                 <div className="min-w-0 flex-1">
                   <CardTitle className="truncate text-base">{u.nome}</CardTitle>
                   <CardDescription className="truncate">
-                    {u.email} · {USER_ROLE_LABEL[u.role]}
+                    {semAcesso(u) ? "sem acesso ao sistema" : u.email} · {USER_ROLE_LABEL[u.role]}
                     {escopadoPorProvedor(u.role) ? ` · ${nomeProvedor(u.provedorId)}` : ""}
                     {!u.ativo && " · inativo"}
                   </CardDescription>
@@ -147,9 +151,15 @@ export function UsuariosPage() {
                 >
                   <Smartphone className="size-4" />
                 </Button>
-                <Button variant="ghost" size="icon" onClick={() => setSenhaAlvo(u)} title="Redefinir senha">
-                  <KeyRound className="size-4" />
-                </Button>
+                {semAcesso(u) ? (
+                  <Button variant="outline" size="sm" onClick={() => setSenhaAlvo(u)}>
+                    <KeyRound className="size-4" /> Liberar acesso
+                  </Button>
+                ) : (
+                  <Button variant="ghost" size="icon" onClick={() => setSenhaAlvo(u)} title="Redefinir senha">
+                    <KeyRound className="size-4" />
+                  </Button>
+                )}
                 <Button variant="ghost" size="icon" onClick={() => abrirEdicao(u)} title="Editar">
                   <Pencil className="size-4" />
                 </Button>
@@ -169,7 +179,11 @@ export function UsuariosPage() {
           void carregar();
         }}
       />
-      <RedefinirSenhaDialog usuario={senhaAlvo} onClose={() => setSenhaAlvo(null)} />
+      <RedefinirSenhaDialog
+        usuario={senhaAlvo}
+        onClose={() => setSenhaAlvo(null)}
+        onSalvo={() => void carregar()}
+      />
       <VincularLinhaDialog usuario={linhaAlvo} onFechar={() => setLinhaAlvo(null)} />
       <CredencialLinhaMovelDialog
         aberto={credencialAberta}
@@ -332,13 +346,28 @@ function UsuarioDialog({
   );
 }
 
-function RedefinirSenhaDialog({ usuario, onClose }: { usuario: UsuarioPublic | null; onClose: () => void }) {
+/**
+ * Redefinir senha — ou, para quem foi cadastrado sem acesso (robo da planilha,
+ * aba do SGP), "Liberar acesso": e-mail de verdade + senha inicial, de uma vez.
+ */
+function RedefinirSenhaDialog({
+  usuario,
+  onClose,
+  onSalvo,
+}: {
+  usuario: UsuarioPublic | null;
+  onClose: () => void;
+  onSalvo: () => void;
+}) {
   const { toast } = useToast();
   const [novaSenha, setNovaSenha] = useState("");
+  const [email, setEmail] = useState("");
   const [enviando, setEnviando] = useState(false);
+  const liberar = !!usuario && semAcesso(usuario);
 
   useEffect(() => {
     setNovaSenha("");
+    setEmail("");
   }, [usuario]);
 
   async function handleSubmit(e: FormEvent) {
@@ -346,8 +375,18 @@ function RedefinirSenhaDialog({ usuario, onClose }: { usuario: UsuarioPublic | n
     if (!usuario) return;
     setEnviando(true);
     try {
+      if (liberar) {
+        await usuariosApi.atualizar(usuario.id, {
+          nome: usuario.nome,
+          email: email.trim(),
+          role: usuario.role,
+          provedorId: usuario.provedorId,
+          ativo: true,
+        });
+      }
       await usuariosApi.redefinirSenha(usuario.id, novaSenha);
-      toast({ titulo: `Senha de ${usuario.nome} redefinida`, variante: "sucesso" });
+      toast({ titulo: liberar ? `Acesso de ${usuario.nome} liberado` : `Senha de ${usuario.nome} redefinida`, variante: "sucesso" });
+      if (liberar) onSalvo();
       onClose();
     } catch (err) {
       toast({ titulo: "Erro ao redefinir senha", descricao: mensagem(err), variante: "erro" });
@@ -360,14 +399,30 @@ function RedefinirSenhaDialog({ usuario, onClose }: { usuario: UsuarioPublic | n
     <Dialog open={!!usuario} onOpenChange={(v) => !v && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Redefinir senha</DialogTitle>
+          <DialogTitle>{liberar ? "Liberar acesso" : "Redefinir senha"}</DialogTitle>
           <DialogDescription>
-            Nova senha para {usuario?.nome}. Repasse à pessoa — ela pode trocar depois em "Meu perfil".
+            {liberar
+              ? `${usuario?.nome} foi cadastrado(a) sem acesso. Informe o e-mail de login e uma senha inicial — repasse à pessoa; ela pode trocar depois em "Meu perfil".`
+              : `Nova senha para ${usuario?.nome}. Repasse à pessoa — ela pode trocar depois em "Meu perfil".`}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          {liberar ? (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="emailAcesso">E-mail de login</Label>
+              <Input
+                id="emailAcesso"
+                type="email"
+                required
+                autoComplete="off"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="nome@empresa.com.br"
+              />
+            </div>
+          ) : null}
           <div className="flex flex-col gap-2">
-            <Label htmlFor="novaSenha">Nova senha</Label>
+            <Label htmlFor="novaSenha">{liberar ? "Senha inicial" : "Nova senha"}</Label>
             <Input
               id="novaSenha"
               type="password"
@@ -379,8 +434,12 @@ function RedefinirSenhaDialog({ usuario, onClose }: { usuario: UsuarioPublic | n
             />
           </div>
           <DialogFooter>
-            <Button type="submit" variant="brand" disabled={enviando || novaSenha.length < 8}>
-              {enviando ? "Salvando..." : "Redefinir senha"}
+            <Button
+              type="submit"
+              variant="brand"
+              disabled={enviando || novaSenha.length < 8 || (liberar && !email.includes("@"))}
+            >
+              {enviando ? "Salvando..." : liberar ? "Liberar acesso" : "Redefinir senha"}
             </Button>
           </DialogFooter>
         </form>

@@ -199,9 +199,13 @@ export function FilaCard({ item, onClick }: { item: FilaItem; onClick: () => voi
             </span>
           ) : (
             item.tecnicoNome && (
-              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" title="Técnico">
+              <span
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+                title={item.apoioNomes?.length ? `Técnico · apoio: ${item.apoioNomes.join(", ")}` : "Técnico"}
+              >
                 <Wrench className="size-3" />
                 {item.tecnicoNome}
+                {item.apoioNomes?.length ? <span className="text-muted-foreground/70">+ {item.apoioNomes.join(", ")}</span> : null}
               </span>
             )
           )}

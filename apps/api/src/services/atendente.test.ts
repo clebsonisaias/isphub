@@ -17,6 +17,8 @@ describe("atendente: o que alcanca (negacao por padrao)", () => {
     expect(atendentePode("POST", "/auth/login")).toBe(true);
     expect(atendentePode("PATCH", "/notificacoes/1/lida")).toBe(true);
     expect(atendentePode("GET", "/provedores")).toBe(true);
+    expect(atendentePode("GET", "/categorias")).toBe(true);
+    expect(atendentePode("POST", "/categorias")).toBe(false);
   });
 
   it("despacho, status, limites, configuracao, usuarios e o resto: fechado", () => {

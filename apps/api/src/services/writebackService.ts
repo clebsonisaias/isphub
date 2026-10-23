@@ -378,6 +378,9 @@ export async function obterArquivoEvidencia(ordemServicoId: string, anexoId: str
  * autor e `atribuidoPor` registra de onde veio (ex.: "planilha") — e o que o
  * robo usa pra saber que pode trocar o tecnico depois.
  */
+/** Quando o tecnico veio de uma fonte automatica, o historico diz qual. */
+const ORIGEM_NO_EVENTO: Record<string, string> = { sgp: " (pelo SGP)", planilha: " (pela planilha)" };
+
 export async function atribuirTecnico(
   ordemServicoId: string,
   tecnicoId: string,
@@ -394,7 +397,7 @@ export async function atribuirTecnico(
   const [, osAtualizada] = await prisma.$transaction([
     prisma.atribuicao.create({ data: { ordemServicoId, tecnicoId, atribuidoPor } }),
     prisma.ordemServico.update({ where: { id: ordemServicoId }, data: { tecnicoId } }),
-    evento(ordemServicoId, "atribuicao", autorId, `Atribuído a ${tecnico.nome}`),
+    evento(ordemServicoId, "atribuicao", autorId, `Atribuído a ${tecnico.nome}${ORIGEM_NO_EVENTO[atribuidoPor ?? ""] ?? ""}`),
     prisma.notificacao.create({
       data: {
         usuarioId: tecnicoId,

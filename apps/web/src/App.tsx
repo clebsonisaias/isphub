@@ -200,7 +200,7 @@ function App() {
                   <Route
                     path="/agenda"
                     element={
-                      <RequireAuth roles={[UserRole.ADMIN, UserRole.GESTOR]}>
+                      <RequireAuth roles={[UserRole.ADMIN, UserRole.GESTOR, UserRole.ATENDENTE]}>
                         <AgendaPage />
                       </RequireAuth>
                     }

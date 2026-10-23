@@ -66,7 +66,7 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
 const PERMITIDO_ATENDENTE: [RegExp, RegExp][] = [
   [/./, /^\/auth(\/|$)/],
   [/./, /^\/notificacoes(\/|$)/],
-  [/^GET$/, /^\/(fila|hora|eventos|config)(\/|$)/],
+  [/^GET$/, /^\/(fila|hora|eventos|config|categorias)(\/|$)/],
   [/^GET$/, /^\/provedores(\/[^/]+)?$/],
   [/^GET$/, /^\/ordens-servico\/[^/]+(\/(ficha-sgp|eventos))?$/],
   [/^GET$/, /^\/agenda\/(vagas|proximas|turno)$/],

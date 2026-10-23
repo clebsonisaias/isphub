@@ -118,17 +118,48 @@ export async function sincronizarAtendentesSgp(provedorId: string, agora = new D
 const USUARIO_RESUMO = { id: true, nome: true, funcaoCampo: true, ativo: true } as const;
 const ITEM = { id: true, papel: true, sgpId: true, nome: true, username: true, ignorado: true, usuario: { select: USUARIO_RESUMO } } as const;
 
+/**
+ * Quantas OS cada login tem no espelho — o peso de cada decisao na tela.
+ * Tecnico: OS abertas em que ele e responsavel ou apoio no SGP (vincular ja
+ * despacha essas). Atendente: OS que registrou nos ultimos dias.
+ */
+async function osPorLogin(provedorId: string, papel: PapelSgp, agora = new Date()): Promise<Map<string, number>> {
+  const conta = new Map<string, number>();
+  const somar = (login: string | null, n = 1) => {
+    const k = login?.trim().toLowerCase();
+    if (k) conta.set(k, (conta.get(k) ?? 0) + n);
+  };
+  if (papel === "atendente") {
+    const grupos = await prisma.ordemServico.groupBy({
+      by: ["usuario"],
+      where: { provedorId, usuario: { not: null }, dataCadastro: { gte: new Date(agora.getTime() - DIAS_ATENDENTES * 86_400_000) } },
+      _count: { _all: true },
+    });
+    for (const g of grupos) somar(g.usuario, g._count._all);
+    return conta;
+  }
+  const oss = await prisma.ordemServico.findMany({
+    where: { provedorId, status: { in: OS_STATUS_ABERTOS }, OR: [{ tecnicoSgpNome: { not: null } }, { tecnicosAuxiliaresSgp: { isEmpty: false } }] },
+    select: { tecnicoSgpNome: true, tecnicosAuxiliaresSgp: true },
+  });
+  for (const o of oss) new Set([o.tecnicoSgpNome, ...o.tecnicosAuxiliaresSgp].map((l) => l?.trim().toLowerCase())).forEach((l) => somar(l ?? null));
+  return conta;
+}
+
 export async function listarTecnicosSgp(provedorId: string, papel: PapelSgp = "tecnico") {
-  const [itens, candidatos] = await Promise.all([
+  const [itens, candidatos, conta] = await Promise.all([
     prisma.tecnicoSgp.findMany({
       where: { provedorId, papel },
       orderBy: [{ ignorado: "asc" }, { nome: { sort: "asc", nulls: "last" } }, { username: "asc" }],
       select: ITEM,
     }),
     prisma.usuario.findMany({ where: candidatosWhere(papel, provedorId), orderBy: { nome: "asc" }, select: USUARIO_RESUMO }),
+    osPorLogin(provedorId, papel),
   ]);
+  const osDe = (i: { username: string | null; nome: string | null; sgpId: string }) =>
+    conta.get((i.username ?? i.sgpId).trim().toLowerCase()) ?? 0;
   // `tecnicos` mantido no nome: e o que a tela ja le (para atendente, sao as atendentes).
-  return { itens, tecnicos: candidatos };
+  return { itens: itens.map((i) => ({ ...i, os: osDe(i) })), tecnicos: candidatos };
 }
 
 export interface DecisaoTecnicoSgp {
@@ -150,7 +181,8 @@ export async function decidirTecnicoSgp(provedorId: string, id: string, d: Decis
   let usuarioId = item.usuarioId;
   if (d.ignorado === true) usuarioId = null;
   if (d.criar) {
-    const nome = item.nome ?? item.username ?? `SGP ${item.sgpId}`;
+    // So o login ("marilia"): vira "Marilia". O admin ajusta o nome depois, se quiser.
+    const nome = item.nome ?? item.username?.replace(/^\p{L}/u, (c) => c.toUpperCase()) ?? `SGP ${item.sgpId}`;
     usuarioId = (papel === "atendente" ? await criarAtendenteSemLogin(nome, provedorId) : await criarTecnicoSemLogin(nome, d.funcao ?? null)).id;
   } else if (d.usuarioId !== undefined) {
     if (d.usuarioId) {
