@@ -3,6 +3,8 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { AlertCircle, Eye, EyeOff, Loader2, MapPin, Radio, Smartphone } from "lucide-react";
 import { gsap, useGSAP } from "@/lib/gsapSetup";
 import { useAuth } from "@/context/AuthContext";
+import { destinoDoLogin } from "@/lib/inicioPorPapel";
+import { inicioJaDecidido } from "@/routes/IrParaInicio";
 import { ApiError } from "@/lib/apiClient";
 import { BrandMark } from "@/components/BrandMark";
 import { CampoComBrilho } from "@/components/CampoComBrilho";
@@ -131,9 +133,9 @@ export function LoginPage() {
     setErro(null);
     setEnviando(true);
     try {
-      await login(email, senha);
-      const destino = (location.state as { from?: string } | null)?.from ?? "/";
-      navigate(destino, { replace: true });
+      const u = await login(email, senha);
+      inicioJaDecidido();
+      navigate(destinoDoLogin(u.role, (location.state as { from?: string } | null)?.from), { replace: true });
     } catch (err) {
       setErro(err instanceof ApiError ? err.message : "Falha ao conectar com o servidor");
     } finally {

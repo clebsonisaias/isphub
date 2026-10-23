@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import { Link, Navigate, useLocation } from "react-router-dom";
 import type { UserRole } from "@isphub/shared";
 import { useAuth } from "@/context/AuthContext";
 import { BrandLoader } from "@/components/BrandLoader";
+import { inicioDoPapel } from "@/lib/inicioPorPapel";
 
 /** Protege uma rota: exige sessao valida e, opcionalmente, um dos papeis informados. */
 export function RequireAuth({ children, roles }: { children: ReactNode; roles?: UserRole[] }) {
@@ -19,8 +20,11 @@ export function RequireAuth({ children, roles }: { children: ReactNode; roles?: 
 
   if (roles && !roles.includes(usuario.role)) {
     return (
-      <div className="flex min-h-svh items-center justify-center px-4 text-center text-sm text-muted-foreground">
-        Voce nao tem permissao para acessar esta pagina.
+      <div className="flex min-h-svh flex-col items-center justify-center gap-3 px-4 text-center text-sm text-muted-foreground">
+        <p>Você não tem permissão para acessar esta página.</p>
+        <Link to={inicioDoPapel(usuario.role)} replace className="font-medium text-primary hover:underline">
+          Ir para o início
+        </Link>
       </div>
     );
   }

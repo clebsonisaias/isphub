@@ -5,6 +5,7 @@ import { USER_ROLE_LABEL, UserRole, escopadoPorProvedor, type ModuloId } from "@
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useModulosHabilitados } from "@/lib/modulos";
+import { fixosRodapeDoPapel, inicioDoPapel, ordenarPorPapel } from "@/lib/inicioPorPapel";
 import {
   Popover,
   PopoverContent,
@@ -219,15 +220,14 @@ const NAV_ITEMS: {
 const NAV_ATENDENTE = new Set(["/", "/marcar-visita", "/agenda"]);
 
 /**
- * As abas FIXAS da barra do rodape no celular, em ordem de preferencia: ficam
- * as 4 primeiras que o perfil enxerga, e o resto vai pro "Mais" do rodape.
- * Supervisor: Painel, Agenda, Mapa, Chat. Tecnico: Painel, Mapa, Chat,
- * Clientes. Provedor: Painel, Mapa, Retiradas, Dashboard.
+ * As abas FIXAS da barra do rodape no celular vem de `fixosRodapeDoPapel`
+ * (lib/inicioPorPapel.ts), em ordem de preferencia: ficam as 4 primeiras que o
+ * perfil enxerga, e o resto vai pro "Mais" do rodape. Gestor: Despacho, Painel,
+ * Agenda, Mapa. Atendente: Marcar visita, Agenda, Painel.
  *
  * Com 13 abas (admin) a barra rolava de lado: resolvia o estouro, mas ninguem
  * descobre a 10a aba rolando. Quatro fixas + "Mais" e o padrao de app.
  */
-const FIXOS_RODAPE = ["/", "/agenda", "/mapa", "/chat", "/retiradas", "/dashboard", "/chat-clientes"];
 const MAX_ABAS_RODAPE = 5;
 
 /** Largura reservada pro botao "Mais" quando ha excesso (medida do proprio botao). */
@@ -714,7 +714,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         ocultoPara: [],
       });
     }
-    return base;
+    // O trabalho do papel primeiro (Despacho para o gestor, Marcar visita para a atendente).
+    return ordenarPorPapel(base, usuario?.role);
   }, [usuario, modulosHabilitados]);
 
   const { cabem, medido: navMedido } = useQuantosCabem(itensNav.length, navRef);
@@ -725,7 +726,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const fixosRodape = new Set(
     doRodape.length <= MAX_ABAS_RODAPE
       ? doRodape.map((i) => i.to)
-      : FIXOS_RODAPE.filter((to) => doRodape.some((i) => i.to === to)).slice(0, MAX_ABAS_RODAPE - 1),
+      : fixosRodapeDoPapel(usuario?.role).filter((to) => doRodape.some((i) => i.to === to)).slice(0, MAX_ABAS_RODAPE - 1),
   );
   const maisRodape = doRodape.filter((i) => !fixosRodape.has(i.to));
 
@@ -772,7 +773,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           className="h-[2px] w-full brand-gradient-bg opacity-70"
         />
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-3 sm:gap-3 sm:px-4 lg:gap-2">
-          <Link to="/" className="flex shrink-0 items-center gap-2 pointer-coarse:min-h-11">
+          <Link to={inicioDoPapel(usuario?.role)} className="flex shrink-0 items-center gap-2 pointer-coarse:min-h-11">
             <span className="font-display text-lg font-bold tracking-tight">
               <span className="brand-gradient-text">ISP</span>
               <span className="text-foreground">hub</span>

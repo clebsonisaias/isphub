@@ -6,6 +6,7 @@ import { ToastProvider } from "@/context/ToastContext";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { RealtimeProvider } from "@/lib/realtime";
 import { RequireAuth } from "@/routes/RequireAuth";
+import { IrParaInicio } from "@/routes/IrParaInicio";
 import { LoginPage } from "@/pages/LoginPage";
 import { BrandLoader } from "@/components/BrandLoader";
 
@@ -62,7 +63,10 @@ function App() {
                     path="/"
                     element={
                       <RequireAuth>
-                        <PainelPage />
+                        {/* Quem abre o app pela raiz cai na tela do papel; o Painel segue em "/". */}
+                        <IrParaInicio>
+                          <PainelPage />
+                        </IrParaInicio>
                       </RequireAuth>
                     }
                   />

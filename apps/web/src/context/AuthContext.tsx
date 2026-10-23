@@ -13,7 +13,8 @@ import {
 interface AuthContextValue {
   usuario: UsuarioPublic | null;
   carregando: boolean;
-  login: (email: string, senha: string) => Promise<void>;
+  /** Devolve o usuario logado (o papel decide para onde a tela de login leva). */
+  login: (email: string, senha: string) => Promise<UsuarioPublic>;
   logout: () => Promise<void>;
   /** Encerra esta e TODAS as outras sessoes do usuario. */
   sairDeTodos: () => Promise<void>;
@@ -75,6 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthToken(resp.token);
     setRefreshToken(resp.refreshToken);
     setUsuario(resp.usuario);
+    return resp.usuario;
   }, []);
 
   const logout = useCallback(async () => {
