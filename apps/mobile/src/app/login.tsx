@@ -18,6 +18,7 @@ import { Feather } from "@expo/vector-icons";
 import { useAuth } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
 import { checarBiometria, iconeBiometria, rotuloBiometria, type BiometriaInfo } from "@/lib/biometria";
+import { useInstalarPwa } from "@/lib/instalar-pwa";
 import { Button } from "@/components/ui";
 import { colors, font, radius, shadow, space } from "@/theme/tokens";
 
@@ -55,6 +56,8 @@ export default function Login() {
     useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  // PWA: oferece instalar já na entrada — é aqui que o técnico chega pelo link.
+  const { modo: modoInstalar, instalar } = useInstalarPwa();
   const [email, setEmail] = useState(emailLembrado ?? "");
   const [senha, setSenha] = useState("");
   const [mostrarSenha, setMostrarSenha] = useState(false);
@@ -302,6 +305,26 @@ export default function Login() {
             </View>
           </Animated.View>
 
+          {modoInstalar === "botao" ? (
+            <View style={styles.instalar}>
+              <Button
+                label="Instalar o app no celular"
+                variant="secondary"
+                icon={<Feather name="download" size={16} color={colors.brandInk} />}
+                onPress={() => void instalar()}
+                fullWidth
+              />
+            </View>
+          ) : modoInstalar === "dica-ios" ? (
+            <View style={[styles.instalar, styles.dicaIos]}>
+              <Feather name="share" size={18} color={colors.brandInk} />
+              <Text style={styles.dicaIosTxt}>
+                Para instalar o app: toque em <Text style={styles.dicaIosForte}>Compartilhar</Text> e depois em{" "}
+                <Text style={styles.dicaIosForte}>Adicionar à Tela de Início</Text>.
+              </Text>
+            </View>
+          ) : null}
+
           <Text style={styles.rodape}>Acesso exclusivo da equipe técnica.</Text>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -346,6 +369,20 @@ const styles = StyleSheet.create({
   campoFocado: { borderColor: colors.brand, backgroundColor: colors.card },
   campo: { flex: 1, paddingHorizontal: space.md, paddingVertical: 13, fontSize: font.size.base, color: colors.ink },
   campoIcone: { paddingHorizontal: space.md, paddingVertical: 10 },
+
+  instalar: { width: "100%", maxWidth: 420 },
+  dicaIos: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.sm,
+    padding: space.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  dicaIosTxt: { flex: 1, fontSize: font.size.sm, color: colors.ink2, lineHeight: 19 },
+  dicaIosForte: { fontWeight: font.weight.bold as "700", color: colors.ink },
 
   quem: { fontSize: font.size.sm, color: colors.ink2, textAlign: "center", fontWeight: font.weight.medium as "600" },
   trocar: { fontSize: font.size.sm, color: colors.brandInk, fontWeight: font.weight.medium as "600" },

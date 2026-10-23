@@ -11,6 +11,8 @@ module.exports = ({ config }) => {
     ...config,
     web: {
       ...config.web,
+      // Ícone da marca (o do app.json é o padrão do Expo; trocar lá mexe no fingerprint).
+      favicon: "./public/icones/icone-192.png",
       // SPA: o modo "static" renderiza cada rota no Node durante o export e
       // esbarra em modulo nativo (expo-notifications, AsyncStorage).
       output: "single",

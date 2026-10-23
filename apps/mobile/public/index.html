@@ -64,6 +64,18 @@
           el.textContent = "Sem conexão — mostrando o último que foi carregado. Fotos ficam na fila e sobem quando o sinal voltar.";
           el.style.display = navigator.onLine ? "none" : "flex";
         }
+        // Instalar o app: o Chrome entrega o pedido uma vez só e cedo — guarda
+        // para a tela de login oferecer o botão (lib/instalar-pwa.ts).
+        window.addEventListener("beforeinstallprompt", function (e) {
+          e.preventDefault();
+          window.__pedidoInstalacao = e;
+          window.dispatchEvent(new Event("isphub-instalavel"));
+        });
+        window.addEventListener("appinstalled", function () {
+          window.__pedidoInstalacao = null;
+          window.dispatchEvent(new Event("isphub-instalavel"));
+        });
+
         window.addEventListener("online", avisoRede);
         window.addEventListener("offline", avisoRede);
         if (!navigator.onLine) window.addEventListener("load", avisoRede);
