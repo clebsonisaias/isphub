@@ -166,3 +166,40 @@ describe("fila offline de evidencias", () => {
     expect(await listarPendentesDaOs("os-1")).toEqual([]);
   });
 });
+
+describe("fila offline no navegador (PWA, sem sistema de arquivos)", () => {
+  beforeEach(() => {
+    memoria.clear();
+    disco.clear();
+    enviarEvidencia.mockReset();
+  });
+
+  it("guarda a foto no proprio registro, mostra como data: e envia dela", async () => {
+    // documentDirectory nulo = navegador. Recarrega o modulo com esse FS.
+    vi.resetModules();
+    vi.doMock("expo-file-system/legacy", () => ({
+      documentDirectory: null,
+      EncodingType: { Base64: "base64" },
+      makeDirectoryAsync: async () => {
+        throw new Error("indisponivel no navegador");
+      },
+      writeAsStringAsync: async () => {
+        throw new Error("indisponivel no navegador");
+      },
+      deleteAsync: async () => {
+        throw new Error("indisponivel no navegador");
+      },
+    }));
+    const web = await import("./outbox");
+
+    const p = await web.enfileirarEvidencia("os-1", input);
+    expect(disco.size).toBe(0);
+    expect(web.uriDaPendente(p)).toBe("data:image/jpeg;base64,AAAA");
+
+    enviarEvidencia.mockResolvedValue([]);
+    await web.processarFila("tok");
+    expect(enviarEvidencia).toHaveBeenCalledWith("os-1", "tok", expect.objectContaining({ dados: "AAAA" }));
+    expect(await web.listarPendentesDaOs("os-1")).toEqual([]);
+    vi.doUnmock("expo-file-system/legacy");
+  });
+});

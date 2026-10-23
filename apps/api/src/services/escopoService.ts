@@ -7,12 +7,27 @@ import type { JwtPayload } from "./authService.js";
  * antes estava duplicada em fila.ts, dashboard.ts e ordensServico.ts:
  * - provedor e atendente: so ve/age nas OS do proprio provedor (nunca a fila geral).
  * - tecnico: e pessoal da ISPhub (nao de um provedor especifico) — so ve/age
- *   nas OS atribuidas a ele mesmo, de qualquer provedor.
+ *   nas OS em que trabalha (responsavel ou apoio), de qualquer provedor.
  * - admin/gestor: sem restricao (visao unificada), respeitando um filtro
  *   opcional de provedor escolhido na tela.
  */
 
-/** Fragmento de `where` do Prisma pra listagens de OrdemServico (fila, dashboard). */
+/**
+ * OS em que o tecnico trabalha: responsavel (`tecnicoId`) OU apoio (`apoios`,
+ * espelhado do despacho do SGP). Quem vai de apoio sai no mesmo carro e precisa
+ * ver e agir na OS igual ao responsavel.
+ *
+ * Usa `OR` no topo: quem combinar com outros filtros poe isto dentro de um
+ * `AND`, senao um `OR` da busca (fila.ts) sobrescreve em silencio.
+ */
+export function osDoTecnicoWhere(tecnicoId: string): Record<string, unknown> {
+  return { OR: [{ tecnicoId }, { apoios: { some: { id: tecnicoId } } }] };
+}
+
+/**
+ * Fragmento de `where` do Prisma pra listagens de OrdemServico (fila, dashboard).
+ * Combinar sempre via `AND: [escopo, ...]` — o do tecnico usa `OR`.
+ */
 export function escopoOsWhere(user: JwtPayload, filtroProvedorId?: string): Record<string, unknown> {
   if (escopadoPorProvedor(user.role)) {
     // Sentinela: usuario provedor sem provedorId (nao deveria acontecer) nao
@@ -20,15 +35,23 @@ export function escopoOsWhere(user: JwtPayload, filtroProvedorId?: string): Reco
     return { provedorId: user.provedorId ?? "__nenhum__" };
   }
   if (user.role === UserRole.TECNICO) {
-    return { tecnicoId: user.sub };
+    return osDoTecnicoWhere(user.sub);
   }
   return filtroProvedorId ? { provedorId: filtroProvedorId } : {};
 }
 
-/** Confere se o usuario pode ler/agir numa OS especifica (fora de listagem). */
-export function podeAcessarOs(user: JwtPayload, os: { provedorId: string; tecnicoId: string | null }): boolean {
+/**
+ * Confere se o usuario pode ler/agir numa OS especifica (fora de listagem).
+ * `apoios` ausente = sem apoio: quem esquecer de carregar a relacao nega, nao libera.
+ */
+export function podeAcessarOs(
+  user: JwtPayload,
+  os: { provedorId: string; tecnicoId: string | null; apoios?: { id: string }[] },
+): boolean {
   if (escopadoPorProvedor(user.role)) return os.provedorId === user.provedorId;
-  if (user.role === UserRole.TECNICO) return os.tecnicoId === user.sub;
+  if (user.role === UserRole.TECNICO) {
+    return os.tecnicoId === user.sub || !!os.apoios?.some((a) => a.id === user.sub);
+  }
   return true;
 }
 

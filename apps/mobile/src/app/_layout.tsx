@@ -1,3 +1,4 @@
+import { Alert, Platform } from "react-native";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -7,6 +8,13 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { AuthProvider } from "@/lib/auth";
 import { queryClient } from "@/lib/query";
 import { colors } from "@/theme/tokens";
+import { alertaNoNavegador } from "@/lib/alerta-navegador";
+
+// O react-native-web deixa `Alert.alert` vazio: no navegador (PWA) as
+// confirmacoes e os avisos de erro nao apareciam. Liga as caixas do navegador.
+if (Platform.OS === "web") {
+  Alert.alert = (titulo, mensagem, botoes) => alertaNoNavegador(window, titulo, mensagem, botoes);
+}
 
 export default function RootLayout() {
   return (

@@ -12,7 +12,8 @@ import { Button, Card, Field, Muted, Pill, Screen, SectionLabel, Title, type Pil
 import { colors, font, space } from "@/theme/tokens";
 import { useAcoesOs } from "@/features/minhas-os/acoes";
 import { GaleriaEvidencias } from "@/features/evidencias/galeria";
-import { abrirNoWaze } from "@/features/minhas-os/navegacao";
+import { abrirNoGoogleMaps, abrirNoWaze } from "@/features/minhas-os/navegacao";
+import { FolhaEncerrar } from "@/features/minhas-os/folha-encerrar";
 import { AcaoContratoStatus } from "@/features/minhas-os/acao-contrato-status";
 import { ConexaoStatus } from "@/features/minhas-os/conexao-status";
 import { FichaSgpComoChegar, FichaSgpConexao, FichaSgpContrato, useFichaSgp } from "@/features/minhas-os/ficha-sgp";
@@ -62,6 +63,7 @@ export default function DetalheOs() {
   const temChat = useModuloHabilitado("chat");
   const temEvidencias = useModuloHabilitado("evidencias");
   const [nota, setNota] = useState("");
+  const [encerrando, setEncerrando] = useState(false);
   const { marcarACaminho, mudarStatus, anotar, mudarContratoStatus } = useAcoesOs(id);
   const { garantirConversaDeOs } = useCriarConversa();
 
@@ -83,7 +85,20 @@ export default function DetalheOs() {
   function rodarAcao() {
     if (!acao) return;
     if (acao.alvo === "acaminho") marcarACaminho.mutate();
+    // Concluir passa pela folha: "o que foi feito" e obrigatorio.
+    else if (acao.alvo === OsStatus.CONCLUIDA) setEncerrando(true);
     else mudarStatus.mutate(acao.alvo);
+  }
+
+  // A anotacao sai ANTES do status: se ela falhar (o erro ja aparece na tela),
+  // a OS nao fecha sem o registro do servico.
+  async function concluir(oQueFoiFeito: string) {
+    try {
+      await anotar.mutateAsync(oQueFoiFeito);
+    } catch {
+      return;
+    }
+    mudarStatus.mutate(OsStatus.CONCLUIDA, { onSuccess: () => setEncerrando(false) });
   }
 
   function abrirMapa() {
@@ -159,13 +174,26 @@ export default function DetalheOs() {
                 </View>
               </View>
               {temDestino(os.endereco) ? (
-                <Button
-                  label="Abrir no Waze"
-                  variant="secondary"
-                  size="sm"
-                  icon={<Feather name="navigation" size={14} color={colors.brandInk} />}
-                  onPress={abrirMapa}
-                />
+                <View style={{ flexDirection: "row", gap: space.sm }}>
+                  <View style={{ flex: 1 }}>
+                    <Button
+                      label="Abrir no Waze"
+                      variant="secondary"
+                      size="sm"
+                      icon={<Feather name="navigation" size={14} color={colors.brandInk} />}
+                      onPress={abrirMapa}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Button
+                      label="Google Maps"
+                      variant="secondary"
+                      size="sm"
+                      icon={<Feather name="map" size={14} color={colors.brandInk} />}
+                      onPress={() => abrirNoGoogleMaps(os.endereco)}
+                    />
+                  </View>
+                </View>
               ) : null}
             </Card>
 
@@ -262,6 +290,15 @@ export default function DetalheOs() {
               />
             ) : null}
           </ScrollView>
+
+          <FolhaEncerrar
+            visivel={encerrando}
+            osId={id}
+            comFotos={temEvidencias}
+            ocupado={anotar.isPending || mudarStatus.isPending}
+            onFechar={() => setEncerrando(false)}
+            onConcluir={(texto) => void concluir(texto)}
+          />
 
           {/* CTA primaria fixa: a proxima acao do fluxo, sempre no alcance do polegar */}
           {acao ? (

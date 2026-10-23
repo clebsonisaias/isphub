@@ -122,7 +122,11 @@ export function GaleriaEvidencias({ osId }: { osId: string }) {
     void listarPendentesDaOs(osId).then(setPendentes);
   }, [osId]);
 
-  useEffect(recarregarPendentes, [recarregarPendentes, query.data]);
+  // Pelo instante da consulta, nao pelo `data`: com o compartilhamento
+  // estrutural do React Query, `[]` -> `[]` mantem a mesma referencia e a fila
+  // nao era relida — a galeria da tela da OS nao via a foto tirada na folha de
+  // encerramento (outra instancia desta galeria).
+  useEffect(recarregarPendentes, [recarregarPendentes, query.dataUpdatedAt, query.errorUpdatedAt]);
 
   async function adicionar(fonte: "camera" | "galeria") {
     setOcupado(true);

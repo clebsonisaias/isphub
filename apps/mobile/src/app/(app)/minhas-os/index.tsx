@@ -18,6 +18,7 @@ import {
   formatarTrabalhado,
   pausaAberta,
   MOTIVO_PAUSA_LABEL,
+  OS_STATUS_ABERTOS,
   formatarPlaca,
   jornadaPrecisaAtencao,
   type FilaItem,
@@ -25,7 +26,7 @@ import {
 } from "@isphub/shared";
 import { useAuth } from "@/lib/auth";
 import { apiFetch, buildFilaQuery } from "@/lib/api";
-import { Card, Hero, Muted, Screen, Segmented } from "@/components/ui";
+import { Button, Card, Hero, Muted, Screen, Segmented } from "@/components/ui";
 import {
   Aviso,
   BarraProgresso,
@@ -40,7 +41,8 @@ import { colors, font, space } from "@/theme/tokens";
 import { Avatar, useAvatarUri } from "@/features/chat/avatar";
 import { FilaCard } from "@/features/minhas-os/fila-card";
 import { agruparPorTurno, escolherProxima, maisRecentesPrimeiro, ordenarSlaFirst } from "@/features/minhas-os/sla";
-import { abrirNoWaze } from "@/features/minhas-os/navegacao";
+import { Feather } from "@expo/vector-icons";
+import { abrirNoWaze, abrirRotaNoGoogleMaps } from "@/features/minhas-os/navegacao";
 import { useEscalaDoDia, useJornada, useMinhaViatura, useRelogioServidor } from "@/features/jornada/api";
 import { FolhaViatura, type EscolhaViatura } from "@/features/jornada/viatura";
 import { FolhaChecklist } from "@/features/jornada/checklist";
@@ -170,6 +172,10 @@ export default function MinhasOs() {
    */
   const proxima = escolherProxima(itens, agendaItens);
   const porTurno = agruparPorTurno(agendaItens);
+  // O que falta da rota, na ordem em que a agenda mostra (turno, depois parada).
+  const paradasRestantes = TURNOS_AGENDA.flatMap((t) => porTurno[t]).filter(
+    (os) => OS_STATUS_ABERTOS.includes(os.status) && temDestino(os.endereco),
+  );
 
   const m = resumo.data;
   const naFila = fila.data?.total ?? itens.length;
@@ -388,6 +394,19 @@ export default function MinhasOs() {
                 <Muted style={{ paddingHorizontal: space.sm, paddingTop: space.xs, fontSize: 11 }}>
                   Pela data do SGP — nenhuma visita marcada na agenda ISPhub hoje.
                 </Muted>
+              ) : null}
+              {paradasRestantes.length > 0 ? (
+                <View style={{ paddingHorizontal: space.sm, paddingTop: space.sm }}>
+                  {/* A rota inteira numa tela do Maps (ideia do app da equipe CITmax). */}
+                  <Button
+                    label={paradasRestantes.length === 1 ? "Abrir rota no Google Maps" : `Rota no Google Maps (${paradasRestantes.length} paradas)`}
+                    variant="secondary"
+                    size="sm"
+                    icon={<Feather name="map" size={14} color={colors.brandInk} />}
+                    onPress={() => abrirRotaNoGoogleMaps(paradasRestantes.map((os) => os.endereco))}
+                    fullWidth
+                  />
+                </View>
               ) : null}
             </Card>
           </Secao>

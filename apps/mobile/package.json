@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
     "test": "vitest run",
+    "build:web": "PWA=1 expo export -p web && node scripts/gerar-sw.mjs dist",
     "eas-build-post-install": "cd ../.. && npm run build:shared"
   },
   "dependencies": {

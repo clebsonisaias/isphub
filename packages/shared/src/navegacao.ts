@@ -52,3 +52,39 @@ export function temDestino(endereco: Partial<Endereco> | null | undefined): bool
   if (endereco?.lat != null && endereco?.lng != null) return true;
   return [endereco?.logradouro, endereco?.numero, endereco?.bairro, endereco?.cidade].some((p) => !!p?.trim());
 }
+
+/** Destino como o Google Maps entende: "lat,lng" ou o endereco em texto. */
+function destinoGoogle(endereco: Partial<Endereco> | null | undefined): string {
+  if (endereco?.lat != null && endereco?.lng != null) return `${endereco.lat},${endereco.lng}`;
+  return [endereco?.logradouro, endereco?.numero, endereco?.bairro, endereco?.cidade].filter(Boolean).join(" ");
+}
+
+/**
+ * Rota no Google Maps de onde o tecnico esta ate o cliente — o Maps mostra as
+ * duas posicoes. Alternativa ao Waze (nem todo aparelho tem). Mesmo cuidado do
+ * `linkWaze`: universal link `https://`, que abre o app quando existe.
+ */
+export function linkGoogleMaps(endereco: Partial<Endereco> | null | undefined): string {
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destinoGoogle(endereco))}&travelmode=driving`;
+}
+
+/**
+ * O Google Maps aceita no maximo 9 paradas intermediarias (waypoints) num link:
+ * com o destino final, sao 10 paradas.
+ */
+export const MAX_PARADAS_GOOGLE_MAPS = 10;
+
+/**
+ * A rota do dia numa tela so do Google Maps: paradas na ordem recebida, a
+ * ultima vira o destino e as anteriores os waypoints. Parada sem destino fica
+ * de fora; sem nenhuma, `null` (a tela esconde o botao).
+ * ponytail: passou de 10 paradas, o link leva as 10 primeiras; o resto sai
+ * num segundo toque depois que essas forem concluidas.
+ */
+export function linkRotaGoogleMaps(enderecos: (Partial<Endereco> | null | undefined)[]): string | null {
+  const pontos = enderecos.filter(temDestino).slice(0, MAX_PARADAS_GOOGLE_MAPS).map(destinoGoogle);
+  if (pontos.length === 0) return null;
+  const destino = encodeURIComponent(pontos[pontos.length - 1]);
+  const waypoints = pontos.slice(0, -1).map(encodeURIComponent).join("%7C");
+  return `https://www.google.com/maps/dir/?api=1&destination=${destino}${waypoints ? `&waypoints=${waypoints}` : ""}&travelmode=driving`;
+}

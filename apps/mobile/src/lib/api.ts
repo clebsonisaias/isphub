@@ -82,6 +82,7 @@ export async function apiFetch<T>(path: string, opts: ApiOpts = {}): Promise<T> 
  * novo nao baixa de novo.
  */
 export async function baixarAnexoAutenticado(path: string, token: string | null): Promise<string> {
+  if (!FileSystem.cacheDirectory) return baixarAnexoNoNavegador(path, token);
   const nomeArquivo = path.replace(/[^a-zA-Z0-9]/g, "_");
   const destino = `${FileSystem.cacheDirectory}${nomeArquivo}`;
   const info = await FileSystem.getInfoAsync(destino);
@@ -90,6 +91,28 @@ export async function baixarAnexoAutenticado(path: string, token: string | null)
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
   return resultado.uri;
+}
+
+/*
+ * Navegador (PWA): sem sistema de arquivos (`cacheDirectory` nulo), o download
+ * acima falhava e foto/avatar ficavam no spinner pra sempre. Baixa com o JWT e
+ * entrega um `blob:` — cacheado por caminho enquanto a aba vive. Falha sai do
+ * cache pra poder tentar de novo.
+ */
+const anexosNoNavegador = new Map<string, Promise<string>>();
+function baixarAnexoNoNavegador(path: string, token: string | null): Promise<string> {
+  let pronto = anexosNoNavegador.get(path);
+  if (!pronto) {
+    pronto = fetch(`${API_BASE}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : undefined }).then(
+      async (res) => {
+        if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`);
+        return URL.createObjectURL(await res.blob());
+      },
+    );
+    anexosNoNavegador.set(path, pronto);
+    pronto.catch(() => anexosNoNavegador.delete(path));
+  }
+  return pronto;
 }
 
 /**

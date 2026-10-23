@@ -42,8 +42,9 @@ dashboardRouter.get(
     // operacao (abaixo) contam so as OS internas. As retiradas nao somem —
     // viram um bloco proprio (`retiradas`), pra continuarem visiveis sem
     // inflar o numero de trabalho que e da equipe.
-    const where = { ...escopo, AND: [OS_INTERNA_WHERE] };
-    const whereRetiradas = { ...escopo, AND: [OS_EXTERNA_WHERE] };
+    // Escopo dentro do AND: o do tecnico usa `OR` e o espalhamento perderia a chave.
+    const where = { AND: [escopo, OS_INTERNA_WHERE] };
+    const whereRetiradas = { AND: [escopo, OS_EXTERNA_WHERE] };
     const provedorIdRestrito = req.user!.role === UserRole.PROVEDOR ? (req.user!.provedorId ?? "__nenhum__") : undefined;
 
     const [totalAbertas, totalConcluidas, ordensAbertasComSla, provedores, statusGroups, tecnicoGroups, ordensCategoria] =
@@ -216,8 +217,7 @@ dashboardRouter.get(
      * tambem nao ha o que esconder.
      */
     const doDia = {
-      ...escopoOsWhere(req.user!),
-      AND: [OS_INTERNA_WHERE],
+      AND: [escopoOsWhere(req.user!), OS_INTERNA_WHERE],
       dataAgendamento: { gte: inicio, lt: fim },
     };
 

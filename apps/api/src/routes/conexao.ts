@@ -4,7 +4,7 @@ import { prisma } from "../lib/prisma.js";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth } from "../middleware/auth.js";
 import { buildConnector } from "../services/erpConnectorService.js";
-import { assertProvedorPermitido } from "../services/escopoService.js";
+import { assertProvedorPermitido, osDoTecnicoWhere } from "../services/escopoService.js";
 import { comConcorrenciaLimitada } from "../lib/limitador.js";
 
 export const conexaoRouter = Router({ mergeParams: true });
@@ -35,7 +35,7 @@ const detalhesCache = new Map<string, { valor: DetalhesTecnicos; expiraEm: numbe
  */
 async function assertProvedor(req: any, provedorId: string): Promise<void> {
   await assertProvedorPermitido(req.user!, provedorId, (tecnicoId, pid) =>
-    prisma.ordemServico.count({ where: { tecnicoId, provedorId: pid } }),
+    prisma.ordemServico.count({ where: { provedorId: pid, ...osDoTecnicoWhere(tecnicoId) } }),
   );
 }
 

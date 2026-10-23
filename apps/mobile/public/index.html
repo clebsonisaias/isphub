@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="%LANG_ISO_CODE%">
+  <head>
+    <meta charset="utf-8" />
+    <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <title>%WEB_TITLE%</title>
+    <!-- PWA do técnico: instalável (manifest + ícones) e usável no iPhone. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icones/apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="ISPhub" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <!-- Reset recomendado pelo react-native-web (modelo padrão do Expo). -->
+    <style id="expo-reset">
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        overflow: hidden;
+        /* Mesma cor do fundo do app (colors.ground): sem clarão branco ao abrir. */
+        background: #f2f1fb;
+      }
+      #root {
+        display: flex;
+        height: 100%;
+        flex: 1;
+      }
+    </style>
+  </head>
+
+  <body>
+    <noscript>Ative o JavaScript para usar o ISPhub Técnico.</noscript>
+    <div id="root"></div>
+    <script>
+      /*
+       * Service worker, aviso de versão nova e aviso de sem conexão. Fora do
+       * React de propósito: funciona antes de o app montar e não depende de
+       * layout do expo-router.
+       */
+      (function () {
+        function faixa(id, estilo) {
+          var el = document.getElementById(id);
+          if (el) return el;
+          el = document.createElement("div");
+          el.id = id;
+          el.setAttribute("role", "status");
+          el.style.cssText =
+            "position:fixed;left:0;right:0;z-index:2147483647;display:flex;align-items:center;gap:12px;" +
+            "padding:10px 16px;font:600 14px/1.35 system-ui,-apple-system,Roboto,sans-serif;color:#fff;" +
+            estilo;
+          document.body.appendChild(el);
+          return el;
+        }
+
+        // Sem rede: o app segue abrindo com o último conteúdo carregado.
+        function avisoRede() {
+          var el = faixa(
+            "isphub-offline",
+            "bottom:0;background:rgba(26,29,41,.94);padding-bottom:calc(env(safe-area-inset-bottom) + 10px);"
+          );
+          el.textContent = "Sem conexão — mostrando o último que foi carregado. Fotos ficam na fila e sobem quando o sinal voltar.";
+          el.style.display = navigator.onLine ? "none" : "flex";
+        }
+        window.addEventListener("online", avisoRede);
+        window.addEventListener("offline", avisoRede);
+        if (!navigator.onLine) window.addEventListener("load", avisoRede);
+
+        if (!("serviceWorker" in navigator)) return;
+
+        // Só recarrega quando a pessoa pediu: no primeiro acesso o SW também
+        // assume a página (clients.claim) e isso não pode recarregar sozinho.
+        var pediuAtualizacao = false;
+        navigator.serviceWorker.addEventListener("controllerchange", function () {
+          if (pediuAtualizacao) location.reload();
+        });
+
+        // Faixa fixa no topo, até atualizar (ideia do app da equipe CITmax).
+        function avisarVersaoNova(sw) {
+          var el = faixa("isphub-atualizacao", "top:0;background:#4f46e5;padding-top:calc(env(safe-area-inset-top) + 10px);");
+          el.textContent = "";
+          var texto = document.createElement("span");
+          texto.style.flex = "1";
+          texto.textContent = "Nova versão do app disponível.";
+          var botao = document.createElement("button");
+          botao.type = "button";
+          botao.textContent = "Atualizar";
+          botao.style.cssText =
+            "min-height:44px;padding:0 18px;border:0;border-radius:999px;background:#fff;color:#4f46e5;font:700 14px system-ui,sans-serif;cursor:pointer;";
+          botao.onclick = function () {
+            pediuAtualizacao = true;
+            botao.disabled = true;
+            botao.textContent = "Atualizando…";
+            sw.postMessage("pular-espera");
+          };
+          el.appendChild(texto);
+          el.appendChild(botao);
+        }
+
+        window.addEventListener("load", function () {
+          navigator.serviceWorker.register("/sw.js").then(function (reg) {
+            if (reg.waiting && navigator.serviceWorker.controller) avisarVersaoNova(reg.waiting);
+            reg.addEventListener("updatefound", function () {
+              var novo = reg.installing;
+              if (!novo) return;
+              novo.addEventListener("statechange", function () {
+                if (novo.state === "installed" && navigator.serviceWorker.controller) avisarVersaoNova(novo);
+              });
+            });
+            // O PWA fica aberto dias no celular: procura versão nova ao voltar pra ele.
+            document.addEventListener("visibilitychange", function () {
+              if (document.visibilityState === "visible") reg.update().catch(function () {});
+            });
+          });
+        });
+      })();
+    </script>
+  </body>
+</html>

@@ -322,7 +322,7 @@ export async function garantirConversaDeOs(user: JwtPayload, ordemServicoId: str
   const autorId = user.sub;
   const os = await prisma.ordemServico.findUnique({
     where: { id: ordemServicoId },
-    select: { id: true, tecnicoId: true, provedorId: true },
+    select: { id: true, tecnicoId: true, provedorId: true, apoios: { select: { id: true } } },
   });
   if (!os) throw new HttpError(404, "Ordem de servico nao encontrada");
 
@@ -777,7 +777,7 @@ export async function aplicarRespostaRapidaOs(user: JwtPayload, conversaId: stri
   // autorizacao tem que valer AGORA, contra a OS de agora.
   const os = await prisma.ordemServico.findUnique({
     where: { id: ordemServicoId },
-    select: { provedorId: true, tecnicoId: true },
+    select: { provedorId: true, tecnicoId: true, apoios: { select: { id: true } } },
   });
   if (!os) throw new HttpError(404, "Ordem de servico nao encontrada");
   if (!podeAcessarOs(user, os)) {

@@ -16,7 +16,10 @@ export const ordensServicoRouter = Router();
 ordensServicoRouter.use(requireAuth);
 
 async function assertAcesso(req: any, ordemServicoId: string) {
-  const os = await prisma.ordemServico.findUnique({ where: { id: ordemServicoId } });
+  const os = await prisma.ordemServico.findUnique({
+    where: { id: ordemServicoId },
+    include: { apoios: { select: { id: true } } },
+  });
   if (!os) throw new HttpError(404, "Ordem de servico nao encontrada");
   if (!podeAcessarOs(req.user, os)) {
     throw new HttpError(403, "Acesso restrito ao proprio provedor/tecnico");

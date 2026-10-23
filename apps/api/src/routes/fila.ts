@@ -170,7 +170,8 @@ filaRouter.get(
 
     // provedor: so o proprio provedor. tecnico: so as OS atribuidas a ele
     // mesmo (de qualquer provedor). admin/gestor: livre, com filtro opcional.
-    const osWhere: any = { ...escopoOsWhere(req.user!, f.provedorId) };
+    // No AND: o escopo do tecnico usa `OR` (responsavel ou apoio) e a busca abaixo grava `osWhere.OR`.
+    const osWhere: any = { AND: [escopoOsWhere(req.user!, f.provedorId)] };
     if (f.status?.length) osWhere.status = { in: f.status };
     else if (f.grupo === "abertos") osWhere.status = { in: OS_STATUS_ABERTOS };
     else if (f.grupo === "fechados") osWhere.status = { notIn: OS_STATUS_ABERTOS };

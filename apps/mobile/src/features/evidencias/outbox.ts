@@ -37,6 +37,14 @@ export interface EvidenciaPendente {
 
 const CHAVE = "isphub_evidencias_outbox";
 const PASTA = `${FileSystem.documentDirectory ?? ""}evidencias-outbox/`;
+/*
+ * Navegador (PWA) nao tem sistema de arquivos: `documentDirectory` vem nulo e
+ * gravar falharia — a foto nunca entrava na fila. La a foto fica no proprio
+ * registro (`input`, formato que `lerDados`/`uriDaPendente` ja sabem ler).
+ * ponytail: o AsyncStorage do navegador e o localStorage (~5 MB): cabem umas
+ * 10 fotos comprimidas na fila; passar disso = IndexedDB.
+ */
+const SEM_DISCO = !FileSystem.documentDirectory;
 const BACKOFF_BASE_MS = 30_000;
 const BACKOFF_MAX_MS = 30 * 60_000;
 
@@ -82,7 +90,7 @@ async function apagarDados(p: Pick<EvidenciaPendente, "localId" | "mimeType">): 
 /** Lanca se nao conseguir guardar: a tela avisa na hora, em vez de "sumir depois". */
 export async function enfileirarEvidencia(osId: string, input: EvidenciaInput): Promise<EvidenciaPendente> {
   const localId = `pendente-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  await gravarDados(localId, input);
+  if (!SEM_DISCO) await gravarDados(localId, input);
   const pendente: EvidenciaPendente = {
     localId,
     osId,
@@ -91,6 +99,7 @@ export async function enfileirarEvidencia(osId: string, input: EvidenciaInput): 
     criadoEm: new Date().toISOString(),
     falhou: false,
     tentativas: 0,
+    ...(SEM_DISCO ? { input } : {}),
   };
   const fila = await lerFila();
   fila.push(pendente);

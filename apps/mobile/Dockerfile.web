@@ -1,0 +1,28 @@
+# PWA do técnico: build web do app Expo (apps/mobile), servido como SPA.
+# Contexto = raiz do monorepo (workspaces npm), igual ao apps/web/Dockerfile.
+
+FROM node:22-alpine AS build
+
+WORKDIR /repo
+COPY . .
+
+# Assada no bundle pelo Metro no build (EXPO_PUBLIC_*), como o VITE_API_URL do
+# painel — o Coolify passa como build arg. Trocar a URL da API = novo build.
+ARG EXPO_PUBLIC_API_URL
+ENV EXPO_PUBLIC_API_URL=$EXPO_PUBLIC_API_URL
+ENV CI=1 EXPO_NO_TELEMETRY=1
+
+RUN npm ci
+RUN npm run build -w @isphub/shared
+RUN npm run build:web -w @isphub/mobile
+
+FROM node:22-alpine
+WORKDIR /app
+RUN npm install -g serve
+COPY --from=build /repo/apps/mobile/dist ./dist
+
+EXPOSE 80
+
+# -s: toda rota cai no index.html (SPA). Os cabeçalhos de cache (sw.js sem
+# cache, bundle imutável) vêm de dist/serve.json.
+CMD ["serve", "-s", "dist", "-l", "80"]

@@ -24,9 +24,11 @@ describe("escopoOsWhere", () => {
     expect(escopoOsWhere(u)).toEqual({ provedorId: "__nenhum__" });
   });
 
-  it("tecnico: restringe as OS atribuidas a ele mesmo (sub), sem filtro de provedor", () => {
+  it("tecnico: restringe as OS em que ele e responsavel OU apoio, sem filtro de provedor", () => {
     const u = usuario(UserRole.TECNICO, { sub: "tec-1" });
-    expect(escopoOsWhere(u, "qualquer-provedor")).toEqual({ tecnicoId: "tec-1" });
+    expect(escopoOsWhere(u, "qualquer-provedor")).toEqual({
+      OR: [{ tecnicoId: "tec-1" }, { apoios: { some: { id: "tec-1" } } }],
+    });
   });
 
   it("admin: sem restricao, mas respeita o filtro de provedor da query se informado", () => {
@@ -57,6 +59,17 @@ describe("podeAcessarOs", () => {
 
   it("tecnico: nao acessa OS sem tecnico atribuido", () => {
     expect(podeAcessarOs(usuario(UserRole.TECNICO, { sub: "tec-1" }), { ...os, tecnicoId: null })).toBe(false);
+  });
+
+  it("tecnico de apoio: acessa a OS em que e apoio, mesmo com outro responsavel ou sem responsavel", () => {
+    const apoio = usuario(UserRole.TECNICO, { sub: "tec-2" });
+    expect(podeAcessarOs(apoio, { ...os, apoios: [{ id: "tec-2" }] })).toBe(true);
+    expect(podeAcessarOs(apoio, { ...os, tecnicoId: null, apoios: [{ id: "tec-2" }] })).toBe(true);
+    expect(podeAcessarOs(apoio, { ...os, apoios: [{ id: "tec-3" }] })).toBe(false);
+  });
+
+  it("tecnico: relacao de apoios nao carregada nega (nao libera por engano)", () => {
+    expect(podeAcessarOs(usuario(UserRole.TECNICO, { sub: "tec-2" }), { ...os, apoios: undefined })).toBe(false);
   });
 
   it("admin/gestor: acessam qualquer OS", () => {

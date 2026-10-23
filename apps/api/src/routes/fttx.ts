@@ -6,7 +6,7 @@ import { prisma } from "../lib/prisma.js";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { buildConnector } from "../services/erpConnectorService.js";
-import { assertProvedorPermitido } from "../services/escopoService.js";
+import { assertProvedorPermitido, osDoTecnicoWhere } from "../services/escopoService.js";
 import { comConcorrenciaLimitada } from "../lib/limitador.js";
 
 /**
@@ -40,7 +40,7 @@ const escritaRoles = [UserRole.ADMIN, UserRole.GESTOR, UserRole.TECNICO];
  */
 async function assertProvedor(req: any, provedorId: string): Promise<void> {
   await assertProvedorPermitido(req.user!, provedorId, (tecnicoId, pid) =>
-    prisma.ordemServico.count({ where: { tecnicoId, provedorId: pid } }),
+    prisma.ordemServico.count({ where: { provedorId: pid, ...osDoTecnicoWhere(tecnicoId) } }),
   );
 }
 
