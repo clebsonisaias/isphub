@@ -17,14 +17,13 @@ import {
   observacaoDoRobo,
   ehDaPlanilha,
 } from "@isphub/shared";
-import { randomBytes } from "node:crypto";
 import { env } from "../config/env.js";
 import { baixar, type ContaServico } from "../lib/googleDrive.js";
 import { prisma } from "../lib/prisma.js";
 import { lerAbas, type Celula } from "../lib/xlsx.js";
 import { HttpError } from "../middleware/errorHandler.js";
 import * as agenda from "./agendaService.js";
-import { hashPassword } from "./authService.js";
+import { criarTecnicoSemLogin } from "./tecnicosSgpService.js";
 import { atribuirTecnico } from "./writebackService.js";
 
 /**
@@ -164,16 +163,7 @@ async function garantirTecnicos(nomes: string[], r: RodadaPlanilha): Promise<Map
   for (const nome of nomes) {
     const chave = chaveNome(nome);
     if (!chave || porNome.has(chave)) continue;
-    const slug = chave.replace(/[^a-z0-9]+/g, ".").replace(/^\.|\.$/g, "");
-    const u = await prisma.usuario.create({
-      data: {
-        nome,
-        email: `${slug}@sem-login.isphub.invalid`,
-        senhaHash: await hashPassword(randomBytes(32).toString("hex")),
-        role: UserRole.TECNICO,
-      },
-      select: { id: true },
-    });
+    const u = await criarTecnicoSemLogin(nome);
     porNome.set(chave, u.id);
     r.tecnicosCriados.push(nome);
   }

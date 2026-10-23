@@ -13,6 +13,7 @@ import { startAuditoriaVisitaScheduler } from "./jobs/auditoriaVisitaScheduler.j
 import { startManutencaoAlertaScheduler } from "./jobs/manutencaoAlertaScheduler.js";
 import { startAutoAgendaScheduler } from "./jobs/autoAgendaScheduler.js";
 import { startPlanilhaScheduler } from "./jobs/planilhaScheduler.js";
+import { startTecnicosSgpScheduler } from "./jobs/tecnicosSgpScheduler.js";
 import { fecharTodasConexoes } from "./services/realtimeHub.js";
 
 const app = createApp();
@@ -31,6 +32,7 @@ const server = app.listen(env.PORT, () => {
   startManutencaoAlertaScheduler();
   startAutoAgendaScheduler();
   startPlanilhaScheduler();
+  startTecnicosSgpScheduler();
 });
 
 /**

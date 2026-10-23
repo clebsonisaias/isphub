@@ -74,6 +74,7 @@ model Provedor {
   tiposOs       TipoOs[]
   ordensServico OrdemServico[]
   usuarios      Usuario[]
+  tecnicosSgp   TecnicoSgp[]
   syncLogs      SyncLog[]
   agendamentos  Agendamento[]
   /// Lancamentos em que este provedor e a CONTRAPARTE (quem deve a hub).
@@ -346,6 +347,9 @@ model Usuario {
   email             String    @unique
   senhaHash         String
   role              UserRole
+  /// So para role=tecnico: "tecnico" (titular da OS) ou "auxiliar" (vai de
+  /// apoio). Definido pelo admin na aba "Tecnicos do SGP"; nulo = nao definido.
+  funcaoCampo       String?
   /// Preenchido apenas para role=provedor (escopa o acesso a um unico provedor).
   provedorId        String?
   provedor          Provedor? @relation(fields: [provedorId], references: [id], onDelete: SetNull)
@@ -419,6 +423,7 @@ model Usuario {
   atribuicoes   Atribuicao[]
   eventos       OsEvento[]
   notificacoes  Notificacao[]
+  tecnicosSgp   TecnicoSgp[]
 
   conversasCriadas  Conversa[]             @relation("ConversasCriadas")
   participacoesChat ConversaParticipante[]
@@ -2327,4 +2332,28 @@ model ExcecaoAgenda {
   atualizadoEm DateTime @updatedAt
 
   @@map("excecoes_agenda")
+}
+
+/// Um tecnico como o SGP do provedor o conhece (so codigo, nome e login) e a
+/// quem ele corresponde no ISPhub. O SGP mistura tecnico de campo com usuario de
+/// sistema ("Hotspot") e escreve nomes diferentes da equipe ("JONATHAN" x "Thiago
+/// Jhonatan") — por isso o vinculo e decidido pelo admin (vincular / criar /
+/// ignorar); so nome identico vincula sozinho.
+model TecnicoSgp {
+  id           String   @id @default(uuid())
+  provedorId   String
+  provedor     Provedor @relation(fields: [provedorId], references: [id], onDelete: Cascade)
+  sgpId        String
+  nome         String?
+  username     String?
+  usuarioId    String?
+  usuario      Usuario? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+  /// Nao e tecnico de campo (usuario de sistema, atendente): fica de fora.
+  ignorado     Boolean  @default(false)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@unique([provedorId, sgpId])
+  @@index([usuarioId])
+  @@map("tecnicos_sgp")
 }

@@ -12,6 +12,7 @@ import { usuariosRouter } from "./routes/usuarios.js";
 import { erpConfigRouter } from "./routes/erpConfig.js";
 import { atendaiConfigRouter } from "./routes/atendaiConfig.js";
 import { tiposOsRouter } from "./routes/tiposOs.js";
+import { tecnicosSgpRouter } from "./routes/tecnicosSgp.js";
 import { syncRouter } from "./routes/sync.js";
 import { filaRouter } from "./routes/fila.js";
 import { ordensServicoRouter } from "./routes/ordensServico.js";
@@ -140,6 +141,7 @@ export function createApp() {
   app.use("/provedores/:provedorId/erp-config", erpConfigRouter);
   app.use("/provedores/:provedorId/atendai", atendaiConfigRouter);
   app.use("/provedores/:provedorId/tipos-os", tiposOsRouter);
+  app.use("/provedores/:provedorId/tecnicos-sgp", tecnicosSgpRouter);
   app.use("/provedores/:provedorId/sync", syncRouter);
   app.use("/provedores/:provedorId/conexao", conexaoRouter);
   app.use("/provedores/:provedorId/fttx", fttxRouter);

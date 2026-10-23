@@ -15,6 +15,7 @@ import type {
   ResultadoStatusOs,
   OsFichaSgp,
   RawOsType,
+  RawTecnico,
   SgpImagem,
   SgpImagemArquivo,
 } from "@isphub/shared";
@@ -891,6 +892,18 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
       } catch (err) {
         return { ok: false, message: err instanceof Error ? err.message : String(err) };
       }
+    },
+
+    async listTecnicos(): Promise<RawTecnico[]> {
+      // Form, como o resto da familia /api/ura/. Vem so {id, nome, username} —
+      // e mistura usuario de sistema ("Hotspot") com tecnico de campo: quem decide
+      // e o admin, na aba "Tecnicos do SGP" do provedor.
+      const data = await sgpPostForm(creds, "/api/ura/tecnicos/");
+      return asArray(data, "tecnicos", "resultados").map((item) => ({
+        sgpId: String(pick(item, "id")),
+        nome: (pick(item, "nome") as string | null | undefined)?.trim() || null,
+        username: (pick(item, "username") as string | null | undefined)?.trim() || null,
+      }));
     },
 
     async listOsTypes(): Promise<RawOsType[]> {

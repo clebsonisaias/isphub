@@ -14,8 +14,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select } from "@/components/ui/select";
-import { atendaiConfigApi, categoriasApi, chaveParceiroApi, erpConfigApi, provedoresApi, syncApi, tiposOsApi } from "@/lib/adminApi";
-import type { AtendaiConfigPublic, ChaveParceiroPublic } from "@/lib/adminApi";
+import { atendaiConfigApi, categoriasApi, chaveParceiroApi, erpConfigApi, provedoresApi, syncApi, tecnicosSgpApi, tiposOsApi } from "@/lib/adminApi";
+import type { AtendaiConfigPublic, ChaveParceiroPublic, FuncaoCampo, TecnicoIsphubResumo, TecnicoSgpItem } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
 import { ArrowLeft, CalendarDays, CheckCircle2, Copy, Download, KeyRound, Link2, RefreshCw, Sparkles, XCircle } from "lucide-react";
@@ -57,6 +57,7 @@ export function ProvedorDetailPage() {
         <TabsList>
           <TabsTrigger value="sgp">Integração SGP</TabsTrigger>
           <TabsTrigger value="tipos">Tipos de OS</TabsTrigger>
+          <TabsTrigger value="tecnicos">Técnicos do SGP</TabsTrigger>
           <TabsTrigger value="atendai">AtendAI</TabsTrigger>
           <TabsTrigger value="api-agenda">API de agendamento</TabsTrigger>
         </TabsList>
@@ -65,6 +66,9 @@ export function ProvedorDetailPage() {
         </TabsContent>
         <TabsContent value="tipos">
           <TiposOsManager provedorId={id} />
+        </TabsContent>
+        <TabsContent value="tecnicos">
+          <TecnicosSgpManager provedorId={id} />
         </TabsContent>
         <TabsContent value="atendai">
           <AtendaiConfigForm provedorId={id} />
@@ -232,6 +236,158 @@ function SgpConfigForm({ provedorId }: { provedorId: string }) {
             {sincronizando ? "Sincronizando..." : "Sincronizar agora"}
           </Button>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Tecnicos que o SGP do provedor conhece e a quem cada um corresponde no ISPhub.
+ * O SGP mistura tecnico de campo com usuario de sistema e escreve nomes
+ * diferentes da equipe; por isso cada linha pede uma decisao: vincular a um
+ * tecnico existente, criar um novo (sem login) ou ignorar — e a funcao.
+ */
+function TecnicosSgpManager({ provedorId }: { provedorId: string }) {
+  const { toast } = useToast();
+  const [itens, setItens] = useState<TecnicoSgpItem[]>([]);
+  const [tecnicos, setTecnicos] = useState<TecnicoIsphubResumo[]>([]);
+  const [carregando, setCarregando] = useState(true);
+  const [buscando, setBuscando] = useState(false);
+  const [salvando, setSalvando] = useState<string | null>(null);
+
+  const carregar = useCallback(async () => {
+    try {
+      const r = await tecnicosSgpApi.listar(provedorId);
+      setItens(r.itens);
+      setTecnicos(r.tecnicos);
+    } catch (err) {
+      toast({ titulo: "Erro ao carregar técnicos do SGP", descricao: mensagem(err), variante: "erro" });
+    } finally {
+      setCarregando(false);
+    }
+  }, [provedorId, toast]);
+
+  useEffect(() => {
+    void carregar();
+  }, [carregar]);
+
+  async function buscar() {
+    setBuscando(true);
+    try {
+      const r = await tecnicosSgpApi.sincronizar(provedorId);
+      toast({
+        titulo: `${r.total} técnico(s) no SGP`,
+        descricao: `${r.novos} novo(s) na lista, ${r.vinculadosAutomaticamente} vinculado(s) sozinho(s) pelo nome.`,
+        variante: "sucesso",
+      });
+      await carregar();
+    } catch (err) {
+      toast({ titulo: "Erro ao buscar no SGP", descricao: mensagem(err), variante: "erro" });
+    } finally {
+      setBuscando(false);
+    }
+  }
+
+  async function decidir(item: TecnicoSgpItem, d: Parameters<typeof tecnicosSgpApi.decidir>[2]) {
+    setSalvando(item.id);
+    try {
+      await tecnicosSgpApi.decidir(provedorId, item.id, d);
+      await carregar();
+    } catch (err) {
+      toast({ titulo: "Não foi possível salvar", descricao: mensagem(err), variante: "erro" });
+    } finally {
+      setSalvando(null);
+    }
+  }
+
+  function aoEscolherVinculo(item: TecnicoSgpItem, valor: string) {
+    if (valor === "__criar") void decidir(item, { criar: true, funcao: "tecnico" });
+    else if (valor === "__ignorar") void decidir(item, { ignorado: true });
+    else void decidir(item, { usuarioId: valor || null, ...(item.ignorado ? { ignorado: false } : {}) });
+  }
+
+  const aDecidir = itens.filter((i) => !i.usuario && !i.ignorado).length;
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center justify-between space-y-0">
+        <div>
+          <CardTitle>Técnicos do SGP</CardTitle>
+          <CardDescription>
+            Quem o SGP deste provedor conhece. Vincule cada um a um técnico do ISPhub (ou crie um novo, sem acesso ao app),
+            ignore quem não é técnico de campo e diga se é técnico ou auxiliar. Nome idêntico já vem vinculado; a lista se
+            atualiza sozinha todo dia.
+            {aDecidir ? ` ${aDecidir} aguardando decisão.` : ""}
+          </CardDescription>
+        </div>
+        <Button variant="outline" onClick={() => void buscar()} disabled={buscando} className="shrink-0">
+          <Download className={buscando ? "animate-pulse" : ""} />
+          {buscando ? "Buscando..." : "Buscar do SGP"}
+        </Button>
+      </CardHeader>
+      <CardContent>
+        {carregando ? (
+          <div className="flex flex-col gap-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-9 rounded-md" />
+            ))}
+          </div>
+        ) : itens.length === 0 ? (
+          <EmptyState title="Nenhum técnico trazido do SGP ainda" description='Clique em "Buscar do SGP".' />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>No SGP</TableHead>
+                <TableHead>Login</TableHead>
+                <TableHead>Técnico no ISPhub</TableHead>
+                <TableHead>Função</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {itens.map((item) => {
+                const valor = item.ignorado ? "__ignorar" : (item.usuario?.id ?? "");
+                return (
+                  <TableRow key={item.id} className={item.ignorado ? "opacity-60" : undefined}>
+                    <TableCell>{item.nome ?? <span className="text-muted-foreground">(sem nome)</span>}</TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">{item.username ?? "—"}</TableCell>
+                    <TableCell>
+                      <Select
+                        value={valor}
+                        disabled={salvando === item.id}
+                        onChange={(e) => aoEscolherVinculo(item, e.target.value)}
+                        aria-label={`Técnico do ISPhub para ${item.nome ?? item.username ?? item.sgpId}`}
+                        className={valor ? "bg-secondary/40 px-2" : "border-warning/40 bg-warning/10 px-2 text-warning"}
+                      >
+                        <option value="">— decidir —</option>
+                        <option value="__criar">+ Criar técnico novo</option>
+                        <option value="__ignorar">Não é técnico (ignorar)</option>
+                        {tecnicos.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.nome}
+                          </option>
+                        ))}
+                      </Select>
+                    </TableCell>
+                    <TableCell>
+                      <Select
+                        value={item.usuario?.funcaoCampo ?? ""}
+                        disabled={!item.usuario || salvando === item.id}
+                        onChange={(e) => void decidir(item, { funcao: (e.target.value || null) as FuncaoCampo | null })}
+                        aria-label={`Função de ${item.nome ?? item.username ?? item.sgpId}`}
+                        className="px-2"
+                      >
+                        <option value="">—</option>
+                        <option value="tecnico">Técnico</option>
+                        <option value="auxiliar">Auxiliar</option>
+                      </Select>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
       </CardContent>
     </Card>
   );

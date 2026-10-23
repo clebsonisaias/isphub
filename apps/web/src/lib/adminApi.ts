@@ -93,6 +93,36 @@ export const tiposOsApi = {
     api.post<{ analisados: number; classificados: number }>(`/provedores/${provedorId}/tipos-os/auto-classificar`),
 };
 
+export type FuncaoCampo = "tecnico" | "auxiliar";
+
+export interface TecnicoIsphubResumo {
+  id: string;
+  nome: string;
+  funcaoCampo: FuncaoCampo | null;
+  ativo: boolean;
+}
+
+export interface TecnicoSgpItem {
+  id: string;
+  sgpId: string;
+  nome: string | null;
+  username: string | null;
+  ignorado: boolean;
+  usuario: TecnicoIsphubResumo | null;
+}
+
+export const tecnicosSgpApi = {
+  listar: (provedorId: string) =>
+    api.get<{ itens: TecnicoSgpItem[]; tecnicos: TecnicoIsphubResumo[] }>(`/provedores/${provedorId}/tecnicos-sgp`),
+  sincronizar: (provedorId: string) =>
+    api.post<{ total: number; novos: number; vinculadosAutomaticamente: number }>(`/provedores/${provedorId}/tecnicos-sgp/sincronizar`),
+  decidir: (
+    provedorId: string,
+    id: string,
+    d: Partial<{ usuarioId: string | null; criar: boolean; ignorado: boolean; funcao: FuncaoCampo | null }>,
+  ) => api.patch<TecnicoSgpItem>(`/provedores/${provedorId}/tecnicos-sgp/${id}`, d),
+};
+
 export const syncApi = {
   disparar: (provedorId: string) => api.post<{ ok: boolean; message?: string }>(`/provedores/${provedorId}/sync`),
 };

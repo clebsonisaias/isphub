@@ -87,6 +87,23 @@ describe("createSgpConnector", () => {
     ]);
   });
 
+  it("listTecnicos le id/nome/username do /api/ura/tecnicos/ (form) e transforma vazio em nulo", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        { id: 73, nome: "alderi", username: "alderi" },
+        { id: 494, nome: null, username: "izarleson" },
+        { id: 497, nome: " Hotspot ", username: "" },
+      ]),
+    );
+    const tecnicos = await createSgpConnector(creds).listTecnicos!();
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/api/ura/tecnicos/");
+    expect(tecnicos).toEqual([
+      { sgpId: "73", nome: "alderi", username: "alderi" },
+      { sgpId: "494", nome: null, username: "izarleson" },
+      { sgpId: "497", nome: "Hotspot", username: null },
+    ]);
+  });
+
   it("listServiceOrders normaliza campos, endereco e lat/lng a partir de endereco_ll", async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({

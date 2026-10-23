@@ -8,6 +8,13 @@ export interface ErpCredentials {
 }
 
 /** Tipo de OS bruto vindo do ERP (ja normalizado pelo adapter). */
+/** Um tecnico cadastrado no ERP (SGP: so codigo, nome e login). */
+export interface RawTecnico {
+  sgpId: string;
+  nome: string | null;
+  username: string | null;
+}
+
 export interface RawOsType {
   sgpCodigo: string;
   descricao: string;
@@ -295,6 +302,9 @@ export interface ErpConnector {
 
   /** Catalogo de tipos de OS do provedor. */
   listOsTypes(): Promise<RawOsType[]>;
+
+  /** Tecnicos cadastrados no ERP. Opcional: nem todo conector expoe. */
+  listTecnicos?(): Promise<RawTecnico[]>;
 
   /** Lista OS para o espelho (polling). Ver `ListagemOs` sobre `completo`. */
   listServiceOrders(params?: ListOsParams): Promise<ListagemOs>;
