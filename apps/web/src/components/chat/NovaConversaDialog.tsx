@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/Avatar";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-import { chatApi } from "@/lib/chatApi";
+import { chatApi, type ContatoAtendai } from "@/lib/chatApi";
 import { filaApi } from "@/lib/filaApi";
 import { ApiError } from "@/lib/apiClient";
 import { Loader2 } from "lucide-react";
@@ -39,6 +39,8 @@ export function NovaConversaDialog({
     usuario?.role === UserRole.ADMIN || usuario?.role === UserRole.GESTOR;
 
   const [contatos, setContatos] = useState<ContatoChat[] | null>(null);
+  // Atendentes do AtendAI (provedores com o chat ligado). Vazio quando nenhum ligou.
+  const [atendentes, setAtendentes] = useState<ContatoAtendai[]>([]);
   const [buscaPessoa, setBuscaPessoa] = useState("");
   const [criandoId, setCriandoId] = useState<string | null>(null);
 
@@ -64,6 +66,10 @@ export function NovaConversaDialog({
       .contatos()
       .then(setContatos)
       .catch(() => setContatos([]));
+    chatApi
+      .contatosAtendai()
+      .then(setAtendentes)
+      .catch(() => setAtendentes([]));
   }, [open]);
 
   useEffect(() => {
@@ -89,6 +95,27 @@ export function NovaConversaDialog({
   const contatosFiltrados = (contatos ?? []).filter((c) =>
     c.nome.toLowerCase().includes(buscaPessoa.trim().toLowerCase()),
   );
+  const atendentesFiltrados = atendentes.filter((a) =>
+    a.nome.toLowerCase().includes(buscaPessoa.trim().toLowerCase()),
+  );
+  const variosProvedores = new Set(atendentes.map((a) => a.provedorId)).size > 1;
+
+  async function handleAbrirAtendente(a: ContatoAtendai) {
+    setCriandoId(`atendai:${a.provedorId}:${a.colaboradorId}`);
+    try {
+      const conversa = await chatApi.conversaComAtendente(a);
+      onConversaCriada(conversa);
+      onOpenChange(false);
+    } catch (err) {
+      toast({
+        titulo: "Não foi possível abrir a conversa",
+        descricao: mensagemErro(err),
+        variante: "erro",
+      });
+    } finally {
+      setCriandoId(null);
+    }
+  }
 
   async function handleAbrirDireta(c: ContatoChat) {
     setCriandoId(c.id);
@@ -208,6 +235,30 @@ export function NovaConversaDialog({
                   </button>
                 ))
               )}
+              {atendentesFiltrados.length > 0 ? (
+                <>
+                  <p className="mt-3 px-2 pb-1 text-xs font-medium text-muted-foreground">Atendimento (AtendAI)</p>
+                  {atendentesFiltrados.map((a) => {
+                    const chave = `atendai:${a.provedorId}:${a.colaboradorId}`;
+                    return (
+                      <button
+                        key={chave}
+                        type="button"
+                        disabled={criandoId === chave}
+                        onClick={() => handleAbrirAtendente(a)}
+                        className="flex items-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors hover:bg-secondary disabled:opacity-50"
+                      >
+                        <Avatar nome={a.nome} size="sm" />
+                        <span className="text-sm text-foreground">{a.nome}</span>
+                        {variosProvedores ? <span className="text-xs text-muted-foreground">{a.provedorNome}</span> : null}
+                        {criandoId === chave && (
+                          <Loader2 className="ml-auto size-3.5 animate-spin text-muted-foreground" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </>
+              ) : null}
             </div>
           </TabsContent>
 

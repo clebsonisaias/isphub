@@ -29,8 +29,19 @@ function query(params: Record<string, string | number | undefined>): string {
   return s ? `?${s}` : "";
 }
 
+/** Atendente do AtendAI de um provedor com o chat ligado. */
+export interface ContatoAtendai {
+  provedorId: string;
+  provedorNome: string;
+  colaboradorId: string;
+  nome: string;
+}
+
 export const chatApi = {
   contatos: () => api.get<ContatoChat[]>("/chat/contatos"),
+  contatosAtendai: () => api.get<ContatoAtendai[]>("/chat/atendai/contatos"),
+  conversaComAtendente: (c: ContatoAtendai) =>
+    api.post<ConversaResumo>("/chat/conversas/atendai", { provedorId: c.provedorId, colaboradorId: c.colaboradorId, nome: c.nome }),
   conversas: () => api.get<ConversaResumo[]>("/chat/conversas"),
   naoLidas: () => api.get<{ naoLidas: number }>("/chat/nao-lidas"),
 

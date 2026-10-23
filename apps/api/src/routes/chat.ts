@@ -5,6 +5,8 @@ import { EMOJIS_REACAO, MensagemTipo, UserRole } from "@isphub/shared";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import * as chatService from "../services/chatService.js";
+import { contatosAtendai, conversaComAtendente } from "../services/ponteChatAtendaiService.js";
+import { prisma } from "../lib/prisma.js";
 
 export const chatRouter = Router();
 
@@ -66,6 +68,26 @@ chatRouter.get(
   "/conversas",
   asyncHandler(async (req, res) => {
     res.json(await chatService.listarConversas(req.user!.sub));
+  }),
+);
+
+/** Atendentes do AtendAI (provedores com o chat ligado) — para abrir conversa com elas. */
+chatRouter.get(
+  "/atendai/contatos",
+  asyncHandler(async (_req, res) => {
+    res.json(await contatosAtendai());
+  }),
+);
+
+/** Conversa direta com uma atendente do AtendAI: nasce la e espelha aqui. */
+chatRouter.post(
+  "/conversas/atendai",
+  asyncHandler(async (req, res) => {
+    const b = z
+      .object({ provedorId: z.string().uuid(), colaboradorId: z.string().min(1).max(64), nome: z.string().trim().min(1).max(120) })
+      .parse(req.body);
+    const eu = await prisma.usuario.findUniqueOrThrow({ where: { id: req.user!.sub }, select: { id: true, nome: true, role: true } });
+    res.status(201).json(await conversaComAtendente(eu, b.provedorId, b.colaboradorId, b.nome));
   }),
 );
 

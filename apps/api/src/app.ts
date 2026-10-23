@@ -28,6 +28,7 @@ import { eventosRouter } from "./routes/eventos.js";
 import { agendaRouter, adminAgendaRouter } from "./routes/agenda.js";
 import { parceiroAgendaRouter } from "./routes/parceiroAgenda.js";
 import { planilhaReceberRouter } from "./routes/planilhaReceber.js";
+import { atendaiChatWebhookRouter } from "./routes/atendaiChatWebhook.js";
 import { syncMinhasRouter } from "./routes/syncMinhas.js";
 import { chatRouter } from "./routes/chat.js";
 import { canaisWhatsappRouter } from "./routes/canaisWhatsapp.js";
@@ -94,6 +95,8 @@ export function createApp() {
   // Rota publica com segredo proprio; montada antes do parser global pelo mesmo
   // motivo dos blocos acima.
   app.use("/api/planilha", planilhaReceberRouter);
+  // Chat interno do AtendAI: webhook assinado, le o corpo cru (mesmo motivo).
+  app.use("/api/atendai/chat", atendaiChatWebhookRouter);
 
   // Limite global apertado. O corpo grande so e legitimo em anexos (foto/audio
   // em base64), que tem rota propria — nao ha motivo pra /auth/login aceitar 5MB.

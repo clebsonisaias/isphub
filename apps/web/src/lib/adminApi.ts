@@ -46,6 +46,8 @@ export interface AtendaiConfigPublic {
   /** Identifica QUAL chave de entrada está ativa sem revelar nenhuma. */
   chaveEntradaPrefixo: string | null;
   chaveEntradaUsoEm: string | null;
+  /** Chat interno ligado ao do AtendAI (nulo = desligado). */
+  chatLigadoEm: string | null;
 }
 
 export const atendaiConfigApi = {
@@ -62,6 +64,9 @@ export const atendaiConfigApi = {
   /** Gera a chave e a entrega ao AtendAI numa tacada — sem copia-e-cola. */
   ligarAgendamento: (provedorId: string) =>
     api.post<{ ok: boolean; url: string }>(`/provedores/${provedorId}/atendai/ligar-agendamento`),
+  /** Liga o chat interno ao do AtendAI (webhook + equipe cadastrada lá). */
+  ligarChat: (provedorId: string) =>
+    api.post<{ ok: boolean; url: string; colaboradores: number }>(`/provedores/${provedorId}/atendai/ligar-chat`),
 };
 
 /** A chave da API de agendamento: só o que a tela pode ver. */

@@ -74,6 +74,7 @@ model Provedor {
   chaveParceiro ChaveParceiro?
   tiposOs       TipoOs[]
   ordensServico OrdemServico[]
+  conversasAtendai Conversa[]
   usuarios      Usuario[]
   tecnicosSgp   TecnicoSgp[]
   syncLogs      SyncLog[]
@@ -121,6 +122,11 @@ model AtendaiConfig {
   /// que se valida a assinatura do que chega — sem isso, qualquer um posta
   /// mensagem no chat da equipe.
   segredoCifrado String?
+
+  /// Chat interno com o AtendAI ("Ligar chat"): o webhook que o AtendAI chama
+  /// a cada mensagem nova (para trocar sem deixar o antigo ativo) e quando ligou.
+  chatWebhookId String?
+  chatLigadoEm  DateTime?
 
   ativo        Boolean  @default(true)
   criadoEm     DateTime @default(now())
@@ -847,6 +853,11 @@ model Conversa {
   ultimaMensagemEm DateTime?
   arquivada        Boolean       @default(false)
   criadoEm         DateTime      @default(now())
+  /// Conversa espelhada do chat interno do AtendAI (a atendente esta la, o
+  /// tecnico aqui). Nulo = conversa so do ISPhub.
+  atendaiConversaId String?   @unique
+  provedorId        String?
+  provedor          Provedor? @relation(fields: [provedorId], references: [id], onDelete: SetNull)
 
   participantes ConversaParticipante[]
   mensagens     Mensagem[]
@@ -909,6 +920,9 @@ model Mensagem {
   apagadoEm      DateTime?
   apagadoPorId   String?
   criadoEm       DateTime     @default(now())
+  /// Mensagem que veio do AtendAI: quem escreveu (la) e o id dela (nao duplica).
+  autorExternoNome  String?
+  atendaiMensagemId String? @unique
 
   reacoes MensagemReacao[]
 

@@ -16,6 +16,7 @@ import { emitParaUsuario } from "./realtimeHub.js";
 import { dispararPush } from "./pushService.js";
 import { podeAcessarOs } from "./escopoService.js";
 import * as writebackService from "./writebackService.js";
+import { enviarAoAtendai } from "./ponteChatAtendaiService.js";
 import type { JwtPayload } from "./authService.js";
 
 /**
@@ -146,7 +147,7 @@ export async function listarContatos(excetoUsuarioId: string): Promise<ContatoCh
 
 // ---- Conversas ----
 
-async function montarConversaResumo(conversaId: string, usuarioId: string): Promise<ConversaResumo> {
+export async function montarConversaResumo(conversaId: string, usuarioId: string): Promise<ConversaResumo> {
   const conversa = await prisma.conversa.findUniqueOrThrow({
     where: { id: conversaId },
     include: {
@@ -186,7 +187,7 @@ async function montarConversaResumo(conversaId: string, usuarioId: string): Prom
         id: ultima.id,
         tipo: ultima.tipo as MensagemTipo,
         corpo: ultima.apagadoEm ? null : ultima.corpo,
-        autorNome: ultima.autor?.nome ?? null,
+        autorNome: ultima.autor?.nome ?? ultima.autorExternoNome ?? null,
         apagadoEm: ultima.apagadoEm?.toISOString() ?? null,
         criadoEm: ultima.criadoEm.toISOString(),
       }
@@ -492,23 +493,20 @@ export async function enviarMensagem(conversaId: string, autorId: string, input:
     }),
   ]);
 
-  // Fan-out SSE — best-effort, DEPOIS da transacao (se cair, o polling do
-  // cliente cobre; nunca faz a escrita depender do SSE).
   const em = new Date().toISOString();
-  const destinatarios: string[] = [];
-  for (const p of conversa.participantes) {
-    if (p.usuarioId === autorId) continue;
-    emitParaUsuario(p.usuarioId, { tipo: "chat-mensagem", conversaId, mensagemId: mensagemCriada.id, autorId, em });
-    // Mesmo publico da Notificacao acima: fora o autor, fora quem silenciou.
-    // Silenciar tem que valer pro push tambem — senao o "silenciar" nao
-    // silencia nada, que e justamente o que incomoda.
-    if (!p.silenciado) destinatarios.push(p.usuarioId);
-  }
-  dispararPush(destinatarios, {
+  avisarParticipantes(conversa.participantes, {
+    conversaId,
+    mensagemId: mensagemCriada.id,
+    autorId,
     titulo: mensagemCriada.autor?.nome ?? "ISPhub",
     corpo: resumoConteudo(mensagemCriada) || "Nova mensagem",
-    dados: { tela: "chat", conversaId },
   });
+
+  // Conversa espelhada do AtendAI: a resposta vai para la tambem (best-effort,
+  // depois da resposta; a mensagem ja vale aqui).
+  if (conversa.atendaiConversaId && conversa.provedorId && mensagemCriada.autor) {
+    void enviarAoAtendai(conversa.provedorId, conversa.atendaiConversaId, mensagemCriada.autor, input);
+  }
 
   // Mencoes reusam o sistema de Notificacao existente (tipo "mencao") em vez
   // de um segundo canal de alerta — so quando ha corpo de texto pra escanear.
@@ -532,6 +530,42 @@ export async function enviarMensagem(conversaId: string, autorId: string, input:
   }
 
   return paraMensagemDTO(mensagemCriada);
+}
+
+/**
+ * SSE + push para os participantes, fora o autor. Best-effort, DEPOIS da
+ * gravacao (se cair, o polling do cliente cobre; nunca faz a escrita depender
+ * do SSE). Mesmo publico da Notificacao: fora quem silenciou — silenciar tem que
+ * valer pro push tambem. Usado aqui e pela ponte do AtendAI (autor nulo).
+ */
+export function avisarParticipantes(
+  participantes: { usuarioId: string; silenciado: boolean }[],
+  m: { conversaId: string; mensagemId: string; autorId: string | null; titulo: string; corpo: string },
+): void {
+  const em = new Date().toISOString();
+  const destinatarios: string[] = [];
+  for (const p of participantes) {
+    if (p.usuarioId === m.autorId) continue;
+    emitParaUsuario(p.usuarioId, { tipo: "chat-mensagem", conversaId: m.conversaId, mensagemId: m.mensagemId, autorId: m.autorId ?? "", em });
+    if (!p.silenciado) destinatarios.push(p.usuarioId);
+  }
+  dispararPush(destinatarios, { titulo: m.titulo, corpo: m.corpo, dados: { tela: "chat", conversaId: m.conversaId } });
+}
+
+/** Quem escreveu do lado do AtendAI aparece como um participante "de fora" (sem conta aqui). */
+export function autorExterno(nome: string): ParticipanteResumo {
+  return {
+    usuarioId: "atendai",
+    nome: `${nome} (AtendAI)`,
+    role: UserRole.ATENDENTE,
+    online: false,
+    ultimaAtividadeEm: null,
+    temFoto: false,
+    fotoVersao: 0,
+    status: null,
+    statusTexto: null,
+    assinaturaChat: null,
+  };
 }
 
 interface MensagemComAutor {
@@ -561,6 +595,7 @@ interface MensagemComAutor {
   editadoEm: Date | null;
   apagadoEm: Date | null;
   criadoEm: Date;
+  autorExternoNome?: string | null;
 }
 
 function paraMensagemDTO(m: MensagemComAutor, respondendoA?: { id: string; autorNome: string | null; resumo: string } | null): MensagemDTO {
@@ -568,7 +603,7 @@ function paraMensagemDTO(m: MensagemComAutor, respondendoA?: { id: string; autor
   return {
     id: m.id,
     conversaId: m.conversaId,
-    autor: m.autor ? participanteResumo(m.autor) : null,
+    autor: m.autor ? participanteResumo(m.autor) : m.autorExternoNome ? autorExterno(m.autorExternoNome) : null,
     tipo: m.tipo as MensagemTipo,
     corpo: apagada ? null : m.corpo,
     anexoMime: apagada ? null : m.anexoMime,
@@ -628,7 +663,11 @@ export async function listarMensagens(conversaId: string, antesDe?: string, limi
     const dto = paraMensagemDTO(
       m,
       m.respondendoA
-        ? { id: m.respondendoA.id, autorNome: m.respondendoA.autor?.nome ?? null, resumo: resumoConteudo(m.respondendoA) }
+        ? {
+            id: m.respondendoA.id,
+            autorNome: m.respondendoA.autor?.nome ?? m.respondendoA.autorExternoNome ?? null,
+            resumo: resumoConteudo(m.respondendoA),
+          }
         : null,
     );
     const porEmoji = new Map<string, string[]>();

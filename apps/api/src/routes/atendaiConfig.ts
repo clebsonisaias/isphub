@@ -8,6 +8,7 @@ import { decrypt, encrypt, maskToken } from "../lib/crypto.js";
 import { validarUrlExterna } from "../lib/urlValidation.js";
 import { chamar, credencialDoProvedor } from "../services/atendaiService.js";
 import { chaveDoProvedor, gerarChaveEntrada, revogarChaveEntrada } from "../services/chaveParceiroService.js";
+import { ligarChat } from "../services/ponteChatAtendaiService.js";
 
 /**
  * Cadastro da ligacao de um provedor com o AtendAI.
@@ -55,6 +56,7 @@ atendaiConfigRouter.get(
       // prefixo, que identifica QUAL chave esta ativa sem revelar nenhuma.
       chaveEntradaPrefixo: chave?.prefixo ?? null,
       chaveEntradaUsoEm: chave?.usoEm ?? null,
+      chatLigadoEm: row.chatLigadoEm,
     });
   }),
 );
@@ -179,3 +181,23 @@ atendaiConfigRouter.post(
     res.json({ ok: true, url });
   }),
 );
+
+/**
+ * "Ligar chat" — o chat interno daqui passa a falar com o do AtendAI: registra
+ * la o webhook de mensagem nova (com a URL publica desta API, como no "Ligar
+ * agendamento") e cadastra tecnicos e supervisores como colaboradores de la.
+ */
+atendaiConfigRouter.post(
+  "/ligar-chat",
+  asyncHandler(async (req, res) => {
+    const doCorpo = z.object({ url: z.string().url().optional() }).parse(req.body ?? {});
+    const url = (doCorpo.url ?? `${req.protocol}://${req.get("host")}`).replace(/\/+$/, "");
+    try {
+      res.json(await ligarChat(req.params.provedorId!, url));
+    } catch (e) {
+      if (e instanceof HttpError) throw e;
+      throw new HttpError(502, `O AtendAI nao aceitou ligar o chat: ${e instanceof Error ? e.message : "falha desconhecida"}`);
+    }
+  }),
+);
+

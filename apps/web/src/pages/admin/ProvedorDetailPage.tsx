@@ -679,6 +679,24 @@ function AtendaiConfigForm({ provedorId }: { provedorId: string }) {
     }
   }
 
+  const [ligandoChat, setLigandoChat] = useState(false);
+  async function ligarChat() {
+    setLigandoChat(true);
+    try {
+      const r = await atendaiConfigApi.ligarChat(provedorId);
+      carregar();
+      toast({
+        titulo: "Chat ligado ao AtendAI",
+        descricao: `${r.colaboradores} pessoa(s) da equipe já aparecem para as atendentes.`,
+        variante: "sucesso",
+      });
+    } catch (err) {
+      toast({ titulo: "Não foi possível ligar o chat", descricao: mensagem(err), variante: "erro" });
+    } finally {
+      setLigandoChat(false);
+    }
+  }
+
   async function ligar() {
     setLigando(true);
     try {
@@ -766,6 +784,34 @@ function AtendaiConfigForm({ provedorId }: { provedorId: string }) {
                 <Button variant="brand" onClick={() => void ligar()} disabled={ligando}>
                   <Link2 className="size-4" />
                   {ligando ? "Ligando..." : config.chaveEntradaPrefixo ? "Religar (troca a chave)" : "Ligar agendamento"}
+                </Button>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Chat interno com o AtendAI</CardTitle>
+          <CardDescription>
+            Técnicos e supervisores do ISPhub passam a aparecer no chat interno do AtendAI. O que a atendente escreve chega
+            no chat daqui (web e app do técnico), e a resposta volta para lá. Por enquanto, só texto: foto, áudio e
+            localização chegam lá como um aviso do que foi enviado.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {!config ? (
+            <p className="text-sm text-muted-foreground">Salve as credenciais acima antes de ligar o chat.</p>
+          ) : (
+            <>
+              <p className="text-sm text-muted-foreground">
+                {config.chatLigadoEm ? `Ligado em ${rotuloDataHora(config.chatLigadoEm)}.` : "Desligado: as conversas ficam só no ISPhub."}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button variant={config.chatLigadoEm ? "outline" : "brand"} onClick={() => void ligarChat()} disabled={ligandoChat}>
+                  <Link2 className="size-4" />
+                  {ligandoChat ? "Ligando..." : config.chatLigadoEm ? "Religar chat" : "Ligar chat"}
                 </Button>
               </div>
             </>
