@@ -9,6 +9,7 @@ import { validarUrlExterna } from "../lib/urlValidation.js";
 import { chamar, credencialDoProvedor } from "../services/atendaiService.js";
 import { chaveDoProvedor, gerarChaveEntrada, revogarChaveEntrada } from "../services/chaveParceiroService.js";
 import { ligarChat } from "../services/ponteChatAtendaiService.js";
+import { canaisDoProvedor, definirCanalClientes } from "../services/clienteAtendaiService.js";
 
 /**
  * Cadastro da ligacao de um provedor com o AtendAI.
@@ -57,6 +58,7 @@ atendaiConfigRouter.get(
       chaveEntradaPrefixo: chave?.prefixo ?? null,
       chaveEntradaUsoEm: chave?.usoEm ?? null,
       chatLigadoEm: row.chatLigadoEm,
+      canalClientes: row.canalClientesId ? { id: row.canalClientesId, nome: row.canalClientesNome ?? row.canalClientesId } : null,
     });
   }),
 );
@@ -201,3 +203,20 @@ atendaiConfigRouter.post(
   }),
 );
 
+
+/** Canais de WhatsApp do AtendAI do provedor — para escolher por onde a equipe fala com os clientes. */
+atendaiConfigRouter.get(
+  "/canais",
+  asyncHandler(async (req, res) => {
+    res.json(await canaisDoProvedor(req.params.provedorId!));
+  }),
+);
+
+/** "As conversas com os clientes deste provedor saem pelo canal X" (`null` tira). */
+atendaiConfigRouter.put(
+  "/canal-clientes",
+  asyncHandler(async (req, res) => {
+    const { canalId } = z.object({ canalId: z.string().min(1).nullable() }).parse(req.body ?? {});
+    res.json({ canalClientes: await definirCanalClientes(req.params.provedorId!, canalId) });
+  }),
+);

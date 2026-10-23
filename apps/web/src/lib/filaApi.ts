@@ -56,6 +56,8 @@ export const ordensServicoApi = {
   anotar: (id: string, texto: string) => api.post<OrdemServico>(`/ordens-servico/${id}/anotacoes`, { texto }),
   atribuir: (id: string, tecnicoId: string) => api.post<OrdemServico>(`/ordens-servico/${id}/atribuir`, { tecnicoId }),
   eventos: (id: string) => api.get<OsEvento[]>(`/ordens-servico/${id}/eventos`),
+  /** Abre (ou retoma) a conversa com o cliente pelo WhatsApp do AtendAI do provedor. */
+  conversaCliente: (id: string) => api.post<{ conversaId: string }>(`/ordens-servico/${id}/conversa-cliente`, {}),
   /** A viatura esteve no endereco? `null` = OS nao concluida. */
   auditoria: (id: string) =>
     api.get<{ veredito: "presente" | "ausente" | "sem_dados"; distanciaMinMetros: number | null; posicoes: number } | null>(

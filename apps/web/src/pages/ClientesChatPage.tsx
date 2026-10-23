@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   CANAL_WHATSAPP_LABEL,
   CanalWhatsapp,
@@ -79,7 +80,13 @@ export function ClientesChatPage() {
   // ADMIN/GESTOR enxergam tudo e intervêm; TECNICO só recebe do servidor as
   // conversas que ele mesmo iniciou — pra ele fila/minhas seriam a mesma lista.
   const podeVerTudo = usuario?.role === UserRole.ADMIN || usuario?.role === UserRole.GESTOR;
-  const [filtro, setFiltro] = useState<FiltroConversaCliente>("fila");
+  // Atendente so conversa pelo AtendAI, aberta pela OS — nao inicia por modelo nem assume da fila.
+  const ehAtendente = usuario?.role === UserRole.ATENDENTE;
+  // `?conversa=` vem do botao "Conversar com o cliente" da OS (abre em "todas":
+  // a conversa nasce com dono, entao nao esta na fila).
+  const [params, setParams] = useSearchParams();
+  const conversaDaUrl = params.get("conversa");
+  const [filtro, setFiltro] = useState<FiltroConversaCliente>(conversaDaUrl ? "todas" : "fila");
   const filtroEfetivo: FiltroConversaCliente = podeVerTudo ? filtro : "todas";
   const [conversas, setConversas] = useState<ConversaClienteResumo[] | null>(null);
   const [selecionada, setSelecionada] = useState<ConversaClienteResumo | null>(null);
@@ -110,6 +117,14 @@ export function ClientesChatPage() {
     void carregarConversas();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtroEfetivo]);
+
+  useEffect(() => {
+    if (!conversaDaUrl || !conversas) return;
+    const alvo = conversas.find((c) => c.id === conversaDaUrl);
+    if (alvo) setSelecionada(alvo);
+    setParams({}, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversaDaUrl, conversas]);
 
   useEffect(() => {
     if (selecionada) void carregarMensagens(selecionada.id);
@@ -152,6 +167,9 @@ export function ClientesChatPage() {
     if (!selecionada) return;
     try {
       await clientesChatApi.encerrar(selecionada.id);
+      if (selecionada.canal === CanalWhatsapp.ATENDAI) {
+        toast({ titulo: "Conversa encerrada", descricao: "A CláudIA volta a atender este cliente.", variante: "sucesso" });
+      }
       setSelecionada(null);
       await carregarConversas();
     } catch (err) {
@@ -193,9 +211,11 @@ export function ClientesChatPage() {
             ) : (
               <span className="flex-1 px-2 text-sm font-medium text-foreground">Minhas conversas</span>
             )}
-            <Button variant="ghost" size="icon" title="Nova conversa" aria-label="Nova conversa" onClick={() => setNovaAberta(true)}>
-              <SquarePen />
-            </Button>
+            {!ehAtendente && (
+              <Button variant="ghost" size="icon" title="Nova conversa" aria-label="Nova conversa" onClick={() => setNovaAberta(true)}>
+                <SquarePen />
+              </Button>
+            )}
           </div>
           <div className="flex-1 overflow-y-auto">
             {conversas === null ? (
@@ -239,7 +259,7 @@ export function ClientesChatPage() {
                     <Button variant="outline" size="sm" onClick={handleEncerrar}>
                       Encerrar
                     </Button>
-                  ) : (
+                  ) : ehAtendente ? null : (
                     <Button variant="brand" size="sm" onClick={handleAssumir}>
                       Assumir
                     </Button>

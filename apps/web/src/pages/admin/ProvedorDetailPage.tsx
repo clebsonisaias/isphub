@@ -818,7 +818,93 @@ function AtendaiConfigForm({ provedorId }: { provedorId: string }) {
           )}
         </CardContent>
       </Card>
+
+      <CanalClientesCard provedorId={provedorId} config={config} />
     </div>
+  );
+}
+
+/**
+ * Por qual WhatsApp do AtendAI a equipe fala com os clientes deste provedor
+ * (botão "Conversar com o cliente" da OS). Um canal por provedor.
+ */
+function CanalClientesCard({ provedorId, config }: { provedorId: string; config: AtendaiConfigPublic | null }) {
+  const { toast } = useToast();
+  const [canais, setCanais] = useState<{ id: string; tipo: string; nome: string }[] | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [atual, setAtual] = useState<string>("");
+  const [salvando, setSalvando] = useState(false);
+
+  useEffect(() => {
+    if (!config) return;
+    setAtual(config.canalClientes?.id ?? "");
+    atendaiConfigApi
+      .canais(provedorId)
+      .then((r) => {
+        setCanais(r.itens);
+        setErro(null);
+      })
+      .catch((err) => setErro(mensagem(err)));
+  }, [provedorId, config]);
+
+  async function salvar(canalId: string) {
+    setSalvando(true);
+    try {
+      const r = await atendaiConfigApi.definirCanalClientes(provedorId, canalId || null);
+      setAtual(r.canalClientes?.id ?? "");
+      toast({
+        titulo: r.canalClientes ? `As conversas com o cliente saem por ${r.canalClientes.nome}` : "Canal removido",
+        descricao: r.canalClientes ? undefined : "O botão Conversar com o cliente avisa que falta escolher o canal.",
+        variante: "sucesso",
+      });
+    } catch (err) {
+      toast({ titulo: "Não foi possível salvar o canal", descricao: mensagem(err), variante: "erro" });
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Conversas com o cliente</CardTitle>
+        <CardDescription>
+          O técnico (ou a atendente) fala com o cliente da OS pelo WhatsApp da empresa, no mesmo número da CláudIA.
+          Enquanto ele conversa, a CláudIA fica quieta; ao encerrar, ela volta a atender esse cliente.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        {!config ? (
+          <p className="text-sm text-muted-foreground">Salve as credenciais acima antes de escolher o canal.</p>
+        ) : erro ? (
+          <p className="text-sm text-destructive">Não foi possível ler os canais do AtendAI: {erro}</p>
+        ) : canais === null ? (
+          <p className="text-sm text-muted-foreground">Carregando canais do AtendAI...</p>
+        ) : canais.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Este AtendAI ainda não tem WhatsApp conectado. Conecte um em Canais, no AtendAI, e volte aqui.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="canal-clientes">As conversas do técnico com os clientes deste provedor saem pelo canal</Label>
+            <Select
+              id="canal-clientes"
+              value={atual}
+              disabled={salvando}
+              onChange={(e) => void salvar(e.target.value)}
+              className="max-w-sm"
+            >
+              <option value="">Nenhum (não sai conversa)</option>
+              {canais.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nome} ({c.tipo === "META" ? "WhatsApp oficial" : "WhatsApp por QR code"})
+                </option>
+              ))}
+            </Select>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

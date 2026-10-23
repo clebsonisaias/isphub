@@ -35,6 +35,18 @@ describe("atendente: o que alcanca (negacao por padrao)", () => {
     expect(atendentePode("GET", "/dashboard")).toBe(false);
     expect(atendentePode("DELETE", "/agenda/123/extra")).toBe(false);
   });
+
+  it("conversa com o cliente da OS: abrir, ler, responder e encerrar — nao iniciar por modelo, assumir nem transferir", () => {
+    expect(atendentePode("POST", "/ordens-servico/abc/conversa-cliente")).toBe(true);
+    expect(atendentePode("GET", "/chat-clientes/conversas?filtro=todas")).toBe(true);
+    expect(atendentePode("GET", "/chat-clientes/conversas/c1/mensagens")).toBe(true);
+    expect(atendentePode("POST", "/chat-clientes/conversas/c1/mensagens")).toBe(true);
+    expect(atendentePode("POST", "/chat-clientes/conversas/c1/encerrar")).toBe(true);
+    expect(atendentePode("POST", "/chat-clientes/conversas")).toBe(false);
+    expect(atendentePode("GET", "/chat-clientes/templates")).toBe(false);
+    expect(atendentePode("POST", "/chat-clientes/conversas/c1/assumir")).toBe(false);
+    expect(atendentePode("POST", "/chat-clientes/conversas/c1/transferir")).toBe(false);
+  });
 });
 
 describe("atendente: escopo pelo provedor", () => {

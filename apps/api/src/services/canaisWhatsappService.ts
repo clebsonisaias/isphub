@@ -9,6 +9,8 @@ import * as whatsappEvolution from "../connectors/whatsappEvolution.js";
 const CAMPOS_SECRETOS: Record<CanalWhatsapp, string[]> = {
   [CanalWhatsapp.META]: ["accessToken", "appSecret", "verifyToken"],
   [CanalWhatsapp.EVOLUTION]: ["apiKey"],
+  // Nao e canal proprio: a credencial mora no AtendAI do provedor.
+  [CanalWhatsapp.ATENDAI]: [],
 };
 
 export interface MetaWhatsappConfig {
@@ -55,7 +57,8 @@ export async function upsertConfig(tipo: CanalWhatsapp, data: CanalWhatsappConfi
 }
 
 export async function listarConfigs(): Promise<CanalWhatsappConfigPublic[]> {
-  const tipos = Object.values(CanalWhatsapp);
+  // So os canais proprios do ISPhub; o `atendai` se configura no cadastro do provedor.
+  const tipos = [CanalWhatsapp.META, CanalWhatsapp.EVOLUTION];
   const rows = await prisma.canalWhatsappConfig.findMany({ where: { tipo: { in: tipos } } });
   const porTipo = new Map(rows.map((r) => [r.tipo, r]));
   return tipos.map((tipo) => {

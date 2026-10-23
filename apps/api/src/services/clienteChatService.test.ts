@@ -28,9 +28,14 @@ describe("escopoConversaClienteWhere", () => {
     expect(escopoConversaClienteWhere(usuario(UserRole.GESTOR))).toEqual({});
   });
 
-  it("tecnico: so o que ele mesmo iniciou — a chave e iniciadaPorId, nao agenteId", () => {
+  it("tecnico: o que ele iniciou OU o que esta com ele (transferir nao tira a dele)", () => {
     const u = usuario(UserRole.TECNICO, { sub: "tec-1" });
-    expect(escopoConversaClienteWhere(u)).toEqual({ iniciadaPorId: "tec-1" });
+    expect(escopoConversaClienteWhere(u)).toEqual({ OR: [{ iniciadaPorId: "tec-1" }, { agenteId: "tec-1" }] });
+  });
+
+  it("atendente: so as conversas pelo AtendAI do provedor dela", () => {
+    expect(escopoConversaClienteWhere(usuario(UserRole.ATENDENTE, { provedorId: "prov-1" }))).toEqual({ canal: "atendai", provedorId: "prov-1" });
+    expect(escopoConversaClienteWhere(usuario(UserRole.ATENDENTE))).toEqual({ canal: "atendai", provedorId: "__nenhum__" });
   });
 
   it("provedor: cai no sentinela, nunca no where vazio", () => {
@@ -54,6 +59,17 @@ describe("podeAcessarConversaCliente", () => {
     expect(podeAcessarConversaCliente(usuario(UserRole.TECNICO, { sub: "tec-2" }), doTecnico1)).toBe(false);
   });
 
+  it("tecnico: acessa a que esta com ele (abriu pela OS ou recebeu)", () => {
+    expect(podeAcessarConversaCliente(usuario(UserRole.TECNICO, { sub: "tec-2" }), { iniciadaPorId: "tec-1", agenteId: "tec-2" })).toBe(true);
+  });
+
+  it("atendente: so conversa AtendAI do proprio provedor", () => {
+    const u = usuario(UserRole.ATENDENTE, { sub: "at-1", provedorId: "prov-1" });
+    expect(podeAcessarConversaCliente(u, { iniciadaPorId: "tec-1", canal: "atendai", provedorId: "prov-1" })).toBe(true);
+    expect(podeAcessarConversaCliente(u, { iniciadaPorId: "tec-1", canal: "atendai", provedorId: "prov-2" })).toBe(false);
+    expect(podeAcessarConversaCliente(u, { iniciadaPorId: "at-1", canal: "meta", provedorId: null })).toBe(false);
+  });
+
   it("tecnico: nao acessa conversa entrante (a fila nao e dele)", () => {
     expect(podeAcessarConversaCliente(usuario(UserRole.TECNICO, { sub: "tec-1" }), entrante)).toBe(false);
   });
@@ -70,19 +86,19 @@ describe("whereConversasCliente (o filtro da tela so estreita)", () => {
 
   it("tecnico com `todas`: NAO alarga — o escopo continua colado", () => {
     const u = usuario(UserRole.TECNICO, { sub: "tec-1" });
-    expect(whereConversasCliente(u, "todas")).toEqual({ arquivada: false, iniciadaPorId: "tec-1" });
+    expect(whereConversasCliente(u, "todas")).toEqual({ arquivada: false, OR: [{ iniciadaPorId: "tec-1" }, { agenteId: "tec-1" }] });
   });
 
   it("tecnico com `fila`: escopo + sem agente — nunca a fila geral", () => {
     const u = usuario(UserRole.TECNICO, { sub: "tec-1" });
-    expect(whereConversasCliente(u, "fila")).toEqual({ arquivada: false, iniciadaPorId: "tec-1", agenteId: null });
+    expect(whereConversasCliente(u, "fila")).toEqual({ arquivada: false, OR: [{ iniciadaPorId: "tec-1" }, { agenteId: "tec-1" }], agenteId: null });
   });
 
   it("`minhas` estreita por agenteId para qualquer papel", () => {
     expect(whereConversasCliente(usuario(UserRole.GESTOR, { sub: "ges-1" }), "minhas")).toEqual({ arquivada: false, agenteId: "ges-1" });
     expect(whereConversasCliente(usuario(UserRole.TECNICO, { sub: "tec-1" }), "minhas")).toEqual({
       arquivada: false,
-      iniciadaPorId: "tec-1",
+      OR: [{ iniciadaPorId: "tec-1" }, { agenteId: "tec-1" }],
       agenteId: "tec-1",
     });
   });

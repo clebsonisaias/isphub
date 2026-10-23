@@ -97,7 +97,11 @@ export default function ClienteChatThread() {
   }
 
   function handleEncerrar() {
-    Alert.alert("Encerrar conversa", "Arquivar esta conversa com o cliente?", [
+    const aviso =
+      conversa?.canal === CanalWhatsapp.ATENDAI
+        ? "A CláudIA volta a atender este cliente no WhatsApp da empresa."
+        : "Arquivar esta conversa com o cliente?";
+    Alert.alert("Encerrar conversa", aviso, [
       { text: "Cancelar", style: "cancel" },
       { text: "Encerrar", style: "destructive", onPress: () => encerrar.mutate(id) },
     ]);

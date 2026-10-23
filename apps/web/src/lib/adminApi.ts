@@ -48,6 +48,8 @@ export interface AtendaiConfigPublic {
   chaveEntradaUsoEm: string | null;
   /** Chat interno ligado ao do AtendAI (nulo = desligado). */
   chatLigadoEm: string | null;
+  /** Por onde saem as conversas da equipe com os clientes deste provedor. */
+  canalClientes: { id: string; nome: string } | null;
 }
 
 export const atendaiConfigApi = {
@@ -67,6 +69,13 @@ export const atendaiConfigApi = {
   /** Liga o chat interno ao do AtendAI (webhook + equipe cadastrada lá). */
   ligarChat: (provedorId: string) =>
     api.post<{ ok: boolean; url: string; colaboradores: number }>(`/provedores/${provedorId}/atendai/ligar-chat`),
+  /** Canais de WhatsApp do AtendAI do provedor. */
+  canais: (provedorId: string) =>
+    api.get<{ itens: { id: string; tipo: string; nome: string }[]; atual: { id: string; nome: string } | null }>(
+      `/provedores/${provedorId}/atendai/canais`,
+    ),
+  definirCanalClientes: (provedorId: string, canalId: string | null) =>
+    api.put<{ canalClientes: { id: string; nome: string } | null }>(`/provedores/${provedorId}/atendai/canal-clientes`, { canalId }),
 };
 
 /** A chave da API de agendamento: só o que a tela pode ver. */

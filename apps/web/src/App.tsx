@@ -305,6 +305,7 @@ function App() {
                           UserRole.ADMIN,
                           UserRole.GESTOR,
                           UserRole.TECNICO,
+                          UserRole.ATENDENTE,
                         ]}
                       >
                         <ClientesChatPage />

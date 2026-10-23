@@ -1,5 +1,5 @@
 import { useEffect, useState, type ElementType } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   rotuloDataHora,
   OS_STATUS_LABEL,
@@ -28,7 +28,7 @@ import { ordensServicoApi, tecnicosApi, type TecnicoResumo } from "@/lib/filaApi
 import { ApiError } from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-import { CalendarDays, CalendarX2, CheckCircle2, ExternalLink, MapPinCheck, MapPinOff, Navigation, Play, Route } from "lucide-react";
+import { CalendarDays, CalendarX2, CheckCircle2, ExternalLink, MapPinCheck, MapPinOff, MessageCircle, Navigation, Play, Route } from "lucide-react";
 import { formatarKm } from "@isphub/shared";
 import { MarcarVisitaDialog } from "@/components/MarcarVisitaDialog";
 import { agendaApi, rotuloVisita } from "@/lib/agendaApi";
@@ -60,6 +60,7 @@ export function OrdemServicoDetalhe({
   // Atendente so marca/remarca/desmarca visita: sem status, tecnico nem anotacao.
   const ehAtendente = usuario?.role === UserRole.ATENDENTE;
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [os, setOs] = useState(item);
   const [tecnicos, setTecnicos] = useState<TecnicoResumo[]>([]);
   const [tecnicoSelecionado, setTecnicoSelecionado] = useState("");
@@ -97,6 +98,19 @@ export function OrdemServicoDetalhe({
       vivo = false;
     };
   }, [podeDespachar, os.id, os.status]);
+
+  // Fala com o cliente pelo WhatsApp da empresa (canal do AtendAI do provedor).
+  async function handleConversarComCliente() {
+    setAcaoEmCurso("conversa-cliente");
+    try {
+      const { conversaId } = await ordensServicoApi.conversaCliente(os.id);
+      navigate(`/chat-clientes?conversa=${conversaId}`);
+    } catch (err) {
+      toast({ titulo: "Não foi possível abrir a conversa", descricao: mensagem(err), variante: "erro" });
+    } finally {
+      setAcaoEmCurso(null);
+    }
+  }
 
   async function handleDesmarcar() {
     if (!os.agendamentoId) return;
@@ -251,6 +265,15 @@ export function OrdemServicoDetalhe({
           {os.protocolo ? ` · Protocolo ${os.protocolo}` : ""}
         </Descricao>
       </Cabecalho>
+
+      {os.telefone && usuario?.role !== UserRole.PROVEDOR ? (
+        <div>
+          <Button variant="outline" size="sm" onClick={() => void handleConversarComCliente()} disabled={acaoEmCurso !== null}>
+            <MessageCircle className="size-4" aria-hidden />
+            {acaoEmCurso === "conversa-cliente" ? "Abrindo conversa..." : "Conversar com o cliente"}
+          </Button>
+        </div>
+      ) : null}
 
       {/*
         A acao fica no DETALHE, nao no badge: o badge tambem aparece no card

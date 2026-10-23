@@ -21,6 +21,7 @@ import { dispararPush } from "./pushService.js";
 import * as canaisWhatsappService from "./canaisWhatsappService.js";
 import * as whatsappMeta from "../connectors/whatsappMeta.js";
 import * as whatsappEvolution from "../connectors/whatsappEvolution.js";
+import * as clienteAtendai from "./clienteAtendaiService.js";
 
 /**
  * Chat com clientes via WhatsApp — caixa compartilhada entre todo staff
@@ -37,8 +38,9 @@ import * as whatsappEvolution from "../connectors/whatsappEvolution.js";
  * tiraria do tecnico justamente a conversa que ele abriu.
  *
  * - ADMIN/GESTOR: veem todas e podem intervir (ver enviarMensagem).
- * - TECNICO: so o que ele mesmo iniciou por template — nao ve fila, nao ve
- *   conversa entrante, nao ve conversa de outro tecnico.
+ * - TECNICO: o que ele mesmo iniciou OU o que esta com ele agora (abriu pela
+ *   OS ou recebeu por transferencia) — nao ve fila nem conversa entrante.
+ * - ATENDENTE: as conversas pelo AtendAI do provedor dela.
  * - PROVEDOR: fora do modulo.
  */
 export function escopoConversaClienteWhere(user: JwtPayload): Record<string, unknown> {
@@ -47,15 +49,22 @@ export function escopoConversaClienteWhere(user: JwtPayload): Record<string, unk
   // papel, mas um papel sem lugar no modulo nunca pode cair no `{}` e enxergar
   // a caixa inteira se um caminho novo esquecer aquele guard.
   if (user.role === UserRole.PROVEDOR) return { iniciadaPorId: "__nenhum__" };
-  return { iniciadaPorId: user.sub };
+  if (user.role === UserRole.ATENDENTE) return { canal: CanalWhatsapp.ATENDAI, provedorId: user.provedorId ?? "__nenhum__" };
+  return { OR: [{ iniciadaPorId: user.sub }, { agenteId: user.sub }] };
 }
 
 /** Confere se o usuario pode ler/agir numa conversa especifica (fora de listagem). */
-export function podeAcessarConversaCliente(user: JwtPayload, conversa: { iniciadaPorId: string | null }): boolean {
+export function podeAcessarConversaCliente(
+  user: JwtPayload,
+  conversa: { iniciadaPorId: string | null; agenteId?: string | null; canal?: string; provedorId?: string | null },
+): boolean {
   if (user.role === UserRole.ADMIN || user.role === UserRole.GESTOR) return true;
   if (user.role === UserRole.PROVEDOR) return false;
-  // Entrante tem iniciadaPorId null: e da fila, e a fila nao e do tecnico.
-  return conversa.iniciadaPorId !== null && conversa.iniciadaPorId === user.sub;
+  if (user.role === UserRole.ATENDENTE) {
+    return conversa.canal === CanalWhatsapp.ATENDAI && !!user.provedorId && conversa.provedorId === user.provedorId;
+  }
+  // Entrante tem iniciadaPorId e agenteId null: e da fila, e a fila nao e do tecnico.
+  return (conversa.iniciadaPorId !== null && conversa.iniciadaPorId === user.sub) || (!!conversa.agenteId && conversa.agenteId === user.sub);
 }
 
 /**
@@ -249,12 +258,17 @@ export async function enviarMensagem(conversaId: string, autorId: string, corpo:
   if (!conversa) throw new HttpError(404, "Conversa nao encontrada");
 
   const canal = conversa.canal as CanalWhatsapp;
-  const config = await canaisWhatsappService.getConfig(canal);
-  const resultado = !config
-    ? { ok: false, erro: "Canal nao configurado" }
-    : config.tipo === "meta"
-      ? await whatsappMeta.enviarTexto(config, conversa.telefone, corpo)
-      : await whatsappEvolution.enviarTexto(config, conversa.telefone, corpo);
+  let resultado: { ok: boolean; waMessageId?: string; erro?: string };
+  if (canal === CanalWhatsapp.ATENDAI) {
+    resultado = await clienteAtendai.enviarPeloAtendai(conversa, autorId, corpo);
+  } else {
+    const config = await canaisWhatsappService.getConfig(canal);
+    resultado = !config
+      ? { ok: false, erro: "Canal nao configurado" }
+      : config.tipo === "meta"
+        ? await whatsappMeta.enviarTexto(config, conversa.telefone, corpo)
+        : await whatsappEvolution.enviarTexto(config, conversa.telefone, corpo);
+  }
 
   const criada = await prisma.mensagemCliente.create({
     data: {
@@ -270,7 +284,12 @@ export async function enviarMensagem(conversaId: string, autorId: string, corpo:
     },
     include: { autor: { select: { nome: true } } },
   });
-  await prisma.conversaCliente.update({ where: { id: conversaId }, data: { ultimaMensagemEm: new Date() } });
+  // Escrever reabre: no AtendAI a conversa volta para a pessoa daqui (IA quieta),
+  // entao aqui ela tambem tem que voltar a receber as respostas do cliente.
+  await prisma.conversaCliente.update({
+    where: { id: conversaId },
+    data: { ultimaMensagemEm: new Date(), ...(canal === CanalWhatsapp.ATENDAI && resultado.ok ? { arquivada: false } : {}) },
+  });
 
   const dto = paraMensagemDTO(criada);
   emitParaTodos({ tipo: "cliente-chat-mensagem", conversaId, mensagemId: criada.id, autorId, em: new Date().toISOString() });
@@ -307,6 +326,11 @@ export async function transferir(conversaId: string, novoAgenteId: string): Prom
 }
 
 export async function encerrar(conversaId: string): Promise<void> {
+  const conversa = await prisma.conversaCliente.findUnique({ where: { id: conversaId } });
+  if (!conversa) throw new HttpError(404, "Conversa nao encontrada");
+  // Pelo AtendAI: a IA de la volta a atender o cliente. Falhou la, nao arquiva
+  // aqui — senao a IA ficaria calada com ninguem atendendo.
+  if (conversa.canal === CanalWhatsapp.ATENDAI) await clienteAtendai.encerrarNoAtendai(conversa);
   await prisma.conversaCliente.update({ where: { id: conversaId }, data: { arquivada: true } });
   emitParaTodos({ tipo: "cliente-chat-conversa", conversaId, em: new Date().toISOString() });
 }
@@ -447,7 +471,7 @@ export async function iniciarConversa(user: JwtPayload, input: IniciarConversaCl
   }
 
   const agora = new Date();
-  const chave = { telefone_canal: { telefone, canal: CanalWhatsapp.META } };
+  const chave = { telefone_canal_canalRef: { telefone, canal: CanalWhatsapp.META, canalRef: "" } };
   const existente = await prisma.conversaCliente.findUnique({ where: chave, select: { agenteId: true } });
   const conversa = await prisma.conversaCliente.upsert({
     where: chave,
@@ -519,7 +543,7 @@ export async function receberMensagemWebhook(input: {
   lng?: number | null;
 }): Promise<void> {
   const conversa = await prisma.conversaCliente.upsert({
-    where: { telefone_canal: { telefone: input.telefone, canal: input.canal } },
+    where: { telefone_canal_canalRef: { telefone: input.telefone, canal: input.canal, canalRef: "" } },
     create: { telefone: input.telefone, canal: input.canal, nomeContato: input.nomeContato ?? null },
     update: { nomeContato: input.nomeContato ?? undefined, ultimaMensagemEm: new Date() },
   });

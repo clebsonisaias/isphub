@@ -6,6 +6,7 @@ import { encrypt, decrypt } from "../lib/crypto.js";
 import { HttpError } from "../middleware/errorHandler.js";
 import { chamar, credencialDoProvedor, type CredencialAtendai } from "./atendaiService.js";
 import { avisarParticipantes, montarConversaResumo } from "./chatService.js";
+import { receberDoCliente, type AvisoCliente } from "./clienteAtendaiService.js";
 
 /**
  * PONTE DO CHAT INTERNO COM O ATENDAI (aprovado em 23/10/2026).
@@ -100,7 +101,7 @@ export function textoParaAtendai(m: {
 // ponytail: cache em memoria, se perde no restart (o cadastro la e idempotente).
 const jaCadastrado = new Set<string>();
 
-async function cadastrarNoAtendai(cred: CredencialAtendai, provedorId: string, u: { id: string; nome: string; role: string }) {
+export async function cadastrarNoAtendai(cred: CredencialAtendai, provedorId: string, u: { id: string; nome: string; role: string }) {
   const chave = `${provedorId}:${u.id}`;
   if (jaCadastrado.has(chave)) return;
   await chamar(cred, "POST", "/colaboradores", { idExterno: u.id, nome: nomeNoAtendai(u) });
@@ -151,7 +152,10 @@ export async function ligarChat(provedorId: string, urlPublica: string) {
     await chamar(cred, "DELETE", `/webhooks/${cfg.chatWebhookId}`).catch(() => undefined);
   }
   const url = `${urlPublica.replace(/\/+$/, "")}/api/atendai/chat/${provedorId}`;
-  const r = await chamar<{ id: string; segredo: string }>(cred, "POST", "/webhooks", { url, eventos: ["chat_nova_mensagem"] });
+  const r = await chamar<{ id: string; segredo: string }>(cred, "POST", "/webhooks", {
+    url,
+    eventos: ["chat_nova_mensagem", "cliente_nova_mensagem"],
+  });
   await prisma.atendaiConfig.update({
     where: { provedorId },
     data: { segredoCifrado: encrypt(r.segredo), chatWebhookId: r.id, chatLigadoEm: new Date() },
@@ -176,6 +180,10 @@ export async function receberAviso(provedorId: string, corpo: Buffer, assinatura
     json = JSON.parse(corpo.toString("utf8"));
   } catch {
     return "ignorado";
+  }
+  // Resposta do cliente numa conversa aberta pela OS (mesmo webhook, outro evento).
+  if ((json as { evento?: unknown })?.evento === "cliente_nova_mensagem") {
+    return receberDoCliente(provedorId, json as AvisoCliente);
   }
   const lido = avisoSchema.safeParse(json);
   if (!lido.success) return "ignorado";

@@ -128,6 +128,11 @@ model AtendaiConfig {
   chatWebhookId String?
   chatLigadoEm  DateTime?
 
+  /// Por onde saem as conversas da equipe com os clientes deste provedor
+  /// (canal de WhatsApp do AtendAI, escolhido no cadastro). Sem canal, nao sai.
+  canalClientesId   String?
+  canalClientesNome String?
+
   ativo        Boolean  @default(true)
   criadoEm     DateTime @default(now())
   atualizadoEm DateTime @updatedAt
@@ -951,6 +956,8 @@ model MensagemReacao {
 enum CanalWhatsapp {
   meta
   evolution
+  /// Sai pelo canal do AtendAI do provedor (mesmo numero da CláudIA).
+  atendai
 }
 
 enum MensagemClienteDirecao {
@@ -1022,9 +1029,18 @@ model ConversaCliente {
   ultimaMensagemEm DateTime?
   criadoEm         DateTime              @default(now())
 
+  /// Canal `atendai`: o id do canal no AtendAI (cada provedor sai por um).
+  /// Vazio nos canais proprios (meta/evolution), que sao um so cada.
+  canalRef          String  @default("")
+  /// A conversa la no AtendAI — e por ela que a resposta do cliente chega.
+  atendaiConversaId String? @unique
+  provedorId        String?
+  /// A OS que originou a conversa (botao "Conversar com o cliente").
+  ordemServicoId    String?
+
   mensagens MensagemCliente[]
 
-  @@unique([telefone, canal])
+  @@unique([telefone, canal, canalRef])
   @@index([canal, arquivada, ultimaMensagemEm])
   @@index([agenteId])
   /// Escopo do tecnico filtra por este campo em toda listagem — sem indice a

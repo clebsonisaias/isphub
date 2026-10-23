@@ -100,8 +100,9 @@ export async function chamar<T>(
     if (!res.ok) {
       let msg = `AtendAI HTTP ${res.status}`;
       try {
-        const j = (await res.json()) as { erro?: string; message?: string };
-        msg = j.erro ?? j.message ?? msg;
+        // AtendAI responde `{ erro: <codigo>, mensagem: <texto> }`: o texto explica.
+        const j = (await res.json()) as { erro?: string; mensagem?: string; message?: string };
+        msg = j.mensagem ?? j.erro ?? j.message ?? msg;
       } catch {
         // corpo nao-JSON — mantem a mensagem HTTP
       }

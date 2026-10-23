@@ -72,6 +72,10 @@ const PERMITIDO_ATENDENTE: [RegExp, RegExp][] = [
   [/^GET$/, /^\/agenda\/(vagas|proximas|turno|minhas)$/],
   [/^POST$/, /^\/agenda\/?$/],
   [/^DELETE$/, /^\/agenda\/[^/]+$/],
+  // Conversa com o cliente da OS pelo AtendAI (o servico limita ao provedor dela).
+  [/^POST$/, /^\/ordens-servico\/[^/]+\/conversa-cliente$/],
+  [/^GET$/, /^\/chat-clientes\/(conversas|conversas\/[^/]+\/mensagens|mensagens\/[^/]+\/anexo)$/],
+  [/^POST$/, /^\/chat-clientes\/conversas\/[^/]+\/(mensagens|encerrar)$/],
 ];
 
 export function atendentePode(metodo: string, url: string): boolean {

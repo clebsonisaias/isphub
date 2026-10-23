@@ -1,4 +1,5 @@
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { OsStatus, UserRole, ehCodigoStatusContrato, type CodigoStatusContrato } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
@@ -10,6 +11,7 @@ import { requireAuth, requireRole } from "../middleware/auth.js";
 import { podeAcessarOs } from "../services/escopoService.js";
 import * as writeback from "../services/writebackService.js";
 import { INCLUDE_FILA, paraFilaItem } from "./fila.js";
+import { iniciarComClienteDaOs } from "../services/clienteAtendaiService.js";
 
 export const ordensServicoRouter = Router();
 
@@ -61,6 +63,28 @@ ordensServicoRouter.get(
 );
 
 const acoesRoles = [UserRole.ADMIN, UserRole.GESTOR, UserRole.TECNICO];
+
+/**
+ * "Conversar com o cliente": abre (ou retoma) a conversa com o cliente da OS
+ * pelo WhatsApp do AtendAI do provedor e devolve o id para abrir o chat. So o
+ * telefone da propria OS; limite por pessoa, porque cada abertura manda mensagem.
+ */
+ordensServicoRouter.post(
+  "/:id/conversa-cliente",
+  requireRole(...acoesRoles, UserRole.ATENDENTE),
+  rateLimit({
+    windowMs: 60_000,
+    limit: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => req.user!.sub,
+    message: { error: "Muitas conversas abertas em pouco tempo. Aguarde um instante." },
+  }),
+  asyncHandler(async (req, res) => {
+    const { texto } = z.object({ texto: z.string().trim().max(1000).optional() }).parse(req.body ?? {});
+    res.json(await iniciarComClienteDaOs(req.user!, req.params.id, texto));
+  }),
+);
 
 ordensServicoRouter.post(
   "/:id/acaminho",

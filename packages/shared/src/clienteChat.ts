@@ -11,11 +11,14 @@
 export enum CanalWhatsapp {
   META = "meta",
   EVOLUTION = "evolution",
+  /** Pelo canal do AtendAI do provedor — o mesmo numero da CláudIA. */
+  ATENDAI = "atendai",
 }
 
 export const CANAL_WHATSAPP_LABEL: Record<CanalWhatsapp, string> = {
   [CanalWhatsapp.META]: "WhatsApp Oficial",
   [CanalWhatsapp.EVOLUTION]: "WhatsApp (Evolution)",
+  [CanalWhatsapp.ATENDAI]: "WhatsApp da empresa (AtendAI)",
 };
 
 export enum MensagemClienteDirecao {

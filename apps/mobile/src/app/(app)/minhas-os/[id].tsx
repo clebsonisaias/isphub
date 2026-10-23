@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { ActivityIndicator, Linking, ScrollView, StyleSheet, Text, View } from "react-native";
-import { useQuery } from "@tanstack/react-query";
+import { ActivityIndicator, Alert, Linking, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import { OS_STATUS_LABEL, OsStatus, ehAtivo, rotuloDoTexto, temDestino, type OrdemServico } from "@isphub/shared";
 import { Aviso } from "@/components/painel-dia";
@@ -66,6 +66,18 @@ export default function DetalheOs() {
   const [encerrando, setEncerrando] = useState(false);
   const { marcarACaminho, mudarStatus, anotar, mudarContratoStatus } = useAcoesOs(id);
   const { garantirConversaDeOs } = useCriarConversa();
+  const qc = useQueryClient();
+  // Fala com o cliente pelo WhatsApp da empresa (canal do AtendAI do provedor),
+  // nao pelo numero pessoal do tecnico.
+  const conversarComCliente = useMutation({
+    mutationFn: () => apiFetch<{ conversaId: string }>(`/ordens-servico/${id}/conversa-cliente`, { method: "POST", body: {}, token }),
+    onSuccess: ({ conversaId }) => {
+      void qc.invalidateQueries({ queryKey: ["cliente-chat", "conversas"] });
+      router.push(`/chat-clientes/${conversaId}`);
+    },
+    onError: (erro: unknown) =>
+      Alert.alert("Não foi possível abrir a conversa", erro instanceof Error ? erro.message : "Verifique a conexão e tente de novo."),
+  });
 
   const query = useQuery({
     queryKey: ["os", id],
@@ -211,10 +223,11 @@ export default function DetalheOs() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Button
-                    label="WhatsApp"
+                    label={conversarComCliente.isPending ? "Abrindo..." : "Conversar"}
                     variant="secondary"
                     icon={<Feather name="message-circle" size={16} color={colors.brandInk} />}
-                    onPress={() => Linking.openURL(`https://wa.me/55${soDigitos(os.telefone!)}`)}
+                    disabled={conversarComCliente.isPending}
+                    onPress={() => conversarComCliente.mutate()}
                   />
                 </View>
               </View>
