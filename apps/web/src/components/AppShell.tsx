@@ -37,6 +37,7 @@ import {
   Truck,
   CalendarClock,
   CalendarDays,
+  CalendarPlus,
   Route,
 } from "lucide-react";
 
@@ -80,6 +81,13 @@ const NAV_ITEMS: {
 }[] = [
   { to: "/", label: "Painel", icon: LayoutGrid, ocultoPara: [] },
   { to: "/despacho", label: "Despacho", icon: Route, ocultoPara: [UserRole.PROVEDOR, UserRole.TECNICO] },
+  {
+    to: "/marcar-visita",
+    label: "Marcar visita",
+    labelCurto: "Marcar",
+    icon: CalendarPlus,
+    ocultoPara: [UserRole.PROVEDOR, UserRole.TECNICO],
+  },
   { to: "/mapa", label: "Mapa", icon: Map, ocultoPara: [] },
   {
     to: "/chat",
@@ -208,7 +216,7 @@ const NAV_ITEMS: {
 ];
 
 /** O que a atendente ve na barra: lista de permissao, nao de exclusao. */
-const NAV_ATENDENTE = new Set(["/", "/agenda"]);
+const NAV_ATENDENTE = new Set(["/", "/marcar-visita", "/agenda"]);
 
 /**
  * As abas FIXAS da barra do rodape no celular, em ordem de preferencia: ficam

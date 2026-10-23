@@ -12,6 +12,7 @@ describe("atendente: o que alcanca (negacao por padrao)", () => {
     expect(atendentePode("GET", "/ordens-servico/abc/ficha-sgp")).toBe(true);
     expect(atendentePode("GET", "/agenda/vagas?de=2026-10-23")).toBe(true);
     expect(atendentePode("GET", "/agenda/turno?dia=2026-10-23&turno=manha")).toBe(true);
+    expect(atendentePode("GET", "/agenda/minhas")).toBe(true);
     expect(atendentePode("POST", "/agenda")).toBe(true);
     expect(atendentePode("DELETE", "/agenda/123")).toBe(true);
     expect(atendentePode("POST", "/auth/login")).toBe(true);

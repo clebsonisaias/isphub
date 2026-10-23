@@ -71,6 +71,36 @@ agendaRouter.get(
   }),
 );
 
+/**
+ * `GET /agenda/minhas` — o que ESTE usuario marcou ou remarcou hoje (horario de
+ * Brasilia), mais recente primeiro. E a lista "Marcadas por voce hoje" da tela
+ * da atendente: conferir o que ja fez e desfazer o engano.
+ */
+agendaRouter.get(
+  "/minhas",
+  asyncHandler(async (req, res) => {
+    // Meia-noite de Brasilia (UTC-3, sem horario de verao) em UTC.
+    const inicio = new Date(`${agenda.diaBrDe(new Date())}T03:00:00.000Z`);
+    const itens = await prisma.agendamento.findMany({
+      where: { marcadoPor: req.user!.email, status: "marcado", atualizadoEm: { gte: inicio } },
+      orderBy: { atualizadoEm: "desc" },
+      take: 30,
+      select: { id: true, sgpOsId: true, dia: true, turno: true, atualizadoEm: true, ordemServico: { select: { id: true, clienteNome: true } } },
+    });
+    res.json(
+      itens.map((i) => ({
+        id: i.id,
+        sgpOsId: i.sgpOsId,
+        dia: i.dia.toISOString().slice(0, 10),
+        turno: i.turno,
+        em: i.atualizadoEm.toISOString(),
+        osId: i.ordemServico?.id ?? null,
+        clienteNome: i.ordemServico?.clienteNome ?? null,
+      })),
+    );
+  }),
+);
+
 /** `GET /agenda/turno` — as paradas de uma janela, na ordem da rota. */
 agendaRouter.get(
   "/turno",

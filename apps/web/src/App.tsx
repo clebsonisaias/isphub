@@ -30,6 +30,7 @@ const FrotaVeiculosPage = lazy(() => import("@/pages/FrotaVeiculosPage").then((m
 const EscalaPage = lazy(() => import("@/pages/EscalaPage").then((m) => ({ default: m.EscalaPage })));
 const AgendaPage = lazy(() => import("@/pages/AgendaPage").then((m) => ({ default: m.AgendaPage })));
 const DespachoPage = lazy(() => import("@/pages/DespachoPage").then((m) => ({ default: m.DespachoPage })));
+const MarcarVisitaPage = lazy(() => import("@/pages/MarcarVisitaPage").then((m) => ({ default: m.MarcarVisitaPage })));
 const FrotaBiPage = lazy(() => import("@/pages/FrotaBiPage").then((m) => ({ default: m.FrotaBiPage })));
 const ProdutividadePage = lazy(() => import("@/pages/ProdutividadePage").then((m) => ({ default: m.ProdutividadePage })));
 const FrotaMapaPage = lazy(() => import("@/pages/FrotaMapaPage").then((m) => ({ default: m.FrotaMapaPage })));
@@ -204,6 +205,15 @@ function App() {
                     element={
                       <RequireAuth roles={[UserRole.ADMIN, UserRole.GESTOR]}>
                         <DespachoPage />
+                      </RequireAuth>
+                    }
+                  />
+                  {/* Marcar visita: a tela da atendente ao telefone (busca, vagas, marcar). */}
+                  <Route
+                    path="/marcar-visita"
+                    element={
+                      <RequireAuth roles={[UserRole.ADMIN, UserRole.GESTOR, UserRole.ATENDENTE]}>
+                        <MarcarVisitaPage />
                       </RequireAuth>
                     }
                   />

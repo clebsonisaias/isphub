@@ -69,7 +69,7 @@ const PERMITIDO_ATENDENTE: [RegExp, RegExp][] = [
   [/^GET$/, /^\/(fila|hora|eventos|config|categorias)(\/|$)/],
   [/^GET$/, /^\/provedores(\/[^/]+)?$/],
   [/^GET$/, /^\/ordens-servico\/[^/]+(\/(ficha-sgp|eventos))?$/],
-  [/^GET$/, /^\/agenda\/(vagas|proximas|turno)$/],
+  [/^GET$/, /^\/agenda\/(vagas|proximas|turno|minhas)$/],
   [/^POST$/, /^\/agenda\/?$/],
   [/^DELETE$/, /^\/agenda\/[^/]+$/],
 ];

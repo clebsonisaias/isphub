@@ -50,6 +50,17 @@ export interface ExcecaoAgenda {
   definidoPor: string | null;
 }
 
+export interface MarcadaHoje {
+  id: string;
+  sgpOsId: string;
+  dia: string;
+  turno: TurnoAgenda;
+  /** Quando foi marcada (ou remarcada). */
+  em: string;
+  osId: string | null;
+  clienteNome: string | null;
+}
+
 export interface ParadaAgenda {
   id: string;
   sgpOsId: string;
@@ -128,6 +139,9 @@ export const agendaApi = {
     if (regiao) q.set("regiao", regiao);
     return api.get<VagaTurno[]>(`/agenda/proximas?${q}`);
   },
+
+  /** O que o usuário logado marcou ou remarcou hoje — a lista "Marcadas por você hoje". */
+  minhas: () => api.get<MarcadaHoje[]>("/agenda/minhas"),
 
   doTurno: (dia: string, turno: TurnoAgenda) =>
     api.get<ParadaAgenda[]>(`/agenda/turno?dia=${dia}&turno=${turno}`),
