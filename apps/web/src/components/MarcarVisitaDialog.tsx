@@ -57,6 +57,7 @@ export function MarcarVisitaDialog({
   const [grade, setGrade] = useState<GradeResposta | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [marcando, setMarcando] = useState<string | null>(null);
+  const [observacao, setObservacao] = useState("");
 
   // A regiao entra pelo teto regional: pop vem sempre do SGP, bairro so
   // depois do backfill — a mesma preferencia que `Agendamento.regiao` usa.
@@ -85,11 +86,25 @@ export function MarcarVisitaDialog({
 
   const atual = item.diaAgenda && item.turnoAgenda ? { dia: item.diaAgenda, turno: item.turnoAgenda } : null;
 
+  // Pelo ISPhub nao se passa do limite: o que cabe primeiro vira um clique so.
+  // A grade chega em ordem cronologica, entao a primeira janela livre e a proxima.
+  const proxima = (grade?.vagas ?? []).find(
+    (v) => v.bloqueio === null && v.livres > 0 && !(atual && atual.dia === v.dia && atual.turno === v.turno),
+  );
+
   async function marcar(dia: string, turno: TurnoAgenda) {
     const chave = `${dia}|${turno}`;
     setMarcando(chave);
     try {
-      const { id } = await agendaApi.marcar({ provedorId: item.provedorId, sgpOsId: item.sgpOsId, dia, turno, regiao: regiao ?? null });
+      const { id } = await agendaApi.marcar({
+        provedorId: item.provedorId,
+        sgpOsId: item.sgpOsId,
+        dia,
+        turno,
+        regiao: regiao ?? null,
+        // Vazio nao manda nada: remarcar mantem a observacao que a visita ja tinha.
+        ...(observacao.trim() ? { observacao: observacao.trim() } : {}),
+      });
       toast({ titulo: atual ? "Visita remarcada" : "Visita marcada", descricao: rotuloVisita(dia, turno), variante: "sucesso" });
       onMarcado(dia, turno, id);
     } catch (e) {
@@ -126,6 +141,36 @@ export function MarcarVisitaDialog({
             ))}
           </div>
         ) : (
+          <>
+            {proxima ? (
+              <button
+                type="button"
+                disabled={marcando !== null}
+                onClick={() => void marcar(proxima.dia, proxima.turno)}
+                className="flex w-full items-center justify-between rounded-md border border-primary bg-primary/5 px-3 py-2 text-left text-sm hover:bg-primary/10 disabled:opacity-50"
+              >
+                <span>
+                  <span className="block text-[11px] font-semibold uppercase tracking-wide text-primary">Próxima vaga livre</span>
+                  <span className="font-medium">{rotuloVisita(proxima.dia, proxima.turno)}</span>
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {proxima.ocupadas}/{proxima.capacidade}
+                </span>
+              </button>
+            ) : (
+              <p className="text-sm text-muted-foreground">Nenhuma vaga livre no horizonte da agenda.</p>
+            )}
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="font-medium text-foreground">Observação para o técnico (opcional)</span>
+              <textarea
+                value={observacao}
+                maxLength={500}
+                rows={2}
+                onChange={(e) => setObservacao(e.target.value)}
+                placeholder="Ex.: cliente em casa só até 16h"
+                className="resize-none rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+              />
+            </label>
           <div className="max-h-[60vh] overflow-y-auto pr-1">
             <div className="grid grid-cols-[auto_1fr_1fr] items-center gap-x-2 gap-y-1.5 text-sm">
               <span />
@@ -146,6 +191,7 @@ export function MarcarVisitaDialog({
               ))}
             </div>
           </div>
+          </>
         )}
       </DialogContent>
     </Dialog>

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  chaveNome,
+  ehVagaDeReserva,
+  linhaAtiva,
+  observacaoDoRobo,
   consolidarLinhas,
   decidirLinha,
   diaDaCelula,
@@ -9,6 +13,7 @@ import {
   type LinhaPlanilha,
   type MarcacaoAtual,
 } from "@isphub/shared";
+import { linhasDaPlanilha, tecnicosDaPlanilha } from "./planilhaSyncService.js";
 
 const hoje = "2026-10-22";
 const linha = (o: Partial<LinhaPlanilha> = {}): LinhaPlanilha => ({
@@ -134,5 +139,46 @@ describe("decisao por linha", () => {
   it("OS fechada no espelho -> ignorar; OS ainda nao espelhada -> marca mesmo assim", () => {
     expect(decide(linha(), null, false)).toMatchObject({ tipo: "ignorar" });
     expect(decide(linha(), null, null)).toEqual({ tipo: "marcar" });
+  });
+});
+
+describe("detalhes da planilha (tecnico, ordem, observacao)", () => {
+  it("nome de tecnico compara sem acento, caixa nem apelido", () => {
+    expect(chaveNome("Izarleson (Major)")).toBe(chaveNome("izarleson"));
+    expect(chaveNome("André Felipe")).toBe("andre felipe");
+    expect(chaveNome("Edilson (Muchacho)")).toBe("edilson");
+  });
+
+  it("'Tecnico 16'... sao vagas de reserva; nomes reais nao", () => {
+    expect(ehVagaDeReserva("Técnico 16")).toBe(true);
+    expect(ehVagaDeReserva("Tecnico 25")).toBe(true);
+    expect(ehVagaDeReserva("Teobaldo")).toBe(false);
+  });
+
+  it("observacao do robo mantem o prefixo que diz que a marcacao e da planilha", () => {
+    expect(observacaoDoRobo(null)).toBe("Migrado da planilha (robô)");
+    expect(observacaoDoRobo(" Cliente só até 16h ")).toBe("Migrado da planilha (robô) · Cliente só até 16h");
+    expect(observacaoDoRobo("x".repeat(600)).length).toBe(500);
+  });
+
+  it("linha ativa: vazia/Roteirizada sim; Concluida/Cancelada nao", () => {
+    expect(linhaAtiva({ status: "" })).toBe(true);
+    expect(linhaAtiva({ status: "Roteirizada" })).toBe(true);
+    expect(linhaAtiva({ status: "Concluída" })).toBe(false);
+    expect(linhaAtiva({ status: "Cancelada" })).toBe(false);
+  });
+
+  it("le tecnico, ordem e observacao quando as colunas existem; sem elas, nulo", () => {
+    const cab = ["Nº OS", "Atendente", "Data Agendada", "Turno", "Técnico Designado", "Ordem da Rota", "Status", "Observações"];
+    const abas = new Map([["Agendamentos - Reparo", [cab, ["213310", "Marília", 46318, "Manhã", "Dison", 2, "Roteirizada", "portão azul"]]]]);
+    expect(linhasDaPlanilha(abas)[0]).toMatchObject({ os: "213310", tecnico: "Dison", ordem: 2, observacao: "portão azul" });
+    const sem = new Map([["Agendamentos - Reparo", [["Nº OS", "Atendente", "Data Agendada", "Turno", "Status"], ["1", "Ana", 46318, "Tarde", ""]]]]);
+    expect(linhasDaPlanilha(sem)[0]).toMatchObject({ tecnico: null, ordem: null, observacao: null });
+  });
+
+  it("lista de tecnicos da aba Configuracoes, sem reservas, ate a primeira celula vazia", () => {
+    const abas = new Map([["Configuracoes", [["Parâmetro", "Valor"], [], ["Técnicos (IRLA)", "Atendentes"], ["Alderi", "Anna Clara"], ["Dison", "Marília"], ["Técnico 16"], [null], ["Fora da lista"]]]]);
+    expect(tecnicosDaPlanilha(abas)).toEqual(["Alderi", "Dison"]);
+    expect(tecnicosDaPlanilha(new Map())).toEqual([]);
   });
 });

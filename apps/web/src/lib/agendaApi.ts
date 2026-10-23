@@ -23,6 +23,18 @@ export interface PropostaRedistribuicao {
   semDestino: string[];
 }
 
+/**
+ * O que mostrar da observacao de uma visita: tira o prefixo interno do robo da
+ * planilha ("Migrado da planilha (robô) · "), que so serve pro robo saber que
+ * a marcacao e dele. Sobra o recado da atendente, ou nada.
+ */
+export function observacaoVisivel(obs: string | null | undefined): string | null {
+  if (!obs) return null;
+  if (!obs.startsWith("Migrado da planilha")) return obs;
+  const i = obs.indexOf(" · ");
+  return i >= 0 ? obs.slice(i + 3).trim() || null : null;
+}
+
 export interface GradeResposta {
   config: AgendaConfigDto;
   vagas: VagaTurno[];

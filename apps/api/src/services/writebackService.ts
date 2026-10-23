@@ -53,7 +53,8 @@ interface Transicao {
 function evento(
   ordemServicoId: string,
   tipo: OsEventoTipo,
-  autorId: string,
+  /** Nulo = acao do sistema (robo da planilha), sem usuario por tras. */
+  autorId: string | null,
   descricao: string,
   geo?: Geo,
   transicao?: Transicao,
@@ -372,7 +373,17 @@ export async function obterArquivoEvidencia(ordemServicoId: string, anexoId: str
  * com um provedor especifico) — por isso nao ha mais checagem cross-provedor
  * aqui, so a validacao de que o alvo e de fato um tecnico ativo.
  */
-export async function atribuirTecnico(ordemServicoId: string, tecnicoId: string, autorId: string) {
+/**
+ * `autorId` nulo = atribuicao do sistema (robo da planilha): o evento fica sem
+ * autor e `atribuidoPor` registra de onde veio (ex.: "planilha") — e o que o
+ * robo usa pra saber que pode trocar o tecnico depois.
+ */
+export async function atribuirTecnico(
+  ordemServicoId: string,
+  tecnicoId: string,
+  autorId: string | null,
+  atribuidoPor: string | null = autorId,
+) {
   const os = await prisma.ordemServico.findUnique({ where: { id: ordemServicoId } });
   if (!os) throw new HttpError(404, "Ordem de servico nao encontrada");
 
@@ -381,7 +392,7 @@ export async function atribuirTecnico(ordemServicoId: string, tecnicoId: string,
   if (!tecnico.ativo) throw new HttpError(409, "Tecnico esta inativo");
 
   const [, osAtualizada] = await prisma.$transaction([
-    prisma.atribuicao.create({ data: { ordemServicoId, tecnicoId, atribuidoPor: autorId } }),
+    prisma.atribuicao.create({ data: { ordemServicoId, tecnicoId, atribuidoPor } }),
     prisma.ordemServico.update({ where: { id: ordemServicoId }, data: { tecnicoId } }),
     evento(ordemServicoId, "atribuicao", autorId, `Atribuído a ${tecnico.nome}`),
     prisma.notificacao.create({

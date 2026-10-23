@@ -21,6 +21,10 @@ export interface LinhaPlanilha {
   status: string;
   atendente: string | null;
   aba: "instalacao" | "reparo";
+  /** Colunas do supervisor e da atendente que nao decidem a vaga (opcionais na planilha). */
+  tecnico?: string | null;
+  ordem?: number | null;
+  observacao?: string | null;
 }
 
 /** O que a agenda tem hoje pra OS (so marcacao ativa interessa). */
@@ -85,6 +89,31 @@ export function ehDaPlanilha(m: Pick<MarcacaoAtual, "origem" | "observacao">): b
   return m.origem === ORIGEM_PLANILHA || (m.observacao ?? "").startsWith(OBSERVACAO_PLANILHA);
 }
 
+/** Linha que ainda vale (nao concluida nem cancelada). */
+export function linhaAtiva(l: Pick<LinhaPlanilha, "status">): boolean {
+  const s = semAcento(l.status);
+  return !s.startsWith("conclu") && !s.startsWith("cancel");
+}
+
+/**
+ * Chave de comparacao de nome de tecnico: sem acento, caixa nem apelido entre
+ * parenteses — a planilha escreve "Izarleson (Major)", o cadastro pode nao ter.
+ */
+export function chaveNome(nome: string | null | undefined): string {
+  return semAcento(nome).replace(/\(.*?\)/g, "").replace(/\s+/g, " ").trim();
+}
+
+/** "Tecnico 16"... da lista de Configuracoes sao vagas de reserva, nao pessoas. */
+export function ehVagaDeReserva(nome: string): boolean {
+  return /^tecnico \d+$/.test(chaveNome(nome));
+}
+
+/** Observacao gravada na marcacao do robo: o prefixo (que diz "e da planilha") + a da atendente. */
+export function observacaoDoRobo(obs: string | null | undefined): string {
+  const texto = (obs ?? "").trim();
+  return (texto ? `${OBSERVACAO_PLANILHA} (robô) · ${texto}` : `${OBSERVACAO_PLANILHA} (robô)`).slice(0, 500);
+}
+
 /**
  * A mesma OS em mais de uma linha (remarcada copiando a linha). Linha ATIVA vence
  * linha concluida/cancelada; entre ativas, vale a ultima (a mais recente na
@@ -95,10 +124,7 @@ export function ehDaPlanilha(m: Pick<MarcacaoAtual, "origem" | "observacao">): b
  * cancelada era de OUTRA data e nao dizia nada sobre a de 24/10.
  */
 export function consolidarLinhas(linhas: LinhaPlanilha[]): LinhaPlanilha[] {
-  const ativa = (l: LinhaPlanilha) => {
-    const s = semAcento(l.status);
-    return !s.startsWith("conclu") && !s.startsWith("cancel");
-  };
+  const ativa = linhaAtiva;
   const escolhida = new Map<string, LinhaPlanilha>();
   const semOs: LinhaPlanilha[] = [];
   for (const l of linhas) {

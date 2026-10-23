@@ -325,6 +325,8 @@ adminAgendaRouter.put(
         autoAgendaAtiva: z.boolean(),
         autoAgendaMaxRodada: z.number().int().min(1).max(200),
         vagasUrgenciaDia: z.number().int().min(0).max(500),
+        // Teto do domingo (so manha); nulo = teto normal do turno.
+        vagasDomingo: z.number().int().min(0).max(500).nullable(),
       })
       .partial()
       .parse(req.body);

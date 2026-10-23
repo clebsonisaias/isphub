@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { AlertTriangle, ArrowDown, Wand2, ArrowUp, CalendarDays, CalendarOff, CalendarPlus, CheckCircle2, ChevronLeft, ChevronRight, CloudOff, MapPin, Phone, RefreshCw, Route, Search, Settings2, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, StickyNote, Wand2, ArrowUp, CalendarDays, CalendarOff, CalendarPlus, CheckCircle2, ChevronLeft, ChevronRight, CloudOff, MapPin, Phone, RefreshCw, Route, Search, Settings2, Trash2, X } from "lucide-react";
 import { ROTULO_TURNO, TURNOS_AGENDA, turnoDaHora, diaBrHoje, formatarKm, inicioDaSemana, somarDias, type AgendaConfigDto, type FilaItem, type ResultadoAuto, type TurnoAgenda, type VagaTurno } from "@isphub/shared";
-import type { SaudeAgendador } from "@/lib/agendaApi";
+import { observacaoVisivel, type SaudeAgendador } from "@/lib/agendaApi";
 import { AppShell } from "@/components/AppShell";
 import { AnimatedPage } from "@/components/AnimatedPage";
 import { Card, CardContent } from "@/components/ui/card";
@@ -61,6 +61,7 @@ export function AgendaPage() {
   const [sugerindo, setSugerindo] = useState(false);
   // Proposta automatica de dia/turno: so leitura, o supervisor revisa.
   const [proposta, setProposta] = useState<ResultadoAuto | null>(null);
+  const [painelAberto, setPainelAberto] = useState(false);
   const [propondo, setPropondo] = useState(false);
   const [saude, setSaude] = useState<SaudeAgendador | null>(null);
   const [aplicando, setAplicando] = useState(false);
@@ -353,7 +354,18 @@ export function AgendaPage() {
               <Wand2 className="size-3.5" aria-hidden />
               {propondo ? "Calculando…" : "Propor agenda"}
             </button>
+            <button
+              type="button"
+              onClick={() => setPainelAberto((v) => !v)}
+              aria-pressed={painelAberto}
+              className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
+            >
+              <CalendarDays className="size-3.5" aria-hidden />
+              Painel 14 dias
+            </button>
           </header>
+
+          {painelAberto ? <PainelQuinzena hoje={hoje} aoFechar={() => setPainelAberto(false)} /> : null}
 
           {proposta ? (
             <PropostaAuto
@@ -665,6 +677,12 @@ export function AgendaPage() {
                               ) : null}
                               <span>{p.marcadoPor ? `por ${p.marcadoPor}` : `origem ${p.origem}`}</span>
                             </p>
+                            {observacaoVisivel(p.observacao) ? (
+                              <p className="mt-0.5 flex items-start gap-1 text-xs text-amber-800 dark:text-amber-300">
+                                <StickyNote className="mt-0.5 size-3 shrink-0" aria-hidden />
+                                <span className="line-clamp-2">{observacaoVisivel(p.observacao)}</span>
+                              </p>
+                            ) : null}
                           </div>
 
                           <select
@@ -818,6 +836,7 @@ function LimitesDaAgenda({
   const [autoAtiva, setAutoAtiva] = useState(config.autoAgendaAtiva ?? false);
   const [autoMax, setAutoMax] = useState<number | "">(config.autoAgendaMaxRodada ?? 20);
   const [urgenciaDia, setUrgenciaDia] = useState<number | "">(config.vagasUrgenciaDia ?? 0);
+  const [domingo, setDomingo] = useState<number | "">(config.vagasDomingo ?? "");
   const [salvando, setSalvando] = useState(false);
 
   const nomesDias = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
@@ -842,6 +861,7 @@ function LimitesDaAgenda({
         autoAgendaAtiva: autoAtiva,
         autoAgendaMaxRodada: autoMax === "" ? 20 : Number(autoMax),
         vagasUrgenciaDia: urgenciaDia === "" ? 0 : Number(urgenciaDia),
+        vagasDomingo: domingo === "" ? null : Number(domingo),
       });
     } finally {
       setSalvando(false);
@@ -904,6 +924,20 @@ function LimitesDaAgenda({
             />
             <span className="text-muted-foreground">
               Parte do que o dia comporta guardada para retirada de kit — não é vaga extra. 0 = a retirada só usa a sobra.
+            </span>
+          </label>
+          <label className="flex flex-col gap-1.5 text-xs">
+            <span className="font-medium text-foreground">Domingo: limite de visitas</span>
+            <input
+              type="number"
+              min={0}
+              max={500}
+              value={domingo}
+              onChange={(e) => setDomingo(e.target.value === "" ? "" : Number(e.target.value))}
+              className="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+            />
+            <span className="text-muted-foreground">
+              Domingo só tem a manhã. Vazio = vale o limite normal do turno. Para fechar o domingo, desmarque "dom" nos dias atendidos.
             </span>
           </label>
           <label className="flex flex-col gap-1.5 text-xs">
@@ -1371,6 +1405,88 @@ function PropostaAuto({
             </ul>
           </details>
         ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * A aba "Painel" da planilha: os proximos 14 dias, instalacao e reparo por turno,
+ * total contra a capacidade e a situacao. "Acima da capacidade" so acontece com o
+ * que veio da planilha (o ISPhub nao deixa marcar acima do limite).
+ */
+function PainelQuinzena({ hoje, aoFechar }: { hoje: string; aoFechar: () => void }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["agenda", "painel14", hoje],
+    queryFn: () => agendaApi.grade({ de: hoje, ate: somarDias(hoje, 13) }),
+  });
+  const porDia = new Map<string, Partial<Record<TurnoAgenda, VagaTurno>>>();
+  for (const v of data?.vagas ?? []) porDia.set(v.dia, { ...porDia.get(v.dia), [v.turno]: v });
+
+  const situacao = (v?: VagaTurno) => {
+    if (!v || ["feriado", "dia_nao_atendido", "turno_nao_atendido"].includes(v.bloqueio ?? "")) {
+      return { texto: v?.bloqueio === "feriado" ? "Feriado" : "Sem atendimento", cls: "text-muted-foreground" };
+    }
+    if (v.ocupadas > v.capacidade) return { texto: "Acima da capacidade", cls: "font-semibold text-destructive" };
+    if (v.ocupadas === v.capacidade) return { texto: "Lotado", cls: "font-medium text-amber-700 dark:text-amber-400" };
+    return { texto: "OK", cls: "text-emerald-700 dark:text-emerald-400" };
+  };
+
+  return (
+    <Card>
+      <CardContent className="p-0">
+        <header className="flex items-center gap-2 border-b border-border px-4 py-3">
+          <CalendarDays className="size-4 text-muted-foreground" aria-hidden />
+          <h2 className="text-sm font-semibold">Painel — próximos 14 dias</h2>
+          <span className="text-xs text-muted-foreground">i = instalação · r = reparo · total/capacidade</span>
+          <button type="button" onClick={aoFechar} aria-label="Fechar painel" className="ml-auto rounded p-1 text-muted-foreground hover:bg-muted">
+            <X className="size-4" aria-hidden />
+          </button>
+        </header>
+        {isLoading ? (
+          <div className="space-y-2 p-4">
+            {Array.from({ length: 5 }, (_, i) => (
+              <Skeleton key={i} className="h-6 w-full" />
+            ))}
+          </div>
+        ) : error ? (
+          <p className="px-4 py-4 text-sm text-destructive">Não foi possível carregar o painel.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-xs">
+              <thead className="bg-muted/50 text-left text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 font-medium">Dia</th>
+                  {TURNOS_AGENDA.map((t) => (
+                    <th key={t} className="px-3 py-2 font-medium" colSpan={2}>
+                      {ROTULO_TURNO[t]}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {[...porDia.entries()].map(([dia, turnos]) => (
+                  <tr key={dia}>
+                    <td className="whitespace-nowrap px-3 py-1.5 font-medium">{rotuloDiaAgenda(dia)}</td>
+                    {TURNOS_AGENDA.map((t) => {
+                      const v = turnos[t];
+                      const sit = situacao(v);
+                      const aberto = sit.texto !== "Sem atendimento" && sit.texto !== "Feriado";
+                      return [
+                        <td key={`${t}-n`} className="whitespace-nowrap px-3 py-1.5 tabular-nums">
+                          {aberto && v ? `${v.instalacao}i · ${v.reparo}r · ${v.ocupadas}/${v.capacidade}` : "—"}
+                        </td>,
+                        <td key={`${t}-s`} className={`whitespace-nowrap px-3 py-1.5 ${sit.cls}`}>
+                          {sit.texto}
+                        </td>,
+                      ];
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

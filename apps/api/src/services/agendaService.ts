@@ -90,7 +90,10 @@ export function vagaDe(args: {
 }): VagaTurno {
   const { dia, turno, config, agora, excecao } = args;
   const ocupacao = args.ocupacao ?? VAZIA;
-  const capacidade = capacidadeDerivada(capacidadeDe(turno, config), args.escalados, config.vagasPorTecnico);
+  // Domingo tem teto proprio (vagasDomingo, padrao 4): e plantao, nao dia cheio.
+  const capFixa = capacidadeDe(turno, config);
+  const capDoDia = diaDaSemana(dia) === 0 && config.vagasDomingo != null ? Math.min(capFixa, config.vagasDomingo) : capFixa;
+  const capacidade = capacidadeDerivada(capDoDia, args.escalados, config.vagasPorTecnico);
   const pelaEscala = config.vagasPorTecnico != null && args.escalados != null;
   const ocupadasDia = args.ocupadasDia ?? ocupacao.total;
 
@@ -110,12 +113,12 @@ export function vagaDe(args: {
     motivoBloqueio = feriado;
   } else if (!liberadoNaMao && !config.diasAtendidos.includes(diaDaSemana(dia))) {
     bloqueio = "dia_nao_atendido";
-  } else if (!liberadoNaMao && turno === "tarde" && diaDaSemana(dia) === 6) {
-    // Sabado so tem a saida da manha: a equipe fecha ao meio-dia. Fica atras
-    // de `liberadoNaMao` pelo mesmo motivo dos outros: um mutirao cadastrado
-    // com `atende: true` abre a tarde tambem.
-    // ponytail: regra fixa (decisao de 07/10/2026). Se a tarde de sabado
-    // passar a variar, vira `diasSoManha Int[]` na AgendaConfig.
+  } else if (!liberadoNaMao && turno === "tarde" && [0, 6].includes(diaDaSemana(dia))) {
+    // Sabado e domingo so tem a saida da manha: a equipe fecha ao meio-dia.
+    // Fica atras de `liberadoNaMao` pelo mesmo motivo dos outros: um mutirao
+    // cadastrado com `atende: true` abre a tarde tambem.
+    // ponytail: regra fixa (sabado em 07/10/2026, domingo em 23/10/2026). Se a
+    // tarde do fim de semana passar a variar, vira `diasSoManha Int[]` na AgendaConfig.
     bloqueio = "turno_nao_atendido";
   } else if (pelaEscala && capacidade === 0) {
     // A escala do dia existe e ninguem esta neste turno: nao e "lotado", e
@@ -266,6 +269,7 @@ export async function lerConfig(): Promise<AgendaConfigDto> {
     autoAgendaAtiva: c.autoAgendaAtiva,
     autoAgendaMaxRodada: c.autoAgendaMaxRodada,
     vagasUrgenciaDia: c.vagasUrgenciaDia,
+    vagasDomingo: c.vagasDomingo,
   };
 }
 
@@ -435,7 +439,16 @@ export interface MarcarArgs {
   observacao?: string | null;
   /** Fila que consome a vaga; omitida, nao mexe no que a marcacao ja tinha. */
   fila?: "normal" | "retirada";
+  /**
+   * So o robo da planilha usa: enquanto ela for a fonte, o que a atendente ja
+   * combinou la entra mesmo acima do teto (decisao de 23/10/2026). Ignora SO a
+   * lotacao (turno, dia, regiao) — feriado e dia/turno fechado continuam valendo.
+   */
+  ignorarLotacao?: boolean;
 }
+
+/** Bloqueios de LOTACAO — os unicos que `ignorarLotacao` atravessa. */
+const BLOQUEIOS_DE_LOTACAO = new Set(["lotado", "dia_lotado", "regiao"]);
 
 /**
  * Recusa que o CLIENTE recebeu por regra de autoatendimento, nao por lotacao.
@@ -538,7 +551,9 @@ export async function marcar(args: MarcarArgs) {
         escalados: escalados?.get(chaveJanela(args.dia, args.turno)),
         agora: new Date(),
       });
-      if (vaga.bloqueio) throw new HttpError(409, motivoRecusa(vaga.bloqueio));
+      if (vaga.bloqueio && !(args.ignorarLotacao && BLOQUEIOS_DE_LOTACAO.has(vaga.bloqueio))) {
+        throw new HttpError(409, motivoRecusa(vaga.bloqueio));
+      }
     }
 
     // Liga na OS espelhada SE ela ja chegou. Quando nao, fica nulo e o sync
@@ -554,7 +569,9 @@ export async function marcar(args: MarcarArgs) {
       regiao: args.regiao ?? null,
       origem: args.origem,
       marcadoPor: args.marcadoPor ?? null,
-      observacao: args.observacao ?? null,
+      // Ausente = mantem a observacao que a visita ja tinha (remarcar pela tela
+      // nao pode apagar o "cliente so ate 16h" que a atendente anotou).
+      observacao: args.observacao === undefined ? undefined : args.observacao,
       fila: args.fila,
       status: "marcado" as const,
       ordemServicoId: os?.id ?? null,
@@ -587,7 +604,7 @@ export function motivoRecusa(bloqueio: BloqueioVaga): string {
     case "dia_nao_atendido":
       return "Nao ha atendimento neste dia da semana.";
     case "turno_nao_atendido":
-      return "Sabado so tem atendimento de manha — escolha a manha ou outro dia.";
+      return "Sabado e domingo so tem atendimento de manha — escolha a manha ou outro dia.";
     case "sem_equipe":
       return "Ninguem escalado neste turno — escale alguem ou escolha outro dia.";
     case "feriado":

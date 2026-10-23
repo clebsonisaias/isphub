@@ -496,3 +496,30 @@ describe("planejarRedistribuicao — quem assume as paradas de quem faltou", () 
     expect(plano.atribuicoes.map((a) => a.tecnicoId)).toEqual(["a", "b", "a"]);
   });
 });
+
+describe("domingo de manha (decisao de 23/10/2026)", () => {
+  // 2026-09-13 e domingo; com o domingo em `diasAtendidos`.
+  const DOMINGO = "2026-09-13";
+  const config = { ...CONFIG, diasAtendidos: [0, 1, 2, 3, 4, 5, 6], vagasDomingo: 4 };
+
+  it("a manha abre com o teto proprio do domingo (4), nao o do turno (20)", () => {
+    const v = vagaDe({ dia: DOMINGO, turno: "manha", config, agora: QUARTA_7H });
+    expect(v).toMatchObject({ bloqueio: null, capacidade: 4, livres: 4 });
+  });
+
+  it("a 5a visita do domingo e recusada por lotacao", () => {
+    expect(vagaDe({ dia: DOMINGO, turno: "manha", config, ocupacao: ocupada(4), agora: QUARTA_7H })).toMatchObject({ bloqueio: "lotado", livres: 0 });
+  });
+
+  it("a tarde de domingo nao existe, igual a do sabado", () => {
+    expect(vagaDe({ dia: DOMINGO, turno: "tarde", config, agora: QUARTA_7H })).toMatchObject({ bloqueio: "turno_nao_atendido" });
+  });
+
+  it("sem vagasDomingo, o domingo usa o teto normal do turno", () => {
+    expect(vagaDe({ dia: DOMINGO, turno: "manha", config: { ...config, vagasDomingo: null }, agora: QUARTA_7H }).capacidade).toBe(20);
+  });
+
+  it("o teto do domingo nao vaza para os outros dias", () => {
+    expect(vagaDe({ dia: QUARTA, turno: "tarde", config, agora: QUARTA_7H }).capacidade).toBe(20);
+  });
+});

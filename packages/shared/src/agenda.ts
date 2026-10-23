@@ -64,6 +64,8 @@ export interface AgendaConfigDto {
   autoAgendaMaxRodada?: number;
   /** Vagas por dia guardadas pra "sem conexao"; liberadas na vespera. 0 = sem reserva. */
   vagasUrgenciaDia?: number;
+  /** Teto do domingo (so de manha). Nulo = vale o teto normal do turno. */
+  vagasDomingo?: number | null;
 }
 
 /** Um dia que foge da regra do calendario, como o servico o entrega. */

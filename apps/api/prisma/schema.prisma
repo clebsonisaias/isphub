@@ -2078,7 +2078,7 @@ model AgendaConfig {
 
   /// Dias da semana atendidos, 0=domingo … 6=sabado. Padrao seg-sab.
   /// A planilha ofertava domingo com capacidade cheia.
-  diasAtendidos Int[] @default([1, 2, 3, 4, 5, 6])
+  diasAtendidos Int[] @default([0, 1, 2, 3, 4, 5, 6])
 
   /// Quantos dias a frente a grade vai. A planilha mostrava 14.
   horizonteDias Int @default(14)
@@ -2113,6 +2113,8 @@ model AgendaConfig {
   /// Vagas por dia guardadas pra "sem conexao" que ainda nao chegou; liberadas
   /// pras demais OS na vespera. 0 = sem reserva.
   vagasUrgenciaDia Int @default(0)
+  /// Teto do domingo, que so tem a manha (plantao). Nulo = vale o teto normal.
+  vagasDomingo Int? @default(4)
 
   atualizadoEm DateTime @updatedAt
 

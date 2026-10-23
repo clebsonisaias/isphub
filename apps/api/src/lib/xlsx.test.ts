@@ -88,7 +88,7 @@ describe("linhas da planilha", () => {
   it("le pelo NOME da coluna (fora de ordem) e pula linha vazia", () => {
     const linhas = linhasDaPlanilha(lerAbas(planilha()));
     expect(linhas).toEqual([
-      { os: "213221", dia: "2026-10-23", turno: "manha", status: "", atendente: "Ana & Cia", aba: "reparo" },
+      { os: "213221", dia: "2026-10-23", turno: "manha", status: "", atendente: "Ana & Cia", aba: "reparo", tecnico: null, ordem: null, observacao: null },
     ]);
   });
 
