@@ -1,4 +1,4 @@
-import { CanalWhatsapp, MensagemClienteDirecao, MensagemClienteTipo, OrigemConversaCliente, UserRole } from "@isphub/shared";
+import { CanalWhatsapp, MensagemClienteDirecao, MensagemClienteTipo, OrigemConversaCliente, OsStatus, UserRole } from "@isphub/shared";
 import type { ConversaCliente } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../middleware/errorHandler.js";
@@ -231,6 +231,47 @@ export async function encerrarNoAtendai(conversa: Pick<ConversaCliente, "provedo
     if (e instanceof AtendaiIndisponivel && (e.status === 404 || e.status === 409)) return;
     erroDoAtendai(e);
   }
+}
+
+/**
+ * OS concluida encerra a conversa aberta por ela: a CláudIA volta a atender o
+ * cliente sem depender de alguem lembrar do "Encerrar". Roda logo depois de o
+ * tecnico concluir e ao fim de cada sync (OS encerrada no SGP).
+ *
+ * Desvincula a OS ao encerrar: se o tecnico voltar a escrever, a conversa
+ * reabre e nao e encerrada de novo no proximo sync. AtendAI fora do ar deixa a
+ * conversa aberta e vinculada — a proxima rodada tenta de novo.
+ */
+export async function encerrarConversasDeOsConcluidas(filtro: { ordemServicoId?: string; provedorId?: string }): Promise<number> {
+  const abertas = await prisma.conversaCliente.findMany({
+    where: {
+      canal: CanalWhatsapp.ATENDAI,
+      arquivada: false,
+      ordemServicoId: filtro.ordemServicoId ?? { not: null },
+      ...(filtro.provedorId ? { provedorId: filtro.provedorId } : {}),
+    },
+    select: { id: true, provedorId: true, atendaiConversaId: true, ordemServicoId: true },
+  });
+  if (abertas.length === 0) return 0;
+  const concluidas = await prisma.ordemServico.findMany({
+    where: { id: { in: abertas.map((c) => c.ordemServicoId!) }, status: OsStatus.CONCLUIDA },
+    select: { id: true },
+  });
+  const ids = new Set(concluidas.map((o) => o.id));
+
+  let encerradas = 0;
+  for (const c of abertas) {
+    if (!ids.has(c.ordemServicoId!)) continue;
+    try {
+      await encerrarNoAtendai(c);
+      await prisma.conversaCliente.update({ where: { id: c.id }, data: { arquivada: true, ordemServicoId: null } });
+      emitParaTodos({ tipo: "cliente-chat-conversa", conversaId: c.id, em: new Date().toISOString() });
+      encerradas++;
+    } catch (e) {
+      console.warn(`[cliente-atendai] OS concluida, mas a conversa ${c.id} nao encerrou:`, e instanceof Error ? e.message : e);
+    }
+  }
+  return encerradas;
 }
 
 /** `cliente_nova_mensagem` do AtendAI (corpo ja com a assinatura conferida). */

@@ -21,6 +21,7 @@ import { SgpError } from "../connectors/sgp.js";
 import { comConcorrenciaLimitada } from "../lib/limitador.js";
 import { emitParaUsuario } from "./realtimeHub.js";
 import { dispararPush } from "./pushService.js";
+import { encerrarConversasDeOsConcluidas } from "./clienteAtendaiService.js";
 
 /** Empurra um evento realtime pro tecnico da OS (best-effort — SSE so reduz latencia). */
 function notificarTecnico(tecnicoId: string | null, tipo: RealtimeEventoTipo, osId: string) {
@@ -207,6 +208,9 @@ export async function mudarStatus(
     evento(os.id, "status", autorId, descricao, geo, { de: os.status as OsStatus, para: novoStatus }),
   ]);
   notificarTecnico(osAtualizada.tecnicoId, "os-alterada", os.id);
+  // OS concluida: a conversa com o cliente aberta por ela encerra e a CláudIA
+  // volta. Sem esperar — concluir nao pode ficar refem do AtendAI.
+  if (novoStatus === OsStatus.CONCLUIDA) void encerrarConversasDeOsConcluidas({ ordemServicoId: os.id }).catch(() => {});
   return osAtualizada;
 }
 

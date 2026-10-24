@@ -14,6 +14,7 @@ import { emitParaTodos, emitParaUsuario } from "./realtimeHub.js";
 import { sugerirCategoriaId } from "./categoriaMatch.js";
 import { confirmarComSgp, ligarOrfas, reconciliarDoSgp } from "./agendaService.js";
 import { espelharDespachoSgp } from "./tecnicosSgpService.js";
+import { encerrarConversasDeOsConcluidas } from "./clienteAtendaiService.js";
 
 /**
  * Motor de sincronizacao: puxa OS do SGP de um provedor e faz
@@ -742,6 +743,14 @@ async function syncProvedorSemTrava(provedorId: string): Promise<{ ok: boolean; 
       // proposito: o cliente so invalida a fila, que e escopada no servidor.
       emitParaTodos({ tipo: "os-alterada", em });
       console.log(`[sync] provedor ${provedorId}: ${mexidas.length} OS nova(s)/alterada(s) — avisado em tempo real`);
+    }
+    // OS encerrada no SGP: a conversa com o cliente aberta por ela encerra e a
+    // CláudIA volta. Falha aqui nunca derruba o sync.
+    try {
+      const n = await encerrarConversasDeOsConcluidas({ provedorId });
+      if (n > 0) console.log(`[sync] provedor ${provedorId}: ${n} conversa(s) com cliente encerrada(s) (OS concluida)`);
+    } catch (e) {
+      console.warn(`[sync] provedor ${provedorId}: falha ao encerrar conversas de OS concluida:`, mensagem(e));
     }
 
     const msgTipos =
