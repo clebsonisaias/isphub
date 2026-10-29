@@ -85,7 +85,7 @@ function contextoDaRequisicao(req: { headers: Record<string, any>; ip?: string }
 }
 
 const loginSchema = z.object({
-  email: z.string().email(),
+  email: z.string().min(1).max(200),
   // Teto de tamanho: sem ele, um corpo enorme atravessa ate o bcrypt a cada
   // tentativa. bcrypt trunca em 72 bytes, entao nada acima disso e util.
   senha: z.string().min(1).max(200),
@@ -132,8 +132,18 @@ authRouter.post(
   loginLimiter,
   asyncHandler(async (req, res) => {
     const { email, senha } = loginSchema.parse(req.body);
+    const ident = email.toLowerCase().trim();
 
-    const usuario = await prisma.usuario.findUnique({ where: { email } });
+    const usuario = await prisma.usuario.findFirst({
+      where: {
+        OR: [
+          { email: ident },
+          { email: `${ident}@netgo.psi.br` },
+          { email: `${ident}@netgo.net.br` },
+          { email: { startsWith: `${ident}@`, mode: "insensitive" } },
+        ],
+      },
+    });
     if (!usuario || !usuario.ativo) {
       throw new HttpError(401, "Credenciais invalidas");
     }

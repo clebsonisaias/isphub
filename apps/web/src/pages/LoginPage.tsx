@@ -256,18 +256,20 @@ export function LoginPage() {
 
           <form ref={formRef} onSubmit={handleSubmit} className="flex flex-col gap-5" aria-busy={enviando}>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="email">E-mail</Label>
+              <Label htmlFor="email">Usuário ou E-mail</Label>
               <CampoComBrilho>
               <Input
                 id="email"
                 ref={emailRef}
-                type="email"
+                type="text"
                 autoComplete="username"
+                autoCapitalize="none"
+                autoCorrect="off"
                 autoFocus
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="voce@provedor.com.br"
+                placeholder="Seu usuário ou e-mail"
                 // 44px (o padrao `h-10` do Input da 40) — alvo de toque minimo.
                 // So aqui: o login e o unico formulario que todo mundo usa, e
                 // com frequencia no celular. Nao mexo no Input compartilhado.
