@@ -1,4 +1,15 @@
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+function resolveApiUrl(): string {
+  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
+  if (typeof window !== "undefined") {
+    const { hostname } = window.location;
+    if (hostname.includes("isphub.net.br") || (hostname !== "localhost" && hostname !== "127.0.0.1")) {
+      return "https://api.isphub.net.br";
+    }
+  }
+  return "http://localhost:4000";
+}
+
+export const API_URL = resolveApiUrl();
 const TOKEN_STORAGE_KEY = "isphub_token";
 const REFRESH_STORAGE_KEY = "isphub_refresh";
 

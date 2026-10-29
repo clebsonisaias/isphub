@@ -10,9 +10,7 @@ import {
 } from "react";
 import type { RealtimeEvento } from "@isphub/shared";
 import { useAuth } from "@/context/AuthContext";
-import { api, getAuthToken } from "./apiClient";
-
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+import { api, getAuthToken, API_URL } from "./apiClient";
 const BACKOFF_INICIAL_MS = 1000;
 const BACKOFF_MAX_MS = 30_000;
 
