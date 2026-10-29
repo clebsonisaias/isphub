@@ -327,3 +327,35 @@ export async function receberDoCliente(provedorId: string, aviso: AvisoCliente):
   }
   return "ok";
 }
+
+/**
+ * Notifica o cliente automaticamente pelo WhatsApp oficial do provedor
+ * quando o técnico clica em "Marcar a caminho" no PWA/APK.
+ */
+export async function avisarClienteACaminho(ordemServicoId: string, autorId: string): Promise<boolean> {
+  try {
+    const os = await prisma.ordemServico.findUnique({
+      where: { id: ordemServicoId },
+      include: { provedor: { select: { nome: true } } },
+    });
+    if (!os || !os.telefone) return false;
+
+    const autor = await prisma.usuario.findUnique({
+      where: { id: autorId },
+      select: { id: true, nome: true, role: true },
+    });
+    if (!autor) return false;
+
+    const primeiroNome = os.clienteNome?.trim().split(/\s+/)[0] || "Cliente";
+    const primeiroNomeTecnico = autor.nome.trim().split(/\s+/)[0] || "nosso técnico";
+    const texto = `Olá, ${primeiroNome}! O técnico ${primeiroNomeTecnico} da ${os.provedor.nome} acabou de iniciar o deslocamento e está a caminho do seu endereço para o atendimento da OS nº ${os.numero ?? os.sgpOsId}. Por favor, fique atento ao portão/interfone.`;
+
+    const user: JwtPayload = { sub: autor.id, email: "", role: autor.role as any, provedorId: os.provedorId };
+    await iniciarComClienteDaOs(user, ordemServicoId, texto);
+    return true;
+  } catch (err) {
+    console.warn("[avisarClienteACaminho] Aviso ao cliente não enviado:", err instanceof Error ? err.message : err);
+    return false;
+  }
+}
+

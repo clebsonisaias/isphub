@@ -22,7 +22,7 @@ import { SgpError } from "../connectors/sgp.js";
 import { comConcorrenciaLimitada } from "../lib/limitador.js";
 import { emitParaTodos, emitParaUsuario } from "./realtimeHub.js";
 import { dispararPush } from "./pushService.js";
-import { encerrarConversasDeOsConcluidas } from "./clienteAtendaiService.js";
+import { avisarClienteACaminho, encerrarConversasDeOsConcluidas } from "./clienteAtendaiService.js";
 
 /** Empurra um evento realtime pro tecnico da OS (best-effort — SSE so reduz latencia). */
 function notificarTecnico(tecnicoId: string | null, tipo: RealtimeEventoTipo, osId: string) {
@@ -174,6 +174,8 @@ export async function marcarACaminho(ordemServicoId: string, autorId: string, ge
     }),
   ]);
   notificarTecnico(osAtualizada.tecnicoId, "os-alterada", os.id);
+  // Notifica o cliente automaticamente pelo WhatsApp oficial da NetGO
+  void avisarClienteACaminho(os.id, autorId).catch(() => {});
   return osAtualizada;
 }
 

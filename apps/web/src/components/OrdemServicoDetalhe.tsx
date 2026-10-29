@@ -351,10 +351,35 @@ export function OrdemServicoDetalhe({
               />
             ) : null}
             <Info label="Designado no SGP" value={os.tecnicoSgpNome} />
-            <Info
-              label="Endereço"
-              value={enderecoTexto(detalhesLive?.endereco ?? null) ?? enderecoTexto(os.endereco)}
-            />
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Endereço</p>
+              <div className="flex flex-wrap items-center justify-between gap-2 mt-0.5">
+                <p className="font-medium text-foreground">
+                  {enderecoTexto(detalhesLive?.endereco ?? null) ?? enderecoTexto(os.endereco) ?? "—"}
+                </p>
+                {(() => {
+                  const endTxt = enderecoTexto(detalhesLive?.endereco ?? null) ?? enderecoTexto(os.endereco);
+                  const lat = detalhesLive?.endereco?.lat ?? os.endereco?.lat;
+                  const lng = detalhesLive?.endereco?.lng ?? os.endereco?.lng;
+                  if (!endTxt && lat == null) return null;
+                  const rotaUrl = (lat != null && lng != null)
+                    ? `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`
+                    : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(endTxt ?? "")}`;
+                  return (
+                    <a
+                      href={rotaUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-secondary/60 px-2.5 py-1 text-xs font-semibold text-primary transition-colors hover:bg-secondary"
+                      title="Navegar no Waze / Google Maps"
+                    >
+                      <Navigation className="size-3 text-brand-to" />
+                      Navegar GPS
+                    </a>
+                  );
+                })()}
+              </div>
+            </div>
             <Info label="Localização (POP)" value={os.pop} />
             <Info
               label="Aberta em"
