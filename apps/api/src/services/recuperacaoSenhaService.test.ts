@@ -46,6 +46,11 @@ vi.mock("../lib/prisma.js", () => ({
 }));
 vi.mock("./emailService.js", () => ({ enviarEmail, smtpConfigurado }));
 vi.mock("./refreshService.js", () => ({ revogarTudoDoUsuario }));
+// Como em producao: a API aceita varias origens, separadas por virgula.
+vi.mock("../config/env.js", async (original) => {
+  const m = await original<typeof import("../config/env.js")>();
+  return { env: { ...m.env, WEB_ORIGIN: "https://painel.isphub.net.br/, https://tecnico.netgo.psi.br" } };
+});
 
 const { redefinirSenha, solicitarRecuperacao } = await import("./recuperacaoSenhaService.js");
 
@@ -53,7 +58,7 @@ const USUARIO = { id: "u-1", nome: "Maria", email: "maria@provedor.com.br", ativ
 
 beforeEach(() => {
   vi.clearAllMocks();
-  smtpConfigurado.mockReturnValue(true);
+  smtpConfigurado.mockResolvedValue(true);
   enviarEmail.mockResolvedValue(true);
   tokenUpdateMany.mockResolvedValue({ count: 1 });
   tokenCreate.mockResolvedValue({});
@@ -113,6 +118,26 @@ describe("solicitarRecuperacao", () => {
     expect(tokenUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { usuarioId: USUARIO.id, usadoEm: null } }),
     );
+  });
+
+  it("o link e so do painel (a primeira origem), nunca a lista inteira", async () => {
+    usuarioFindUnique.mockResolvedValueOnce(USUARIO);
+    await solicitarRecuperacao(USUARIO.email);
+    const { texto } = enviarEmail.mock.calls[0][0];
+    expect(texto).toMatch(/^https:\/\/painel\.isphub\.net\.br\/redefinir-senha\?token=\S+$/m);
+    expect(texto).not.toContain("tecnico.netgo.psi.br");
+  });
+
+  it("sem SMTP configurado: nao tenta e-mail e deixa o link no log", async () => {
+    usuarioFindUnique.mockResolvedValueOnce(USUARIO);
+    smtpConfigurado.mockResolvedValueOnce(false);
+    const log = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await expect(solicitarRecuperacao(USUARIO.email)).resolves.toBeUndefined();
+
+    expect(enviarEmail).not.toHaveBeenCalled();
+    expect(log.mock.calls[0][0]).toContain("https://painel.isphub.net.br/redefinir-senha?token=");
+    log.mockRestore();
   });
 
   it("SMTP fora do ar nao propaga erro — a resposta tem que continuar uniforme", async () => {

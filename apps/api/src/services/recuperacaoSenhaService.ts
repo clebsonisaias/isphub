@@ -60,11 +60,13 @@ export async function solicitarRecuperacao(email: string): Promise<void> {
     },
   });
 
-  const link = `${env.WEB_ORIGIN.replace(/\/$/, "")}/redefinir-senha?token=${encodeURIComponent(token)}`;
+  // WEB_ORIGIN e uma LISTA (painel, PWA do tecnico...): o link e do painel, a primeira.
+  const painel = env.WEB_ORIGIN.split(",")[0]!.trim().replace(/\/$/, "");
+  const link = `${painel}/redefinir-senha?token=${encodeURIComponent(token)}`;
 
-  if (!smtpConfigurado()) {
-    // Em dev/e2e nao ha SMTP; sem isto o recurso seria intestavel localmente.
-    // Em producao o SMTP existe e este ramo nao roda.
+  if (!(await smtpConfigurado())) {
+    // Sem SMTP (dev/e2e, ou producao ainda sem e-mail configurado) o link vai
+    // pro log da API — so quem administra o servidor o le.
     console.warn(`[recuperacao] SMTP ausente — link de ${usuario.email}: ${link}`);
     return;
   }
