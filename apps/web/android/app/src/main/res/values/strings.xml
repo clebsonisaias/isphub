@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Técnico NetGO</string>
+    <string name="title_activity_main">Técnico NetGO</string>
+    <string name="package_name">br.net.netgo.tecnico</string>
+    <string name="custom_url_scheme">br.net.netgo.tecnico</string>
+</resources>

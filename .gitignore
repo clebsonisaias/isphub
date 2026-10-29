@@ -5,6 +5,11 @@ node_modules/
 dist/
 build/
 *.tsbuildinfo
+*.apk
+.gradle/
+**/android/.gradle/
+**/android/app/build/
+**/android/.idea/
 
 # env / secrets
 .env
