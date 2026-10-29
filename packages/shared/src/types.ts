@@ -149,6 +149,8 @@ export interface OrdemServico {
   visitaConfirmadaEm?: string | null;
   /** Quando o SGP do provedor refletiu a data marcada. Nulo = pendente la. */
   visitaSgpConfirmadaEm?: string | null;
+  /** "Marcada pela IA do AtendAI em qui 29/10 · 16:32 · a OS já estava aberta". Nulo sem visita marcada. */
+  agendaResumo?: string | null;
   /** Tecnico ISPhub atribuido (despacho feito dentro do ISPhub). */
   tecnicoId?: string | null;
   tecnicoNome?: string | null;
@@ -258,6 +260,15 @@ export interface OsEvento {
   /** Onde o tecnico estava. Nulo quando a permissao foi negada. */
   lat?: number | null;
   lng?: number | null;
+}
+
+/**
+ * Item da timeline da OS como a tela recebe: os eventos da OS mais a trilha da agenda (`agenda`:
+ * marcou/remarcou/desmarcou/confirmou) e a abertura (`abertura`: no SGP ou avisada pelo AtendAI).
+ * Tipo proprio porque `OsEventoTipo` e o enum gravado no banco, e estes dois nao vivem la.
+ */
+export interface OsTimelineItem extends Omit<OsEvento, "tipo"> {
+  tipo: OsEventoTipo | "agenda" | "abertura";
 }
 
 /**

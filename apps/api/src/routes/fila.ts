@@ -8,6 +8,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { calcularSla } from "../services/slaService.js";
 import { escopoOsWhere } from "../services/escopoService.js";
 import { prepararFila } from "../services/filaService.js";
+import { resumoMarcacao } from "../lib/eventosAgenda.js";
 import { whereEquipeParaUsuario } from "../services/equipeService.js";
 
 export const filaRouter = Router();
@@ -26,7 +27,22 @@ export const INCLUDE_FILA = {
   apoios: { select: { nome: true } },
   // A rota do dia: o supervisor ordena na agenda e o app do tecnico le
   // daqui. Na planilha essa coluna existia e morria na planilha.
-  agendamento: { select: { id: true, ordemRota: true, turno: true, status: true, dia: true, confirmadoEm: true, sgpConfirmadoEm: true } },
+  agendamento: {
+    select: {
+      id: true,
+      ordemRota: true,
+      turno: true,
+      status: true,
+      dia: true,
+      confirmadoEm: true,
+      sgpConfirmadoEm: true,
+      // "Quem marcou, quando e se a OS ja estava aberta" — a linha curta do detalhe.
+      origem: true,
+      marcadoPor: true,
+      osSituacao: true,
+      atualizadoEm: true,
+    },
+  },
 } satisfies Prisma.OrdemServicoInclude;
 
 export function paraFilaItem(os: Prisma.OrdemServicoGetPayload<{ include: typeof INCLUDE_FILA }>): FilaItem {
@@ -87,6 +103,7 @@ export function paraFilaItem(os: Prisma.OrdemServicoGetPayload<{ include: typeof
     visitaConfirmadaEm: os.agendamento?.status === "marcado" ? (os.agendamento.confirmadoEm?.toISOString() ?? null) : null,
     visitaSgpConfirmadaEm:
       os.agendamento?.status === "marcado" ? (os.agendamento.sgpConfirmadoEm?.toISOString() ?? null) : null,
+    agendaResumo: resumoMarcacao(os.agendamento),
     tecnicoId: os.tecnicoId,
     tecnicoNome: os.tecnico?.nome ?? null,
     apoioNomes: os.apoios.map((a) => a.nome),

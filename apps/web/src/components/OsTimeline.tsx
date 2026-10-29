@@ -1,13 +1,13 @@
 import { rotuloDataHora } from "@isphub/shared";
 import { useEffect, useState } from "react";
-import type { OsEvento } from "@isphub/shared";
+import type { OsTimelineItem } from "@isphub/shared";
 import { ordensServicoApi } from "@/lib/filaApi";
 import { ApiError } from "@/lib/apiClient";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ErrorState";
-import { UserPlus, RefreshCw, MessageSquare, Camera, Pencil, FileSignature, MapPin, type LucideIcon } from "lucide-react";
+import { UserPlus, RefreshCw, MessageSquare, Camera, Pencil, FileSignature, MapPin, CalendarClock, FilePlus, type LucideIcon } from "lucide-react";
 
-const ICONE_POR_TIPO: Record<OsEvento["tipo"], LucideIcon> = {
+const ICONE_POR_TIPO: Record<OsTimelineItem["tipo"], LucideIcon> = {
   atribuicao: UserPlus,
   status: RefreshCw,
   anotacao: MessageSquare,
@@ -16,15 +16,18 @@ const ICONE_POR_TIPO: Record<OsEvento["tipo"], LucideIcon> = {
   // Mudanca do status do CONTRATO — icone proprio pra nao se confundir com o
   // `status` (que e o da OS) na mesma timeline.
   contrato: FileSignature,
+  // Trilha da agenda (marcou, remarcou, desmarcou, confirmou) e a abertura da OS.
+  agenda: CalendarClock,
+  abertura: FilePlus,
 };
 
 function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
 }
 
-/** Timeline de uma OS (status, anotações, atribuições, fotos) — busca ao montar. */
+/** Timeline de uma OS (status, anotações, atribuições, fotos, agenda e abertura) — busca ao montar. */
 export function OsTimeline({ ordemServicoId }: { ordemServicoId: string }) {
-  const [eventos, setEventos] = useState<OsEvento[] | null>(null);
+  const [eventos, setEventos] = useState<OsTimelineItem[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [tentativa, setTentativa] = useState(0);
 

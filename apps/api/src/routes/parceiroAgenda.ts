@@ -82,7 +82,21 @@ const marcarSchema = z.object({
   /** Nome de quem marcou, pra trilha. A planilha tinha a coluna "Atendente". */
   marcadoPor: z.string().trim().max(120).nullish(),
   observacao: z.string().trim().max(500).nullish(),
+  ...contextoSchema(),
 });
+
+/**
+ * O que a conversa do AtendAI sabe e o ISPhub nao: se a OS ja estava aberta, o protocolo que o
+ * cliente tem na mao e o canal. Tudo opcional — parceiro antigo continua marcando igual.
+ */
+function contextoSchema() {
+  return {
+    osSituacao: z.enum(["ja_aberta", "aberta_agora"]).nullish(),
+    protocolo: z.string().trim().max(60).nullish(),
+    canal: z.string().trim().max(40).nullish(),
+    conversaRef: z.string().trim().max(80).nullish(),
+  };
+}
 
 /** Como a origem chega do outro lado vira a origem canonica daqui. */
 const ORIGEM: Record<"ia" | "humano" | "cliente", string> = {
@@ -121,6 +135,13 @@ parceiroAgendaRouter.post(
       origem: ORIGEM[b.por],
       marcadoPor: b.marcadoPor ?? null,
       observacao: b.observacao ?? null,
+      contexto: {
+        // Sem a informacao do parceiro: OS ja espelhada existia antes desta marcacao.
+        osSituacao: b.osSituacao ?? (espelhada ? "ja_aberta" : null),
+        protocolo: b.protocolo ?? null,
+        canal: b.canal ?? null,
+        conversaRef: b.conversaRef ?? null,
+      },
     });
 
     res.status(201).json({
@@ -322,8 +343,40 @@ parceiroAgendaRouter.delete(
       select: { id: true, status: true },
     });
     if (!m) throw new HttpError(404, "Nao ha marcacao para esta OS");
-    if (m.status === "marcado") await agenda.cancelar(m.id);
+    // Quem desmarcou vem na query (DELETE sem corpo); ausente = atendente do AtendAI.
+    const q = z
+      .object({ por: z.enum(["ia", "humano", "cliente"]).default("humano"), marcadoPor: z.string().trim().max(120).optional(), protocolo: z.string().trim().max(60).optional() })
+      .parse(req.query);
+    if (m.status === "marcado") {
+      await agenda.cancelar(m.id, { origem: ORIGEM[q.por], autor: q.marcadoPor ?? null, contexto: { protocolo: q.protocolo ?? null } });
+    }
     res.status(204).end();
     if (m.status === "marcado") void agenda.limparNoSgp(m.id);
+  }),
+);
+
+const aberturaSchema = z.object({
+  sgpOsId: z.union([z.string().trim().min(1), z.number().int()]).transform(String),
+  por: z.enum(["ia", "humano", "cliente"]).default("humano"),
+  autor: z.string().trim().max(120).nullish(),
+  ...contextoSchema(),
+});
+
+/**
+ * `POST /os/aberta` — o AtendAI avisa que acabou de abrir esta OS no SGP. So trilha: a OS chega
+ * ao espelho pelo sync, e e isto que permite o Historico dizer "aberta pela IA, protocolo X".
+ */
+parceiroAgendaRouter.post(
+  "/os/aberta",
+  asyncHandler(async (req, res) => {
+    const b = aberturaSchema.parse(req.body);
+    await agenda.registrarAbertura({
+      provedorId: req.provedorParceiroId!,
+      sgpOsId: b.sgpOsId,
+      origem: ORIGEM[b.por],
+      autor: b.autor ?? null,
+      contexto: { osSituacao: "aberta_agora", protocolo: b.protocolo ?? null, canal: b.canal ?? null, conversaRef: b.conversaRef ?? null },
+    });
+    res.status(201).json({ ok: true });
   }),
 );

@@ -464,6 +464,8 @@ export function OrdemServicoDetalhe({
                       Visita: <span className="font-medium text-foreground">{rotuloVisita(os.diaAgenda, os.turnoAgenda)}</span>
                     </span>
                   )}
+                  {/* Quem marcou e se a OS ja estava aberta: o resto da historia fica na aba Historico. */}
+                  {os.agendaResumo && <span className="basis-full text-xs text-muted-foreground">{os.agendaResumo}</span>}
                   {auditoria && (
                     <span
                       className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${auditoria.veredito === "presente" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}

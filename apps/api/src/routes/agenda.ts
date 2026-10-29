@@ -272,7 +272,7 @@ agendaRouter.delete(
       if (!m) throw new HttpError(404, "Agendamento nao encontrado");
       exigirProvedorDoAtendente(req.user, m.provedorId);
     }
-    const cancelado = await agenda.cancelar(req.params.id);
+    const cancelado = await agenda.cancelar(req.params.id, { origem: "isphub", autor: req.user!.email });
     res.json(cancelado);
     // Depois da resposta, como no marcar: o SGP alcanca a agenda, nao o contrario.
     void agenda.limparNoSgp(cancelado.id);

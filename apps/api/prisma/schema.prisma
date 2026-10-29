@@ -79,6 +79,7 @@ model Provedor {
   tecnicosSgp   TecnicoSgp[]
   syncLogs      SyncLog[]
   agendamentos  Agendamento[]
+  agendamentoEventos AgendamentoEvento[]
   /// Lancamentos em que este provedor e a CONTRAPARTE (quem deve a hub).
   /// Diferente de todas as relacoes acima: nao e particao multi-tenant.
   lancamentos   Lancamento[]
@@ -2309,6 +2310,10 @@ model Agendamento {
 
   origem String
 
+  /// Na ultima marcacao: a OS "ja_aberta" (existia antes) ou "aberta_agora" (aberta na mesma
+  /// conversa que marcou). Nulo = quem marcou nao disse.
+  osSituacao String?
+
   /// Quem marcou (nome da atendente, login, ou "IA"). Colunas "Atendente" e
   /// "Data do Registro" da planilha viram dado auditavel.
   marcadoPor String?
@@ -2396,4 +2401,40 @@ model TecnicoSgp {
   @@unique([provedorId, papel, sgpId])
   @@index([usuarioId])
   @@map("tecnicos_sgp")
+}
+
+/// Trilha da agenda e da abertura de OS: cada marcacao, remarcacao, desmarcacao e confirmacao, e a
+/// abertura avisada pelo AtendAI. `Agendamento` e uma linha so por OS (o `marcar` sobrescreve),
+/// entao sem isto "quem marcou primeiro, quem remarcou, quando" nao tinha resposta.
+///
+/// Chave `(provedorId, sgpOsId)` e nao a OS espelhada, pelo mesmo motivo do `Agendamento`: o
+/// AtendAI abre e marca antes de o sync trazer a OS. Por isso nao e `OsEvento` (que exige a OS
+/// espelhada e autor `Usuario`).
+model AgendamentoEvento {
+  id            String   @id @default(uuid())
+  provedorId    String
+  provedor      Provedor @relation(fields: [provedorId], references: [id], onDelete: Cascade)
+  sgpOsId       String
+  agendamentoId String?
+  /// os_aberta | marcado | remarcado | desmarcado | confirmado
+  tipo          String
+  dia           DateTime? @db.Date
+  turno         TurnoAgenda?
+  diaAnterior   DateTime? @db.Date
+  turnoAnterior TurnoAgenda?
+  /// isphub | atendai_ia | atendai_humano | cliente | sgp | auto | planilha
+  origem        String
+  /// Nome/login de quem fez, ou o nome do bot.
+  autor         String?
+  /// Canal da conversa do AtendAI (whatsapp, widget...).
+  canal         String?
+  /// Protocolo do atendimento no AtendAI — e o que o cliente tem na mao.
+  protocolo     String?
+  conversaRef   String?
+  /// ja_aberta | aberta_agora
+  osSituacao    String?
+  criadoEm      DateTime @default(now())
+
+  @@index([provedorId, sgpOsId, criadoEm])
+  @@map("agendamento_eventos")
 }

@@ -449,6 +449,8 @@ export interface MarcarArgs {
    * lotacao (turno, dia, regiao) — feriado e dia/turno fechado continuam valendo.
    */
   ignorarLotacao?: boolean;
+  /** De onde veio a marcacao, para a trilha (AtendAI: canal, protocolo, se a OS ja estava aberta). */
+  contexto?: ContextoEvento;
 }
 
 /** Bloqueios de LOTACAO — os unicos que `ignorarLotacao` atravessa. */
@@ -546,6 +548,60 @@ export async function statusNoSgp(provedorId: string, sgpOsId: string): Promise<
   }
 }
 
+/** O que acompanha um evento da trilha quando ele vem de uma conversa. */
+export interface ContextoEvento {
+  canal?: string | null;
+  protocolo?: string | null;
+  conversaRef?: string | null;
+  /** "ja_aberta" | "aberta_agora" */
+  osSituacao?: string | null;
+}
+
+/**
+ * Que evento uma marcacao gera. Nulo = nada mudou para a trilha (a mesma janela de novo,
+ * por exemplo so trocando a observacao).
+ */
+export function tipoDaMarcacao(
+  jaTinha: { dia: Date; turno: TurnoAgenda; status: string } | null,
+  dia: string,
+  turno: TurnoAgenda,
+): "marcado" | "remarcado" | null {
+  if (!jaTinha || jaTinha.status !== "marcado") return "marcado";
+  const mesma = jaTinha.dia.toISOString().slice(0, 10) === dia && jaTinha.turno === turno;
+  return mesma ? null : "remarcado";
+}
+
+type TxEvento = Pick<typeof prisma, "agendamentoEvento">;
+
+/** Grava um evento na trilha. Dentro da transacao de quem chamou: so registra o que de fato aconteceu. */
+export async function registrarEvento(
+  tx: TxEvento,
+  e: {
+    provedorId: string;
+    sgpOsId: string;
+    agendamentoId?: string | null;
+    tipo: "os_aberta" | "marcado" | "remarcado" | "desmarcado" | "confirmado";
+    dia?: Date | null;
+    turno?: TurnoAgenda | null;
+    diaAnterior?: Date | null;
+    turnoAnterior?: TurnoAgenda | null;
+    origem: string;
+    autor?: string | null;
+    contexto?: ContextoEvento;
+  },
+) {
+  const { contexto, ...resto } = e;
+  await tx.agendamentoEvento.create({
+    data: {
+      ...resto,
+      canal: contexto?.canal ?? null,
+      protocolo: contexto?.protocolo ?? null,
+      conversaRef: contexto?.conversaRef ?? null,
+      osSituacao: contexto?.osSituacao ?? null,
+    },
+  });
+}
+
 export async function marcar(args: MarcarArgs) {
   const config = await lerConfig();
   // A excecao do dia entra na checagem: sem ela, marcar direto (sem passar
@@ -610,6 +666,8 @@ export async function marcar(args: MarcarArgs) {
       fila: args.fila,
       status: "marcado" as const,
       ordemServicoId: os?.id ?? null,
+      // So muda quando quem marcou disse; ausente mantem o que a marcacao tinha.
+      osSituacao: args.contexto?.osSituacao === undefined ? undefined : args.contexto.osSituacao,
       // Remarcar invalida a confirmacao anterior: o SGP ainda tem a data velha.
       sgpConfirmadoEm: null,
       // Remarcar tira a OS da rota do dia antigo — a ordem la nao significa
@@ -617,11 +675,28 @@ export async function marcar(args: MarcarArgs) {
       ordemRota: mesmaJanela ? undefined : null,
     };
 
-    return tx.agendamento.upsert({
+    const salvo = await tx.agendamento.upsert({
       where: { provedorId_sgpOsId: { provedorId: args.provedorId, sgpOsId: args.sgpOsId } },
       create: { provedorId: args.provedorId, sgpOsId: args.sgpOsId, ...dados },
       update: dados,
     });
+
+    const tipo = tipoDaMarcacao(jaTinha, args.dia, args.turno);
+    if (tipo) {
+      await registrarEvento(tx, {
+        provedorId: args.provedorId,
+        sgpOsId: args.sgpOsId,
+        agendamentoId: salvo.id,
+        tipo,
+        dia: salvo.dia,
+        turno: salvo.turno,
+        ...(tipo === "remarcado" ? { diaAnterior: jaTinha!.dia, turnoAnterior: jaTinha!.turno } : {}),
+        origem: args.origem,
+        autor: args.marcadoPor ?? null,
+        contexto: args.contexto,
+      });
+    }
+    return salvo;
   });
 }
 
@@ -670,11 +745,32 @@ async function ocupacoesNaTransacao(
   return mapa;
 }
 
-export async function cancelar(id: string) {
+export async function cancelar(
+  id: string,
+  /** Quem desmarcou, para a trilha. Ausente = "isphub" sem autor. */
+  quem: { origem: string; autor?: string | null; contexto?: ContextoEvento } = { origem: "isphub" },
+) {
   // Cancela em vez de apagar: a vaga volta a ficar livre do mesmo jeito, mas
   // "esta OS ja foi marcada e desmarcada" continua sendo uma pergunta
   // respondivel — e e a que aparece quando o cliente reclama.
-  return prisma.agendamento.update({ where: { id }, data: { status: "cancelado", ordemRota: null } });
+  return prisma.$transaction(async (tx) => {
+    const antes = await tx.agendamento.findUnique({ where: { id }, select: { status: true } });
+    const cancelado = await tx.agendamento.update({ where: { id }, data: { status: "cancelado", ordemRota: null } });
+    if (antes?.status === "marcado") {
+      await registrarEvento(tx, {
+        provedorId: cancelado.provedorId,
+        sgpOsId: cancelado.sgpOsId,
+        agendamentoId: cancelado.id,
+        tipo: "desmarcado",
+        dia: cancelado.dia,
+        turno: cancelado.turno,
+        origem: quem.origem,
+        autor: quem.autor ?? null,
+        contexto: quem.contexto,
+      });
+    }
+    return cancelado;
+  });
 }
 
 /** As marcacoes de uma janela, na ordem da rota. A lista do supervisor. */
@@ -743,6 +839,12 @@ export async function reconciliarDoSgp(
   linhas: { provedorId: string; sgpOsId: string; ordemServicoId: string; dataAgendamento: Date; regiao: string | null }[],
 ) {
   if (linhas.length === 0) return 0;
+  // Quais ainda nao tinham marcacao: so essas viram evento ("o SGP ja trazia a data").
+  const existentes = await prisma.agendamento.findMany({
+    where: { OR: linhas.map((l) => ({ provedorId: l.provedorId, sgpOsId: l.sgpOsId })) },
+    select: { provedorId: true, sgpOsId: true },
+  });
+  const ja = new Set(existentes.map((e) => `${e.provedorId}:${e.sgpOsId}`));
   const resultado = await prisma.agendamento.createMany({
     data: linhas.map((l) => ({
       provedorId: l.provedorId,
@@ -757,6 +859,20 @@ export async function reconciliarDoSgp(
     })),
     skipDuplicates: true,
   });
+  const novas = linhas.filter((l) => !ja.has(`${l.provedorId}:${l.sgpOsId}`));
+  if (novas.length) {
+    await prisma.agendamentoEvento.createMany({
+      data: novas.map((l) => ({
+        provedorId: l.provedorId,
+        sgpOsId: l.sgpOsId,
+        tipo: "marcado",
+        dia: dataDoDia(diaBrDe(l.dataAgendamento)),
+        turno: turnoBrDe(l.dataAgendamento),
+        origem: "sgp",
+        autor: "SGP",
+      })),
+    });
+  }
   return resultado.count;
 }
 
@@ -933,10 +1049,31 @@ export async function confirmarPeloCliente(provedorId: string, sgpOsId: string) 
     select: { id: true, status: true },
   });
   if (!m || m.status !== "marcado") return null;
-  return prisma.agendamento.update({
-    where: { id: m.id },
-    data: { confirmadoEm: new Date() },
-    select: { id: true, dia: true, turno: true, confirmadoEm: true },
+  return prisma.$transaction(async (tx) => {
+    const r = await tx.agendamento.update({
+      where: { id: m.id },
+      data: { confirmadoEm: new Date() },
+      select: { id: true, dia: true, turno: true, confirmadoEm: true },
+    });
+    await registrarEvento(tx, { provedorId, sgpOsId, agendamentoId: r.id, tipo: "confirmado", dia: r.dia, turno: r.turno, origem: "cliente", autor: "Cliente" });
+    return r;
+  });
+}
+
+/**
+ * Abertura de OS avisada por um parceiro (o AtendAI abriu no SGP). E so trilha: a OS chega ao
+ * espelho pelo sync, como qualquer outra.
+ */
+export async function registrarAbertura(args: { provedorId: string; sgpOsId: string; origem: string; autor?: string | null; contexto?: ContextoEvento }) {
+  await registrarEvento(prisma, { ...args, tipo: "os_aberta" });
+}
+
+/** A trilha de uma OS, mais recente primeiro. */
+export async function eventosDaOs(provedorId: string, sgpOsId: string) {
+  return prisma.agendamentoEvento.findMany({
+    where: { provedorId, sgpOsId },
+    orderBy: { criadoEm: "desc" },
+    take: 100,
   });
 }
 

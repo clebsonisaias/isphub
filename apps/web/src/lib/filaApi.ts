@@ -1,4 +1,4 @@
-import type { EvidenciaResumo, FilaFiltros, FilaItem, OrdemServico, OsEvento, OsFichaSgp, OsStatus, CodigoStatusContrato } from "@isphub/shared";
+import type { EvidenciaResumo, FilaFiltros, FilaItem, OrdemServico, OsTimelineItem, OsFichaSgp, OsStatus, CodigoStatusContrato } from "@isphub/shared";
 import { api } from "@/lib/apiClient";
 import type { ImagemComprimida } from "@/lib/imagem";
 
@@ -57,7 +57,7 @@ export const ordensServicoApi = {
   /** Encerra sem visita (no ISPhub e no SGP); o motivo e o nome de quem encerrou vão para o SGP. */
   encerrar: (id: string, motivo: string) => api.post<OrdemServico>(`/ordens-servico/${id}/encerrar`, { motivo }),
   atribuir: (id: string, tecnicoId: string) => api.post<OrdemServico>(`/ordens-servico/${id}/atribuir`, { tecnicoId }),
-  eventos: (id: string) => api.get<OsEvento[]>(`/ordens-servico/${id}/eventos`),
+  eventos: (id: string) => api.get<OsTimelineItem[]>(`/ordens-servico/${id}/eventos`),
   /** Abre (ou retoma) a conversa com o cliente pelo WhatsApp do AtendAI do provedor. */
   conversaCliente: (id: string) => api.post<{ conversaId: string }>(`/ordens-servico/${id}/conversa-cliente`, {}),
   /** A viatura esteve no endereco? `null` = OS nao concluida. */

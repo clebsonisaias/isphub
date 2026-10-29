@@ -12,6 +12,8 @@ import { podeAcessarOs } from "../services/escopoService.js";
 import * as writeback from "../services/writebackService.js";
 import { INCLUDE_FILA, paraFilaItem } from "./fila.js";
 import { iniciarComClienteDaOs } from "../services/clienteAtendaiService.js";
+import * as agendaService from "../services/agendaService.js";
+import { montarTimeline } from "../lib/eventosAgenda.js";
 
 export const ordensServicoRouter = Router();
 
@@ -214,26 +216,38 @@ ordensServicoRouter.get(
   "/:id/eventos",
   asyncHandler(async (req, res) => {
     await assertAcesso(req, req.params.id);
-    const eventos = await prisma.osEvento.findMany({
-      where: { ordemServicoId: req.params.id },
-      include: { autor: { select: { nome: true } } },
-      orderBy: { criadoEm: "desc" },
-    });
+    const [eventos, os] = await Promise.all([
+      prisma.osEvento.findMany({
+        where: { ordemServicoId: req.params.id },
+        include: { autor: { select: { nome: true } } },
+        orderBy: { criadoEm: "desc" },
+      }),
+      prisma.ordemServico.findUnique({
+        where: { id: req.params.id },
+        select: { provedorId: true, sgpOsId: true, usuario: true, dataCadastro: true },
+      }),
+    ]);
+    // Trilha da agenda e da abertura: chaveada pelo id do SGP, existe mesmo antes de a OS espelhar.
+    const agendaEventos = os ? await agendaService.eventosDaOs(os.provedorId, os.sgpOsId) : [];
     res.json(
-      /*
-       * Projecao campo a campo — lista de permissao, nao de exclusao. Campo
-       * novo no modelo que nao seja acrescentado AQUI simplesmente nao chega
-       * na tela, sem erro nenhum em lugar nenhum.
-       */
-      eventos.map((e) => ({
-        id: e.id,
-        tipo: e.tipo,
-        autorNome: e.autor?.nome ?? null,
-        descricao: e.descricao,
-        lat: e.lat,
-        lng: e.lng,
-        criadoEm: e.criadoEm,
-      })),
+      montarTimeline(
+        /*
+         * Projecao campo a campo — lista de permissao, nao de exclusao. Campo
+         * novo no modelo que nao seja acrescentado AQUI simplesmente nao chega
+         * na tela, sem erro nenhum em lugar nenhum.
+         */
+        eventos.map((e) => ({
+          id: e.id,
+          tipo: e.tipo,
+          autorNome: e.autor?.nome ?? null,
+          descricao: e.descricao,
+          lat: e.lat,
+          lng: e.lng,
+          criadoEm: e.criadoEm.toISOString(),
+        })),
+        agendaEventos,
+        { usuario: os?.usuario ?? null, dataCadastro: os?.dataCadastro ?? null },
+      ),
     );
   }),
 );
