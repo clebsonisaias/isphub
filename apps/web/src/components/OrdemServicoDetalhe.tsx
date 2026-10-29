@@ -28,9 +28,10 @@ import { ordensServicoApi, tecnicosApi, type TecnicoResumo } from "@/lib/filaApi
 import { ApiError } from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-import { CalendarDays, CalendarX2, CheckCircle2, ExternalLink, MapPinCheck, MapPinOff, MessageCircle, Navigation, Play, Route } from "lucide-react";
+import { CalendarDays, CalendarX2, CheckCircle2, CircleX, ExternalLink, MapPinCheck, MapPinOff, MessageCircle, Navigation, Play, Route } from "lucide-react";
 import { formatarKm } from "@isphub/shared";
 import { MarcarVisitaDialog } from "@/components/MarcarVisitaDialog";
+import { EncerrarOsDialog } from "@/components/EncerrarOsDialog";
 import { agendaApi, rotuloVisita } from "@/lib/agendaApi";
 
 function mensagem(err: unknown): string {
@@ -67,6 +68,7 @@ export function OrdemServicoDetalhe({
   const [novoStatus, setNovoStatus] = useState<OsStatus>(item.status);
   const [textoAnotacao, setTextoAnotacao] = useState("");
   const [acaoEmCurso, setAcaoEmCurso] = useState<string | null>(null);
+  const [encerrarAberto, setEncerrarAberto] = useState(false);
   const [detalhesLive, setDetalhesLive] = useState<DetalhesTecnicos | null>(null);
   const [marcandoVisita, setMarcandoVisita] = useState(false);
   // Dois toques pra desmarcar: o primeiro so pergunta. Inline, sem outro
@@ -159,6 +161,22 @@ export function OrdemServicoDetalhe({
   }, [podeDespachar, os.id]);
 
   const marcarMudanca = onMudanca;
+
+  /** Encerrar sem visita (admin e gestor): fecha no ISPhub e no SGP, com o motivo anotado lá. */
+  async function encerrarSemVisita(motivo: string) {
+    setAcaoEmCurso("encerrar");
+    try {
+      const atualizado = await ordensServicoApi.encerrar(os.id, motivo);
+      setOs((prev) => ({ ...prev, status: atualizado.status, diaAgenda: null, turnoAgenda: null }));
+      setEncerrarAberto(false);
+      toast({ variante: "sucesso", titulo: `OS ${os.sgpOsId} encerrada no ISPhub e no SGP` });
+      marcarMudanca();
+    } catch (e) {
+      toast({ variante: "erro", titulo: "Não deu para encerrar", descricao: mensagem(e) });
+    } finally {
+      setAcaoEmCurso(null);
+    }
+  }
 
   async function handleACaminho() {
     setAcaoEmCurso("acaminho");
@@ -266,13 +284,36 @@ export function OrdemServicoDetalhe({
         </Descricao>
       </Cabecalho>
 
-      {os.telefone && usuario?.role !== UserRole.PROVEDOR ? (
-        <div>
-          <Button variant="outline" size="sm" onClick={() => void handleConversarComCliente()} disabled={acaoEmCurso !== null}>
-            <MessageCircle className="size-4" aria-hidden />
-            {acaoEmCurso === "conversa-cliente" ? "Abrindo conversa..." : "Conversar com o cliente"}
-          </Button>
+      {(os.telefone && usuario?.role !== UserRole.PROVEDOR) || (podeDespachar && OS_STATUS_ABERTOS.includes(os.status)) ? (
+        <div className="flex flex-wrap gap-2">
+          {os.telefone && usuario?.role !== UserRole.PROVEDOR ? (
+            <Button variant="outline" size="sm" onClick={() => void handleConversarComCliente()} disabled={acaoEmCurso !== null}>
+              <MessageCircle className="size-4" aria-hidden />
+              {acaoEmCurso === "conversa-cliente" ? "Abrindo conversa..." : "Conversar com o cliente"}
+            </Button>
+          ) : null}
+          {podeDespachar && OS_STATUS_ABERTOS.includes(os.status) ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:bg-destructive/10"
+              onClick={() => setEncerrarAberto(true)}
+              disabled={acaoEmCurso !== null}
+            >
+              <CircleX className="size-4" aria-hidden />
+              Encerrar OS
+            </Button>
+          ) : null}
         </div>
+      ) : null}
+      {podeDespachar ? (
+        <EncerrarOsDialog
+          os={os}
+          aberto={encerrarAberto}
+          enviando={acaoEmCurso === "encerrar"}
+          onFechar={() => setEncerrarAberto(false)}
+          onConfirmar={(motivo) => void encerrarSemVisita(motivo)}
+        />
       ) : null}
 
       {/*
