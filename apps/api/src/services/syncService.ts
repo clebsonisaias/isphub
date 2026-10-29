@@ -12,7 +12,7 @@ import { OS_EXTERNA_WHERE, OS_INTERNA_WHERE } from "./equipeService.js";
 import { buildConnector } from "./erpConnectorService.js";
 import { emitParaTodos, emitParaUsuario } from "./realtimeHub.js";
 import { sugerirCategoriaId } from "./categoriaMatch.js";
-import { confirmarComSgp, ligarOrfas, reconciliarDoSgp } from "./agendaService.js";
+import { confirmarComSgp, ligarOrfas, reconciliarDoSgp, reenviarNaoConfirmadas } from "./agendaService.js";
 import { espelharDespachoSgp } from "./tecnicosSgpService.js";
 import { encerrarConversasDeOsConcluidas } from "./clienteAtendaiService.js";
 
@@ -446,6 +446,10 @@ async function syncProvedorSemTrava(provedorId: string): Promise<{ ok: boolean; 
     try {
       await ligarOrfas(provedorId);
       await confirmarComSgp(provedorId);
+      // Sem esperar: até 30 escritas no SGP não podem atrasar o ciclo do sync.
+      void reenviarNaoConfirmadas(provedorId)
+        .then((n) => n > 0 && console.log(`[sync] agenda: ${n} visita(s) reenviada(s) ao SGP (provedor ${provedorId})`))
+        .catch((e) => console.warn(`[sync] agenda: reenvio ao SGP falhou no provedor ${provedorId}:`, e));
       const semMarcacao = await prisma.ordemServico.findMany({
         where: {
           provedorId,

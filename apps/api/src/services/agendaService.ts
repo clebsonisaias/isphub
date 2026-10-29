@@ -892,6 +892,33 @@ export async function confirmarComSgp(provedorId: string): Promise<number> {
   return r.count;
 }
 
+/**
+ * Reenvia ao SGP as visitas que ele ainda não confirmou: o envio na hora de
+ * marcar é tiro único, e se falhou (SGP fora do ar, ou o campo errado que
+ * existiu até 29/10/2026) a data nunca chegava. Só visita futura de OS aberta,
+ * marcada/mexida há mais de 15 min (para não atropelar o envio da própria
+ * marcação). O `confirmarComSgp` do ciclo seguinte encerra a repetição.
+ */
+export async function reenviarNaoConfirmadas(provedorId: string, agora = new Date()): Promise<number> {
+  const pendentes = await prisma.agendamento.findMany({
+    where: {
+      provedorId,
+      status: "marcado",
+      sgpConfirmadoEm: null,
+      dia: { gte: dataDoDia(diaBrDe(agora)) },
+      atualizadoEm: { lt: new Date(agora.getTime() - 15 * 60_000) },
+      ordemServico: { status: { in: ["aberta", "pendente"] } },
+    },
+    select: { id: true },
+    orderBy: { dia: "asc" },
+    // ponytail: 30 por ciclo (~3 min) limita a carga no SGP; um SGP que recuse sempre repete os mesmos 30.
+    take: 30,
+  });
+  let enviadas = 0;
+  for (const p of pendentes) if (await enviarAoSgp(p.id)) enviadas++;
+  return enviadas;
+}
+
 
 /**
  * O cliente confirmou que estara em casa.

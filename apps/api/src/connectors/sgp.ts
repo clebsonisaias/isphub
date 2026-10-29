@@ -745,7 +745,9 @@ function comFusoSgp(dataHora: string | null): string | null {
 const FUSO_SGP = "-03:00";
 
 /**
- * `AAAA-MM-DD HH:MM` no relogio do SGP, que e o formato que ele aceita escrever.
+ * `AAAA-MM-DD HH:MM:SS` no relogio do SGP. Sem os segundos o SGP responde 200
+ * com corpo `500` e nao grava, apesar de a doc pedir `HH:MM` (testado na NetGo
+ * em 29/10/2026).
  *
  * A conversao e explicita porque o servidor roda em UTC: `toISOString()` daria
  * a hora de Londres, e uma visita marcada pras 8h viraria 5h no ERP do
@@ -754,7 +756,7 @@ const FUSO_SGP = "-03:00";
 function paraDataHoraSgp(d: Date): string {
   const local = new Date(d.getTime() - 3 * 3_600_000);
   const p = (n: number) => String(n).padStart(2, "0");
-  return `${local.getUTCFullYear()}-${p(local.getUTCMonth() + 1)}-${p(local.getUTCDate())} ${p(local.getUTCHours())}:${p(local.getUTCMinutes())}`;
+  return `${local.getUTCFullYear()}-${p(local.getUTCMonth() + 1)}-${p(local.getUTCDate())} ${p(local.getUTCHours())}:${p(local.getUTCMinutes())}:00`;
 }
 
 /**
@@ -1075,18 +1077,24 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
     },
 
     async scheduleOs(sgpOsId: string, quando: Date): Promise<void> {
-      const path = `/api/os/update/id/${encodeURIComponent(sgpOsId)}/`;
-      // JSON, nao form: mesmo motivo de `updateOsStatus` — como form o SGP
-      // responde 200 e ignora o corpo inteiro.
-      const data = await sgpPostJson(creds, path, { data_hora_agendamento: paraDataHoraSgp(quando) });
+      // "Chamado – Atualizar" (`os_data_agendamento`). O `/api/os/update/` nao
+      // tem campo de agendamento: o `data_hora_agendamento` que ia para la e o
+      // nome do campo no CRIAR chamado, e o SGP o ignorava respondendo 200 —
+      // nenhuma visita do ISPhub chegava ao SGP ate 29/10/2026.
+      const path = `/api/central/chamado/update/${encodeURIComponent(sgpOsId)}/`;
+      const data = await sgpPostJson(creds, path, { os_data_agendamento: paraDataHoraSgp(quando) });
       assertSgpEscritaOk(data, path);
+      // Erro do SGP aqui vem como 200 com corpo `500`: so `os_id` na resposta prova que gravou.
+      if (data == null || typeof data !== "object" || !("os_id" in data)) {
+        throw new SgpError(`SGP nao confirmou a data da visita em ${path}: ${JSON.stringify(data)}`);
+      }
     },
 
     async unscheduleOs(sgpOsId: string): Promise<void> {
       const path = `/api/os/update/id/${encodeURIComponent(sgpOsId)}/`;
-      // `null` e a forma JSON de "sem data". NAO testado contra um SGP real
-      // (como o proprio scheduleOs): se o SGP ignorar o campo, a data velha
-      // fica la — e e por isso que a agenda ISPhub, nao o ERP, e a verdade.
+      // O SGP nao apaga a data por API: no "Chamado – Atualizar", vazio e `null`
+      // respondem sucesso e mantem a data (testado na NetGo em 29/10/2026). A
+      // data velha fica la — e e por isso que a agenda ISPhub, nao o ERP, e a verdade.
       const data = await sgpPostJson(creds, path, { data_hora_agendamento: null });
       assertSgpEscritaOk(data, path);
     },

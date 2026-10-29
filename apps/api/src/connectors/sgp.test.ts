@@ -466,6 +466,22 @@ describe("createSgpConnector", () => {
     expect(body.token).toBe(creds.token);
   });
 
+  it("scheduleOs grava pelo Chamado – Atualizar, os_data_agendamento com segundos na hora do Brasil", async () => {
+    // O /api/os/update/ ignorava a data (campo inexistente) respondendo 200: nenhuma visita chegava ao SGP.
+    fetchMock.mockResolvedValueOnce(jsonResponse({ msg: "OS alterada com sucesso", os_id: 555 }));
+
+    await createSgpConnector(creds).scheduleOs("555", new Date("2026-10-30T16:00:00Z"));
+
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/api/central/chamado/update/555/");
+    expect(JSON.parse(options.body as string)).toEqual({ app: creds.app, token: creds.token, os_data_agendamento: "2026-10-30 13:00:00" });
+  });
+
+  it("scheduleOs: corpo `500` com HTTP 200 (erro do SGP) vira falha, nao sucesso silencioso", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(500));
+    await expect(createSgpConnector(creds).scheduleOs("555", new Date("2026-10-30T16:00:00Z"))).rejects.toThrow(/nao confirmou/);
+  });
+
   it("unscheduleOs manda data_hora_agendamento NULA em JSON — e so isso", async () => {
     // Desmarcar aqui tem que apagar la: senao o provedor segue vendo no ERP
     // uma visita que nao vai acontecer.
