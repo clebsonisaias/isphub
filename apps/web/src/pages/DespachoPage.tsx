@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState, type DragEvent } from "react";
+import { lazy, Suspense, useMemo, useRef, useState, type DragEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Map as MapIcon, Search, Users } from "lucide-react";
 import { OsStatus, ROTULO_TURNO, TURNOS_AGENDA, diaBrHoje, somarDias, type FilaItem, type SlaSemaforo, type TurnoAgenda, type VagaTurno } from "@isphub/shared";
@@ -15,6 +15,7 @@ import { escalaApi } from "@/lib/escalaApi";
 import { filaApi, ordensServicoApi, tecnicosApi } from "@/lib/filaApi";
 import { ApiError } from "@/lib/apiClient";
 import { acaoDoDrop, montarQuadro, paraAgendar, paradaDe, type Arrasto, type Destino, type Parada } from "@/lib/despacho";
+import { useRealtime } from "@/lib/realtime";
 import { cn } from "@/lib/utils";
 
 const MapaDoDia = lazy(() => import("@/components/despacho/MapaDoDia"));
@@ -138,6 +139,15 @@ export function DespachoPage() {
     void queryClient.invalidateQueries({ queryKey: ["agenda"] });
     void queryClient.invalidateQueries({ queryKey: ["fila"] });
   }
+
+  // OS mudou noutro lugar (fechou no SGP, encerrada noutra tela): recarrega na hora,
+  // juntando rajadas em 800 ms como o Painel (ver FilaWorkspace).
+  const recarga = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useRealtime((evento) => {
+    if (evento.tipo !== "os-alterada") return;
+    if (recarga.current) clearTimeout(recarga.current);
+    recarga.current = setTimeout(atualizar, 800);
+  });
 
   async function soltar(a: Arrasto, d: Destino) {
     const acao = acaoDoDrop(a, d, turnoFechado);

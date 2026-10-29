@@ -31,7 +31,7 @@ vi.mock("../lib/prisma.js", () => ({
   },
 }));
 vi.mock("./erpConnectorService.js", () => ({ buildConnector }));
-vi.mock("./realtimeHub.js", () => ({ emitParaUsuario: vi.fn() }));
+vi.mock("./realtimeHub.js", () => ({ emitParaUsuario: vi.fn(), emitParaTodos: vi.fn() }));
 vi.mock("./pushService.js", () => ({ dispararPush: vi.fn() }));
 
 const { marcarACaminho, adicionarAnotacao } = await import("./writebackService.js");

@@ -12,6 +12,7 @@ const m = vi.hoisted(() => ({
   evento: vi.fn(),
   tx: vi.fn(),
   buildConnector: vi.fn(),
+  emitParaTodos: vi.fn(),
 }));
 vi.mock("../lib/prisma.js", () => ({
   prisma: {
@@ -24,7 +25,7 @@ vi.mock("../lib/prisma.js", () => ({
   },
 }));
 vi.mock("./erpConnectorService.js", () => ({ buildConnector: m.buildConnector }));
-vi.mock("./realtimeHub.js", () => ({ emitParaUsuario: vi.fn() }));
+vi.mock("./realtimeHub.js", () => ({ emitParaUsuario: vi.fn(), emitParaTodos: m.emitParaTodos }));
 vi.mock("./pushService.js", () => ({ dispararPush: vi.fn() }));
 vi.mock("./clienteAtendaiService.js", () => ({ encerrarConversasDeOsConcluidas: vi.fn() }));
 
@@ -63,12 +64,15 @@ describe("encerrar OS sem visita", () => {
       where: { provedorId: "netgo", sgpOsId: "213347", status: "marcado" },
       data: { status: "cancelado", ordemRota: null },
     });
+    // Painel e Despacho de todas as telas recarregam na hora.
+    expect(m.emitParaTodos).toHaveBeenCalledWith(expect.objectContaining({ tipo: "os-alterada" }));
   });
 
   it("SGP recusou o status: nada muda no ISPhub", async () => {
     sgp.updateOsStatus.mockRejectedValue(new Error("SGP 500 em https://sgp/api/os/update"));
     await expect(encerrarSemVisita("os-1", "Cliente desistiu da visita", "u-marilia")).rejects.toMatchObject({ status: 502 });
     expect(m.tx).not.toHaveBeenCalled();
+    expect(m.emitParaTodos).not.toHaveBeenCalled();
   });
 
   it("OS já encerrada: recusa sem chamar o SGP", async () => {

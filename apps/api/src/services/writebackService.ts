@@ -20,7 +20,7 @@ import { HttpError } from "../middleware/errorHandler.js";
 import { buildConnector } from "./erpConnectorService.js";
 import { SgpError } from "../connectors/sgp.js";
 import { comConcorrenciaLimitada } from "../lib/limitador.js";
-import { emitParaUsuario } from "./realtimeHub.js";
+import { emitParaTodos, emitParaUsuario } from "./realtimeHub.js";
 import { dispararPush } from "./pushService.js";
 import { encerrarConversasDeOsConcluidas } from "./clienteAtendaiService.js";
 
@@ -209,6 +209,8 @@ export async function mudarStatus(
     evento(os.id, "status", autorId, descricao, geo, { de: os.status as OsStatus, para: novoStatus }),
   ]);
   notificarTecnico(osAtualizada.tecnicoId, "os-alterada", os.id);
+  // Painel e Despacho das outras telas recarregam na hora (antes so o tecnico sabia).
+  emitParaTodos({ tipo: "os-alterada", em: new Date().toISOString() });
   // OS concluida: a conversa com o cliente aberta por ela encerra e a CláudIA
   // volta. Sem esperar — concluir nao pode ficar refem do AtendAI.
   if (novoStatus === OsStatus.CONCLUIDA) void encerrarConversasDeOsConcluidas({ ordemServicoId: os.id }).catch(() => {});
@@ -249,6 +251,7 @@ export async function encerrarSemVisita(ordemServicoId: string, motivo: string, 
     }),
   ]);
   notificarTecnico(osAtualizada.tecnicoId, "os-alterada", os.id);
+  emitParaTodos({ tipo: "os-alterada", em: new Date().toISOString() });
   return osAtualizada;
 }
 
