@@ -54,6 +54,8 @@ export const ordensServicoApi = {
   mudarContratoStatus: (id: string, status: CodigoStatusContrato) =>
     api.post<OrdemServico>(`/ordens-servico/${id}/contrato-status`, { status }),
   anotar: (id: string, texto: string) => api.post<OrdemServico>(`/ordens-servico/${id}/anotacoes`, { texto }),
+  /** Encerra sem visita (no ISPhub e no SGP); o motivo e o nome de quem encerrou vão para o SGP. */
+  encerrar: (id: string, motivo: string) => api.post<OrdemServico>(`/ordens-servico/${id}/encerrar`, { motivo }),
   atribuir: (id: string, tecnicoId: string) => api.post<OrdemServico>(`/ordens-servico/${id}/atribuir`, { tecnicoId }),
   eventos: (id: string) => api.get<OsEvento[]>(`/ordens-servico/${id}/eventos`),
   /** Abre (ou retoma) a conversa com o cliente pelo WhatsApp do AtendAI do provedor. */

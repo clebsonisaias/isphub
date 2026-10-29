@@ -5,13 +5,14 @@ import { ROTULO_TURNO, type FilaItem, type TurnoAgenda } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
 import { AnimatedPage } from "@/components/AnimatedPage";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { MarcarVisitaDialog } from "@/components/MarcarVisitaDialog";
 import { useToast } from "@/context/ToastContext";
 import { agendaApi } from "@/lib/agendaApi";
-import { filaApi } from "@/lib/filaApi";
+import { filaApi, ordensServicoApi } from "@/lib/filaApi";
 import { ApiError } from "@/lib/apiClient";
 import { buscarOs, faltaMarcar, rotuloCurto, rotuloLongo } from "@/lib/marcarVisita";
 import { cn } from "@/lib/utils";
@@ -51,6 +52,7 @@ export function MarcarVisitaPage() {
   const [marcando, setMarcando] = useState(false);
   const [feita, setFeita] = useState<Feita | null>(null);
   const [gradeAberta, setGradeAberta] = useState(false);
+  const [encerrarAberto, setEncerrarAberto] = useState(false);
 
   const fila = useQuery({
     queryKey: ["fila", { grupo: "abertos", equipe: "interna", marcar: true }],
@@ -142,6 +144,22 @@ export function MarcarVisitaPage() {
     novaBusca(i.sgpOsId);
     setEscolhidaId(i.id);
     window.scrollTo({ top: 0 });
+  }
+
+  async function encerrar(motivo: string) {
+    if (!os) return;
+    setMarcando(true);
+    try {
+      await ordensServicoApi.encerrar(os.id, motivo);
+      toast({ variante: "sucesso", titulo: `OS ${os.sgpOsId} encerrada no ISPhub e no SGP` });
+      setEncerrarAberto(false);
+      marcarOutra();
+      atualizar();
+    } catch (e) {
+      toast({ variante: "erro", titulo: "Não deu para encerrar", descricao: mensagem(e) });
+    } finally {
+      setMarcando(false);
+    }
   }
 
   function marcarOutra() {
@@ -335,13 +353,24 @@ export function MarcarVisitaPage() {
                       />
                     </div>
 
-                    <Button size="lg" className="self-start" onClick={() => void marcar()} disabled={marcando || !escolhida}>
-                      {marcando
-                        ? "Marcando…"
-                        : escolhida
-                          ? `${os.diaAgenda ? "Remarcar" : "Marcar visita"} para ${rotuloLongo(escolhida.dia, escolhida.turno)}`
-                          : "Escolha uma vaga"}
-                    </Button>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Button size="lg" onClick={() => void marcar()} disabled={marcando || !escolhida}>
+                        {marcando
+                          ? "Marcando…"
+                          : escolhida
+                            ? `${os.diaAgenda ? "Remarcar" : "Marcar visita"} para ${rotuloLongo(escolhida.dia, escolhida.turno)}`
+                            : "Escolha uma vaga"}
+                      </Button>
+                      <Button
+                        size="lg"
+                        variant="outline"
+                        className="text-destructive hover:bg-destructive/10"
+                        onClick={() => setEncerrarAberto(true)}
+                        disabled={marcando}
+                      >
+                        Encerrar OS
+                      </Button>
+                    </div>
                   </>
                 )}
               </section>
@@ -420,6 +449,17 @@ export function MarcarVisitaPage() {
         </div>
       </AnimatedPage>
 
+      {os ? (
+        <EncerrarOsDialog
+          key={os.id}
+          os={os}
+          aberto={encerrarAberto}
+          enviando={marcando}
+          onFechar={() => setEncerrarAberto(false)}
+          onConfirmar={(motivo) => void encerrar(motivo)}
+        />
+      ) : null}
+
       {gradeAberta && os ? (
         <MarcarVisitaDialog
           item={os}
@@ -437,5 +477,77 @@ export function MarcarVisitaPage() {
         />
       ) : null}
     </AppShell>
+  );
+}
+
+const MOTIVOS_RAPIDOS = ["A internet voltou", "Cliente desistiu da visita", "Resolvido por telefone", "OS aberta por engano"];
+const MOTIVO_MINIMO = 10;
+
+/** Encerrar sem visita: motivo obrigatório (vai para o SGP com o nome de quem encerrou) e confirmação. */
+function EncerrarOsDialog(props: {
+  os: FilaItem;
+  aberto: boolean;
+  enviando: boolean;
+  onFechar: () => void;
+  onConfirmar: (motivo: string) => void;
+}) {
+  const { os } = props;
+  const [motivo, setMotivo] = useState("");
+  const pronto = motivo.trim().length >= MOTIVO_MINIMO;
+
+  return (
+    <Dialog open={props.aberto} onOpenChange={(o) => !o && props.onFechar()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Encerrar a OS {os.sgpOsId}?</DialogTitle>
+          <DialogDescription>{os.clienteNome ?? "Cliente não identificado"}</DialogDescription>
+        </DialogHeader>
+
+        <p className="text-sm">
+          A OS fecha no ISPhub e no SGP, sem visita. No SGP fica anotado que foi você e o motivo.
+          {os.diaAgenda && os.turnoAgenda ? ` A visita de ${rotuloLongo(os.diaAgenda, os.turnoAgenda)} será desmarcada.` : ""}
+        </p>
+
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="motivo-encerrar">Motivo</Label>
+          <div className="flex flex-wrap gap-2">
+            {MOTIVOS_RAPIDOS.map((m) => (
+              <button
+                key={m}
+                type="button"
+                aria-pressed={motivo === m}
+                onClick={() => setMotivo(m)}
+                className={cn(
+                  "rounded-full border px-3 py-1 text-sm transition-colors",
+                  motivo === m ? "border-primary bg-primary/10 font-medium" : "border-border hover:bg-secondary",
+                )}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+          <Textarea
+            id="motivo-encerrar"
+            rows={3}
+            maxLength={500}
+            value={motivo}
+            onChange={(e) => setMotivo(e.target.value)}
+            placeholder="Escolha acima ou escreva o motivo"
+          />
+          {!pronto && motivo.trim().length > 0 ? (
+            <span className="text-xs text-muted-foreground">Escreva pelo menos {MOTIVO_MINIMO} letras.</span>
+          ) : null}
+        </div>
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={props.onFechar}>
+            Cancelar
+          </Button>
+          <Button variant="destructive" disabled={!pronto || props.enviando} onClick={() => props.onConfirmar(motivo.trim())}>
+            {props.enviando ? "Encerrando…" : `Encerrar OS ${os.sgpOsId}`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

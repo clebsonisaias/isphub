@@ -86,6 +86,22 @@ ordensServicoRouter.post(
   }),
 );
 
+/**
+ * Encerra a OS sem visita (a internet voltou, o cliente desistiu...), pela tela
+ * de marcar. Motivo obrigatorio: vai para o SGP junto com o nome de quem encerrou.
+ */
+ordensServicoRouter.post(
+  "/:id/encerrar",
+  requireRole(UserRole.ADMIN, UserRole.GESTOR, UserRole.ATENDENTE),
+  asyncHandler(async (req, res) => {
+    await assertAcesso(req, req.params.id);
+    const { motivo } = z
+      .object({ motivo: z.string().trim().min(10, "Escreva o motivo (pelo menos 10 letras)").max(500) })
+      .parse(req.body ?? {});
+    res.json(await writeback.encerrarSemVisita(req.params.id, motivo, req.user!.sub));
+  }),
+);
+
 ordensServicoRouter.post(
   "/:id/acaminho",
   requireRole(...acoesRoles),

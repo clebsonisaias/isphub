@@ -72,8 +72,8 @@ const PERMITIDO_ATENDENTE: [RegExp, RegExp][] = [
   [/^GET$/, /^\/agenda\/(vagas|proximas|turno|minhas)$/],
   [/^POST$/, /^\/agenda\/?$/],
   [/^DELETE$/, /^\/agenda\/[^/]+$/],
-  // Conversa com o cliente da OS pelo AtendAI (o servico limita ao provedor dela).
-  [/^POST$/, /^\/ordens-servico\/[^/]+\/conversa-cliente$/],
+  // Conversa com o cliente da OS pelo AtendAI e encerrar OS sem visita (limitados ao provedor dela).
+  [/^POST$/, /^\/ordens-servico\/[^/]+\/(conversa-cliente|encerrar)$/],
   [/^GET$/, /^\/chat-clientes\/(conversas|conversas\/[^/]+\/mensagens|mensagens\/[^/]+\/anexo)$/],
   [/^POST$/, /^\/chat-clientes\/conversas\/[^/]+\/(mensagens|encerrar)$/],
 ];

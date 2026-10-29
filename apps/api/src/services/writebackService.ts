@@ -1,5 +1,6 @@
 import {
   MOTIVO_RECUSA_TEXTO,
+  OS_STATUS_ABERTOS,
   OS_STATUS_LABEL,
   OsStatus,
   STATUS_CONTRATO,
@@ -211,6 +212,43 @@ export async function mudarStatus(
   // OS concluida: a conversa com o cliente aberta por ela encerra e a CláudIA
   // volta. Sem esperar — concluir nao pode ficar refem do AtendAI.
   if (novoStatus === OsStatus.CONCLUIDA) void encerrarConversasDeOsConcluidas({ ordemServicoId: os.id }).catch(() => {});
+  return osAtualizada;
+}
+
+/** O que fica escrito no SGP: quem encerrou e por quê (o SGP só mostra o usuário da integração). */
+export const notaDeEncerramento = (nome: string, motivo: string) => `Encerrada pelo ISPhub por ${nome}, sem visita. Motivo: ${motivo}`;
+
+/**
+ * Encerra a OS sem visita (a internet voltou, o cliente desistiu...), pela tela
+ * de marcar. No SGP: anotação com quem e por quê, depois status Encerrada — a
+ * anotação vai antes para o motivo nunca faltar lá (se o status falhar, tentar
+ * de novo só repete a anotação). No ISPhub vira CANCELADA, não concluída: não
+ * conta como serviço feito, e o sync mantém cancelada mesmo com o SGP dizendo
+ * "encerrada". A visita marcada sai da agenda e libera a vaga.
+ */
+export async function encerrarSemVisita(ordemServicoId: string, motivo: string, autorId: string) {
+  const { os, connector } = await loadOsWithConnector(ordemServicoId);
+  if (!OS_STATUS_ABERTOS.includes(os.status as OsStatus)) throw new HttpError(409, "Esta OS já está encerrada");
+  const autor = await prisma.usuario.findUnique({ where: { id: autorId }, select: { nome: true } });
+
+  await chamarSgp(() => connector.addOsNote(os.sgpOsId, notaDeEncerramento(autor?.nome ?? "usuário do ISPhub", motivo)));
+  await chamarSgp(() => connector.updateOsStatus(os.sgpOsId, SgpOsStatus.ENCERRADA));
+
+  const [osAtualizada] = await prisma.$transaction([
+    prisma.ordemServico.update({
+      where: { id: os.id },
+      data: { status: OsStatus.CANCELADA, sincronizadoEm: new Date(), statusAlteradoEm: new Date() },
+    }),
+    evento(os.id, "status", autorId, `Encerrada sem visita. Motivo: ${motivo}`, undefined, {
+      de: os.status as OsStatus,
+      para: OsStatus.CANCELADA,
+    }),
+    prisma.agendamento.updateMany({
+      where: { provedorId: os.provedorId, sgpOsId: os.sgpOsId, status: "marcado" },
+      data: { status: "cancelado", ordemRota: null },
+    }),
+  ]);
+  notificarTecnico(osAtualizada.tecnicoId, "os-alterada", os.id);
   return osAtualizada;
 }
 

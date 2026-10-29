@@ -47,6 +47,11 @@ describe("atendente: o que alcanca (negacao por padrao)", () => {
     expect(atendentePode("POST", "/chat-clientes/conversas/c1/assumir")).toBe(false);
     expect(atendentePode("POST", "/chat-clientes/conversas/c1/transferir")).toBe(false);
   });
+
+  it("encerra OS sem visita pela rota propria, mas nao muda status livremente", () => {
+    expect(atendentePode("POST", "/ordens-servico/abc/encerrar")).toBe(true);
+    expect(atendentePode("PATCH", "/ordens-servico/abc/status")).toBe(false);
+  });
 });
 
 describe("atendente: escopo pelo provedor", () => {
