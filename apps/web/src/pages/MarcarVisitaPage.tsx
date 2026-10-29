@@ -13,7 +13,7 @@ import { useToast } from "@/context/ToastContext";
 import { agendaApi } from "@/lib/agendaApi";
 import { filaApi } from "@/lib/filaApi";
 import { ApiError } from "@/lib/apiClient";
-import { buscarOs, rotuloCurto, rotuloLongo } from "@/lib/marcarVisita";
+import { buscarOs, faltaMarcar, rotuloCurto, rotuloLongo } from "@/lib/marcarVisita";
 import { cn } from "@/lib/utils";
 
 /**
@@ -59,8 +59,11 @@ export function MarcarVisitaPage() {
   const minhas = useQuery({ queryKey: ["agenda", "minhas"], queryFn: () => agendaApi.minhas() });
 
   const resultados = useMemo(() => buscarOs(fila.data?.itens ?? [], termo), [fila.data, termo]);
+  const aMarcar = useMemo(() => faltaMarcar(fila.data?.itens ?? []), [fila.data]);
+  // Pelo id na fila inteira (não só nos resultados): a lista "Falta marcar" escolhe sem depender da busca.
   const os: FilaItem | null =
-    resultados.find((i) => i.id === escolhidaId) ?? (resultados.length === 1 ? resultados[0]! : null);
+    (escolhidaId ? fila.data?.itens.find((i) => i.id === escolhidaId) : undefined) ??
+    (resultados.length === 1 ? resultados[0]! : null);
   const regiao = os ? (os.pop ?? os.endereco?.bairro ?? undefined) : undefined;
 
   const proximas = useQuery({
@@ -132,6 +135,13 @@ export function MarcarVisitaPage() {
     } finally {
       setMarcando(false);
     }
+  }
+
+  /** Clique na lista "Falta marcar": abre a OS no painel como se tivesse buscado pelo número. */
+  function abrirDaLista(i: FilaItem) {
+    novaBusca(i.sgpOsId);
+    setEscolhidaId(i.id);
+    window.scrollTo({ top: 0 });
   }
 
   function marcarOutra() {
@@ -338,33 +348,74 @@ export function MarcarVisitaPage() {
             ) : null}
           </div>
 
-          <aside aria-labelledby="feitas-hoje" className="min-w-0 flex-[1_1_17rem] rounded-xl border border-border bg-card lg:max-w-[21rem]">
-            <h2 id="feitas-hoje" className="border-b border-border px-4 py-3 text-base font-bold">
-              Marcadas por você hoje
-            </h2>
-            {minhas.isPending ? (
-              <div className="flex flex-col gap-2 p-4">
-                {[0, 1, 2].map((i) => (
-                  <Skeleton key={i} className="h-10 w-full" />
-                ))}
-              </div>
-            ) : (minhas.data ?? []).length === 0 ? (
-              <p className="p-4 text-sm text-muted-foreground">Nenhuma ainda hoje.</p>
-            ) : (
-              <ul className="divide-y divide-border">
-                {(minhas.data ?? []).map((m) => (
-                  <li key={m.id} className="flex justify-between gap-3 px-4 py-2.5">
-                    <span className="flex min-w-0 flex-col">
-                      <span className="truncate font-semibold">{m.clienteNome ?? `OS ${m.sgpOsId}`}</span>
-                      <span className="text-sm text-muted-foreground">
-                        {rotuloCurto(m.dia)}, {ROTULO_TURNO[m.turno].toLowerCase()}
+          <aside className="flex min-w-0 flex-[1_1_17rem] flex-col gap-4 lg:max-w-[21rem]">
+            <section aria-labelledby="falta-marcar" className="rounded-xl border border-border bg-card">
+              <h2 id="falta-marcar" className="flex items-baseline justify-between gap-3 border-b border-border px-4 py-3 text-base font-bold">
+                Falta marcar
+                {fila.data ? <span className="text-sm font-semibold tabular-nums text-muted-foreground">{aMarcar.length}</span> : null}
+              </h2>
+              {fila.isPending ? (
+                <div className="flex flex-col gap-2 p-4">
+                  {[0, 1, 2].map((i) => (
+                    <Skeleton key={i} className="h-10 w-full" />
+                  ))}
+                </div>
+              ) : aMarcar.length === 0 ? (
+                <p className="p-4 text-sm text-muted-foreground">Todas as OS abertas já têm visita.</p>
+              ) : (
+                <ul className="max-h-[min(28rem,55vh)] divide-y divide-border overflow-y-auto">
+                  {aMarcar.map((i) => (
+                    <li key={i.id}>
+                      <button
+                        type="button"
+                        onClick={() => abrirDaLista(i)}
+                        aria-current={os?.id === i.id ? "true" : undefined}
+                        className={cn("flex w-full items-center gap-2.5 px-4 py-2.5 text-left hover:bg-secondary/60", os?.id === i.id && "bg-primary/10")}
+                      >
+                        <span className="size-2 shrink-0 rounded-full" style={{ background: i.categoria?.cor ?? "#64748b" }} aria-hidden />
+                        <span className="flex min-w-0 flex-1 flex-col">
+                          <span className="truncate font-semibold">{i.clienteNome ?? `OS ${i.sgpOsId}`}</span>
+                          <span className="truncate text-sm text-muted-foreground">
+                            {i.categoria?.nome ?? "Sem categoria"}
+                            {i.endereco?.bairro || i.pop ? `, ${i.endereco?.bairro ?? i.pop}` : ""}
+                          </span>
+                        </span>
+                        {i.dataCadastro ? <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{dataCurta(i.dataCadastro)}</span> : null}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <section aria-labelledby="feitas-hoje" className="rounded-xl border border-border bg-card">
+              <h2 id="feitas-hoje" className="border-b border-border px-4 py-3 text-base font-bold">
+                Marcadas por você hoje
+              </h2>
+              {minhas.isPending ? (
+                <div className="flex flex-col gap-2 p-4">
+                  {[0, 1, 2].map((i) => (
+                    <Skeleton key={i} className="h-10 w-full" />
+                  ))}
+                </div>
+              ) : (minhas.data ?? []).length === 0 ? (
+                <p className="p-4 text-sm text-muted-foreground">Nenhuma ainda hoje.</p>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {(minhas.data ?? []).map((m) => (
+                    <li key={m.id} className="flex justify-between gap-3 px-4 py-2.5">
+                      <span className="flex min-w-0 flex-col">
+                        <span className="truncate font-semibold">{m.clienteNome ?? `OS ${m.sgpOsId}`}</span>
+                        <span className="text-sm text-muted-foreground">
+                          {rotuloCurto(m.dia)}, {ROTULO_TURNO[m.turno].toLowerCase()}
+                        </span>
                       </span>
-                    </span>
-                    <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{hora(m.em)}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
+                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{hora(m.em)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
           </aside>
         </div>
       </AnimatedPage>

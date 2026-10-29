@@ -1,4 +1,4 @@
-import type { FilaItem, TurnoAgenda } from "@isphub/shared";
+import { OsStatus, type FilaItem, type TurnoAgenda } from "@isphub/shared";
 
 /**
  * MARCAR VISITA — a busca da atendente ao telefone e os rótulos que ela lê
@@ -37,6 +37,17 @@ export function buscarOs(itens: FilaItem[], termo: string, limite = 20): FilaIte
         (b.dataCadastro ?? "").localeCompare(a.dataCadastro ?? ""),
     )
     .slice(0, limite);
+}
+
+/**
+ * "Falta marcar": OS aberta ou pendente sem visita, a mais antiga primeiro (é a
+ * que espera há mais tempo). Em deslocamento/execução o técnico já está nela.
+ * Retirada não entra porque a página já pede só a fila da equipe interna.
+ */
+export function faltaMarcar(itens: FilaItem[]): FilaItem[] {
+  return itens
+    .filter((i) => !i.diaAgenda && (i.status === OsStatus.ABERTA || i.status === OsStatus.PENDENTE))
+    .sort((a, b) => (a.dataCadastro ?? "9").localeCompare(b.dataCadastro ?? "9"));
 }
 
 const DIA_LONGO = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];

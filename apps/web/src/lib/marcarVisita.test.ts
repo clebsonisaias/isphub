@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { FilaItem } from "@isphub/shared";
-import { buscarOs, rotuloCurto, rotuloLongo } from "./marcarVisita";
+import { OsStatus, type FilaItem } from "@isphub/shared";
+import { buscarOs, faltaMarcar, rotuloCurto, rotuloLongo } from "./marcarVisita";
 
 const os = (o: Partial<FilaItem>) =>
   ({ id: o.sgpOsId, sgpOsId: "1", clienteNome: null, contratoId: null, protocolo: null, clienteDocumento: null, telefone: null, diaAgenda: null, dataCadastro: "2026-10-20", ...o }) as FilaItem;
@@ -33,6 +33,19 @@ describe("busca da atendente", () => {
   it("termo curto demais não busca", () => {
     expect(buscarOs(itens, "m")).toEqual([]);
     expect(buscarOs(itens, "21")).toEqual([]);
+  });
+});
+
+describe("falta marcar", () => {
+  it("só aberta/pendente sem visita, a mais antiga primeiro", () => {
+    const lista = [
+      os({ sgpOsId: "1", status: OsStatus.ABERTA, dataCadastro: "2026-10-22" }),
+      os({ sgpOsId: "2", status: OsStatus.ABERTA, dataCadastro: "2026-10-20", diaAgenda: "2026-10-30" }),
+      os({ sgpOsId: "3", status: OsStatus.EM_EXECUCAO, dataCadastro: "2026-10-19" }),
+      os({ sgpOsId: "4", status: OsStatus.PENDENTE, dataCadastro: "2026-10-18" }),
+      os({ sgpOsId: "5", status: OsStatus.ABERTA, dataCadastro: null }),
+    ];
+    expect(faltaMarcar(lista).map((i) => i.sgpOsId)).toEqual(["4", "1", "5"]);
   });
 });
 
