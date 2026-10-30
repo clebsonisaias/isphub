@@ -1,12 +1,20 @@
 function resolveApiUrl(): string {
-  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
+  const envUrl = import.meta.env.VITE_API_URL;
   if (typeof window !== "undefined") {
-    const { hostname } = window.location;
-    if (hostname.includes("isphub.net.br") || (hostname !== "localhost" && hostname !== "127.0.0.1")) {
+    const { hostname, protocol, port } = window.location;
+    const isCapacitor =
+      protocol === "capacitor:" ||
+      Boolean((window as unknown as { Capacitor?: unknown }).Capacitor) ||
+      ((hostname === "localhost" || hostname === "127.0.0.1") && !port);
+    const isLocalDev = (hostname === "localhost" || hostname === "127.0.0.1") && !isCapacitor;
+    if (!isLocalDev) {
+      if (envUrl && !envUrl.includes("localhost") && !envUrl.includes("127.0.0.1")) {
+        return envUrl;
+      }
       return "https://api.isphub.net.br";
     }
   }
-  return "http://localhost:4000";
+  return envUrl || "http://localhost:4000";
 }
 
 export const API_URL = resolveApiUrl();

@@ -3,7 +3,7 @@
  * Garante abertura instantânea mesmo sem sinal (offline shell)
  * e integração com o SyncEngine em IndexedDB.
  */
-const VERSAO = "isphub-pwa-v1";
+const VERSAO = "isphub-pwa-v2";
 const CACHE_SHELL = `shell-${VERSAO}`;
 
 const PRECACHE = [
@@ -45,6 +45,10 @@ self.addEventListener("message", (event) => {
 async function tratarNavegacao(request) {
   try {
     const resposta = await fetch(request);
+    if (resposta.ok) {
+      const cache = await caches.open(CACHE_SHELL);
+      cache.put("/", resposta.clone()).catch(() => {});
+    }
     return resposta;
   } catch {
     const copia = await caches.match("/", { cacheName: CACHE_SHELL });
