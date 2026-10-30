@@ -40,6 +40,7 @@ import { frotaRouter } from "./routes/frota.js";
 import { linhaMovelRouter } from "./routes/linhaMovel.js";
 import { webhooksWhatsappRouter } from "./routes/webhooksWhatsapp.js";
 import { clienteChatRouter } from "./routes/clienteChat.js";
+import { logisticaRouter } from "./routes/logistica.js";
 
 export function createApp() {
   const app = express();
@@ -154,6 +155,7 @@ export function createApp() {
   app.use("/financeiro", financeiroRouter);
   app.use("/frota", frotaRouter);
   app.use("/linha-movel", linhaMovelRouter);
+  app.use("/logistica", logisticaRouter);
 
   app.use((_req, res) => {
     res.status(404).json({ error: "Rota nao encontrada" });

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, useRef, useState, type DragEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Map as MapIcon, Search, Users } from "lucide-react";
+import { Check, Map as MapIcon, Search, Users, Zap, Siren } from "lucide-react";
 import { OsStatus, ROTULO_TURNO, TURNOS_AGENDA, diaBrHoje, somarDias, type FilaItem, type SlaSemaforo, type TurnoAgenda, type VagaTurno } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
 import { AnimatedPage } from "@/components/AnimatedPage";
@@ -17,6 +17,8 @@ import { ApiError } from "@/lib/apiClient";
 import { acaoDoDrop, montarQuadro, paraAgendar, paradaDe, type Arrasto, type Destino, type Parada } from "@/lib/despacho";
 import { useRealtime } from "@/lib/realtime";
 import { cn } from "@/lib/utils";
+import { OtimizarRotaDialog } from "@/components/despacho/OtimizarRotaDialog";
+import { DespachoEmergencialDialog } from "@/components/despacho/DespachoEmergencialDialog";
 
 const MapaDoDia = lazy(() => import("@/components/despacho/MapaDoDia"));
 
@@ -63,6 +65,8 @@ export function DespachoPage() {
   const [alvo, setAlvo] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [selecionado, setSelecionado] = useState<FilaItem | null>(null);
+  const [otimizarTecnico, setOtimizarTecnico] = useState<{ id: string; nome: string } | null>(null);
+  const [emergencialOsId, setEmergencialOsId] = useState<string | null>(null);
 
   const dias = useMemo(() => Array.from({ length: 7 }, (_, i) => somarDias(hoje, i)), [hoje]);
   const grade = useQuery({
@@ -327,7 +331,7 @@ export function DespachoPage() {
               ) : (
                 <ul className="divide-y divide-border">
                   {visiveis.slice(0, mostrar).map((i) => (
-                    <li key={i.id}>
+                    <li key={i.id} className="group relative flex items-center hover:bg-secondary/40 transition-colors">
                       <button
                         type="button"
                         draggable
@@ -335,7 +339,7 @@ export function DespachoPage() {
                         onDragEnd={fimDoArrasto}
                         onClick={() => setSelecionado(i)}
                         className={cn(
-                          "flex w-full cursor-grab gap-3 px-4 py-3 text-left hover:bg-secondary/60 active:cursor-grabbing",
+                          "flex min-w-0 flex-1 cursor-grab gap-3 px-4 py-3 text-left active:cursor-grabbing",
                           arrastando?.tipo === "nova" && arrastando.item.id === i.id && "opacity-40",
                         )}
                       >
@@ -351,6 +355,15 @@ export function DespachoPage() {
                           </span>
                           <span className={cn("text-xs tabular-nums text-muted-foreground", TEXTO_PRAZO[i.sla.semaforo])}>{prazoDe(i)}</span>
                         </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setEmergencialOsId(i.id)}
+                        className="mr-3 opacity-0 group-hover:opacity-100 focus:opacity-100 rounded-lg border border-destructive/30 bg-destructive/10 p-1.5 text-destructive hover:bg-destructive hover:text-white transition-all shadow-xs"
+                        title="Despacho emergencial por proximidade física"
+                      >
+                        <Siren className="size-4" />
                       </button>
                     </li>
                   ))}
@@ -430,6 +443,7 @@ export function DespachoPage() {
                           arrastar={arrastar}
                           fimDoArrasto={fimDoArrasto}
                           aoAbrir={(osId) => void abrirOs(osId)}
+                          onOtimizar={(id, nome) => setOtimizarTecnico({ id, nome })}
                         />
                       ))}
                 </div>
@@ -450,6 +464,32 @@ export function DespachoPage() {
           }}
         />
       ) : null}
+
+      {otimizarTecnico ? (
+        <OtimizarRotaDialog
+          aberto={otimizarTecnico !== null}
+          tecnicoId={otimizarTecnico.id}
+          tecnicoNome={otimizarTecnico.nome}
+          dia={dia}
+          onFechar={() => setOtimizarTecnico(null)}
+          onAplicado={() => {
+            setOtimizarTecnico(null);
+            atualizar();
+          }}
+        />
+      ) : null}
+
+      {emergencialOsId ? (
+        <DespachoEmergencialDialog
+          aberto={emergencialOsId !== null}
+          osId={emergencialOsId}
+          onFechar={() => setEmergencialOsId(null)}
+          onDespachado={() => {
+            setEmergencialOsId(null);
+            atualizar();
+          }}
+        />
+      ) : null}
     </AppShell>
   );
 }
@@ -463,6 +503,7 @@ function LinhaDoQuadro({
   arrastar,
   fimDoArrasto,
   aoAbrir,
+  onOtimizar,
 }: {
   linha: ReturnType<typeof montarQuadro>[number];
   alvo: string | null;
@@ -472,13 +513,16 @@ function LinhaDoQuadro({
   arrastar: (a: Arrasto) => (e: DragEvent) => void;
   fimDoArrasto: () => void;
   aoAbrir: (osId: string) => void;
+  onOtimizar: (tecnicoId: string, nome: string) => void;
 }) {
   const semTecnico = linha.tecnicoId === null;
   const total = linha.manha.length + linha.tarde.length;
   return (
     <>
       <div className={cn("flex flex-col justify-center gap-0.5 border-b border-border px-4 py-3", semTecnico && "bg-warning/10")}>
-        <span className={cn("font-bold", semTecnico && "text-warning")}>{linha.nome}</span>
+        <div className="flex items-center justify-between gap-1">
+          <span className={cn("font-bold", semTecnico && "text-warning")}>{linha.nome}</span>
+        </div>
         <span className="text-xs text-muted-foreground">
           {semTecnico
             ? "Arraste para um técnico"
@@ -488,6 +532,17 @@ function LinhaDoQuadro({
                 ? "Sem paradas"
                 : `${total} parada${total === 1 ? "" : "s"}`}
         </span>
+        {!semTecnico && total >= 2 && (
+          <button
+            type="button"
+            onClick={() => onOtimizar(linha.tecnicoId!, linha.nome)}
+            className="mt-1.5 inline-flex items-center gap-1 rounded bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary hover:bg-primary/20 transition-colors w-fit"
+            title="Otimizar sequência das paradas para menor quilometragem e combustível"
+          >
+            <Zap className="size-3 text-amber-500" />
+            Otimizar Rota
+          </button>
+        )}
       </div>
       {TURNOS_AGENDA.map((t) => {
         const lista = t === "manha" ? linha.manha : linha.tarde;

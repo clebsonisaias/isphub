@@ -28,10 +28,11 @@ import { ordensServicoApi, tecnicosApi, type TecnicoResumo } from "@/lib/filaApi
 import { ApiError } from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-import { CalendarDays, CalendarX2, CheckCircle2, CircleX, ExternalLink, MapPinCheck, MapPinOff, MessageCircle, Navigation, Play, Route } from "lucide-react";
+import { CalendarDays, CalendarX2, CheckCircle2, CircleX, ExternalLink, MapPinCheck, MapPinOff, MessageCircle, Navigation, Play, Route, Siren } from "lucide-react";
 import { formatarKm } from "@isphub/shared";
 import { MarcarVisitaDialog } from "@/components/MarcarVisitaDialog";
 import { EncerrarOsDialog } from "@/components/EncerrarOsDialog";
+import { DespachoEmergencialDialog } from "@/components/despacho/DespachoEmergencialDialog";
 import { agendaApi, rotuloVisita } from "@/lib/agendaApi";
 import { offlineStorage } from "@/lib/offlineStorage";
 import { syncEngine } from "@/lib/syncEngine";
@@ -71,6 +72,7 @@ export function OrdemServicoDetalhe({
   const [textoAnotacao, setTextoAnotacao] = useState("");
   const [acaoEmCurso, setAcaoEmCurso] = useState<string | null>(null);
   const [encerrarAberto, setEncerrarAberto] = useState(false);
+  const [emergencialAberto, setEmergencialAberto] = useState(false);
   const [detalhesLive, setDetalhesLive] = useState<DetalhesTecnicos | null>(null);
   const [marcandoVisita, setMarcandoVisita] = useState(false);
   // Dois toques pra desmarcar: o primeiro so pergunta. Inline, sem outro
@@ -637,6 +639,17 @@ export function OrdemServicoDetalhe({
                 >
                   {acaoEmCurso === "atribuir" ? "Atribuindo..." : "Atribuir"}
                 </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  type="button"
+                  onClick={() => setEmergencialAberto(true)}
+                  className="gap-1.5"
+                  title="Encontrar e despachar para o técnico mais próximo em tempo real"
+                >
+                  <Siren className="size-3.5 animate-pulse" />
+                  Emergência por Proximidade
+                </Button>
                 </div>
                 )}
               </div>
@@ -698,6 +711,18 @@ export function OrdemServicoDetalhe({
             setOs((atual) => ({ ...atual, diaAgenda: dia, turnoAgenda: turno, agendamentoId: id }));
             marcarMudanca();
             setMarcandoVisita(false);
+          }}
+        />
+      )}
+
+      {emergencialAberto && (
+        <DespachoEmergencialDialog
+          aberto={emergencialAberto}
+          osId={os.id}
+          onFechar={() => setEmergencialAberto(false)}
+          onDespachado={() => {
+            marcarMudanca();
+            setEmergencialAberto(false);
           }}
         />
       )}
