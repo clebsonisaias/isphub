@@ -34,10 +34,10 @@ const buttonVariants = cva(
        * botao tem 32px no mouse e 44px no dedo sem duas classes competindo.
        */
       size: {
-        default: "h-10 px-4 py-2 pointer-coarse:min-h-11 pointer-coarse:min-w-11",
-        sm: "h-8 rounded-md px-3 text-xs pointer-coarse:min-h-11 pointer-coarse:min-w-11 pointer-coarse:px-4",
-        lg: "h-11 rounded-md px-8",
-        icon: "size-10 pointer-coarse:size-11",
+        default: "h-11 px-4 py-2.5 text-sm sm:h-10 sm:py-2 max-sm:min-h-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11",
+        sm: "h-9.5 rounded-md px-3 text-xs sm:h-8 max-sm:min-h-10 max-sm:text-xs pointer-coarse:min-h-11 pointer-coarse:min-w-11 pointer-coarse:px-4",
+        lg: "h-12 rounded-md px-8 text-base max-sm:min-h-12",
+        icon: "size-11 sm:size-10 pointer-coarse:size-11",
       },
     },
     defaultVariants: {

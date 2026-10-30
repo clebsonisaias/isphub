@@ -244,20 +244,20 @@ export function OtimizarRotaDialog({
           </div>
         ) : null}
 
-        <DialogFooter className="border-t border-border pt-3">
-          <Button variant="outline" size="sm" onClick={onFechar} disabled={aplicando}>
+        <DialogFooter className="border-t border-border pt-3 gap-2">
+          <Button variant="outline" size="default" className="min-h-11 font-semibold w-full sm:w-auto" onClick={onFechar} disabled={aplicando}>
             Fechar
           </Button>
           <Button
-            size="sm"
+            size="default"
             onClick={() => void aplicar()}
             disabled={carregando || aplicando || !dados || paradasOrdenadas.length === 0}
-            className="gap-1.5"
+            className="gap-2 min-h-11 font-bold w-full sm:w-auto shadow-sm"
           >
             {aplicando ? (
-              <Loader2 className="size-3.5 animate-spin" />
+              <Loader2 className="size-4 animate-spin" />
             ) : (
-              <Zap className="size-3.5" />
+              <Zap className="size-4" />
             )}
             Aplicar Rota Otimizada
           </Button>

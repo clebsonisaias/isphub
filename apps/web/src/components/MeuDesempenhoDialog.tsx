@@ -99,12 +99,12 @@ export function MeuDesempenhoDialog({
               </DialogDescription>
             </DialogHeader>
 
-            <div className="flex rounded-lg border border-border bg-background p-0.5 text-xs font-medium">
+            <div className="flex rounded-lg border border-border bg-background p-1 text-xs font-semibold">
               <button
                 type="button"
                 onClick={() => setPeriodo("semana")}
-                className={`rounded-md px-2.5 py-1 transition-colors ${
-                  periodo === "semana" ? "bg-primary text-primary-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
+                className={`rounded-md px-3.5 py-1.5 min-h-9 text-xs font-bold transition-colors ${
+                  periodo === "semana" ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 Semana
@@ -112,8 +112,8 @@ export function MeuDesempenhoDialog({
               <button
                 type="button"
                 onClick={() => setPeriodo("mes")}
-                className={`rounded-md px-2.5 py-1 transition-colors ${
-                  periodo === "mes" ? "bg-primary text-primary-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
+                className={`rounded-md px-3.5 py-1.5 min-h-9 text-xs font-bold transition-colors ${
+                  periodo === "mes" ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 Mês
@@ -323,8 +323,8 @@ export function MeuDesempenhoDialog({
           </p>
         </div>
 
-        <div className="border-t border-border bg-secondary/20 p-3 flex justify-end">
-          <Button variant="outline" size="sm" onClick={onFechar}>
+        <div className="border-t border-border bg-secondary/20 p-3 sm:p-4 flex justify-end">
+          <Button variant="outline" size="default" className="min-h-11 font-semibold w-full sm:w-auto px-6" onClick={onFechar}>
             Fechar
           </Button>
         </div>

@@ -358,22 +358,22 @@ export function OrdemServicoDetalhe({
       </Cabecalho>
 
       {(os.telefone && usuario?.role !== UserRole.PROVEDOR) || (podeDespachar && OS_STATUS_ABERTOS.includes(os.status)) ? (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2.5">
           {os.telefone && usuario?.role !== UserRole.PROVEDOR ? (
-            <Button variant="outline" size="sm" onClick={() => void handleConversarComCliente()} disabled={acaoEmCurso !== null}>
-              <MessageCircle className="size-4" aria-hidden />
+            <Button variant="outline" size="default" className="min-h-11 flex-1 sm:flex-none font-semibold" onClick={() => void handleConversarComCliente()} disabled={acaoEmCurso !== null}>
+              <MessageCircle className="size-4.5 text-emerald-500" aria-hidden />
               {acaoEmCurso === "conversa-cliente" ? "Abrindo conversa..." : "Conversar com o cliente"}
             </Button>
           ) : null}
           {podeDespachar && OS_STATUS_ABERTOS.includes(os.status) ? (
             <Button
               variant="outline"
-              size="sm"
-              className="text-destructive hover:bg-destructive/10"
+              size="default"
+              className="text-destructive hover:bg-destructive/10 min-h-11 font-semibold"
               onClick={() => setEncerrarAberto(true)}
               disabled={acaoEmCurso !== null}
             >
-              <CircleX className="size-4" aria-hidden />
+              <CircleX className="size-4.5" aria-hidden />
               Encerrar OS
             </Button>
           ) : null}
@@ -493,24 +493,24 @@ export function OrdemServicoDetalhe({
                 variant="brand"
                 onClick={proximoPasso.executar}
                 disabled={acaoEmCurso !== null}
-                className="h-11 w-full text-base sm:w-auto sm:self-start sm:px-6"
+                className="h-12 min-h-12 w-full text-base font-bold shadow-md sm:w-auto sm:self-start sm:px-8"
               >
-                <proximoPasso.Icone className="size-4" />
+                <proximoPasso.Icone className="size-5" />
                 {acaoEmCurso ? "Enviando..." : proximoPasso.rotulo}
               </Button>
             ) : null}
             {!ehAtendente && (
-            <div className="flex flex-wrap items-center gap-2 text-sm">
+            <div className="flex flex-wrap items-center gap-2.5 text-sm pt-1">
               {/* "A caminho" de novo continua possível com a OS já em
                   deslocamento ou execução (técnico saiu, voltou à rua): a API
                   aceita e grava a posição de saída. Só não é o botão grande. */}
               {proximoPasso?.rotulo !== "Marcar a caminho" && OS_STATUS_ABERTOS.includes(os.status) ? (
-                <Button variant="outline" size="sm" onClick={() => void handleACaminho()} disabled={acaoEmCurso !== null}>
-                  <Navigation className="size-3.5" />
+                <Button variant="outline" size="default" className="min-h-11 font-semibold" onClick={() => void handleACaminho()} disabled={acaoEmCurso !== null}>
+                  <Navigation className="size-4 text-primary" />
                   Marcar a caminho
                 </Button>
               ) : null}
-              <span className="text-muted-foreground">Outro status:</span>
+              <span className="text-muted-foreground text-xs font-medium">Outro status:</span>
               <Select
                 /*
                  * Sem rotulo, este <select> so era alcancavel por
@@ -521,7 +521,7 @@ export function OrdemServicoDetalhe({
                 aria-label="Novo status da OS"
                 value={novoStatus}
                 onChange={(e) => setNovoStatus(e.target.value as OsStatus)}
-                className="h-9 w-auto bg-secondary/40 px-2"
+                className="h-11 min-h-11 w-auto bg-secondary/40 px-3 text-sm font-medium"
               >
                 {Object.values(OsStatus).map((s) => (
                   <option key={s} value={s}>
@@ -531,7 +531,8 @@ export function OrdemServicoDetalhe({
               </Select>
               <Button
                 variant="outline"
-                size="sm"
+                size="default"
+                className="min-h-11 font-semibold"
                 onClick={() => void handleMudarStatus()}
                 disabled={acaoEmCurso !== null || novoStatus === os.status}
               >
@@ -633,7 +634,8 @@ export function OrdemServicoDetalhe({
                 </Select>
                 <Button
                   variant="outline"
-                  size="sm"
+                  size="default"
+                  className="min-h-11 font-semibold"
                   onClick={handleAtribuir}
                   disabled={acaoEmCurso !== null || !tecnicoSelecionado}
                 >
@@ -641,13 +643,13 @@ export function OrdemServicoDetalhe({
                 </Button>
                 <Button
                   variant="destructive"
-                  size="sm"
+                  size="default"
                   type="button"
                   onClick={() => setEmergencialAberto(true)}
-                  className="gap-1.5"
+                  className="gap-2 min-h-11 font-bold shadow-xs"
                   title="Encontrar e despachar para o técnico mais próximo em tempo real"
                 >
-                  <Siren className="size-3.5 animate-pulse" />
+                  <Siren className="size-4 animate-pulse" />
                   Emergência por Proximidade
                 </Button>
                 </div>

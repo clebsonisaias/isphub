@@ -536,10 +536,10 @@ function LinhaDoQuadro({
           <button
             type="button"
             onClick={() => onOtimizar(linha.tecnicoId!, linha.nome)}
-            className="mt-1.5 inline-flex items-center gap-1 rounded bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary hover:bg-primary/20 transition-colors w-fit"
+            className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary/20 transition-colors min-h-9 shadow-2xs w-fit"
             title="Otimizar sequência das paradas para menor quilometragem e combustível"
           >
-            <Zap className="size-3 text-amber-500" />
+            <Zap className="size-3.5 text-amber-500" />
             Otimizar Rota
           </button>
         )}

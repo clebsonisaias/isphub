@@ -415,7 +415,7 @@ function navItemClass(ativo: boolean): string {
     // `lg:shrink-0` + `whitespace-nowrap`: agora que o nav rola (ver a nota no
     // <nav>), a pilula nao pode ser comprimida nem quebrar o rotulo em duas
     // linhas — ela sai de vista rolando, inteira, e volta do mesmo jeito.
-    "group relative flex min-w-16 flex-1 flex-col items-center justify-center gap-0.5 whitespace-nowrap rounded-lg px-1 py-2 text-[0.65rem] font-medium transition-colors lg:min-w-0 lg:flex-none lg:shrink-0 lg:flex-row lg:gap-1.5 lg:rounded-full lg:px-3 lg:py-1.5 lg:text-sm pointer-coarse:min-h-11",
+    "group relative flex min-w-16 flex-1 flex-col items-center justify-center gap-1 whitespace-nowrap rounded-lg px-1.5 py-2 text-[0.7rem] font-medium transition-colors lg:min-w-0 lg:flex-none lg:shrink-0 lg:flex-row lg:gap-1.5 lg:rounded-full lg:px-3 lg:py-1.5 lg:text-sm min-h-12 pointer-coarse:min-h-12",
     ativo
       ? "text-primary"
       : "text-muted-foreground hover:text-foreground lg:hover:bg-secondary/60",
@@ -907,11 +907,11 @@ export function AppShell({ children }: { children: ReactNode }) {
               <button
                 type="button"
                 onClick={() => setDesempenhoAberto(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-500/20 dark:text-amber-300 transition-colors"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-700 hover:bg-amber-500/20 dark:text-amber-300 transition-colors min-h-10 shadow-xs"
                 title="Meu Desempenho e Ranking Privado"
               >
-                <Trophy className="size-3.5 text-amber-500" />
-                <span className="hidden sm:inline">Desempenho</span>
+                <Trophy className="size-4 text-amber-500 shrink-0" />
+                <span className="font-bold">Desempenho</span>
               </button>
             )}
             {usuario && <CommandPalette />}

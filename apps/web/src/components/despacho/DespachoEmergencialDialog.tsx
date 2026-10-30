@@ -229,16 +229,16 @@ export function DespachoEmergencialDialog({
 
                         <div className="shrink-0 pt-1 sm:pt-0">
                           <Button
-                            size="sm"
+                            size="default"
                             variant={maisProximo ? "default" : "outline"}
                             disabled={despachandoId !== null}
                             onClick={() => void despachar(t.id, t.nome)}
-                            className="w-full sm:w-auto gap-1.5 text-xs h-8 font-semibold"
+                            className="w-full sm:w-auto gap-2 text-xs sm:text-sm min-h-10 h-10 font-bold px-3.5 shadow-2xs"
                           >
                             {despachando ? (
-                              <Loader2 className="size-3.5 animate-spin" />
+                              <Loader2 className="size-4 animate-spin" />
                             ) : (
-                              <Zap className="size-3.5 text-amber-400" />
+                              <Zap className="size-4 text-amber-400" />
                             )}
                             Despachar Urgente
                           </Button>
@@ -253,7 +253,7 @@ export function DespachoEmergencialDialog({
         ) : null}
 
         <DialogFooter className="border-t border-border pt-3">
-          <Button variant="outline" size="sm" onClick={onFechar} disabled={despachandoId !== null}>
+          <Button variant="outline" size="default" className="min-h-11 font-semibold w-full sm:w-auto" onClick={onFechar} disabled={despachandoId !== null}>
             Fechar
           </Button>
         </DialogFooter>
