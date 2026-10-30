@@ -19,3 +19,14 @@ createRoot(document.getElementById("root")!).render(
     </QueryClientProvider>
   </StrictMode>,
 );
+
+// Registra o Service Worker do PWA para suporte offline e abertura instantânea
+if (typeof window !== "undefined" && "serviceWorker" in navigator && !window.location.host.includes("localhost")) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker
+      .register("/sw.js")
+      .catch((err) => {
+        console.warn("[PWA] Falha ao registrar Service Worker:", err);
+      });
+  });
+}
