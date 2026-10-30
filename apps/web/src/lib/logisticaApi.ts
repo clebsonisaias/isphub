@@ -74,7 +74,57 @@ export interface ProximidadeTecnicosDto {
   semCoordenada: boolean;
 }
 
+export interface MinhaRotaDoDiaParadaDto {
+  agendamentoId: string;
+  osId: string;
+  sgpOsId: string;
+  cliente: string | null;
+  bairro: string | null;
+  cidade: string | null;
+  logradouro: string | null;
+  numero: string | null;
+  enderecoFormatado: string;
+  horarioPrevisto: string;
+  turno: "manha" | "tarde";
+  ordem: number;
+  status: string;
+  lat: number | null;
+  lng: number | null;
+  distanciaTrechoKm: number | null;
+  distanciaAcumuladaKm: number | null;
+}
+
+export interface MinhaRotaDoDiaDto {
+  dia: string;
+  diaFormatado: string;
+  totalParadas: number;
+  totalKm: number;
+  tempoEstimadoMinutos: number;
+  origem: {
+    lat: number;
+    lng: number;
+    descricao: string;
+  } | null;
+  paradas: MinhaRotaDoDiaParadaDto[];
+  googleMapsUrl: string | null;
+}
+
 export const logisticaApi = {
+  async obterMinhaRotaDoDia(dia?: string): Promise<MinhaRotaDoDiaDto> {
+    const params = dia ? `?dia=${dia}` : "";
+    return api.get<MinhaRotaDoDiaDto>(`/logistica/minha-rota-do-dia${params}`);
+  },
+
+  async roboOtimizarDia(dia?: string): Promise<{
+    ok: boolean;
+    dia: string;
+    tecnicosOtimizados: number;
+    totalParadas: number;
+    kmTotalEconomizado: number;
+  }> {
+    return api.post(`/logistica/robo-otimizar-dia`, { dia });
+  },
+
   async obterSugestaoRota(
     tecnicoId: string,
     dia: string,

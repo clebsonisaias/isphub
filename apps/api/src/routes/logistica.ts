@@ -8,6 +8,8 @@ import {
   aplicarOrdemRotaTecnico,
   obterTecnicosProximos,
   despacharEmergencial,
+  obterMinhaRotaDoDia,
+  otimizarTodasRotasDoDia,
 } from "../services/logisticaService.js";
 
 export const logisticaRouter = Router();
@@ -15,6 +17,43 @@ export const logisticaRouter = Router();
 logisticaRouter.use(requireAuth);
 
 const DIA_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * `GET /logistica/minha-rota-do-dia`
+ * Retorna as paradas do técnico logado para o dia na sequência ótima, com distâncias e link do Google Maps.
+ */
+logisticaRouter.get(
+  "/minha-rota-do-dia",
+  asyncHandler(async (req, res) => {
+    const { dia } = z
+      .object({
+        dia: z.string().regex(DIA_REGEX, "Data deve ser AAAA-MM-DD").optional(),
+      })
+      .parse(req.query);
+
+    const resultado = await obterMinhaRotaDoDia(req.user!.id, dia);
+    res.json(resultado);
+  }),
+);
+
+/**
+ * `POST /logistica/robo-otimizar-dia`
+ * Dispara o Robô de Roteirização para calcular a melhor ordem de paradas de todos os técnicos do dia.
+ */
+logisticaRouter.post(
+  "/robo-otimizar-dia",
+  requireRole(UserRole.ADMIN, UserRole.GESTOR),
+  asyncHandler(async (req, res) => {
+    const { dia } = z
+      .object({
+        dia: z.string().regex(DIA_REGEX, "Data deve ser AAAA-MM-DD").optional(),
+      })
+      .parse(req.body);
+
+    const resultado = await otimizarTodasRotasDoDia(dia, req.user?.provedorId);
+    res.json(resultado);
+  }),
+);
 
 /**
  * `GET /logistica/tecnico/:tecnicoId/rota-otimizada`

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, useRef, useState, type DragEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Map as MapIcon, Search, Users, Zap, Siren } from "lucide-react";
+import { Check, Map as MapIcon, Search, Users, Zap, Siren, Bot, Loader2 } from "lucide-react";
 import { OsStatus, ROTULO_TURNO, TURNOS_AGENDA, diaBrHoje, somarDias, type FilaItem, type SlaSemaforo, type TurnoAgenda, type VagaTurno } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
 import { AnimatedPage } from "@/components/AnimatedPage";
@@ -19,6 +19,7 @@ import { useRealtime } from "@/lib/realtime";
 import { cn } from "@/lib/utils";
 import { OtimizarRotaDialog } from "@/components/despacho/OtimizarRotaDialog";
 import { DespachoEmergencialDialog } from "@/components/despacho/DespachoEmergencialDialog";
+import { logisticaApi } from "@/lib/logisticaApi";
 
 const MapaDoDia = lazy(() => import("@/components/despacho/MapaDoDia"));
 
@@ -67,6 +68,7 @@ export function DespachoPage() {
   const [selecionado, setSelecionado] = useState<FilaItem | null>(null);
   const [otimizarTecnico, setOtimizarTecnico] = useState<{ id: string; nome: string } | null>(null);
   const [emergencialOsId, setEmergencialOsId] = useState<string | null>(null);
+  const [roteirizandoRobo, setRoteirizandoRobo] = useState(false);
 
   const dias = useMemo(() => Array.from({ length: 7 }, (_, i) => somarDias(hoje, i)), [hoje]);
   const grade = useQuery({
@@ -213,6 +215,27 @@ export function DespachoPage() {
     },
   });
 
+  const handleRoboRoteirizar = async () => {
+    setRoteirizandoRobo(true);
+    try {
+      const res = await logisticaApi.roboOtimizarDia(dia);
+      toast({
+        titulo: "Robô de Roteirização Concluído",
+        descricao: `${res.tecnicosOtimizados} técnicos organizados na melhor sequência. Economia estimada: -${res.kmTotalEconomizado} km!`,
+        variante: "info",
+      });
+      void queryClient.invalidateQueries({ queryKey: ["agenda", "turno", dia] });
+    } catch (e) {
+      toast({
+        titulo: "Falha na Roteirização",
+        descricao: e instanceof Error ? e.message : "Erro ao executar o robô",
+        variante: "erro",
+      });
+    } finally {
+      setRoteirizandoRobo(false);
+    }
+  };
+
   const carregandoQuadro = manha.isPending || tarde.isPending || tecnicos.isPending;
 
   return (
@@ -227,6 +250,16 @@ export function DespachoPage() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={() => void handleRoboRoteirizar()}
+                disabled={roteirizandoRobo}
+                title="Otimiza automaticamente as rotas de todos os técnicos do dia pelo menor percurso com custo zero de IA"
+                className="gap-2 font-semibold"
+              >
+                {roteirizandoRobo ? <Loader2 className="size-4 animate-spin text-primary" /> : <Bot className="size-4 text-primary" />}
+                Robô: Roteirizar Todos
+              </Button>
               <Button variant={mapaAberto ? "default" : "outline"} onClick={() => setMapaAberto((v) => !v)} aria-pressed={mapaAberto}>
                 <MapIcon className="size-4" aria-hidden />
                 {mapaAberto ? "Esconder mapa" : "Ver no mapa"}

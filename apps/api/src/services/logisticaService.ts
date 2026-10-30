@@ -1,4 +1,4 @@
-import { TurnoAgenda, haversineMetros, metrosDaOrdem, sugerirOrdem, type ParadaRota } from "@isphub/shared";
+import { TurnoAgenda, haversineMetros, metrosDaOrdem, sugerirOrdem, type ParadaRota, diaBrHoje } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { emitParaTodos, emitParaUsuario } from "./realtimeHub.js";
 import { mapaAoVivo } from "./rastreamentoService.js";
@@ -580,5 +580,307 @@ export async function despacharEmergencial(
   return {
     ok: true,
     mensagem: `OS ${os.sgpOsId} despachada com sucesso para ${nomeTecnico} como 1ª parada prioritária!`,
+  };
+}
+
+export interface MinhaRotaDoDiaParada {
+  agendamentoId: string;
+  osId: string;
+  sgpOsId: string;
+  cliente: string | null;
+  bairro: string | null;
+  cidade: string | null;
+  logradouro: string | null;
+  numero: string | null;
+  enderecoFormatado: string;
+  horarioPrevisto: string;
+  turno: "manha" | "tarde";
+  ordem: number;
+  status: string;
+  lat: number | null;
+  lng: number | null;
+  distanciaTrechoKm: number | null;
+  distanciaAcumuladaKm: number | null;
+}
+
+export interface MinhaRotaDoDiaResultado {
+  dia: string;
+  diaFormatado: string;
+  totalParadas: number;
+  totalKm: number;
+  tempoEstimadoMinutos: number;
+  origem: {
+    lat: number;
+    lng: number;
+    descricao: string;
+  } | null;
+  paradas: MinhaRotaDoDiaParada[];
+  googleMapsUrl: string | null;
+}
+
+export function gerarGoogleMapsUrl(
+  origem: { lat: number; lng: number } | null,
+  paradas: { lat: number; lng: number }[],
+): string | null {
+  if (paradas.length === 0) return null;
+
+  if (paradas.length === 1 && !origem) {
+    const p = paradas[0];
+    return `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}&travelmode=driving`;
+  }
+
+  const pontoOrigem = origem ? `${origem.lat},${origem.lng}` : `${paradas[0].lat},${paradas[0].lng}`;
+  const pontoDestino = `${paradas[paradas.length - 1].lat},${paradas[paradas.length - 1].lng}`;
+
+  const paradasIntermediarias = origem ? paradas.slice(0, -1) : paradas.slice(1, -1);
+
+  const waypoints = paradasIntermediarias.map((p) => `${p.lat},${p.lng}`).join("|");
+  const waypointsParam = waypoints ? `&waypoints=${encodeURIComponent(waypoints)}` : "";
+
+  return `https://www.google.com/maps/dir/?api=1&origin=${pontoOrigem}&destination=${pontoDestino}${waypointsParam}&travelmode=driving`;
+}
+
+/**
+ * Consulta a rota do dia do técnico logado com as paradas na sequência ótima,
+ * cálculo de distâncias entre cada ponto e link multi-paradas para o Google Maps.
+ */
+export async function obterMinhaRotaDoDia(
+  tecnicoId: string,
+  diaStr?: string,
+): Promise<MinhaRotaDoDiaResultado> {
+  const dia = diaStr || diaBrHoje();
+  const diaDate = new Date(dia);
+
+  // Busca agendamentos do técnico no dia
+  let agendamentos = await prisma.agendamento.findMany({
+    where: {
+      dia: diaDate,
+      status: "marcado",
+      ordemServico: {
+        tecnicoId,
+      },
+    },
+    include: {
+      ordemServico: {
+        include: {
+          tipoOs: {
+            include: { categoria: true },
+          },
+        },
+      },
+    },
+    orderBy: [
+      { ordemRota: { sort: "asc", nulls: "last" } },
+      { turno: "asc" },
+      { criadoEm: "asc" },
+    ],
+  });
+
+  // Se tiver 2 ou mais paradas e alguma ainda não tiver ordemRota definida,
+  // chama o robô de roteirização para ordenar agora mesmo
+  const precisaRoteirizar = agendamentos.length >= 2 && agendamentos.some((a) => a.ordemRota == null);
+  if (precisaRoteirizar) {
+    try {
+      const sugestao = await obterSugestaoRotaTecnico(tecnicoId, dia, "dia_inteiro");
+      if (sugestao.ordemSugeridaIds.length) {
+        await aplicarOrdemRotaTecnico(sugestao.ordemSugeridaIds);
+        agendamentos = await prisma.agendamento.findMany({
+          where: {
+            id: { in: sugestao.ordemSugeridaIds },
+          },
+          include: {
+            ordemServico: {
+              include: {
+                tipoOs: {
+                  include: { categoria: true },
+                },
+              },
+            },
+          },
+          orderBy: [{ ordemRota: "asc" }],
+        });
+      }
+    } catch (e) {
+      console.warn("[obterMinhaRotaDoDia] Falha na auto-roteirização:", e);
+    }
+  }
+
+  // Determina localização de origem (GPS da viatura ou último check-in do técnico)
+  let origem: { lat: number; lng: number; descricao: string } | null = null;
+  const ocupacaoAtiva = await prisma.ocupacaoVeiculo.findFirst({
+    where: { usuarioId: tecnicoId, fimEm: null },
+  });
+  if (ocupacaoAtiva) {
+    const posicoes = await mapaAoVivo();
+    const pv = posicoes.find((p) => p.veiculoId === ocupacaoAtiva.veiculoId);
+    if (pv) {
+      origem = { lat: pv.lat, lng: pv.lng, descricao: `Viatura ${pv.rotulo}` };
+    }
+  }
+
+  // Fallback: Base da empresa configurada na Agenda
+  if (!origem) {
+    const configAgenda = await prisma.agendaConfig.findUnique({
+      where: { id: "global" },
+    });
+    if (configAgenda?.baseLat != null && configAgenda?.baseLng != null) {
+      origem = {
+        lat: configAgenda.baseLat,
+        lng: configAgenda.baseLng,
+        descricao: "Base / Central do provedor",
+      };
+    }
+  }
+
+  // Calcula distâncias e formata as paradas
+  let pontoAnterior = origem;
+  let totalMetros = 0;
+
+  const paradas: MinhaRotaDoDiaParada[] = [];
+
+  for (let i = 0; i < agendamentos.length; i++) {
+    const ag = agendamentos[i];
+    const os = ag.ordemServico!;
+    const lat = os.lat ?? null;
+    const lng = os.lng ?? null;
+
+    let distanciaTrechoKm: number | null = null;
+    if (lat != null && lng != null && pontoAnterior) {
+      const dMetros = haversineMetros(pontoAnterior, { lat, lng });
+      distanciaTrechoKm = Number((dMetros / 1000).toFixed(1));
+      totalMetros += dMetros;
+      pontoAnterior = { lat, lng, descricao: `Parada ${i + 1}` };
+    } else if (lat != null && lng != null) {
+      pontoAnterior = { lat, lng, descricao: `Parada ${i + 1}` };
+    }
+
+    const rua = [os.logradouro, os.numero].filter(Boolean).join(", ");
+    const enderecoFormatado = rua
+      ? `${rua}${os.bairro ? ` - ${os.bairro}` : ""}${os.cidade ? `, ${os.cidade}` : ""}`
+      : os.cidade
+        ? os.cidade
+        : os.pop
+          ? `POP ${os.pop}`
+          : "Endereço não informado";
+
+    const horarioPrevisto = ag.turno === "manha" ? "08:00 - 12:00" : "13:00 - 18:00";
+
+    paradas.push({
+      agendamentoId: ag.id,
+      osId: os.id,
+      sgpOsId: os.sgpOsId,
+      cliente: os.clienteNome ?? "Cliente",
+      bairro: os.bairro,
+      cidade: os.cidade,
+      logradouro: os.logradouro,
+      numero: os.numero,
+      enderecoFormatado,
+      horarioPrevisto,
+      turno: ag.turno,
+      ordem: ag.ordemRota ?? i + 1,
+      status: os.status,
+      lat,
+      lng,
+      distanciaTrechoKm,
+      distanciaAcumuladaKm: Number((totalMetros / 1000).toFixed(1)),
+    });
+  }
+
+  // Google Maps URL
+  const paradasComGeo = paradas.filter(
+    (p): p is MinhaRotaDoDiaParada & { lat: number; lng: number } => p.lat != null && p.lng != null,
+  );
+  const googleMapsUrl = gerarGoogleMapsUrl(origem, paradasComGeo);
+
+  // Formatação do dia
+  const dObj = new Date(dia + "T12:00:00");
+  const mesExtenso = dObj.toLocaleDateString("pt-BR", { month: "long" });
+  const diaNum = dObj.getDate();
+  const diaFormatado = `Hoje, ${diaNum} de ${mesExtenso}`;
+
+  const totalKm = Number((totalMetros / 1000).toFixed(1));
+  const tempoEstimadoMinutos = Math.round((totalKm / 35) * 60) + paradas.length * 20;
+
+  return {
+    dia,
+    diaFormatado,
+    totalParadas: paradas.length,
+    totalKm,
+    tempoEstimadoMinutos,
+    origem,
+    paradas,
+    googleMapsUrl,
+  };
+}
+
+/**
+ * Robô de Roteirização Automática:
+ * Varre todos os técnicos com OS marcadas para o dia e calcula a rota ótima (TSP 2-opt).
+ * Custo de tokens: R$ 0,00 (100% determinístico e executado em memória).
+ */
+export async function otimizarTodasRotasDoDia(
+  diaStr?: string,
+  provedorId?: string | null,
+): Promise<{
+  ok: boolean;
+  dia: string;
+  tecnicosOtimizados: number;
+  totalParadas: number;
+  kmTotalEconomizado: number;
+}> {
+  const dia = diaStr || diaBrHoje();
+  const diaDate = new Date(dia);
+
+  const agendamentos = await prisma.agendamento.findMany({
+    where: {
+      dia: diaDate,
+      status: "marcado",
+      ordemServico: {
+        tecnicoId: { not: null },
+        ...(provedorId ? { provedorId } : {}),
+      },
+    },
+    select: {
+      id: true,
+      ordemServico: {
+        select: {
+          tecnicoId: true,
+        },
+      },
+    },
+  });
+
+  const idsTecnicos = [...new Set(agendamentos.map((a) => a.ordemServico?.tecnicoId).filter(Boolean))] as string[];
+
+  let tecnicosOtimizados = 0;
+  let totalParadas = 0;
+  let kmTotalEconomizado = 0;
+
+  for (const tId of idsTecnicos) {
+    try {
+      const sugestao = await obterSugestaoRotaTecnico(tId, dia, "dia_inteiro");
+      if (sugestao.paradas.length >= 2) {
+        await aplicarOrdemRotaTecnico(sugestao.ordemSugeridaIds);
+        tecnicosOtimizados += 1;
+        totalParadas += sugestao.paradas.length;
+        kmTotalEconomizado += sugestao.kmEconomizado;
+      }
+    } catch (err) {
+      console.warn(`[Robô Roteirizador] Falha ao otimizar técnico ${tId}:`, err);
+    }
+  }
+
+  // Notifica todos via WebSocket
+  emitParaTodos({
+    tipo: "os-alterada",
+    em: new Date().toISOString(),
+  });
+
+  return {
+    ok: true,
+    dia,
+    tecnicosOtimizados,
+    totalParadas,
+    kmTotalEconomizado: Number(kmTotalEconomizado.toFixed(1)),
   };
 }

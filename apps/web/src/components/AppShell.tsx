@@ -16,6 +16,7 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { HeaderClock } from "@/components/HeaderClock";
 import { SyncBanner } from "@/components/SyncBanner";
 import { MeuDesempenhoDialog } from "@/components/MeuDesempenhoDialog";
+import { RotaDoDiaModal } from "@/components/tecnico/RotaDoDiaModal";
 import { chatApi } from "@/lib/chatApi";
 import { useRealtime } from "@/lib/realtime";
 import { cn, iniciais } from "@/lib/utils";
@@ -487,6 +488,7 @@ function UserMenu({
   onLogout,
   itensSoDesktop,
   onAbrirDesempenho,
+  onAbrirRotaDoDia,
 }: {
   nome: string;
   role: UserRole;
@@ -494,6 +496,7 @@ function UserMenu({
   /** Itens marcados `soDesktop` — saem da barra do rodape e entram aqui no celular. */
   itensSoDesktop: { to: string; label: string; icon: typeof LayoutGrid }[];
   onAbrirDesempenho?: () => void;
+  onAbrirRotaDoDia?: () => void;
 }) {
   const { theme, toggleTheme } = useTheme();
   const [aberto, setAberto] = useState(false);
@@ -560,6 +563,19 @@ function UserMenu({
             {label}
           </Link>
         ))}
+        {role === UserRole.TECNICO && onAbrirRotaDoDia && (
+          <button
+            type="button"
+            onClick={() => {
+              setAberto(false);
+              onAbrirRotaDoDia();
+            }}
+            className="mt-1 flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm font-medium text-teal-700 dark:text-teal-300 outline-none transition-colors hover:bg-teal-500/10 focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11"
+          >
+            <Route className="size-4 text-teal-600 dark:text-teal-400" />
+            Minha Rota do Dia
+          </button>
+        )}
         {role === UserRole.TECNICO && onAbrirDesempenho && (
           <button
             type="button"
@@ -708,6 +724,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { ids: modulosHabilitados } = useModulosHabilitados();
   const navRef = useRef<HTMLElement | null>(null);
   const [desempenhoAberto, setDesempenhoAberto] = useState(false);
+  const [rotaDoDiaAberta, setRotaDoDiaAberta] = useState(false);
 
   /*
    * UMA lista com tudo, inclusive Administração — que antes era renderizada
@@ -902,17 +919,28 @@ export function AppShell({ children }: { children: ReactNode }) {
             escondida, sem nenhuma pista de que os itens existiam. Medido: a
             partir de 1536px o nav caia de 780px pra 490px.
           */}
-          <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
             {usuario?.role === UserRole.TECNICO && (
-              <button
-                type="button"
-                onClick={() => setDesempenhoAberto(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-700 hover:bg-amber-500/20 dark:text-amber-300 transition-colors min-h-10 shadow-xs"
-                title="Meu Desempenho e Ranking Privado"
-              >
-                <Trophy className="size-4 text-amber-500 shrink-0" />
-                <span className="font-bold">Desempenho</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => setRotaDoDiaAberta(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-teal-500/40 bg-teal-500/10 px-3 py-2 text-xs font-bold text-teal-700 hover:bg-teal-500/20 dark:text-teal-300 transition-colors min-h-10 shadow-xs"
+                  title="Minha Rota do Dia Otimizada no Mapa"
+                >
+                  <Route className="size-4 text-teal-600 dark:text-teal-400 shrink-0" />
+                  <span className="font-bold">Rota do dia</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDesempenhoAberto(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-700 hover:bg-amber-500/20 dark:text-amber-300 transition-colors min-h-10 shadow-xs"
+                  title="Meu Desempenho e Ranking Privado"
+                >
+                  <Trophy className="size-4 text-amber-500 shrink-0" />
+                  <span className="font-bold">Desempenho</span>
+                </button>
+              </>
             )}
             {usuario && <CommandPalette />}
             {usuario && <NotificationBell />}
@@ -923,6 +951,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 onLogout={logout}
                 itensSoDesktop={itensNav.filter((i) => i.soDesktop)}
                 onAbrirDesempenho={() => setDesempenhoAberto(true)}
+                onAbrirRotaDoDia={() => setRotaDoDiaAberta(true)}
               />
             )}
           </div>
@@ -951,10 +980,16 @@ export function AppShell({ children }: { children: ReactNode }) {
       </footer>
 
       {usuario?.role === UserRole.TECNICO && (
-        <MeuDesempenhoDialog
-          aberto={desempenhoAberto}
-          onFechar={() => setDesempenhoAberto(false)}
-        />
+        <>
+          <MeuDesempenhoDialog
+            aberto={desempenhoAberto}
+            onFechar={() => setDesempenhoAberto(false)}
+          />
+          <RotaDoDiaModal
+            aberto={rotaDoDiaAberta}
+            onFechar={() => setRotaDoDiaAberta(false)}
+          />
+        </>
       )}
     </div>
   );
