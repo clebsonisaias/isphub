@@ -16,6 +16,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { cn } from "@/lib/utils";
 import { filaApi } from "@/lib/filaApi";
+import { offlineStorage } from "@/lib/offlineStorage";
 import { useRealtime, useRealtimeConectado } from "@/lib/realtime";
 import { categoriasApi, provedoresApi } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
@@ -233,12 +234,30 @@ export function FilaWorkspace({
     // So o grupo da aba ativa: sem isso, uma base com muita OS encerrada
     // consome o teto de registros e esconde as abertas.
     queryKey: ["fila", { grupo: visao === "concluidas" ? "fechados" : "abertos", busca: buscaDebounced || undefined, equipe }],
-    queryFn: () =>
-      filaApi.listar({
-        busca: buscaDebounced || undefined,
-        grupo: visao === "concluidas" ? "fechados" : "abertos",
-        equipe,
-      }),
+    queryFn: async () => {
+      try {
+        const res = await filaApi.listar({
+          busca: buscaDebounced || undefined,
+          grupo: visao === "concluidas" ? "fechados" : "abertos",
+          equipe,
+        });
+        if (res.itens && res.itens.length > 0) {
+          void offlineStorage.salvarOs(res.itens);
+        }
+        return res;
+      } catch (err) {
+        const locais = await offlineStorage.listarOs();
+        if (locais.length > 0) {
+          return {
+            total: locais.length,
+            truncado: false,
+            itens: locais,
+            totais: { osAbertas: locais.length, osFechadas: 0, osSlaEstourado: 0 },
+          };
+        }
+        throw err;
+      }
+    },
     // Troca de aba/busca mantem a lista anterior na tela ate a nova chegar —
     // sem piscar pro skeleton.
     placeholderData: keepPreviousData,

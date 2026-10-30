@@ -33,6 +33,8 @@ import { formatarKm } from "@isphub/shared";
 import { MarcarVisitaDialog } from "@/components/MarcarVisitaDialog";
 import { EncerrarOsDialog } from "@/components/EncerrarOsDialog";
 import { agendaApi, rotuloVisita } from "@/lib/agendaApi";
+import { offlineStorage } from "@/lib/offlineStorage";
+import { syncEngine } from "@/lib/syncEngine";
 
 function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
@@ -78,6 +80,10 @@ export function OrdemServicoDetalhe({
   const [deslocamento, setDeslocamento] = useState<{ metros: number; fonte: "gps" | "estimado" | "sem_dados" } | null>(null);
   // Auditoria de presenca: so existe depois de concluida; "sem dados" nao aparece.
   const [auditoria, setAuditoria] = useState<{ veredito: "presente" | "ausente"; distanciaMinMetros: number | null } | null>(null);
+
+  useEffect(() => {
+    if (item) void offlineStorage.salvarOs(item);
+  }, [item]);
   useEffect(() => {
     if (!podeDespachar || os.status !== OsStatus.CONCLUIDA) return;
     let vivo = true;
@@ -181,12 +187,33 @@ export function OrdemServicoDetalhe({
   async function handleACaminho() {
     setAcaoEmCurso("acaminho");
     try {
-      const atualizado = await ordensServicoApi.aCaminho(os.id);
-      setOs((prev) => ({ ...prev, status: atualizado.status as OsStatus }));
-      toast({ titulo: "OS marcada como a caminho", variante: "sucesso" });
+      if (navigator.onLine) {
+        try {
+          const atualizado = await ordensServicoApi.aCaminho(os.id);
+          setOs((prev) => ({ ...prev, status: atualizado.status as OsStatus }));
+          void offlineStorage.salvarOs({ ...os, status: atualizado.status as OsStatus });
+          toast({ titulo: "OS marcada como a caminho", variante: "sucesso" });
+          marcarMudanca();
+          return;
+        } catch (netErr) {
+          console.warn("[OrdemServicoDetalhe] Falha online, salvando no aparelho...", netErr);
+        }
+      }
+
+      // Modo Offline: salva na outbox e atualiza estado local
+      await offlineStorage.enfileirarMutacao({
+        ordemServicoId: os.id,
+        tipo: "A_CAMINHO",
+        payload: { status: OsStatus.EM_DESLOCAMENTO },
+      });
+      setOs((prev) => ({ ...prev, status: OsStatus.EM_DESLOCAMENTO }));
+      void syncEngine.atualizarPendencias();
+      toast({
+        titulo: "A caminho (Modo Offline)",
+        descricao: "Ação salva no aparelho. Será enviada assim que houver sinal.",
+        variante: "info",
+      });
       marcarMudanca();
-    } catch (err) {
-      toast({ titulo: "Erro ao marcar a caminho", descricao: mensagem(err), variante: "erro" });
     } finally {
       setAcaoEmCurso(null);
     }
@@ -195,12 +222,33 @@ export function OrdemServicoDetalhe({
   async function handleMudarStatus(alvo: OsStatus = novoStatus) {
     setAcaoEmCurso("status");
     try {
-      const atualizado = await ordensServicoApi.mudarStatus(os.id, alvo);
-      setOs((prev) => ({ ...prev, status: atualizado.status as OsStatus }));
-      toast({ titulo: "Status atualizado", variante: "sucesso" });
+      if (navigator.onLine) {
+        try {
+          const atualizado = await ordensServicoApi.mudarStatus(os.id, alvo);
+          setOs((prev) => ({ ...prev, status: atualizado.status as OsStatus }));
+          void offlineStorage.salvarOs({ ...os, status: atualizado.status as OsStatus });
+          toast({ titulo: "Status atualizado", variante: "sucesso" });
+          marcarMudanca();
+          return;
+        } catch (netErr) {
+          console.warn("[OrdemServicoDetalhe] Falha online, salvando no aparelho...", netErr);
+        }
+      }
+
+      // Modo Offline: salva na outbox e atualiza estado local
+      await offlineStorage.enfileirarMutacao({
+        ordemServicoId: os.id,
+        tipo: "STATUS",
+        payload: { status: alvo },
+      });
+      setOs((prev) => ({ ...prev, status: alvo }));
+      void syncEngine.atualizarPendencias();
+      toast({
+        titulo: `Status salvo (${OS_STATUS_LABEL[alvo]})`,
+        descricao: "Modo Offline: será enviado para a central assim que houver sinal.",
+        variante: "info",
+      });
       marcarMudanca();
-    } catch (err) {
-      toast({ titulo: "Erro ao atualizar status", descricao: mensagem(err), variante: "erro" });
     } finally {
       setAcaoEmCurso(null);
     }
@@ -221,13 +269,36 @@ export function OrdemServicoDetalhe({
     if (!textoAnotacao.trim()) return;
     setAcaoEmCurso("anotacao");
     try {
-      const atualizado = await ordensServicoApi.anotar(os.id, textoAnotacao.trim());
-      setOs((prev) => ({ ...prev, observacao: atualizado.observacao }));
+      if (navigator.onLine) {
+        try {
+          const atualizado = await ordensServicoApi.anotar(os.id, textoAnotacao.trim());
+          setOs((prev) => ({ ...prev, observacao: atualizado.observacao }));
+          void offlineStorage.salvarOs({ ...os, observacao: atualizado.observacao });
+          setTextoAnotacao("");
+          toast({ titulo: "Anotação enviada ao SGP", variante: "sucesso" });
+          marcarMudanca();
+          return;
+        } catch (netErr) {
+          console.warn("[OrdemServicoDetalhe] Falha online ao anotar, salvando no aparelho...", netErr);
+        }
+      }
+
+      // Modo Offline: salva na outbox
+      await offlineStorage.enfileirarMutacao({
+        ordemServicoId: os.id,
+        tipo: "ANOTACAO",
+        payload: { texto: textoAnotacao.trim() },
+      });
+      setOs((prev) => ({ ...prev, observacao: textoAnotacao.trim() }));
+      void offlineStorage.salvarOs({ ...os, observacao: textoAnotacao.trim() });
       setTextoAnotacao("");
-      toast({ titulo: "Anotação enviada ao SGP", variante: "sucesso" });
+      void syncEngine.atualizarPendencias();
+      toast({
+        titulo: "Anotação salva no aparelho",
+        descricao: "Modo Offline: será enviada ao SGP assim que houver sinal.",
+        variante: "info",
+      });
       marcarMudanca();
-    } catch (err) {
-      toast({ titulo: "Erro ao adicionar anotação", descricao: mensagem(err), variante: "erro" });
     } finally {
       setAcaoEmCurso(null);
     }

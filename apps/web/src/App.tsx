@@ -5,6 +5,7 @@ import { AuthProvider } from "@/context/AuthContext";
 import { ToastProvider } from "@/context/ToastContext";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { RealtimeProvider } from "@/lib/realtime";
+import { SyncProvider } from "@/context/SyncContext";
 import { RequireAuth } from "@/routes/RequireAuth";
 import { IrParaInicio } from "@/routes/IrParaInicio";
 import { LoginPage } from "@/pages/LoginPage";
@@ -53,7 +54,8 @@ function App() {
         <ToastProvider>
           <AuthProvider>
             <RealtimeProvider>
-              <Suspense fallback={<BrandLoader />}>
+              <SyncProvider>
+                <Suspense fallback={<BrandLoader />}>
                 <Routes>
                   {/* Publicas: quem chega nelas nao tem (ou perdeu) a sessao. */}
                   <Route path="/login" element={<LoginPage />} />
@@ -378,7 +380,8 @@ function App() {
                   />
                 </Routes>
               </Suspense>
-            </RealtimeProvider>
+            </SyncProvider>
+          </RealtimeProvider>
           </AuthProvider>
         </ToastProvider>
       </ThemeProvider>

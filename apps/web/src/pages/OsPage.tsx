@@ -9,6 +9,7 @@ import { OrdemServicoDetalhe } from "@/components/OrdemServicoDetalhe";
 import { OsTimeline } from "@/components/OsTimeline";
 import { ordensServicoApi } from "@/lib/filaApi";
 import { ApiError } from "@/lib/apiClient";
+import { offlineStorage } from "@/lib/offlineStorage";
 import { ArrowLeft } from "lucide-react";
 
 /**
@@ -25,10 +26,18 @@ export function OsPage() {
 
   const carregar = useCallback(async () => {
     try {
-      setOs(await ordensServicoApi.obter(id));
+      const item = await ordensServicoApi.obter(id);
+      setOs(item);
+      void offlineStorage.salvarOs(item);
       setErro(null);
     } catch (e) {
-      setErro(e instanceof ApiError ? e.message : "Falha ao comunicar com o servidor");
+      const cached = await offlineStorage.obterOs(id);
+      if (cached) {
+        setOs(cached);
+        setErro(null);
+      } else {
+        setErro(e instanceof ApiError ? e.message : "Falha ao comunicar com o servidor");
+      }
     }
   }, [id]);
 

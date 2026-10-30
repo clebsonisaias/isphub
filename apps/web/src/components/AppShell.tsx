@@ -14,6 +14,7 @@ import {
 import { NotificationBell } from "@/components/NotificationBell";
 import { CommandPalette } from "@/components/CommandPalette";
 import { HeaderClock } from "@/components/HeaderClock";
+import { SyncBanner } from "@/components/SyncBanner";
 import { chatApi } from "@/lib/chatApi";
 import { useRealtime } from "@/lib/realtime";
 import { cn, iniciais } from "@/lib/utils";
@@ -898,6 +899,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </div>
       </header>
+
+      <SyncBanner />
 
       {/* pb extra no mobile: a aba de navegacao fixa no rodape nao pode
           cobrir o final da lista/conteudo. */}
