@@ -186,12 +186,36 @@ export function OrdemServicoDetalhe({
     }
   }
 
+  /** Captura GPS rápido (não-bloqueante, máx 2.5s) para auditoria de visita e despacho por proximidade. */
+  async function capturarGpsRapido(): Promise<{ lat: number; lng: number; precisaoM?: number } | undefined> {
+    if (typeof navigator === "undefined" || !("geolocation" in navigator)) return undefined;
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(undefined), 2500);
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          clearTimeout(timer);
+          resolve({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            precisaoM: Number.isFinite(pos.coords.accuracy) ? Math.round(pos.coords.accuracy) : undefined,
+          });
+        },
+        () => {
+          clearTimeout(timer);
+          resolve(undefined);
+        },
+        { enableHighAccuracy: true, timeout: 2200, maximumAge: 60_000 },
+      );
+    });
+  }
+
   async function handleACaminho() {
     setAcaoEmCurso("acaminho");
     try {
+      const geo = await capturarGpsRapido();
       if (navigator.onLine) {
         try {
-          const atualizado = await ordensServicoApi.aCaminho(os.id);
+          const atualizado = await ordensServicoApi.aCaminho(os.id, geo);
           setOs((prev) => ({ ...prev, status: atualizado.status as OsStatus }));
           void offlineStorage.salvarOs({ ...os, status: atualizado.status as OsStatus });
           toast({ titulo: "OS marcada como a caminho", variante: "sucesso" });
@@ -206,7 +230,7 @@ export function OrdemServicoDetalhe({
       await offlineStorage.enfileirarMutacao({
         ordemServicoId: os.id,
         tipo: "A_CAMINHO",
-        payload: { status: OsStatus.EM_DESLOCAMENTO },
+        payload: { status: OsStatus.EM_DESLOCAMENTO, geo },
       });
       setOs((prev) => ({ ...prev, status: OsStatus.EM_DESLOCAMENTO }));
       void syncEngine.atualizarPendencias();
@@ -224,9 +248,10 @@ export function OrdemServicoDetalhe({
   async function handleMudarStatus(alvo: OsStatus = novoStatus) {
     setAcaoEmCurso("status");
     try {
+      const geo = await capturarGpsRapido();
       if (navigator.onLine) {
         try {
-          const atualizado = await ordensServicoApi.mudarStatus(os.id, alvo);
+          const atualizado = await ordensServicoApi.mudarStatus(os.id, alvo, geo);
           setOs((prev) => ({ ...prev, status: atualizado.status as OsStatus }));
           void offlineStorage.salvarOs({ ...os, status: atualizado.status as OsStatus });
           toast({ titulo: "Status atualizado", variante: "sucesso" });
@@ -241,7 +266,7 @@ export function OrdemServicoDetalhe({
       await offlineStorage.enfileirarMutacao({
         ordemServicoId: os.id,
         tipo: "STATUS",
-        payload: { status: alvo },
+        payload: { status: alvo, geo },
       });
       setOs((prev) => ({ ...prev, status: alvo }));
       void syncEngine.atualizarPendencias();

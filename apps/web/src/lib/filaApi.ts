@@ -44,11 +44,19 @@ export const filaApi = {
   listar: (filtros: FilaFiltros) => api.get<FilaResponse>(`/fila?${buildQuery(filtros)}`),
 };
 
+export interface GeoCheckin {
+  lat: number;
+  lng: number;
+  precisaoM?: number;
+}
+
 export const ordensServicoApi = {
   // Devolve a forma da fila (provedor, sla, categoria, agenda) — ver GET /ordens-servico/:id.
   obter: (id: string) => api.get<FilaItem>(`/ordens-servico/${id}`),
-  aCaminho: (id: string) => api.post<OrdemServico>(`/ordens-servico/${id}/acaminho`),
-  mudarStatus: (id: string, status: OsStatus) => api.patch<OrdemServico>(`/ordens-servico/${id}/status`, { status }),
+  aCaminho: (id: string, geo?: GeoCheckin) =>
+    api.post<OrdemServico>(`/ordens-servico/${id}/acaminho`, geo ? { ...geo } : {}),
+  mudarStatus: (id: string, status: OsStatus, geo?: GeoCheckin) =>
+    api.patch<OrdemServico>(`/ordens-servico/${id}/status`, { status, ...(geo ?? {}) }),
 
   /** Status do CONTRATO no SGP (não o da OS). `status` é o código REST 1..7. */
   mudarContratoStatus: (id: string, status: CodigoStatusContrato) =>

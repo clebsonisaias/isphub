@@ -10,6 +10,11 @@ export interface OutboxMutation {
     status?: OsStatus;
     texto?: string;
     fotoIdLocal?: string;
+    geo?: {
+      lat: number;
+      lng: number;
+      precisaoM?: number;
+    };
   };
   criadoEm: number;
   status: "PENDENTE" | "ENVIANDO" | "ERRO";

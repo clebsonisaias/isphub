@@ -117,14 +117,32 @@ class SyncEngine {
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           console.warn(`[SyncEngine] Falha ao sincronizar mutação ${mutacao.id}:`, msg);
-          await offlineStorage.atualizarStatusMutacao(mutacao.id, "ERRO", msg);
-          falhas++;
 
           // Se for erro de rede, interrompe o lote para não ficar batendo sem conexão
           const isNetworkError =
             msg.toLowerCase().includes("failed to fetch") ||
             msg.toLowerCase().includes("network") ||
-            msg.toLowerCase().includes("timeout");
+            msg.toLowerCase().includes("timeout") ||
+            msg.toLowerCase().includes("conexão");
+
+          if (!isNetworkError && mutacao.tentativas >= 2) {
+            // Após 3 tentativas com erro de regra de negócio/4xx (ex: OS já encerrada no SGP),
+            // descarta a mutação órfã para não travar a fila offline do técnico eternamente.
+            console.warn(
+              `[SyncEngine] Descartando mutação ${mutacao.id} após ${mutacao.tentativas + 1} falhas definitivas:`,
+              msg,
+            );
+            if (mutacao.tipo === "FOTO" && mutacao.payload.fotoIdLocal) {
+              await offlineStorage.removerBlob(mutacao.payload.fotoIdLocal);
+            }
+            await offlineStorage.removerMutacao(mutacao.id);
+            await this.atualizarPendencias();
+            continue;
+          }
+
+          await offlineStorage.atualizarStatusMutacao(mutacao.id, "ERRO", msg);
+          falhas++;
+
           if (isNetworkError) {
             this.status = "offline";
             break;
@@ -143,12 +161,16 @@ class SyncEngine {
   private async executarMutacao(mutacao: OutboxMutation): Promise<void> {
     switch (mutacao.tipo) {
       case "A_CAMINHO":
-        await ordensServicoApi.aCaminho(mutacao.ordemServicoId);
+        await ordensServicoApi.aCaminho(mutacao.ordemServicoId, mutacao.payload.geo);
         break;
 
       case "STATUS":
         if (mutacao.payload.status) {
-          await ordensServicoApi.mudarStatus(mutacao.ordemServicoId, mutacao.payload.status);
+          await ordensServicoApi.mudarStatus(
+            mutacao.ordemServicoId,
+            mutacao.payload.status,
+            mutacao.payload.geo,
+          );
         }
         break;
 

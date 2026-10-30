@@ -711,6 +711,7 @@ export async function obterMinhaRotaDoDia(
     where: {
       status: { in: ["aberta", "em_deslocamento", "em_execucao"] },
       OR: [{ tecnicoId }, { apoios: { some: { id: tecnicoId } } }],
+      NOT: { tipoOs: { categoria: { equipeExterna: true } } },
       ...(idsOsJaAgendadas.size > 0 ? { id: { notIn: [...idsOsJaAgendadas] } } : {}),
     },
     include: {
