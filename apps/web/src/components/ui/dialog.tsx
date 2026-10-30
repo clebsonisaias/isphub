@@ -76,7 +76,7 @@ function DialogContent({ className, children, ...props }: React.ComponentProps<t
                  * `w-[calc(100%-1.5rem)]` da respiro nas laterais — `w-full`
                  * colava o card nas duas bordas da tela.
                  */
-                "fixed left-1/2 top-1/2 z-50 grid max-h-[calc(100dvh-1.5rem)] w-[calc(100%-1.5rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto overscroll-contain rounded-xl border border-border bg-card p-4 shadow-soft-lg sm:w-full sm:p-6",
+                "fixed left-1/2 top-1/2 z-50 grid max-h-[calc(100dvh-1.5rem)] w-[calc(100%-1.5rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto overscroll-contain rounded-xl border border-border bg-card p-4 shadow-soft-lg sm:w-full sm:p-6 [&>*]:min-w-0",
                 className,
               )}
             >

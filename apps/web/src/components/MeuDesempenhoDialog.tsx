@@ -32,7 +32,7 @@ export function MeuDesempenhoDialog({
   onFechar: () => void;
   tecnicoId?: string;
 }) {
-  const [periodo, setPeriodo] = useState<"semana" | "mes">("semana");
+  const [periodo, setPeriodo] = useState<"semana" | "mes">("mes");
   const [carregando, setCarregando] = useState(false);
   const [dados, setDados] = useState<MeuDesempenhoDto | null>(null);
 
@@ -86,24 +86,24 @@ export function MeuDesempenhoDialog({
     <Dialog open={aberto} onOpenChange={(o) => !o && onFechar()}>
       <DialogContent className="max-w-lg overflow-hidden p-0 sm:max-w-xl">
         {/* Cabeçalho com abas */}
-        <div className="border-b border-border bg-secondary/30 p-4 sm:p-5">
-          <div className="flex items-center justify-between gap-2">
-            <DialogHeader className="text-left">
+        <div className="min-w-0 border-b border-border bg-secondary/30 p-4 pr-12 sm:p-5 sm:pr-12">
+          <div className="flex flex-wrap items-center justify-between gap-2.5">
+            <DialogHeader className="min-w-0 pr-0 text-left">
               <div className="flex items-center gap-2">
-                <Trophy className="size-5 text-amber-500" />
-                <DialogTitle className="text-lg font-bold">Meu Desempenho & Ranking</DialogTitle>
-                {carregando && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
+                <Trophy className="size-5 shrink-0 text-amber-500" />
+                <DialogTitle className="text-base font-bold sm:text-lg">Meu Desempenho & Ranking</DialogTitle>
+                {carregando && <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />}
               </div>
               <DialogDescription className="text-xs">
                 Sua pontuação individual, metas e qualidade no ISPhub + SGP
               </DialogDescription>
             </DialogHeader>
 
-            <div className="flex rounded-lg border border-border bg-background p-1 text-xs font-semibold">
+            <div className="flex shrink-0 rounded-lg border border-border bg-background p-1 text-xs font-semibold">
               <button
                 type="button"
                 onClick={() => setPeriodo("semana")}
-                className={`rounded-md px-3.5 py-1.5 min-h-9 text-xs font-bold transition-colors ${
+                className={`rounded-md px-3 py-1.5 min-h-9 text-xs font-bold transition-colors ${
                   periodo === "semana" ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
                 }`}
               >
@@ -112,7 +112,7 @@ export function MeuDesempenhoDialog({
               <button
                 type="button"
                 onClick={() => setPeriodo("mes")}
-                className={`rounded-md px-3.5 py-1.5 min-h-9 text-xs font-bold transition-colors ${
+                className={`rounded-md px-3 py-1.5 min-h-9 text-xs font-bold transition-colors ${
                   periodo === "mes" ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
                 }`}
               >
@@ -122,7 +122,7 @@ export function MeuDesempenhoDialog({
           </div>
         </div>
 
-        <div className="max-h-[75vh] overflow-y-auto p-4 sm:p-6 space-y-4">
+        <div className="min-w-0 max-h-[75vh] overflow-y-auto p-4 sm:p-6 space-y-4">
           {/* Card Principal: Posição no Ranking & Pontuação (Privado) */}
           <div className={`relative overflow-hidden rounded-xl border bg-gradient-to-br p-4 sm:p-5 ${corCardDestaque}`}>
             <div className="flex items-start justify-between gap-4">

@@ -67,7 +67,7 @@ produtividadeRouter.get(
   asyncHandler(async (req, res) => {
     const periodo = req.query.periodo === "mes" ? "mes" : "semana";
     const provedorId = req.user!.provedorId;
-    const resultado = await calcularMeuDesempenho(req.user!.id, provedorId, periodo);
+    const resultado = await calcularMeuDesempenho(req.user!.sub, provedorId, periodo);
     res.json(resultado);
   }),
 );

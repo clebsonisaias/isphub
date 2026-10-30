@@ -33,7 +33,7 @@ export type AbaFinanceiro = (typeof ABAS)[number]["chave"];
  */
 export function FinanceiroTabs({ atual }: { atual: AbaFinanceiro }) {
   return (
-    <nav aria-label="Seções do financeiro" className="flex gap-1 border-b border-border">
+    <nav aria-label="Seções do financeiro" className="flex gap-1 overflow-x-auto border-b border-border scrollbar-none">
       {ABAS.map((aba) => {
         const ativa = aba.chave === atual;
         return (
@@ -42,7 +42,7 @@ export function FinanceiroTabs({ atual }: { atual: AbaFinanceiro }) {
             to={aba.to}
             aria-current={ativa ? "page" : undefined}
             className={cn(
-              "-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors pointer-coarse:min-h-11",
+              "-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors pointer-coarse:min-h-11",
               ativa
                 ? "border-primary text-foreground"
                 : "border-transparent text-muted-foreground hover:text-foreground",

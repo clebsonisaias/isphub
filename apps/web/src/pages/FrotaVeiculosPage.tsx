@@ -112,7 +112,7 @@ export function FrotaVeiculosPage() {
               </h1>
               <p className="text-sm text-muted-foreground">Veículos da operação e dos provedores.</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button variant="ghost" asChild>
                 <Link to="/frota/mapa">
                   <MapIcon className="size-4" aria-hidden />

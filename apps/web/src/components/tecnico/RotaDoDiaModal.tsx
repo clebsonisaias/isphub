@@ -102,7 +102,7 @@ export function RotaDoDiaModal({
 
   return (
     <Dialog open={aberto} onOpenChange={(o) => !o && onFechar()}>
-      <DialogContent className="fixed inset-0 z-50 flex h-full w-full max-w-none flex-col overflow-hidden bg-background p-0 sm:inset-auto sm:h-[88vh] sm:max-h-[820px] sm:max-w-md sm:rounded-2xl sm:border sm:shadow-2xl">
+      <DialogContent className="flex h-[92dvh] max-h-[820px] w-[calc(100%-1rem)] max-w-md flex-col gap-0 overflow-hidden rounded-2xl bg-background p-0 shadow-2xl [&>button[aria-label='Fechar']]:right-3 [&>button[aria-label='Fechar']]:top-3 [&>button[aria-label='Fechar']]:text-white">
         {/* Top bar teal escuro */}
         <div className="relative flex shrink-0 items-center justify-between bg-teal-950 px-4 py-3.5 text-white">
           <button

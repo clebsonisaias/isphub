@@ -919,30 +919,37 @@ export function AppShell({ children }: { children: ReactNode }) {
             escondida, sem nenhuma pista de que os itens existiam. Medido: a
             partir de 1536px o nav caia de 780px pra 490px.
           */}
-          <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
             {usuario?.role === UserRole.TECNICO && (
               <>
                 <button
                   type="button"
                   onClick={() => setRotaDoDiaAberta(true)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-teal-500/40 bg-teal-500/10 px-3 py-2 text-xs font-bold text-teal-700 hover:bg-teal-500/20 dark:text-teal-300 transition-colors min-h-10 shadow-xs"
+                  className="inline-flex items-center gap-1 rounded-lg border border-teal-500/40 bg-teal-500/10 px-2 py-1.5 sm:px-3 sm:py-2 text-xs font-bold text-teal-700 hover:bg-teal-500/20 dark:text-teal-300 transition-colors min-h-9 sm:min-h-10 shadow-xs"
                   title="Minha Rota do Dia Otimizada no Mapa"
                 >
-                  <Route className="size-4 text-teal-600 dark:text-teal-400 shrink-0" />
-                  <span className="font-bold">Rota do dia</span>
+                  <Route className="size-3.5 sm:size-4 text-teal-600 dark:text-teal-400 shrink-0" />
+                  <span className="font-bold">
+                    Rota<span className="hidden sm:inline"> do dia</span>
+                  </span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setDesempenhoAberto(true)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-700 hover:bg-amber-500/20 dark:text-amber-300 transition-colors min-h-10 shadow-xs"
+                  className="inline-flex items-center gap-1 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 sm:px-3 sm:py-2 text-xs font-bold text-amber-700 hover:bg-amber-500/20 dark:text-amber-300 transition-colors min-h-9 sm:min-h-10 shadow-xs"
                   title="Meu Desempenho e Ranking Privado"
                 >
-                  <Trophy className="size-4 text-amber-500 shrink-0" />
-                  <span className="font-bold">Desempenho</span>
+                  <Trophy className="size-3.5 sm:size-4 text-amber-500 shrink-0" />
+                  <span className="font-bold sm:hidden">Ranking</span>
+                  <span className="font-bold hidden sm:inline">Desempenho</span>
                 </button>
               </>
             )}
-            {usuario && <CommandPalette />}
+            {usuario && (
+              <span className={usuario.role === UserRole.TECNICO ? "hidden sm:inline-flex" : "inline-flex"}>
+                <CommandPalette />
+              </span>
+            )}
             {usuario && <NotificationBell />}
             {usuario && (
               <UserMenu

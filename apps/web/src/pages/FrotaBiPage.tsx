@@ -173,7 +173,7 @@ export function FrotaBiPage() {
           <BlocoResumo custo={custo} uso={uso} carregando={carregando} />
 
           <div className="grid gap-5 lg:grid-cols-2">
-            <Card>
+            <Card className="min-w-0">
               <CardHeader>
                 <CardTitle>Quilometragem por dia</CardTitle>
                 <CardDescription>
@@ -185,7 +185,7 @@ export function FrotaBiPage() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="min-w-0">
               <CardHeader>
                 <CardTitle>Gasto por veículo</CardTitle>
                 <CardDescription>Combustível e qualquer despesa lançada com veículo.</CardDescription>

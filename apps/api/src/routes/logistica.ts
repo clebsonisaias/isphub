@@ -31,7 +31,7 @@ logisticaRouter.get(
       })
       .parse(req.query);
 
-    const resultado = await obterMinhaRotaDoDia(req.user!.id, dia);
+    const resultado = await obterMinhaRotaDoDia(req.user!.sub, dia);
     res.json(resultado);
   }),
 );
@@ -126,7 +126,7 @@ logisticaRouter.post(
     const resultado = await despacharEmergencial(req.params.osId, tecnicoId, {
       encaixarPrimeiro: encaixarPrimeiro ?? true,
       turno,
-      usuarioAutorId: req.user?.id,
+      usuarioAutorId: req.user?.sub,
     });
 
     res.json(resultado);

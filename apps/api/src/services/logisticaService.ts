@@ -651,13 +651,13 @@ export async function obterMinhaRotaDoDia(
   const dia = diaStr || diaBrHoje();
   const diaDate = new Date(dia);
 
-  // Busca agendamentos do técnico no dia
+  // Busca agendamentos do técnico no dia (titular ou apoio)
   let agendamentos = await prisma.agendamento.findMany({
     where: {
       dia: diaDate,
       status: "marcado",
       ordemServico: {
-        tecnicoId,
+        OR: [{ tecnicoId }, { apoios: { some: { id: tecnicoId } } }],
       },
     },
     include: {
@@ -676,8 +676,8 @@ export async function obterMinhaRotaDoDia(
     ],
   });
 
-  // Se tiver 2 ou mais paradas e alguma ainda não tiver ordemRota definida,
-  // chama o robô de roteirização para ordenar agora mesmo
+  // Se tiver 2 ou mais paradas agendadas e alguma ainda não tiver ordemRota definida,
+  // chama o robô de roteirização para ordenar e persistir na agenda
   const precisaRoteirizar = agendamentos.length >= 2 && agendamentos.some((a) => a.ordemRota == null);
   if (precisaRoteirizar) {
     try {
@@ -704,6 +704,22 @@ export async function obterMinhaRotaDoDia(
       console.warn("[obterMinhaRotaDoDia] Falha na auto-roteirização:", e);
     }
   }
+
+  // Busca também as O.S. abertas da fila ativa do técnico que ainda não estejam na tabela de agendamentos de hoje
+  const idsOsJaAgendadas = new Set(agendamentos.map((a) => a.ordemServicoId).filter(Boolean) as string[]);
+  const osAbertasDaFila = await prisma.ordemServico.findMany({
+    where: {
+      status: { in: ["aberta", "em_deslocamento", "em_execucao"] },
+      OR: [{ tecnicoId }, { apoios: { some: { id: tecnicoId } } }],
+      ...(idsOsJaAgendadas.size > 0 ? { id: { notIn: [...idsOsJaAgendadas] } } : {}),
+    },
+    include: {
+      tipoOs: {
+        include: { categoria: true },
+      },
+    },
+    orderBy: [{ dataAgendamento: "asc" }, { criadoEm: "asc" }],
+  });
 
   // Determina localização de origem (GPS da viatura ou último check-in do técnico)
   let origem: { lat: number; lng: number; descricao: string } | null = null;
@@ -732,15 +748,56 @@ export async function obterMinhaRotaDoDia(
     }
   }
 
+  // Unifica paradas agendadas + O.S. abertas da fila do técnico
+  type ItemBrutoRota = {
+    itemId: string;
+    os: (typeof osAbertasDaFila)[number];
+    turno: "manha" | "tarde";
+    ordemFixa: number | null;
+  };
+
+  const itensRota: ItemBrutoRota[] = [
+    ...agendamentos
+      .filter((a) => a.ordemServico != null)
+      .map((a) => ({
+        itemId: a.id,
+        os: a.ordemServico!,
+        turno: (a.turno === "tarde" ? "tarde" : "manha") as "manha" | "tarde",
+        ordemFixa: a.ordemRota,
+      })),
+    ...osAbertasDaFila.map((os) => ({
+      itemId: os.id,
+      os,
+      turno: (os.dataAgendamento && os.dataAgendamento.getHours() >= 13 ? "tarde" : "manha") as "manha" | "tarde",
+      ordemFixa: null,
+    })),
+  ];
+
+  // Se houver itens sem ordemFixa (ex: vindos direto da fila do técnico),
+  // aplica o robô TSP 2-opt (sugerirOrdem) para deixá-los na melhor sequência geográfica
+  if (itensRota.length >= 2 && itensRota.some((it) => it.ordemFixa == null)) {
+    const sugestaoFila = sugerirOrdem(
+      itensRota.map((it) => ({
+        id: it.itemId,
+        lat: it.os.lat ?? null,
+        lng: it.os.lng ?? null,
+      })),
+      origem ? { lat: origem.lat, lng: origem.lng } : null,
+    );
+    const mapaIdx = new Map<string, number>();
+    sugestaoFila.ordem.forEach((id, idx) => mapaIdx.set(id, idx));
+    itensRota.sort((a, b) => (mapaIdx.get(a.itemId) ?? 999) - (mapaIdx.get(b.itemId) ?? 999));
+  }
+
   // Calcula distâncias e formata as paradas
   let pontoAnterior = origem;
   let totalMetros = 0;
 
   const paradas: MinhaRotaDoDiaParada[] = [];
 
-  for (let i = 0; i < agendamentos.length; i++) {
-    const ag = agendamentos[i];
-    const os = ag.ordemServico!;
+  for (let i = 0; i < itensRota.length; i++) {
+    const item = itensRota[i];
+    const os = item.os;
     const lat = os.lat ?? null;
     const lng = os.lng ?? null;
 
@@ -763,10 +820,10 @@ export async function obterMinhaRotaDoDia(
           ? `POP ${os.pop}`
           : "Endereço não informado";
 
-    const horarioPrevisto = ag.turno === "manha" ? "08:00 - 12:00" : "13:00 - 18:00";
+    const horarioPrevisto = item.turno === "manha" ? "08:00 - 12:00" : "13:00 - 18:00";
 
     paradas.push({
-      agendamentoId: ag.id,
+      agendamentoId: item.itemId,
       osId: os.id,
       sgpOsId: os.sgpOsId,
       cliente: os.clienteNome ?? "Cliente",
@@ -776,8 +833,8 @@ export async function obterMinhaRotaDoDia(
       numero: os.numero,
       enderecoFormatado,
       horarioPrevisto,
-      turno: ag.turno,
-      ordem: ag.ordemRota ?? i + 1,
+      turno: item.turno,
+      ordem: i + 1,
       status: os.status,
       lat,
       lng,

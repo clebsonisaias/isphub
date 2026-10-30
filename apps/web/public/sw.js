@@ -3,7 +3,7 @@
  * Garante abertura instantânea mesmo sem sinal (offline shell)
  * e integração com o SyncEngine em IndexedDB.
  */
-const VERSAO = "isphub-pwa-v2";
+const VERSAO = "isphub-pwa-v4";
 const CACHE_SHELL = `shell-${VERSAO}`;
 
 const PRECACHE = [
