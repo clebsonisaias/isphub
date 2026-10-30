@@ -9,11 +9,17 @@ export interface MeuDesempenhoDto {
     totalTecnicos: number;
     titulo: string;
     diferencaParaLider: number;
+    liderPontos: number;
   };
   pessoal: {
+    pontos: number;
+    osIndividual: number;
+    osDupla: number;
     osConcluidas: number;
     osConcluidasSemana: number;
     osConcluidasMes: number;
+    pontosSemana: number;
+    pontosMes: number;
     tempoMedioMinutos: number;
     notaMedia: number;
     totalAvaliacoes: number;
@@ -21,7 +27,9 @@ export interface MeuDesempenhoDto {
     progressoMetaPct: number;
   };
   benchmarksEquipe: {
+    liderPontos: number;
     liderOs: number;
+    mediaEquipePontos: number;
     mediaEquipeOs: number;
     tempoMedioEquipeMin: number;
   };

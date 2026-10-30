@@ -10,11 +10,17 @@ export interface MeuDesempenhoDto {
     totalTecnicos: number;
     titulo: string;
     diferencaParaLider: number;
+    liderPontos: number;
   };
   pessoal: {
+    pontos: number;
+    osIndividual: number;
+    osDupla: number;
     osConcluidas: number;
     osConcluidasSemana: number;
     osConcluidasMes: number;
+    pontosSemana: number;
+    pontosMes: number;
     tempoMedioMinutos: number;
     notaMedia: number;
     totalAvaliacoes: number;
@@ -22,7 +28,9 @@ export interface MeuDesempenhoDto {
     progressoMetaPct: number;
   };
   benchmarksEquipe: {
+    liderPontos: number;
     liderOs: number;
+    mediaEquipePontos: number;
     mediaEquipeOs: number;
     tempoMedioEquipeMin: number;
   };
@@ -40,12 +48,12 @@ function obterIntervalo(tipo: "semana" | "mes"): { de: Date; ate: Date } {
   const ate = new Date(agora);
 
   if (tipo === "mes") {
-    // Primeiro dia do mês atual
+    // Primeiro dia do mês atual às 00:00:00
     const de = new Date(agora.getFullYear(), agora.getMonth(), 1, 0, 0, 0, 0);
     return { de, ate };
   }
 
-  // Segunda-feira da semana atual
+  // Segunda-feira da semana atual às 00:00:00
   const diaSemana = agora.getDay(); // 0 = Domingo, 1 = Segunda, ...
   const diffSegunda = diaSemana === 0 ? -6 : 1 - diaSemana;
   const de = new Date(agora);
@@ -55,6 +63,17 @@ function obterIntervalo(tipo: "semana" | "mes"): { de: Date; ate: Date } {
   return { de, ate };
 }
 
+interface MetricasTecnicoInterna {
+  tecnicoId: string;
+  nome: string;
+  pontos: number;
+  osIndividual: number;
+  osDupla: number;
+  totalOs: number;
+  duracoesMin: number[];
+  notas: number[];
+}
+
 export async function calcularMeuDesempenho(
   usuarioId: string,
   provedorId?: string | null,
@@ -62,144 +81,237 @@ export async function calcularMeuDesempenho(
 ): Promise<MeuDesempenhoDto> {
   const { de, ate } = obterIntervalo(periodo);
 
-  // Intervalo do mês inteiro para métrica mensal
-  const inicioMes = new Date(ate.getFullYear(), ate.getMonth(), 1, 0, 0, 0, 0);
+  // Intervalo do mês atual
+  const agora = new Date();
+  const deMes = new Date(agora.getFullYear(), agora.getMonth(), 1, 0, 0, 0, 0);
+  const diaSemana = agora.getDay();
+  const diffSegunda = diaSemana === 0 ? -6 : 1 - diaSemana;
+  const deSemana = new Date(agora);
+  deSemana.setDate(agora.getDate() + diffSegunda);
+  deSemana.setHours(0, 0, 0, 0);
 
-  // Escopo de provedor
+  // Escopo de provedor para ordens e técnicos
   const escopoProvedor = provedorId ? { provedorId } : {};
 
-  // 1. Lista todos os técnicos ativos da equipe
+  // 1. Busca todos os técnicos ativos da equipe
   const tecnicos = await prisma.usuario.findMany({
     where: {
       role: UserRole.tecnico,
       ativo: true,
-      ...escopoProvedor,
+      ...(provedorId ? { OR: [{ provedorId }, { provedorId: null }] } : {}),
     },
-    select: { id: true, nome: true },
+    select: { id: true, nome: true, nomeExibicao: true },
   });
 
   const idsTecnicos = tecnicos.map((t) => t.id);
-  // Garante que o usuário logado está na lista se for técnico
   if (!idsTecnicos.includes(usuarioId)) {
-    idsTecnicos.push(usuarioId);
+    // Se o usuário logado for admin ou não estiver listado, inclui para cálculo pessoal
+    const usuarioLogado = await prisma.usuario.findUnique({
+      where: { id: usuarioId },
+      select: { id: true, nome: true, nomeExibicao: true },
+    });
+    if (usuarioLogado) {
+      tecnicos.push(usuarioLogado);
+      idsTecnicos.push(usuarioId);
+    }
   }
 
-  // 2. Busca todos os eventos de conclusão no período selecionado
-  const eventosConclusao = await prisma.osEvento.findMany({
+  // 2. Tabela De-Para SGP -> ISPhub (tecnicos_sgp)
+  const vinculosSgp = await prisma.tecnicoSgp.findMany({
     where: {
-      statusPara: OsStatus.concluida,
-      criadoEm: { gte: de, lte: ate },
-      ordemServico: {
-        ...escopoProvedor,
-        tecnicoId: { in: idsTecnicos },
-      },
+      papel: "tecnico",
+      usuarioId: { not: null },
+      ...escopoProvedor,
     },
-    select: {
-      ordemServicoId: true,
-      criadoEm: true,
-      ordemServico: {
-        select: {
-          id: true,
-          tecnicoId: true,
-          avaliacaoNota: true,
-        },
-      },
-    },
+    select: { sgpId: true, nome: true, username: true, usuarioId: true },
   });
 
-  // 3. Busca eventos de início (em_execucao ou em_deslocamento) para calcular duração média
-  const osIds = [...new Set(eventosConclusao.map((e) => e.ordemServicoId))];
-  const eventosInicio = osIds.length
-    ? await prisma.osEvento.findMany({
+  const porLoginSgp = new Map<string, string>();
+  for (const v of vinculosSgp) {
+    if (v.usuarioId) {
+      if (v.username) porLoginSgp.set(v.username.trim().toLowerCase(), v.usuarioId);
+      if (v.nome) porLoginSgp.set(v.nome.trim().toLowerCase(), v.usuarioId);
+      if (v.sgpId) porLoginSgp.set(v.sgpId.trim().toLowerCase(), v.usuarioId);
+    }
+  }
+
+  // 3. Busca ordens de serviço concluídas no período
+  // Usamos a data mais antiga necessária (se periodo == 'semana', deSemana; se 'mes', deMes)
+  const dataMaisAntiga = de.getTime() < deMes.getTime() ? de : deMes;
+
+  const concluidasTodas = await prisma.ordemServico.findMany({
+    where: {
+      status: OsStatus.concluida,
+      OR: [
+        { eventos: { some: { statusPara: OsStatus.concluida, criadoEm: { gte: dataMaisAntiga, lte: ate } } } },
+        { statusAlteradoEm: { gte: dataMaisAntiga, lte: ate } },
+        { criadoEm: { gte: dataMaisAntiga, lte: ate } },
+      ],
+      ...escopoProvedor,
+    },
+    select: {
+      id: true,
+      tecnicoId: true,
+      tecnicoSgpNome: true,
+      tecnicosAuxiliaresSgp: true,
+      statusAlteradoEm: true,
+      criadoEm: true,
+      avaliacaoNota: true,
+      apoios: { select: { id: true } },
+      eventos: {
         where: {
-          ordemServicoId: { in: osIds },
-          statusPara: { in: [OsStatus.em_execucao, OsStatus.em_deslocamento] },
+          statusPara: { in: [OsStatus.em_execucao, OsStatus.em_deslocamento, OsStatus.concluida] },
         },
         select: {
-          ordemServicoId: true,
+          statusPara: true,
           criadoEm: true,
         },
         orderBy: { criadoEm: "asc" },
-      })
-    : [];
-
-  const primeiroInicioPorOs = new Map<string, Date>();
-  for (const ei of eventosInicio) {
-    if (!primeiroInicioPorOs.has(ei.ordemServicoId)) {
-      primeiroInicioPorOs.set(ei.ordemServicoId, ei.criadoEm);
-    }
-  }
-
-  // 4. Também consulta o total do mês para o técnico atual
-  const concluidasMesMeu = await prisma.osEvento.count({
-    where: {
-      statusPara: OsStatus.concluida,
-      criadoEm: { gte: inicioMes, lte: ate },
-      ordemServico: {
-        tecnicoId: usuarioId,
       },
     },
   });
 
-  // 5. Agrupa por técnico para o ranking anônimo
-  interface MetricasTecnico {
-    tecnicoId: string;
-    concluidas: number;
-    duracoesMin: number[];
-    notas: number[];
-  }
-
-  const mapaTecnicos = new Map<string, MetricasTecnico>();
-  for (const tId of idsTecnicos) {
-    mapaTecnicos.set(tId, { tecnicoId: tId, concluidas: 0, duracoesMin: [], notas: [] });
-  }
-
-  for (const ev of eventosConclusao) {
-    const tId = ev.ordemServico.tecnicoId;
-    if (!tId) continue;
-    let dados = mapaTecnicos.get(tId);
-    if (!dados) {
-      dados = { tecnicoId: tId, concluidas: 0, duracoesMin: [], notas: [] };
-      mapaTecnicos.set(tId, dados);
-    }
-    dados.concluidas += 1;
-
-    // Avaliação de cliente
-    if (ev.ordemServico.avaliacaoNota && ev.ordemServico.avaliacaoNota >= 1 && ev.ordemServico.avaliacaoNota <= 5) {
-      dados.notas.push(ev.ordemServico.avaliacaoNota);
+  // Função auxiliar para pontuar uma lista de OS
+  function processarOsParaTecnicos(
+    listaOs: typeof concluidasTodas,
+    filtroDataGte: Date,
+  ): Map<string, MetricasTecnicoInterna> {
+    const mapa = new Map<string, MetricasTecnicoInterna>();
+    for (const t of tecnicos) {
+      mapa.set(t.id, {
+        tecnicoId: t.id,
+        nome: t.nomeExibicao || t.nome,
+        pontos: 0,
+        osIndividual: 0,
+        osDupla: 0,
+        totalOs: 0,
+        duracoesMin: [],
+        notas: [],
+      });
     }
 
-    // Duração
-    const dtInicio = primeiroInicioPorOs.get(ev.ordemServicoId);
-    if (dtInicio) {
-      const duracaoMin = Math.round((ev.criadoEm.getTime() - dtInicio.getTime()) / 60_000);
-      if (duracaoMin > 5 && duracaoMin < 480) {
-        dados.duracoesMin.push(duracaoMin);
+    for (const os of listaOs) {
+      // Determina data de conclusão da OS
+      const evConclusao = os.eventos.find((e) => e.statusPara === OsStatus.concluida);
+      const dataConclusao = evConclusao?.criadoEm ?? os.statusAlteradoEm ?? os.criadoEm;
+      if (dataConclusao < filtroDataGte || dataConclusao > ate) {
+        continue;
+      }
+
+      // 1. Identifica titular (ISPhub ou SGP)
+      let titularId = os.tecnicoId;
+      if (!titularId && os.tecnicoSgpNome) {
+        titularId = porLoginSgp.get(os.tecnicoSgpNome.trim().toLowerCase()) ?? null;
+      }
+
+      // 2. Identifica apoios/duplas
+      const duplasIds = new Set<string>();
+      for (const a of os.apoios) {
+        if (a.id !== titularId) {
+          duplasIds.add(a.id);
+        }
+      }
+      for (const login of os.tecnicosAuxiliaresSgp || []) {
+        const uid = porLoginSgp.get(login.trim().toLowerCase());
+        if (uid && uid !== titularId) {
+          duplasIds.add(uid);
+        }
+      }
+
+      const ehDupla = duplasIds.size > 0;
+
+      // Duração de execução
+      let duracaoMin: number | null = null;
+      const evInicio = os.eventos.find(
+        (e) => e.statusPara === OsStatus.em_execucao || e.statusPara === OsStatus.em_deslocamento,
+      );
+      if (evInicio && evConclusao) {
+        const m = Math.round((evConclusao.criadoEm.getTime() - evInicio.criadoEm.getTime()) / 60_000);
+        if (m > 5 && m < 480) {
+          duracaoMin = m;
+        }
+      }
+
+      // Pontuação:
+      // - Solo: titular ganha 1,0 ponto
+      // - Dupla: titular ganha 0,5 ponto e cada integrante do apoio ganha 0,5 ponto
+      if (titularId && mapa.has(titularId)) {
+        const reg = mapa.get(titularId)!;
+        if (ehDupla) {
+          reg.pontos += 0.5;
+          reg.osDupla += 1;
+        } else {
+          reg.pontos += 1.0;
+          reg.osIndividual += 1;
+        }
+        reg.totalOs += 1;
+        if (os.avaliacaoNota && os.avaliacaoNota >= 1 && os.avaliacaoNota <= 5) {
+          reg.notas.push(os.avaliacaoNota);
+        }
+        if (duracaoMin) {
+          reg.duracoesMin.push(duracaoMin);
+        }
+      }
+
+      for (const dId of duplasIds) {
+        const reg = mapa.get(dId);
+        if (reg) {
+          reg.pontos += 0.5;
+          reg.osDupla += 1;
+          reg.totalOs += 1;
+          if (os.avaliacaoNota && os.avaliacaoNota >= 1 && os.avaliacaoNota <= 5) {
+            reg.notas.push(os.avaliacaoNota);
+          }
+          if (duracaoMin) {
+            reg.duracoesMin.push(duracaoMin);
+          }
+        }
       }
     }
+
+    return mapa;
   }
 
-  // 6. Ordena técnicos por produtividade: mais O.S. primeiro, desempate por menor tempo médio
-  const listaOrdenada = Array.from(mapaTecnicos.values()).sort((a, b) => {
-    if (b.concluidas !== a.concluidas) {
-      return b.concluidas - a.concluidas;
+  // Mapa do período selecionado
+  const mapaPeriodo = processarOsParaTecnicos(concluidasTodas, de);
+
+  // Mapa do mês (para métrica consolidada do mês)
+  const mapaMes = processarOsParaTecnicos(concluidasTodas, deMes);
+
+  // Mapa da semana (para métrica consolidada da semana)
+  const mapaSemana = processarOsParaTecnicos(concluidasTodas, deSemana);
+
+  // 4. Ordena técnicos por pontuação (1º mais pontos, 2º mais OS totais, 3º menor tempo médio)
+  const listaOrdenada = Array.from(mapaPeriodo.values()).sort((a, b) => {
+    if (b.pontos !== a.pontos) {
+      return b.pontos - a.pontos;
+    }
+    if (b.totalOs !== a.totalOs) {
+      return b.totalOs - a.totalOs;
     }
     const mediaA = a.duracoesMin.length ? a.duracoesMin.reduce((acc, v) => acc + v, 0) / a.duracoesMin.length : 999;
     const mediaB = b.duracoesMin.length ? b.duracoesMin.reduce((acc, v) => acc + v, 0) / b.duracoesMin.length : 999;
     return mediaA - mediaB;
   });
 
-  // 7. Encontra a posição do técnico
+  // 5. Encontra a posição individual do técnico logado
   const idx = listaOrdenada.findIndex((t) => t.tecnicoId === usuarioId);
   const posicao = idx >= 0 ? idx + 1 : listaOrdenada.length;
   const totalTecnicos = Math.max(listaOrdenada.length, 1);
 
-  const dadosMeu = mapaTecnicos.get(usuarioId) ?? {
+  const dadosMeu = mapaPeriodo.get(usuarioId) ?? {
     tecnicoId: usuarioId,
-    concluidas: 0,
+    nome: "Você",
+    pontos: 0,
+    osIndividual: 0,
+    osDupla: 0,
+    totalOs: 0,
     duracoesMin: [],
     notas: [],
   };
+
+  const dadosMeuMes = mapaMes.get(usuarioId);
+  const dadosMeuSemana = mapaSemana.get(usuarioId);
 
   const tempoMedioMeu = dadosMeu.duracoesMin.length
     ? Math.round(dadosMeu.duracoesMin.reduce((acc, v) => acc + v, 0) / dadosMeu.duracoesMin.length)
@@ -207,13 +319,18 @@ export async function calcularMeuDesempenho(
 
   const notaMediaMeu = dadosMeu.notas.length
     ? Number((dadosMeu.notas.reduce((acc, v) => acc + v, 0) / dadosMeu.notas.length).toFixed(1))
-    : 5.0; // Padrão 5.0 se não houver reclamação/avaliação negativa
+    : 5.0;
 
   // Benchmarks anônimos da equipe
-  const liderOs = listaOrdenada[0]?.concluidas ?? 0;
-  const diferencaParaLider = Math.max(0, liderOs - dadosMeu.concluidas);
+  const lider = listaOrdenada[0];
+  const liderPontos = lider?.pontos ?? 0;
+  const liderOs = lider?.totalOs ?? 0;
+  const diferencaParaLider = Math.max(0, Number((liderPontos - dadosMeu.pontos).toFixed(1)));
 
-  const totalOsEquipe = listaOrdenada.reduce((acc, t) => acc + t.concluidas, 0);
+  const totalPontosEquipe = listaOrdenada.reduce((acc, t) => acc + t.pontos, 0);
+  const mediaEquipePontos = Number((totalPontosEquipe / totalTecnicos).toFixed(1));
+
+  const totalOsEquipe = listaOrdenada.reduce((acc, t) => acc + t.totalOs, 0);
   const mediaEquipeOs = Math.round(totalOsEquipe / totalTecnicos);
 
   const todasDuracoes = listaOrdenada.flatMap((t) => t.duracoesMin);
@@ -223,35 +340,35 @@ export async function calcularMeuDesempenho(
 
   // Título motivacional de acordo com o ranking
   let tituloRanking = "Técnico de Campo";
-  if (posicao === 1 && dadosMeu.concluidas > 0) {
+  if (posicao === 1 && dadosMeu.pontos > 0) {
     tituloRanking = "🥇 Líder Geral da Equipe";
-  } else if (posicao === 2 && dadosMeu.concluidas > 0) {
+  } else if (posicao === 2 && dadosMeu.pontos > 0) {
     tituloRanking = "🥈 Vice-líder da Semana";
-  } else if (posicao === 3 && dadosMeu.concluidas > 0) {
+  } else if (posicao === 3 && dadosMeu.pontos > 0) {
     tituloRanking = "🥉 Top 3 da Equipe";
-  } else if (posicao <= Math.ceil(totalTecnicos * 0.5) && dadosMeu.concluidas > 0) {
+  } else if (posicao <= Math.ceil(totalTecnicos * 0.5) && dadosMeu.pontos > 0) {
     tituloRanking = "Top 50% Mais Produtivos";
   }
 
-  // Meta semanal (25 OS por padrão na semana, ou 100 no mês)
+  // Meta (25 pontos na semana, ou 100 no mês)
   const meta = periodo === "semana" ? 25 : 100;
-  const progressoPct = Math.min(100, Math.round((dadosMeu.concluidas / meta) * 100));
+  const progressoPct = Math.min(100, Math.round((dadosMeu.pontos / meta) * 100));
 
   // Insígnias gamificadas
   const insignias = [
     {
       id: "lider",
       nome: "Líder da Equipe",
-      descricao: "Alcançou o 1º lugar de produtividade da semana",
+      descricao: "Alcançou o 1º lugar em pontuação da equipe",
       icone: "crown",
-      desbloqueada: posicao === 1 && dadosMeu.concluidas > 0,
+      desbloqueada: posicao === 1 && dadosMeu.pontos > 0,
     },
     {
       id: "podio",
       nome: "Pódio de Produtividade",
-      descricao: "Ficou entre os 3 técnicos mais ágeis da operação",
+      descricao: "Ficou entre os 3 melhores pontuadores",
       icone: "medal",
-      desbloqueada: posicao <= 3 && dadosMeu.concluidas > 0,
+      desbloqueada: posicao <= 3 && dadosMeu.pontos > 0,
     },
     {
       id: "nota_10",
@@ -270,9 +387,9 @@ export async function calcularMeuDesempenho(
     {
       id: "meta_batida",
       nome: "Meta Alcançada",
-      descricao: `Atingiu a meta de ${meta} O.S. no período`,
+      descricao: `Atingiu a meta de ${meta} pontos no período`,
       icone: "target",
-      desbloqueada: dadosMeu.concluidas >= meta,
+      desbloqueada: dadosMeu.pontos >= meta,
     },
   ];
 
@@ -285,11 +402,17 @@ export async function calcularMeuDesempenho(
       totalTecnicos,
       titulo: tituloRanking,
       diferencaParaLider,
+      liderPontos,
     },
     pessoal: {
-      osConcluidas: dadosMeu.concluidas,
-      osConcluidasSemana: periodo === "semana" ? dadosMeu.concluidas : dadosMeu.concluidas,
-      osConcluidasMes: concluidasMesMeu,
+      pontos: dadosMeu.pontos,
+      osIndividual: dadosMeu.osIndividual,
+      osDupla: dadosMeu.osDupla,
+      osConcluidas: dadosMeu.totalOs,
+      osConcluidasSemana: dadosMeuSemana?.totalOs ?? 0,
+      osConcluidasMes: dadosMeuMes?.totalOs ?? 0,
+      pontosSemana: dadosMeuSemana?.pontos ?? 0,
+      pontosMes: dadosMeuMes?.pontos ?? 0,
       tempoMedioMinutos: tempoMedioMeu,
       notaMedia: notaMediaMeu,
       totalAvaliacoes: dadosMeu.notas.length,
@@ -297,7 +420,9 @@ export async function calcularMeuDesempenho(
       progressoMetaPct: progressoPct,
     },
     benchmarksEquipe: {
+      liderPontos,
       liderOs,
+      mediaEquipePontos,
       mediaEquipeOs,
       tempoMedioEquipeMin,
     },
