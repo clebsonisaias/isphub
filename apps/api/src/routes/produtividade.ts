@@ -5,6 +5,7 @@ import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { escopoOsWhere } from "../services/escopoService.js";
 import { MAXIMO_DIAS, produtividade } from "../services/biProdutividadeService.js";
+import { calcularMeuDesempenho } from "../services/meuDesempenhoService.js";
 
 /**
  * Produtividade da equipe — ADMIN e GESTOR.
@@ -54,5 +55,19 @@ produtividadeRouter.get(
   asyncHandler(async (req, res) => {
     const { de, ate, provedorId } = periodoSchema.parse(req.query);
     res.json(await produtividade(escopoOsWhere(req.user!, provedorId), de, ate));
+  }),
+);
+
+/**
+ * Painel de metas e ranking privado do técnico (Gamificação).
+ * Retorna as métricas e posição individual do técnico sem expor nomes de terceiros.
+ */
+produtividadeRouter.get(
+  "/meu-desempenho",
+  asyncHandler(async (req, res) => {
+    const periodo = req.query.periodo === "mes" ? "mes" : "semana";
+    const provedorId = req.user!.provedorId;
+    const resultado = await calcularMeuDesempenho(req.user!.id, provedorId, periodo);
+    res.json(resultado);
   }),
 );

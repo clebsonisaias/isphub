@@ -15,6 +15,7 @@ import { NotificationBell } from "@/components/NotificationBell";
 import { CommandPalette } from "@/components/CommandPalette";
 import { HeaderClock } from "@/components/HeaderClock";
 import { SyncBanner } from "@/components/SyncBanner";
+import { MeuDesempenhoDialog } from "@/components/MeuDesempenhoDialog";
 import { chatApi } from "@/lib/chatApi";
 import { useRealtime } from "@/lib/realtime";
 import { cn, iniciais } from "@/lib/utils";
@@ -485,12 +486,14 @@ function UserMenu({
   role,
   onLogout,
   itensSoDesktop,
+  onAbrirDesempenho,
 }: {
   nome: string;
   role: UserRole;
   onLogout: () => void;
   /** Itens marcados `soDesktop` — saem da barra do rodape e entram aqui no celular. */
   itensSoDesktop: { to: string; label: string; icon: typeof LayoutGrid }[];
+  onAbrirDesempenho?: () => void;
 }) {
   const { theme, toggleTheme } = useTheme();
   const [aberto, setAberto] = useState(false);
@@ -557,6 +560,19 @@ function UserMenu({
             {label}
           </Link>
         ))}
+        {role === UserRole.TECNICO && onAbrirDesempenho && (
+          <button
+            type="button"
+            onClick={() => {
+              setAberto(false);
+              onAbrirDesempenho();
+            }}
+            className="mt-1 flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm font-medium text-amber-700 dark:text-amber-300 outline-none transition-colors hover:bg-amber-500/10 focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11"
+          >
+            <Trophy className="size-4 text-amber-500" />
+            Meu Desempenho & Ranking
+          </button>
+        )}
         <Link
           to="/perfil"
           onClick={() => setAberto(false)}
@@ -691,6 +707,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [naoLidasChat, setNaoLidasChat] = useState(0);
   const { ids: modulosHabilitados } = useModulosHabilitados();
   const navRef = useRef<HTMLElement | null>(null);
+  const [desempenhoAberto, setDesempenhoAberto] = useState(false);
 
   /*
    * UMA lista com tudo, inclusive Administração — que antes era renderizada
@@ -886,6 +903,17 @@ export function AppShell({ children }: { children: ReactNode }) {
             partir de 1536px o nav caia de 780px pra 490px.
           */}
           <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
+            {usuario?.role === UserRole.TECNICO && (
+              <button
+                type="button"
+                onClick={() => setDesempenhoAberto(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-500/20 dark:text-amber-300 transition-colors"
+                title="Meu Desempenho e Ranking Privado"
+              >
+                <Trophy className="size-3.5 text-amber-500" />
+                <span className="hidden sm:inline">Desempenho</span>
+              </button>
+            )}
             {usuario && <CommandPalette />}
             {usuario && <NotificationBell />}
             {usuario && (
@@ -894,6 +922,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 role={usuario.role}
                 onLogout={logout}
                 itensSoDesktop={itensNav.filter((i) => i.soDesktop)}
+                onAbrirDesempenho={() => setDesempenhoAberto(true)}
               />
             )}
           </div>
@@ -920,6 +949,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           {APP_VERSION_LABEL}
         </span>
       </footer>
+
+      {usuario?.role === UserRole.TECNICO && (
+        <MeuDesempenhoDialog
+          aberto={desempenhoAberto}
+          onFechar={() => setDesempenhoAberto(false)}
+        />
+      )}
     </div>
   );
 }

@@ -312,6 +312,10 @@ model OrdemServico {
   /// escrita, entao o sync so volta a confiar na leitura dele apos a janela
   /// de graca (ver syncService.ts).
   observacaoAlteradaEm     DateTime?
+  /// Avaliação de satisfação do cliente (1 a 5 estrelas) enviada via WhatsApp/AtendAI após conclusão.
+  avaliacaoNota            Int?
+  avaliacaoComentario      String?
+  avaliacaoEm              DateTime?
   /// Quando o status do CONTRATO foi alterado por acao humana daqui. Mesma
   /// janela de graca do statusAlteradoEm: o SGP aceita a escrita mas a leitura
   /// seguinte ainda devolve o valor antigo por alguns ciclos.
