@@ -2419,13 +2419,6 @@ model TecnicoSgp {
   @@map("tecnicos_sgp")
 }
 
-/// Trilha da agenda e da abertura de OS: cada marcacao, remarcacao, desmarcacao e confirmacao, e a
-/// abertura avisada pelo AtendAI. `Agendamento` e uma linha so por OS (o `marcar` sobrescreve),
-/// entao sem isto "quem marcou primeiro, quem remarcou, quando" nao tinha resposta.
-///
-/// Chave `(provedorId, sgpOsId)` e nao a OS espelhada, pelo mesmo motivo do `Agendamento`: o
-/// AtendAI abre e marca antes de o sync trazer a OS. Por isso nao e `OsEvento` (que exige a OS
-/// espelhada e autor `Usuario`).
 /// Pre-cadastro feito pelo vendedor em campo. O cadastro em si mora no SGP (via
 /// AtendAI); aqui fica o rastro: quem vendeu, o contrato, a OS de instalacao e
 /// se a visita ja saiu agendada. Sem CPF de proposito — o SGP ja guarda, e o
@@ -2479,6 +2472,13 @@ model OfertaAgenda {
   @@map("ofertas_agenda")
 }
 
+/// Trilha da agenda e da abertura de OS: cada marcacao, remarcacao, desmarcacao e confirmacao, e a
+/// abertura avisada pelo AtendAI. `Agendamento` e uma linha so por OS (o `marcar` sobrescreve),
+/// entao sem isto "quem marcou primeiro, quem remarcou, quando" nao tinha resposta.
+///
+/// Chave `(provedorId, sgpOsId)` e nao a OS espelhada, pelo mesmo motivo do `Agendamento`: o
+/// AtendAI abre e marca antes de o sync trazer a OS. Por isso nao e `OsEvento` (que exige a OS
+/// espelhada e autor `Usuario`).
 model AgendamentoEvento {
   id            String       @id @default(uuid())
   provedorId    String

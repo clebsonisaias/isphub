@@ -71,14 +71,19 @@ export type BuscaOs =
   | { encontrada: false }
   | { encontrada: true; sgpOsId: string; vagas: { dia: string; turno: TurnoAgenda; livres: number }[] };
 
+/**
+ * `provedorId`: so a gestao (admin/gestor) informa — o vendedor esta preso ao
+ * provedor dele e a API ignora o campo para ele.
+ */
 export const preCadastroApi = {
-  cobertura: (q: { lat?: number; lng?: number; cep?: string; endereco?: string }) => {
+  cobertura: (q: { lat?: number; lng?: number; cep?: string; endereco?: string }, provedorId?: string | null) => {
     const p = new URLSearchParams();
-    for (const [k, v] of Object.entries(q)) if (v != null && v !== "") p.set(k, String(v));
+    for (const [k, v] of Object.entries({ ...q, provedorId })) if (v != null && v !== "") p.set(k, String(v));
     return api.get<CoberturaResposta>(`/pre-cadastro/cobertura?${p}`);
   },
-  vencimentos: () => api.get<{ dias: number[] }>("/pre-cadastro/vencimentos"),
-  enviar: (f: FormularioEnvio) => api.post<PreCadastro>("/pre-cadastro", f),
+  vencimentos: (provedorId?: string | null) =>
+    api.get<{ dias: number[] }>(`/pre-cadastro/vencimentos${provedorId ? `?provedorId=${encodeURIComponent(provedorId)}` : ""}`),
+  enviar: (f: FormularioEnvio, provedorId?: string | null) => api.post<PreCadastro>("/pre-cadastro", { ...f, ...(provedorId ? { provedorId } : {}) }),
   listar: () => api.get<PreCadastro[]>("/pre-cadastro"),
   os: (id: string) => api.get<BuscaOs>(`/pre-cadastro/${id}/os`),
   agendar: (id: string, dia: string, turno: TurnoAgenda) =>

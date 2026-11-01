@@ -170,14 +170,27 @@ export async function rodarOferta(agora = new Date()): Promise<RodadaOferta> {
 
       let resp: RespostaOferta;
       try {
-        resp = await chamar<RespostaOferta>(cred, "POST", "/isphub/oferta-agenda", {
-          sgpOsId: os.sgpOsId,
-          telefone: telefoneDaOs(o.telefone),
-          nome: o.clienteNome,
-          tipo: o.tipoOs?.descricao ?? null,
-          regiao: o.pop ?? o.bairro ?? null,
-        });
+        resp = await chamar<RespostaOferta>(
+          cred,
+          "POST",
+          "/isphub/oferta-agenda",
+          {
+            sgpOsId: os.sgpOsId,
+            telefone: telefoneDaOs(o.telefone),
+            nome: o.clienteNome,
+            tipo: o.tipoOs?.descricao ?? null,
+            regiao: o.pop ?? o.bairro ?? null,
+          },
+          30_000,
+        );
       } catch (e) {
+        // Sem resposta a tempo: a mensagem pode ter saido. Conta a tentativa (espera
+        // 24 h) em vez de reenviar a cada rodada, e para.
+        if (e instanceof Error && e.name === "AbortError") {
+          await registrarEnvio(os, false, "AtendAI não respondeu a tempo (a mensagem pode ter saído)");
+          r.falhas++;
+          break;
+        }
         // AtendAI fora (rede, 5xx, chave): NAO gasta tentativa do cliente — senao
         // uma queda de horas mandaria todo mundo pra "sem retorno". Para a rodada.
         // Recusa do proprio pedido (400/422: telefone, OS) conta; chave errada
@@ -190,8 +203,9 @@ export async function rodarOferta(agora = new Date()): Promise<RodadaOferta> {
         r.erro = e instanceof Error ? e.message : String(e);
         break;
       }
-      // Agenda lotada no horizonte: ninguem tem o que receber agora. Tenta na proxima rodada.
-      if (resp.status === "SEM_VAGA") break;
+      // Sem data livre para a regiao desta OS: tenta na proxima rodada, sem gastar
+      // tentativa. Segue para as outras — outra regiao pode ter vaga.
+      if (resp.status === "SEM_VAGA") continue;
       const saiu = resp.status === "ENVIADO" || resp.status === "ENVIADO_TEMPLATE";
       // Nao saiu (numero sem WhatsApp, sem modelo aprovado): conta a tentativa
       // mesmo assim, pra que no teto a OS caia pra uma pessoa em vez de girar.
@@ -213,8 +227,8 @@ async function registrarEnvio(os: { provedorId: string; sgpOsId: string }, saiu:
   await prisma.$transaction(async (tx) => {
     await tx.ofertaAgenda.upsert({
       where: { provedorId_sgpOsId: id },
-      create: { ...id, tentativas: 1, ultimaEm: agora, status: "enviada", ultimoErro: erro },
-      update: { tentativas: { increment: 1 }, ultimaEm: agora, ultimoErro: erro },
+      create: { ...id, tentativas: 1, ultimaEm: agora, status: saiu ? "enviada" : "falhou", ultimoErro: erro },
+      update: { tentativas: { increment: 1 }, ultimaEm: agora, status: saiu ? "enviada" : "falhou", ultimoErro: erro },
     });
     if (saiu) await agenda.registrarEvento(tx, { ...id, tipo: "oferta_enviada", origem: "auto", autor: "Robô de agendamento" });
   });

@@ -4,13 +4,16 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MapContainer, Marker, useMap } from "react-leaflet";
 import { ArrowLeft, Check, CheckCircle2, Copy, Crosshair, Loader2, MapPin, RotateCcw, Search, TriangleAlert, XCircle } from "lucide-react";
-import { ROTULO_TURNO, type TurnoAgenda } from "@isphub/shared";
+import { ROTULO_TURNO, UserRole, type TurnoAgenda } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
 import { AnimatedPage } from "@/components/AnimatedPage";
 import { CamadaOsm } from "@/components/mapa/base";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/context/ToastContext";
+import { useAuth } from "@/context/AuthContext";
+import { Select } from "@/components/ui/select";
+import { provedoresApi } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
 import { rotuloDiaAgenda } from "@/lib/agendaApi";
 import {
@@ -68,6 +71,8 @@ interface Rascunho {
   cliente: Cliente;
   /** O que o mapa preencheu no endereco (para marcar "confira" e trocar ao mover o pino). */
   autoEndereco: Partial<EnderecoMapa> | null;
+  /** Gestao (admin/gestor) escolhe de qual provedor e a venda; vendedor ja e preso ao dele. */
+  provedorId: string | null;
 }
 
 const CLIENTE_VAZIO: Cliente = {
@@ -84,7 +89,7 @@ const CLIENTE_VAZIO: Cliente = {
   cidade: "",
   cep: "",
 };
-const RASCUNHO_VAZIO: Rascunho = { etapa: 0, ponto: null, cobertura: null, planoId: null, vencimentoDia: null, cliente: CLIENTE_VAZIO, autoEndereco: null };
+const RASCUNHO_VAZIO: Rascunho = { etapa: 0, ponto: null, cobertura: null, planoId: null, vencimentoDia: null, cliente: CLIENTE_VAZIO, autoEndereco: null, provedorId: null };
 
 const mensagem = (err: unknown) => (err instanceof ApiError ? err.message : "Sem conexão com o servidor. Confira o sinal.");
 const reais = (v: number | null) => (v == null ? null : v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
@@ -94,6 +99,10 @@ export function PreCadastroPage() {
   const queryClient = useQueryClient();
   const [r, setR] = useState<Rascunho>(() => ({ ...RASCUNHO_VAZIO, ...lerRascunho<Rascunho>() }));
   const [enviado, setEnviado] = useState<PreCadastro | null>(null);
+  // Gestao (admin/gestor) vende em nome de um provedor; o vendedor ja e preso ao dele.
+  const { usuario } = useAuth();
+  const gestao = usuario?.role === UserRole.ADMIN || usuario?.role === UserRole.GESTOR;
+  const provedores = useQuery({ queryKey: ["provedores"], queryFn: () => provedoresApi.listar(), enabled: gestao });
 
   // Rascunho a cada mudanca — e so do que ainda nao foi enviado.
   useEffect(() => {
@@ -131,11 +140,34 @@ export function PreCadastroPage() {
             <h1 className="font-display text-2xl font-bold tracking-tight sm:text-3xl">Pré-cadastro</h1>
           </header>
 
+          {gestao && !enviado && (
+            <div className="flex max-w-sm flex-col gap-1.5">
+              <Label htmlFor="pc-provedor" className="text-sm font-semibold">
+                Provedor da venda
+              </Label>
+              <Select
+                id="pc-provedor"
+                value={r.provedorId ?? ""}
+                onChange={(e) => setR({ ...RASCUNHO_VAZIO, provedorId: e.target.value || null })}
+                className="h-12"
+              >
+                <option value="">Escolha o provedor…</option>
+                {(provedores.data ?? []).map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.nome}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
+
           <Trilha atual={etapa} />
 
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
             <section className="flex min-w-0 flex-col gap-5" aria-live="polite">
-              {etapa === 0 && <EtapaLocal r={r} set={set} onAvancar={() => irPara(1)} onRetomar={retomar} />}
+              {gestao && !r.provedorId && !enviado ? (
+                <p className="text-sm text-muted-foreground">Escolha o provedor para começar o pré-cadastro.</p>
+              ) : etapa === 0 && <EtapaLocal r={r} set={set} onAvancar={() => irPara(1)} onRetomar={retomar} />}
               {etapa === 1 && r.cobertura && (
                 <EtapaPlano r={r} set={set} onVoltar={() => irPara(0)} onAvancar={() => irPara(2)} />
               )}
@@ -281,7 +313,7 @@ function EtapaLocal({
   async function consultar(q: { lat?: number; lng?: number; cep?: string; endereco?: string }, ponto: { lat: number; lng: number } | null) {
     setErro(null);
     try {
-      const c = await preCadastroApi.cobertura(q);
+      const c = await preCadastroApi.cobertura(q, r.provedorId);
       const p = ponto ?? (c.lat != null && c.lng != null ? { lat: c.lat, lng: c.lng } : null);
       // Sem cobertura nao adianta nada no formulario: aquele endereco nao e o da venda.
       if (!c.tratarComoCoberto) {
@@ -540,7 +572,11 @@ function PendentesDeAgenda({ onRetomar }: { onRetomar: (pc: PreCadastro) => void
 // ---------------------------------------------------------------------------
 
 function EtapaPlano({ r, set, onVoltar, onAvancar }: { r: Rascunho; set: (p: Partial<Rascunho>) => void; onVoltar: () => void; onAvancar: () => void }) {
-  const venc = useQuery({ queryKey: ["pre-cadastro", "vencimentos"], queryFn: () => preCadastroApi.vencimentos(), staleTime: 10 * 60_000 });
+  const venc = useQuery({
+    queryKey: ["pre-cadastro", "vencimentos", r.provedorId],
+    queryFn: () => preCadastroApi.vencimentos(r.provedorId),
+    staleTime: 10 * 60_000,
+  });
   const planos = (r.cobertura?.planos ?? []).filter((p): p is PlanoZona & { plano_id: number } => p.plano_id != null);
 
   return (
@@ -752,7 +788,7 @@ function EtapaRevisar({ r, plano, onEditar, onEnviado }: { r: Rascunho; plano: P
         popId: cob.popId ?? null,
         portadorId: cob.portadorId ?? null,
         nasId: cob.nasId ?? null,
-      });
+      }, r.provedorId);
       onEnviado(pc);
     } catch (e) {
       setErro(mensagem(e));

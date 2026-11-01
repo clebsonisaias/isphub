@@ -99,6 +99,9 @@ describe("API: campos obrigatórios", () => {
     expect(campos(formSchema.safeParse({ ...ok, nascimento: "" }))).toContain("nascimento");
     expect(formSchema.safeParse({ ...ok, cpfCnpj: "12.345.678/0001-90", nascimento: null }).success).toBe(true);
   });
+  it("CPF com dígito errado é recusado", () => {
+    expect(campos(formSchema.safeParse({ ...ok, cpfCnpj: "529.982.247-24" }))).toContain("cpfCnpj");
+  });
   it("CEP incompleto e e-mail inválido são recusados", () => {
     expect(campos(formSchema.safeParse({ ...ok, cep: "5928" }))).toContain("cep");
     expect(campos(formSchema.safeParse({ ...ok, email: "maria@" }))).toContain("email");

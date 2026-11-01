@@ -81,9 +81,11 @@ export async function chamar<T>(
   metodo: "GET" | "POST" | "DELETE",
   caminho: string,
   corpo?: unknown,
+  /** So para chamada que sabidamente demora (o pre-cadastro espera o SGP criar o contrato). */
+  timeoutMs = TIMEOUT_MS,
 ): Promise<T> {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const res = await fetch(`${cred.baseUrl}${BASE_PATH}${caminho}`, {
       method: metodo,

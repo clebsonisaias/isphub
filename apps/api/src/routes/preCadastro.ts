@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { TURNOS_AGENDA, UserRole } from "@isphub/shared";
+import { TURNOS_AGENDA, UserRole, cpfValido } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
@@ -71,7 +71,14 @@ export const formSchema = z
   .object({
     provedorId: z.string().optional(),
     nome: z.string().trim().min(3, "Informe o nome completo").max(200),
-    cpfCnpj: z.string().trim().refine((s) => [11, 14].includes(s.replace(/\D/g, "").length), "CPF ou CNPJ incompleto"),
+    // CPF confere os digitos (mesma regra da tela); CNPJ so o tamanho — o SGP valida o resto.
+    cpfCnpj: z
+      .string()
+      .trim()
+      .refine((s) => {
+        const d = s.replace(/\D/g, "");
+        return d.length === 14 || (d.length === 11 && cpfValido(d));
+      }, "CPF ou CNPJ inválido"),
     nascimento: z.string().trim().max(10).nullish(),
     celular: z.string().trim().refine((s) => /^\d{10,11}$/.test(s.replace(/\D/g, "")), "Celular (WhatsApp) com DDD"),
     email: z.string().trim().email("E-mail inválido").max(200),

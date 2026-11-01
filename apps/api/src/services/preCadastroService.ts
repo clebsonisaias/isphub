@@ -97,13 +97,26 @@ async function credencial(provedorId: string) {
 }
 
 /** Recusa de regra (422) chega ao vendedor com o texto do AtendAI; o resto e indisponibilidade. */
-async function noAtendai<T>(provedorId: string, metodo: "GET" | "POST", caminho: string, corpo?: unknown): Promise<T> {
+/**
+ * Tempos por chamada: a cobertura geocodifica e confere CEP (ViaCEP); o
+ * pre-cadastro espera o SGP criar contrato e OS (o conector do AtendAI da 60 s
+ * ao SGP). Com os 8 s padrao, o vendedor via erro com o contrato ja criado e
+ * cadastrava de novo.
+ */
+const TEMPO_COBERTURA_MS = 30_000;
+const TEMPO_CADASTRO_MS = 90_000;
+
+async function noAtendai<T>(provedorId: string, metodo: "GET" | "POST", caminho: string, corpo?: unknown, timeoutMs = TEMPO_COBERTURA_MS): Promise<T> {
   const cred = await credencial(provedorId);
   try {
-    return await chamar<T>(cred, metodo, caminho, corpo);
+    return await chamar<T>(cred, metodo, caminho, corpo, timeoutMs);
   } catch (e) {
     if (e instanceof AtendaiIndisponivel && e.status === 422) throw new HttpError(422, e.message);
     if (e instanceof AtendaiIndisponivel && e.status === 400) throw new HttpError(400, `Dados recusados: ${e.message}`);
+    // Sem resposta no envio do cadastro: pode ter dado certo do outro lado.
+    if (caminho === "/isphub/pre-cadastro" && e instanceof Error && e.name === "AbortError") {
+      throw new HttpError(504, "O SGP demorou a responder. O cadastro pode ter sido feito: confira no SGP antes de enviar de novo.");
+    }
     throw new HttpError(502, "O AtendAI não respondeu. Confira o sinal e tente de novo.");
   }
 }
@@ -120,7 +133,8 @@ export function cobertura(provedorId: string, q: { lat?: number; lng?: number; c
 
 export async function vencimentos(provedorId: string): Promise<number[]> {
   const r = await noAtendai<{ itens: { dia?: number | string }[] }>(provedorId, "GET", "/isphub/vencimentos");
-  const dias = r.itens.map((v) => Number(v.dia)).filter((d) => Number.isInteger(d) && d >= 1 && d <= 31);
+  // O SGP pode mandar o dia como texto ("Dia 10"): fica so o numero, como no cadastrar_cliente.
+  const dias = r.itens.map((v) => Number(String(v.dia ?? "").replace(/\D/g, ""))).filter((d) => Number.isInteger(d) && d >= 1 && d <= 31);
   return [...new Set(dias)].sort((a, b) => a - b);
 }
 
@@ -131,6 +145,7 @@ export async function enviar(args: { provedorId: string; vendedorId: string; for
     "POST",
     "/isphub/pre-cadastro",
     corpoParaAtendai(args.form),
+    TEMPO_CADASTRO_MS,
   );
   return prisma.preCadastro.create({
     data: {
