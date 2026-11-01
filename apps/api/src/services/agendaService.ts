@@ -580,7 +580,7 @@ export async function registrarEvento(
     provedorId: string;
     sgpOsId: string;
     agendamentoId?: string | null;
-    tipo: "os_aberta" | "marcado" | "remarcado" | "desmarcado" | "confirmado";
+    tipo: "os_aberta" | "marcado" | "remarcado" | "desmarcado" | "confirmado" | "oferta_enviada" | "oferta_sem_retorno";
     dia?: Date | null;
     turno?: TurnoAgenda | null;
     diaAnterior?: Date | null;

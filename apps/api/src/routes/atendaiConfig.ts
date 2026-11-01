@@ -59,6 +59,7 @@ atendaiConfigRouter.get(
       chaveEntradaUsoEm: chave?.usoEm ?? null,
       chatLigadoEm: row.chatLigadoEm,
       canalClientes: row.canalClientesId ? { id: row.canalClientesId, nome: row.canalClientesNome ?? row.canalClientesId } : null,
+      ofertaAgendaAtiva: row.ofertaAgendaAtiva,
     });
   }),
 );
@@ -218,5 +219,17 @@ atendaiConfigRouter.put(
   asyncHandler(async (req, res) => {
     const { canalId } = z.object({ canalId: z.string().min(1).nullable() }).parse(req.body ?? {});
     res.json({ canalClientes: await definirCanalClientes(req.params.provedorId!, canalId) });
+  }),
+);
+
+/** Liga/desliga o robo de agendamento do provedor (oferta de datas por WhatsApp). */
+atendaiConfigRouter.put(
+  "/oferta-agenda",
+  asyncHandler(async (req, res) => {
+    const { ativa } = z.object({ ativa: z.boolean() }).parse(req.body ?? {});
+    const row = await prisma.atendaiConfig.findUnique({ where: { provedorId: req.params.provedorId! }, select: { id: true } });
+    if (!row) throw new HttpError(404, "Cadastre o AtendAI deste provedor antes de ligar o robô de agendamento.");
+    await prisma.atendaiConfig.update({ where: { id: row.id }, data: { ofertaAgendaAtiva: ativa } });
+    res.json({ ofertaAgendaAtiva: ativa });
   }),
 );

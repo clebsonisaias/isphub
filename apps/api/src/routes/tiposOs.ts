@@ -105,6 +105,7 @@ const patchSchema = z.object({
   visivel: z.boolean().optional(),
   slaHoras: z.number().int().min(1).max(24 * 30).nullable().optional(),
   categoriaId: z.string().uuid().nullable().optional(),
+  agendavel: z.boolean().optional(),
 });
 
 tiposOsRouter.patch(

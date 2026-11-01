@@ -507,7 +507,7 @@ function TiposOsManager({ provedorId }: { provedorId: string }) {
     }
   }
 
-  async function atualizarTipo(tipo: TipoOs, patch: Partial<Pick<TipoOs, "visivel" | "slaHoras" | "categoriaId">>) {
+  async function atualizarTipo(tipo: TipoOs, patch: Partial<Pick<TipoOs, "visivel" | "slaHoras" | "categoriaId" | "agendavel">>) {
     const categoria =
       "categoriaId" in patch ? (categorias.find((c) => c.id === patch.categoriaId) ?? null) : undefined;
     setTipos((prev) =>
@@ -566,6 +566,7 @@ function TiposOsManager({ provedorId }: { provedorId: string }) {
                 <TableHead>Categoria</TableHead>
                 <TableHead>SLA (horas)</TableHead>
                 <TableHead>Visível</TableHead>
+                <TableHead title="O robô de agendamento oferece as datas ao cliente por WhatsApp">Agendável</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -608,6 +609,13 @@ function TiposOsManager({ provedorId }: { provedorId: string }) {
                     <Switch
                       checked={tipo.visivel}
                       onCheckedChange={(v) => atualizarTipo(tipo, { visivel: v })}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Switch
+                      aria-label={`${tipo.descricao}: robô oferece datas ao cliente`}
+                      checked={tipo.agendavel ?? false}
+                      onCheckedChange={(v) => atualizarTipo(tipo, { agendavel: v })}
                     />
                   </TableCell>
                 </TableRow>
@@ -694,6 +702,16 @@ function AtendaiConfigForm({ provedorId }: { provedorId: string }) {
       toast({ titulo: "Não foi possível ligar o chat", descricao: mensagem(err), variante: "erro" });
     } finally {
       setLigandoChat(false);
+    }
+  }
+
+  async function alternarOferta(ativa: boolean) {
+    try {
+      await atendaiConfigApi.definirOfertaAgenda(provedorId, ativa);
+      carregar();
+      toast({ titulo: ativa ? "Robô de agendamento ligado" : "Robô de agendamento desligado", variante: "sucesso" });
+    } catch (err) {
+      toast({ titulo: "Não foi possível alterar o robô", descricao: mensagem(err), variante: "erro" });
     }
   }
 
@@ -785,6 +803,22 @@ function AtendaiConfigForm({ provedorId }: { provedorId: string }) {
                   <Link2 className="size-4" />
                   {ligando ? "Ligando..." : config.chaveEntradaPrefixo ? "Religar (troca a chave)" : "Ligar agendamento"}
                 </Button>
+              </div>
+              <div className="flex items-start justify-between gap-4 border-t border-border pt-4">
+                <div className="flex flex-col gap-1">
+                  <Label htmlFor="oferta-agenda">Robô de agendamento</Label>
+                  <p className="text-sm text-muted-foreground">
+                    OS aberta de um tipo marcado como "Agendável" recebe as datas livres no WhatsApp do cliente, e ele
+                    escolhe. Sem resposta, o robô tenta 3 vezes, uma por dia, das 7h às 20h. Depois a OS aparece em "Sem
+                    retorno" no painel para agendar por contato humano.
+                  </p>
+                </div>
+                <Switch
+                  id="oferta-agenda"
+                  checked={config.ofertaAgendaAtiva}
+                  disabled={!config.chaveEntradaPrefixo}
+                  onCheckedChange={(v) => void alternarOferta(v)}
+                />
               </div>
             </>
           )}

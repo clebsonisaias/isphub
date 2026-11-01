@@ -244,6 +244,40 @@ dashboardRouter.get(
 );
 
 /**
+ * OS que o robo de agendamento desistiu e que ainda estao abertas e sem visita:
+ * a fila do contato humano. Some da lista sozinha quando alguem marca a visita
+ * ou a OS fecha.
+ */
+async function ofertasSemRetorno(): Promise<DashboardAgenda["ofertaSemRetorno"]> {
+  const ofertas = await prisma.ofertaAgenda.findMany({
+    where: { status: "sem_retorno" },
+    orderBy: { ultimaEm: "asc" },
+    take: 200,
+  });
+  if (ofertas.length === 0) return [];
+  const [oss, marcadas] = await Promise.all([
+    prisma.ordemServico.findMany({
+      where: { OR: ofertas.map((o) => ({ provedorId: o.provedorId, sgpOsId: o.sgpOsId })), status: { in: ["aberta", "pendente"] } },
+      select: { id: true, provedorId: true, sgpOsId: true, clienteNome: true },
+    }),
+    prisma.agendamento.findMany({
+      where: { OR: ofertas.map((o) => ({ provedorId: o.provedorId, sgpOsId: o.sgpOsId })), status: "marcado" },
+      select: { provedorId: true, sgpOsId: true },
+    }),
+  ]);
+  const k = (x: { provedorId: string; sgpOsId: string }) => `${x.provedorId}|${x.sgpOsId}`;
+  const abertas = new Map(oss.map((o) => [k(o), o]));
+  const comVisita = new Set(marcadas.map(k));
+  return ofertas
+    .filter((o) => abertas.has(k(o)) && !comVisita.has(k(o)))
+    .slice(0, 50)
+    .map((o) => {
+      const os = abertas.get(k(o))!;
+      return { ordemServicoId: os.id, sgpOsId: o.sgpOsId, clienteNome: os.clienteNome, tentativas: o.tentativas, ultimaEm: o.ultimaEm?.toISOString() ?? null };
+    });
+}
+
+/**
  * A agenda pelo olhar do gestor: quanto da semana ja esta tomado, o que ainda
  * depende de alguem (cliente que nao confirmou, SGP que nao refletiu) e quem
  * esta marcando. O ranking por funcionario le `marcadoPor` (e-mail de quem
@@ -276,6 +310,7 @@ dashboardRouter.get(
       }),
       semPresencaDesde(new Date(Date.now() - 7 * 86_400_000)),
     ]);
+    const ofertaSemRetorno = await ofertasSemRetorno();
 
     const resposta: DashboardAgenda = {
       dias,
@@ -283,6 +318,7 @@ dashboardRouter.get(
       semConfirmacaoCliente,
       pendentesSgp,
       semPresenca7d,
+      ofertaSemRetorno,
       porFuncionario: agenda.resumirMarcacoes(
         linhas.map((l) => ({ marcadoPor: l.marcadoPor, origem: l.origem, status: l.status, total: l._count._all })),
       ),

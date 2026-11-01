@@ -12,6 +12,7 @@ import { startEscalaAlertaScheduler } from "./jobs/escalaAlertaScheduler.js";
 import { startAuditoriaVisitaScheduler } from "./jobs/auditoriaVisitaScheduler.js";
 import { startManutencaoAlertaScheduler } from "./jobs/manutencaoAlertaScheduler.js";
 import { startAutoAgendaScheduler } from "./jobs/autoAgendaScheduler.js";
+import { startOfertaAgendaScheduler } from "./jobs/ofertaAgendaScheduler.js";
 import { startPlanilhaScheduler } from "./jobs/planilhaScheduler.js";
 import { startTecnicosSgpScheduler } from "./jobs/tecnicosSgpScheduler.js";
 import { startRoboRoteirizacaoScheduler } from "./jobs/roboRoteirizacaoScheduler.js";
@@ -32,6 +33,7 @@ const server = app.listen(env.PORT, () => {
   startAuditoriaVisitaScheduler();
   startManutencaoAlertaScheduler();
   startAutoAgendaScheduler();
+  startOfertaAgendaScheduler();
   startPlanilhaScheduler();
   startTecnicosSgpScheduler();
   startRoboRoteirizacaoScheduler();

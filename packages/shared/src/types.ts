@@ -92,6 +92,8 @@ export interface TipoOs {
   visivel: boolean;
   /** Prazo de SLA em horas (base do semaforo). null = sem SLA proprio (usa o padrao da categoria). */
   slaHoras?: number | null;
+  /** O robô de agendamento oferece datas por WhatsApp para OS deste tipo. */
+  agendavel?: boolean;
 }
 
 /** Endereco geolocalizado de uma OS. */
@@ -358,6 +360,8 @@ export interface DashboardAgenda {
   porFuncionario: { marcadoPor: string; origem: string; marcadas: number; canceladas: number }[];
   /** OS concluidas nos ultimos 7 dias cuja viatura NAO passou pelo endereco (auditoria). */
   semPresenca7d: number;
+  /** OS em que o cliente nao respondeu ao robo de agendamento e ainda sem visita: agendar por contato humano. */
+  ofertaSemRetorno: { ordemServicoId: string | null; sgpOsId: string; clienteNome: string | null; tentativas: number; ultimaEm: string | null }[];
 }
 
 export interface DashboardRetiradas {

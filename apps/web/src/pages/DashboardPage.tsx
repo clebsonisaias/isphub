@@ -229,6 +229,28 @@ export function DashboardPage() {
                   <MiniStat label="Pendentes no SGP" value={agenda.pendentesSgp} critico />
                   <MiniStat label="Sem presença (7 dias)" value={agenda.semPresenca7d} critico />
                 </div>
+                {agenda.ofertaSemRetorno.length > 0 && (
+                  <div className="flex flex-col gap-2">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Sem retorno ao robô ({agenda.ofertaSemRetorno.length}) · agendar por contato humano
+                    </p>
+                    <ul className="flex flex-col divide-y divide-border text-sm">
+                      {agenda.ofertaSemRetorno.slice(0, 8).map((o) => (
+                        <li key={o.sgpOsId} className="flex min-h-10 items-center justify-between gap-3">
+                          {o.ordemServicoId ? (
+                            <Link to={`/os/${o.ordemServicoId}`} className="min-w-0 truncate font-medium text-primary hover:underline">
+                              OS {o.sgpOsId}
+                              {o.clienteNome ? ` · ${o.clienteNome}` : ""}
+                            </Link>
+                          ) : (
+                            <span className="min-w-0 truncate">OS {o.sgpOsId}</span>
+                          )}
+                          <span className="shrink-0 text-xs text-muted-foreground">{o.tentativas} mensagens</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 <Link to="/agenda" className="inline-flex min-h-10 w-fit items-center gap-1 text-sm font-medium text-primary hover:underline">
                   Abrir a agenda <ArrowRight className="size-3.5" />
                 </Link>

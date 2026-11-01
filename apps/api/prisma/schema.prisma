@@ -69,22 +69,23 @@ model Provedor {
   ativo    Boolean  @default(true)
   criadoEm DateTime @default(now())
 
-  erpConfigs    ErpConfig[]
-  atendaiConfig AtendaiConfig?
-  chaveParceiro ChaveParceiro?
-  tiposOs       TipoOs[]
-  ordensServico OrdemServico[]
-  conversasAtendai Conversa[]
-  usuarios      Usuario[]
-  tecnicosSgp   TecnicoSgp[]
-  syncLogs      SyncLog[]
-  agendamentos  Agendamento[]
+  erpConfigs         ErpConfig[]
+  atendaiConfig      AtendaiConfig?
+  chaveParceiro      ChaveParceiro?
+  tiposOs            TipoOs[]
+  ordensServico      OrdemServico[]
+  conversasAtendai   Conversa[]
+  usuarios           Usuario[]
+  tecnicosSgp        TecnicoSgp[]
+  syncLogs           SyncLog[]
+  agendamentos       Agendamento[]
   agendamentoEventos AgendamentoEvento[]
+  ofertasAgenda      OfertaAgenda[]
   /// Lancamentos em que este provedor e a CONTRAPARTE (quem deve a hub).
   /// Diferente de todas as relacoes acima: nao e particao multi-tenant.
-  lancamentos   Lancamento[]
-  recorrencias  Recorrencia[]
-  parcelamentos Parcelamento[]
+  lancamentos        Lancamento[]
+  recorrencias       Recorrencia[]
+  parcelamentos      Parcelamento[]
 
   /// Frota: aqui `provedorId` VOLTA a ser particao multi-tenant (diferente dos
   /// tres acima) — so que NULAVEL, porque existe frota da propria operacao.
@@ -133,6 +134,11 @@ model AtendaiConfig {
   /// (canal de WhatsApp do AtendAI, escolhido no cadastro). Sem canal, nao sai.
   canalClientesId   String?
   canalClientesNome String?
+
+  /// Robo de agendamento: OS de tipo `agendavel` aberta sem visita recebe as
+  /// datas livres por WhatsApp (via AtendAI) e o cliente escolhe. Por provedor,
+  /// porque e o AtendAI DELE que fala com o cliente.
+  ofertaAgendaAtiva Boolean @default(false)
 
   ativo        Boolean  @default(true)
   criadoEm     DateTime @default(now())
@@ -239,6 +245,9 @@ model TipoOs {
   visivel     Boolean    @default(true)
   /// Prazo de SLA em horas; null = sem SLA proprio (usa o padrao da categoria).
   slaHoras    Int?
+  /// Precisa de visita marcada com o cliente: o robo de agendamento oferece
+  /// datas por WhatsApp quando uma OS deste tipo aparece aberta sem visita.
+  agendavel   Boolean    @default(false)
 
   ordensServico OrdemServico[]
 
@@ -341,20 +350,20 @@ model OrdemServico {
   atualizadoEm             DateTime  @updatedAt
   sincronizadoEm           DateTime  @default(now())
 
-  atribuicoes  Atribuicao[]
-  eventos      OsEvento[]
-  notificacoes Notificacao[]
+  atribuicoes     Atribuicao[]
+  eventos         OsEvento[]
+  notificacoes    Notificacao[]
   /// Thread de chat da OS — no maximo 1 por OS (ver Conversa.ordemServicoId @unique).
-  conversa     Conversa?
+  conversa        Conversa?
   /// Ocupacoes abertas ESPECIFICAMENTE pra esta OS — o caso raro. O normal e
   /// descobrir o veiculo cruzando a janela de execucao com as ocupacoes do
   /// tecnico; ver `veiculosDaOs`.
-  deslocamento DeslocamentoOs?
+  deslocamento    DeslocamentoOs?
   auditoriaVisita AuditoriaVisita?
-  ocupacoes    OcupacaoVeiculo[]
+  ocupacoes       OcupacaoVeiculo[]
   /// A marcacao na agenda da ISPhub, quando existe. Chega DEPOIS da OS em
   /// alguns casos e ANTES dela em outros — ver o comentario em `Agendamento`.
-  agendamento  Agendamento?
+  agendamento     Agendamento?
 
   @@unique([provedorId, sgpOsId])
   @@index([provedorId, status])
@@ -443,7 +452,7 @@ model Usuario {
 
   ordensServico OrdemServico[]
   atribuicoes   Atribuicao[]
-  osComoApoio         OrdemServico[] @relation("OsApoio")
+  osComoApoio   OrdemServico[] @relation("OsApoio")
   eventos       OsEvento[]
   notificacoes  Notificacao[]
   tecnicosSgp   TecnicoSgp[]
@@ -848,26 +857,26 @@ enum MensagemTipo {
 }
 
 model Conversa {
-  id               String        @id @default(uuid())
-  tipo             ConversaTipo
+  id                String        @id @default(uuid())
+  tipo              ConversaTipo
   /// Titulo explicito (grupo/avisos) — DM e thread de OS derivam o titulo no
   /// servidor (nome do outro participante / "OS #sgpOsId"), nao fica salvo aqui.
-  titulo           String?
+  titulo            String?
   /// Thread de OS: no maximo 1 conversa por OS (idempotencia de
   /// garantirConversaDeOs vem desse @unique).
-  ordemServicoId   String?       @unique
-  ordemServico     OrdemServico? @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
-  criadoPorId      String?
-  criadoPor        Usuario?      @relation("ConversasCriadas", fields: [criadoPorId], references: [id], onDelete: SetNull)
+  ordemServicoId    String?       @unique
+  ordemServico      OrdemServico? @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
+  criadoPorId       String?
+  criadoPor         Usuario?      @relation("ConversasCriadas", fields: [criadoPorId], references: [id], onDelete: SetNull)
   /// Denormalizado: ordena a lista de conversas sem varrer mensagens (evita N+1).
-  ultimaMensagemEm DateTime?
-  arquivada        Boolean       @default(false)
-  criadoEm         DateTime      @default(now())
+  ultimaMensagemEm  DateTime?
+  arquivada         Boolean       @default(false)
+  criadoEm          DateTime      @default(now())
   /// Conversa espelhada do chat interno do AtendAI (a atendente esta la, o
   /// tecnico aqui). Nulo = conversa so do ISPhub.
-  atendaiConversaId String?   @unique
+  atendaiConversaId String?       @unique
   provedorId        String?
-  provedor          Provedor? @relation(fields: [provedorId], references: [id], onDelete: SetNull)
+  provedor          Provedor?     @relation(fields: [provedorId], references: [id], onDelete: SetNull)
 
   participantes ConversaParticipante[]
   mensagens     Mensagem[]
@@ -897,42 +906,42 @@ model ConversaParticipante {
 }
 
 model Mensagem {
-  id             String       @id @default(uuid())
-  conversaId     String
-  conversa       Conversa     @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  id                String       @id @default(uuid())
+  conversaId        String
+  conversa          Conversa     @relation(fields: [conversaId], references: [id], onDelete: Cascade)
   /// null = mensagem do sistema ("Fulano assumiu a OS"), sem autor humano.
-  autorId        String?
-  autor          Usuario?     @relation("MensagensDoAutor", fields: [autorId], references: [id], onDelete: SetNull)
-  tipo           MensagemTipo
+  autorId           String?
+  autor             Usuario?     @relation("MensagensDoAutor", fields: [autorId], references: [id], onDelete: SetNull)
+  tipo              MensagemTipo
   /// Texto, legenda da foto, ou rotulo do sistema.
-  corpo          String?
+  corpo             String?
   /// Midia local (chat NAO e evidencia de OS — nao espelha o SGP, entao nao
   /// segue o padrao de proxy-ao-vivo das fotos de evidencia). Limite validado
   /// no servidor: foto <=400KB, audio <=60s e <=500KB (ver chatService). Se o
   /// volume crescer, migrar pra S3/MinIO e trocar `anexoDados` por uma URL —
   /// o contrato de API (Mensagem.anexoMime/anexoTamanho) nao muda.
-  anexoDados     Bytes?
-  anexoMime      String?
-  anexoTamanho   Int?
+  anexoDados        Bytes?
+  anexoMime         String?
+  anexoTamanho      Int?
   /// Audio, em segundos.
-  duracaoSeg     Int?
-  lat            Float?
-  lng            Float?
+  duracaoSeg        Int?
+  lat               Float?
+  lng               Float?
   /// Card de OS compartilhado no chat (tipo os_ref).
-  ordemServicoId String?
-  respondendoAId String?
-  respondendoA   Mensagem?    @relation("Respostas", fields: [respondendoAId], references: [id], onDelete: SetNull)
-  respostas      Mensagem[]   @relation("Respostas")
-  editadoEm      DateTime?
+  ordemServicoId    String?
+  respondendoAId    String?
+  respondendoA      Mensagem?    @relation("Respostas", fields: [respondendoAId], references: [id], onDelete: SetNull)
+  respostas         Mensagem[]   @relation("Respostas")
+  editadoEm         DateTime?
   /// SOFT DELETE — contexto operacional e prova; nada some do banco. Quem
   /// apagou fica so como String (mesmo padrao de Atribuicao.atribuidoPor —
   /// auditoria informativa, sem FK).
-  apagadoEm      DateTime?
-  apagadoPorId   String?
-  criadoEm       DateTime     @default(now())
+  apagadoEm         DateTime?
+  apagadoPorId      String?
+  criadoEm          DateTime     @default(now())
   /// Mensagem que veio do AtendAI: quem escreveu (la) e o id dela (nao duplica).
   autorExternoNome  String?
-  atendaiMensagemId String? @unique
+  atendaiMensagemId String?      @unique
 
   reacoes MensagemReacao[]
 
@@ -2154,14 +2163,14 @@ model AgendaConfig {
 
   /// Liga o job que marca sozinho instalacao e reparo. Desligado por padrao: o
   /// agendador so passa a agir quando alguem liga.
-  autoAgendaAtiva Boolean @default(false)
+  autoAgendaAtiva     Boolean @default(false)
   /// Teto de marcacoes por rodada do job — trava contra enxurrada se algo errar.
-  autoAgendaMaxRodada Int @default(20)
+  autoAgendaMaxRodada Int     @default(20)
   /// Vagas por dia guardadas pra "sem conexao" que ainda nao chegou; liberadas
   /// pras demais OS na vespera. 0 = sem reserva.
-  vagasUrgenciaDia Int @default(0)
+  vagasUrgenciaDia    Int     @default(0)
   /// Teto do domingo, que so tem a manha (plantao). Nulo = vale o teto normal.
-  vagasDomingo Int? @default(4)
+  vagasDomingo        Int?    @default(4)
 
   atualizadoEm DateTime @updatedAt
 
@@ -2176,13 +2185,13 @@ model PlanoManutencao {
   veiculoId String
   veiculo   Veiculo @relation(fields: [veiculoId], references: [id], onDelete: Cascade)
 
-  tipo          String @db.VarChar(40)
+  tipo          String    @db.VarChar(40)
   intervaloKm   Int?
   intervaloDias Int?
   ultimaKm      Int?
   ultimaEm      DateTime?
 
-  ativo Boolean @default(true)
+  ativo     Boolean   @default(true)
   /// Trava do sino: nulo = ainda nao avisado; zera ao concluir.
   avisadoEm DateTime?
 
@@ -2202,12 +2211,12 @@ model ChecklistViatura {
   usuarioId  String
 
   /// saida | retorno
-  momento        String @db.VarChar(10)
+  momento        String   @db.VarChar(10)
   odometroKm     Int?
   combustivelPct Int?
-  avarias        String? @db.VarChar(400)
+  avarias        String?  @db.VarChar(400)
   fotoPainel     Bytes?
-  fotoMime       String? @db.VarChar(40)
+  fotoMime       String?  @db.VarChar(40)
   lat            Float?
   lng            Float?
   criadoEm       DateTime @default(now())
@@ -2232,9 +2241,9 @@ model AuditoriaVisita {
   posicoes           Int
   inicioEm           DateTime
   fimEm              DateTime
-  auditadaEm         DateTime @default(now())
+  auditadaEm         DateTime  @default(now())
   /// Quando o aviso "visita sem presenca" saiu pros gestores.
-  notificadaEm DateTime?
+  notificadaEm       DateTime?
 
   @@index([veredito, auditadaEm])
   @@map("auditorias_visita")
@@ -2256,7 +2265,7 @@ model DeslocamentoOs {
   metros   Int
   pontos   Int
   /// gps = soma dos trechos; estimado = reta x fator de rua; sem_dados = nao deu pra medir.
-  fonte String
+  fonte    String
 
   calculadoEm DateTime @default(now())
 
@@ -2414,17 +2423,38 @@ model TecnicoSgp {
 /// Chave `(provedorId, sgpOsId)` e nao a OS espelhada, pelo mesmo motivo do `Agendamento`: o
 /// AtendAI abre e marca antes de o sync trazer a OS. Por isso nao e `OsEvento` (que exige a OS
 /// espelhada e autor `Usuario`).
+/// O robo de agendamento oferecendo datas ao cliente de uma OS, por WhatsApp.
+/// Mesma chave do `Agendamento` — a OS pode ainda nao estar espelhada.
+model OfertaAgenda {
+  id           String    @id @default(uuid())
+  provedorId   String
+  provedor     Provedor  @relation(fields: [provedorId], references: [id], onDelete: Cascade)
+  sgpOsId      String
+  /// Envios que sairam (ou tentaram sair). No teto sem resposta, vira `sem_retorno`.
+  tentativas   Int       @default(0)
+  ultimaEm     DateTime?
+  /// enviada | agendada | sem_retorno
+  status       String    @default("enviada")
+  ultimoErro   String?
+  criadoEm     DateTime  @default(now())
+  atualizadoEm DateTime  @updatedAt
+
+  @@unique([provedorId, sgpOsId])
+  @@index([status])
+  @@map("ofertas_agenda")
+}
+
 model AgendamentoEvento {
-  id            String   @id @default(uuid())
+  id            String       @id @default(uuid())
   provedorId    String
-  provedor      Provedor @relation(fields: [provedorId], references: [id], onDelete: Cascade)
+  provedor      Provedor     @relation(fields: [provedorId], references: [id], onDelete: Cascade)
   sgpOsId       String
   agendamentoId String?
-  /// os_aberta | marcado | remarcado | desmarcado | confirmado
+  /// os_aberta | marcado | remarcado | desmarcado | confirmado | oferta_enviada | oferta_sem_retorno
   tipo          String
-  dia           DateTime? @db.Date
+  dia           DateTime?    @db.Date
   turno         TurnoAgenda?
-  diaAnterior   DateTime? @db.Date
+  diaAnterior   DateTime?    @db.Date
   turnoAnterior TurnoAgenda?
   /// isphub | atendai_ia | atendai_humano | cliente | sgp | auto | planilha
   origem        String
@@ -2437,7 +2467,7 @@ model AgendamentoEvento {
   conversaRef   String?
   /// ja_aberta | aberta_agora
   osSituacao    String?
-  criadoEm      DateTime @default(now())
+  criadoEm      DateTime     @default(now())
 
   @@index([provedorId, sgpOsId, criadoEm])
   @@map("agendamento_eventos")

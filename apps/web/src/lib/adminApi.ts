@@ -50,6 +50,8 @@ export interface AtendaiConfigPublic {
   chatLigadoEm: string | null;
   /** Por onde saem as conversas da equipe com os clientes deste provedor. */
   canalClientes: { id: string; nome: string } | null;
+  /** Robô de agendamento ligado: OS agendáveis recebem as datas por WhatsApp. */
+  ofertaAgendaAtiva: boolean;
 }
 
 export const atendaiConfigApi = {
@@ -76,6 +78,8 @@ export const atendaiConfigApi = {
     ),
   definirCanalClientes: (provedorId: string, canalId: string | null) =>
     api.put<{ canalClientes: { id: string; nome: string } | null }>(`/provedores/${provedorId}/atendai/canal-clientes`, { canalId }),
+  definirOfertaAgenda: (provedorId: string, ativa: boolean) =>
+    api.put<{ ofertaAgendaAtiva: boolean }>(`/provedores/${provedorId}/atendai/oferta-agenda`, { ativa }),
 };
 
 /** A chave da API de agendamento: só o que a tela pode ver. */
@@ -101,7 +105,7 @@ export const tiposOsApi = {
   atualizar: (
     provedorId: string,
     tipoId: string,
-    data: Partial<{ visivel: boolean; slaHoras: number | null; categoriaId: string | null }>,
+    data: Partial<{ visivel: boolean; slaHoras: number | null; categoriaId: string | null; agendavel: boolean }>,
   ) => api.patch<TipoOs>(`/provedores/${provedorId}/tipos-os/${tipoId}`, data),
   autoClassificar: (provedorId: string) =>
     api.post<{ analisados: number; classificados: number }>(`/provedores/${provedorId}/tipos-os/auto-classificar`),

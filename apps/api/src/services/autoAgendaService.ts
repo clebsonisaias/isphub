@@ -15,6 +15,7 @@ import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../middleware/errorHandler.js";
 import * as agenda from "./agendaService.js";
 import { calcularSla } from "./slaService.js";
+import { provedoresComOferta } from "./ofertaAgendaService.js";
 
 /**
  * Proposta de agenda automatica: le o banco, delega a decisao ao motor puro
@@ -23,9 +24,15 @@ import { calcularSla } from "./slaService.js";
 
 /** OS abertas/pendentes sem visita marcada, no formato do motor. */
 async function candidatas(): Promise<CandidataAuto[]> {
+  // Com o robo de agendamento ligado, quem escolhe a data das OS agendaveis e
+  // o CLIENTE: o agendador nao pode marcar por cima.
+  const comOferta = (await provedoresComOferta()).map((p) => p.provedorId);
   const [oss, marcadas] = await Promise.all([
     prisma.ordemServico.findMany({
-      where: { status: { in: ["aberta", "pendente"] } },
+      where: {
+        status: { in: ["aberta", "pendente"] },
+        NOT: { provedorId: { in: comOferta }, tipoOs: { agendavel: true } },
+      },
       select: {
         provedorId: true,
         sgpOsId: true,
