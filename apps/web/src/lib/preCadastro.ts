@@ -64,6 +64,100 @@ export function erroCelular(bruto: string): string | null {
   return d.length === 10 || d.length === 11 ? null : "Celular com DDD, ex.: (84) 99999-1234.";
 }
 
+export function erroEmail(texto: string): string | null {
+  const e = texto.trim();
+  if (!e) return "Informe o e-mail.";
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e) ? null : "E-mail inválido.";
+}
+
+export function erroCep(texto: string): string | null {
+  return soDigitos(texto).length === 8 ? null : "CEP com 8 números.";
+}
+
+export interface DadosCliente {
+  nome: string;
+  documento: string;
+  nascimento: string;
+  celular: string;
+  email: string;
+  logradouro: string;
+  bairro: string;
+  cidade: string;
+  cep: string;
+}
+
+const ROTULOS: Record<keyof DadosCliente, string> = {
+  nome: "nome",
+  documento: "CPF/CNPJ",
+  nascimento: "nascimento",
+  celular: "celular",
+  email: "e-mail",
+  logradouro: "rua",
+  bairro: "bairro",
+  cidade: "cidade",
+  cep: "CEP",
+};
+
+/**
+ * Erros do titular. Obrigatorios: nome, documento, nascimento (PF), celular com
+ * WhatsApp, e-mail, rua, bairro, cidade e CEP. O nascimento so nao se aplica a
+ * CNPJ: o SGP nao recebe data de nascimento de empresa.
+ */
+export function errosCliente(c: DadosCliente): Record<keyof DadosCliente, string | null> {
+  const pj = soDigitos(c.documento).length === 14;
+  return {
+    nome: c.nome.trim().split(/\s+/).length < 2 ? "Nome e sobrenome." : null,
+    documento: erroDocumento(c.documento),
+    nascimento: pj ? null : erroNascimento(c.nascimento),
+    celular: erroCelular(c.celular),
+    email: erroEmail(c.email),
+    logradouro: c.logradouro.trim().length < 2 ? "Informe a rua." : null,
+    bairro: c.bairro.trim().length < 2 ? "Informe o bairro." : null,
+    cidade: c.cidade.trim().length < 2 ? "Informe a cidade." : null,
+    cep: erroCep(c.cep),
+  };
+}
+
+/** "e-mail e CEP" — o que ainda falta, para o vendedor saber por que nao avanca. */
+export function faltando(erros: Record<keyof DadosCliente, string | null>): string | null {
+  const nomes = (Object.keys(erros) as (keyof DadosCliente)[]).filter((k) => erros[k]).map((k) => ROTULOS[k]);
+  if (nomes.length === 0) return null;
+  return nomes.length === 1 ? nomes[0]! : `${nomes.slice(0, -1).join(", ")} e ${nomes.at(-1)}`;
+}
+
+export interface EnderecoMapa {
+  logradouro: string;
+  bairro: string;
+  cidade: string;
+  cep: string;
+}
+const CAMPOS_MAPA = ["logradouro", "bairro", "cidade", "cep"] as const;
+
+/**
+ * Endereco que veio do mapa por cima do formulario. Um campo so muda se estiver
+ * vazio OU ainda com o valor que o proprio mapa pos da ultima vez: assim o pino
+ * arrastado corrige a rua, e o que a vendedora digitou nunca e atropelado.
+ * Devolve o formulario novo e o que o mapa preencheu agora (o `auto` seguinte).
+ */
+export function mesclarEndereco(
+  atual: EnderecoMapa,
+  autoAnterior: Partial<EnderecoMapa> | null,
+  doMapa: { logradouro?: string | null; bairro?: string | null; cidade?: string | null; cep?: string | null } | null | undefined,
+): { endereco: EnderecoMapa; auto: Partial<EnderecoMapa> } {
+  const endereco = { ...atual };
+  const auto: Partial<EnderecoMapa> = {};
+  for (const k of CAMPOS_MAPA) {
+    const bruto = doMapa?.[k]?.trim();
+    if (!bruto) continue;
+    const novo = k === "cep" ? mascararCep(bruto) : bruto;
+    if (!atual[k].trim() || atual[k] === autoAnterior?.[k]) {
+      endereco[k] = novo;
+      auto[k] = novo;
+    }
+  }
+  return { endereco, auto };
+}
+
 /** O que a resposta de cobertura do AtendAI significa para a venda. */
 export type LeituraCobertura = { pode: boolean; tom: "ok" | "atencao" | "nao"; titulo: string; detalhe: string };
 

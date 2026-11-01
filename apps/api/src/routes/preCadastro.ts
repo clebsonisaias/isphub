@@ -62,27 +62,37 @@ preCadastroRouter.get(
 );
 
 const opcional = (max: number) => z.string().trim().max(max).nullish();
-const formSchema = z.object({
-  provedorId: z.string().optional(),
-  nome: z.string().trim().min(3, "Informe o nome completo").max(200),
-  cpfCnpj: z.string().trim().refine((s) => [11, 14].includes(s.replace(/\D/g, "").length), "CPF ou CNPJ incompleto"),
-  nascimento: opcional(10),
-  celular: z.string().trim().refine((s) => /^\d{10,11}$/.test(s.replace(/\D/g, "")), "Celular com DDD").nullish(),
-  email: z.string().trim().email("E-mail inválido").max(200).nullish().or(z.literal("")),
-  plano: z.object({ id: z.number().int().positive(), nome: z.string().trim().min(1).max(120) }),
-  vencimentoDia: z.number().int().min(1).max(31),
-  logradouro: z.string().trim().min(2, "Informe a rua").max(200),
-  numero: opcional(20),
-  complemento: opcional(120),
-  referencia: opcional(120),
-  bairro: z.string().trim().min(2, "Informe o bairro").max(120),
-  cidade: z.string().trim().min(2).max(120),
-  uf: z.string().trim().length(2).nullish(),
-  cep: opcional(9),
-  popId: z.number().int().positive().nullish(),
-  portadorId: z.number().int().positive().nullish(),
-  nasId: z.number().int().positive().nullish(),
-});
+/**
+ * Obrigatorios (decisao da NetGo): alem do titular e do endereco, e-mail, CEP,
+ * celular com WhatsApp e nascimento. Nascimento so para CPF — o SGP nao recebe
+ * data de nascimento de empresa.
+ */
+export const formSchema = z
+  .object({
+    provedorId: z.string().optional(),
+    nome: z.string().trim().min(3, "Informe o nome completo").max(200),
+    cpfCnpj: z.string().trim().refine((s) => [11, 14].includes(s.replace(/\D/g, "").length), "CPF ou CNPJ incompleto"),
+    nascimento: z.string().trim().max(10).nullish(),
+    celular: z.string().trim().refine((s) => /^\d{10,11}$/.test(s.replace(/\D/g, "")), "Celular (WhatsApp) com DDD"),
+    email: z.string().trim().email("E-mail inválido").max(200),
+    plano: z.object({ id: z.number().int().positive(), nome: z.string().trim().min(1).max(120) }),
+    vencimentoDia: z.number().int().min(1).max(31),
+    logradouro: z.string().trim().min(2, "Informe a rua").max(200),
+    numero: opcional(20),
+    complemento: opcional(120),
+    referencia: opcional(120),
+    bairro: z.string().trim().min(2, "Informe o bairro").max(120),
+    cidade: z.string().trim().min(2).max(120),
+    uf: z.string().trim().length(2).nullish(),
+    cep: z.string().trim().refine((s) => s.replace(/\D/g, "").length === 8, "CEP com 8 números"),
+    popId: z.number().int().positive().nullish(),
+    portadorId: z.number().int().positive().nullish(),
+    nasId: z.number().int().positive().nullish(),
+  })
+  .refine((f) => f.cpfCnpj.replace(/\D/g, "").length === 14 || /^\d{2}\/\d{2}\/\d{4}$/.test(f.nascimento ?? ""), {
+    message: "Informe a data de nascimento (dd/mm/aaaa)",
+    path: ["nascimento"],
+  });
 
 /** `POST /pre-cadastro` — cadastra no SGP (via AtendAI). O SGP abre a OS de instalacao na mesma chamada. */
 preCadastroRouter.post(

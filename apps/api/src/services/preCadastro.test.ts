@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RawOs } from "@isphub/shared";
 import { vendedorPode } from "../middleware/auth.js";
+import { formSchema } from "../routes/preCadastro.js";
 import { corpoParaAtendai, escolherOsInstalacao, type FormularioPreCadastro } from "./preCadastroService.js";
 
 const os = (sgpOsId: string, tipoDescricao: string, statusCode: number | string = 0): RawOs => ({
@@ -67,6 +68,40 @@ describe("corpoParaAtendai", () => {
       pop_id: 3,
       portador_id: 1,
     });
+  });
+});
+
+describe("API: campos obrigatórios", () => {
+  const ok = {
+    nome: "Maria da Silva",
+    cpfCnpj: "529.982.247-25",
+    nascimento: "10/02/1990",
+    celular: "(84) 99999-1234",
+    email: "maria@exemplo.com.br",
+    plano: { id: 12, nome: "500 Mega" },
+    vencimentoDia: 10,
+    logradouro: "Rua das Flores",
+    bairro: "Centro",
+    cidade: "Macaíba",
+    cep: "59280-000",
+  };
+  const campos = (r: { success: boolean; error?: { issues: { path: (string | number)[] }[] } }) =>
+    r.success ? [] : r.error!.issues.map((i) => i.path.join("."));
+
+  it("formulário completo passa", () => {
+    expect(formSchema.safeParse(ok).success).toBe(true);
+  });
+  it.each(["email", "cep", "celular"] as const)("sem %s é recusado", (campo) => {
+    const { [campo]: _fora, ...resto } = ok;
+    expect(campos(formSchema.safeParse(resto))).toContain(campo);
+  });
+  it("CPF sem nascimento é recusado; CNPJ não precisa", () => {
+    expect(campos(formSchema.safeParse({ ...ok, nascimento: "" }))).toContain("nascimento");
+    expect(formSchema.safeParse({ ...ok, cpfCnpj: "12.345.678/0001-90", nascimento: null }).success).toBe(true);
+  });
+  it("CEP incompleto e e-mail inválido são recusados", () => {
+    expect(campos(formSchema.safeParse({ ...ok, cep: "5928" }))).toContain("cep");
+    expect(campos(formSchema.safeParse({ ...ok, email: "maria@" }))).toContain("email");
   });
 });
 

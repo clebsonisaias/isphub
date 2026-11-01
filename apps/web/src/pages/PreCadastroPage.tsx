@@ -15,10 +15,11 @@ import { ApiError } from "@/lib/apiClient";
 import { rotuloDiaAgenda } from "@/lib/agendaApi";
 import {
   apagarRascunho,
-  erroCelular,
-  erroDocumento,
-  erroNascimento,
+  errosCliente,
+  faltando,
   lerCobertura,
+  mesclarEndereco,
+  type EnderecoMapa,
   lerRascunho,
   mascararCelular,
   mascararCep,
@@ -65,6 +66,8 @@ interface Rascunho {
   planoId: number | null;
   vencimentoDia: number | null;
   cliente: Cliente;
+  /** O que o mapa preencheu no endereco (para marcar "confira" e trocar ao mover o pino). */
+  autoEndereco: Partial<EnderecoMapa> | null;
 }
 
 const CLIENTE_VAZIO: Cliente = {
@@ -81,7 +84,7 @@ const CLIENTE_VAZIO: Cliente = {
   cidade: "",
   cep: "",
 };
-const RASCUNHO_VAZIO: Rascunho = { etapa: 0, ponto: null, cobertura: null, planoId: null, vencimentoDia: null, cliente: CLIENTE_VAZIO };
+const RASCUNHO_VAZIO: Rascunho = { etapa: 0, ponto: null, cobertura: null, planoId: null, vencimentoDia: null, cliente: CLIENTE_VAZIO, autoEndereco: null };
 
 const mensagem = (err: unknown) => (err instanceof ApiError ? err.message : "Sem conexão com o servidor. Confira o sinal.");
 const reais = (v: number | null) => (v == null ? null : v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
@@ -285,17 +288,20 @@ function EtapaLocal({
         set({ cobertura: c, ponto: p, planoId: null });
         return;
       }
-      // O endereco da geocodificacao adianta o formulario; o que o vendedor ja digitou fica.
+      // O vendedor esta na casa do cliente: o endereco do ponto ja vem no cadastro,
+      // para ele so conferir. O que ele mesmo digitou nunca e trocado.
+      const { endereco, auto } = mesclarEndereco(r.cliente, r.autoEndereco, {
+        logradouro: c.local?.logradouro,
+        bairro: c.local?.bairro,
+        cidade: c.local?.cidade ?? c.cidade,
+        cep: c.local?.cep ?? q.cep,
+      });
       set({
         cobertura: c,
         ponto: p,
         planoId: c.planos.some((x) => x.plano_id === r.planoId) ? r.planoId : null,
-        cliente: {
-          ...r.cliente,
-          bairro: r.cliente.bairro || c.local?.bairro || "",
-          cidade: r.cliente.cidade || c.cidade || c.local?.cidade || "",
-          cep: r.cliente.cep || (q.cep ? mascararCep(q.cep) : ""),
-        },
+        cliente: { ...r.cliente, ...endereco },
+        autoEndereco: { ...r.autoEndereco, ...auto },
       });
     } catch (e) {
       setErro(mensagem(e));
@@ -408,6 +414,22 @@ function EtapaLocal({
               <p className="mt-1 text-sm text-destructive">Nenhum plano cadastrado para esta área no AtendAI.</p>
             )}
           </div>
+        </div>
+      )}
+
+      {leitura?.pode && (r.cliente.logradouro || r.cliente.cep) && (
+        <div className="flex flex-col gap-1 rounded-xl border border-border bg-card p-4">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Endereço encontrado no mapa</p>
+          <p className="font-semibold">
+            {[r.cliente.logradouro, r.cliente.bairro].filter(Boolean).join(" · ") || "Rua não identificada"}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {[r.cliente.cidade, r.cliente.cep && `CEP ${r.cliente.cep}`].filter(Boolean).join(" · ")}
+          </p>
+          {!r.cliente.cep && !!r.cobertura?.local?.candidatosCep?.length && (
+            <p className="text-sm font-semibold text-warning">Esta rua tem mais de um CEP. Você escolhe o certo na etapa 3.</p>
+          )}
+          <p className="text-sm">Confira com o cliente. Na etapa 3 você corrige o que o mapa errou e põe o número da casa.</p>
         </div>
       )}
 
@@ -609,26 +631,14 @@ function EtapaPlano({ r, set, onVoltar, onAvancar }: { r: Rascunho; set: (p: Par
 // 3. Cliente
 // ---------------------------------------------------------------------------
 
-function errosCliente(c: Cliente) {
-  const pj = soDigitos(c.documento).length === 14;
-  return {
-    nome: c.nome.trim().split(/\s+/).length < 2 ? "Nome e sobrenome." : null,
-    documento: erroDocumento(c.documento),
-    nascimento: pj ? null : erroNascimento(c.nascimento),
-    celular: erroCelular(c.celular),
-    email: c.email.trim() && !/^\S+@\S+\.\S+$/.test(c.email.trim()) ? "E-mail inválido." : null,
-    logradouro: c.logradouro.trim().length < 2 ? "Informe a rua." : null,
-    bairro: c.bairro.trim().length < 2 ? "Informe o bairro." : null,
-    cidade: c.cidade.trim().length < 2 ? "Informe a cidade." : null,
-    cep: c.cep && soDigitos(c.cep).length !== 8 ? "CEP com 8 números." : null,
-  };
-}
-
 function EtapaCliente({ r, setCliente, onVoltar, onAvancar }: { r: Rascunho; setCliente: (p: Partial<Cliente>) => void; onVoltar: () => void; onAvancar: () => void }) {
   const c = r.cliente;
   const erros = errosCliente(c);
   const pj = soDigitos(c.documento).length === 14;
-  const valido = Object.values(erros).every((e) => !e);
+  const falta = faltando(erros);
+  const candidatosCep = r.cobertura?.local?.candidatosCep ?? [];
+  // Campo ainda com o valor que o mapa pos: a vendedora so confere.
+  const doMapa = (k: keyof EnderecoMapa) => (c[k] && c[k] === r.autoEndereco?.[k] ? "Veio do mapa, confira." : undefined);
 
   return (
     <>
@@ -661,25 +671,48 @@ function EtapaCliente({ r, setCliente, onVoltar, onAvancar }: { r: Rascunho; set
           />
         )}
         <Campo id="pc-cel" label="Celular (WhatsApp)" value={c.celular} onChange={(v) => setCliente({ celular: mascararCelular(v) })} erro={erros.celular} inputMode="tel" autoComplete="tel-national" />
-        <Campo id="pc-email" label="E-mail" value={c.email} onChange={(v) => setCliente({ email: v })} erro={erros.email} inputMode="email" autoComplete="email" opcional />
+        <Campo id="pc-email" label="E-mail" value={c.email} onChange={(v) => setCliente({ email: v })} erro={erros.email} inputMode="email" autoComplete="email" />
       </fieldset>
 
-      <fieldset className="grid grid-cols-[minmax(0,1fr)_6.5rem] gap-4 border-t border-border pt-5">
-        <legend className="mb-1 pt-5 text-sm font-semibold uppercase tracking-wider text-muted-foreground">Endereço da instalação</legend>
-        <Campo id="pc-rua" label="Rua" value={c.logradouro} onChange={(v) => setCliente({ logradouro: v })} erro={erros.logradouro} autoComplete="address-line1" />
+      <fieldset className="grid grid-cols-[minmax(0,1fr)_6.5rem] gap-4">
+        <legend className="mb-4 w-full border-t border-border pt-5 text-sm font-semibold uppercase tracking-wider text-muted-foreground">Endereço da instalação</legend>
+        <Campo id="pc-rua" label="Rua" value={c.logradouro} onChange={(v) => setCliente({ logradouro: v })} erro={erros.logradouro} dica={doMapa("logradouro")} autoComplete="address-line1" />
         <Campo id="pc-num" label="Nº" value={c.numero} onChange={(v) => setCliente({ numero: v })} inputMode="numeric" placeholder="S/N" />
-        <Campo id="pc-bairro" label="Bairro" value={c.bairro} onChange={(v) => setCliente({ bairro: v })} erro={erros.bairro} className="col-span-2 sm:col-span-1" />
-        <Campo id="pc-cep" label="CEP" value={c.cep} onChange={(v) => setCliente({ cep: mascararCep(v) })} erro={erros.cep} inputMode="numeric" autoComplete="postal-code" dica="Em branco, o sistema busca pela rua." className="col-span-2 sm:col-span-1" />
-        <Campo id="pc-cidade" label="Cidade" value={c.cidade} onChange={(v) => setCliente({ cidade: v })} erro={erros.cidade} className="col-span-2" />
+        <Campo id="pc-bairro" label="Bairro" value={c.bairro} onChange={(v) => setCliente({ bairro: v })} erro={erros.bairro} dica={doMapa("bairro")} className="col-span-2 sm:col-span-1" />
+        <Campo id="pc-cep" label="CEP" value={c.cep} onChange={(v) => setCliente({ cep: mascararCep(v) })} erro={erros.cep} dica={doMapa("cep")} inputMode="numeric" autoComplete="postal-code" className="col-span-2 sm:col-span-1" />
+        {candidatosCep.length > 0 && soDigitos(c.cep).length !== 8 && (
+          <div className="col-span-2 flex flex-col gap-2 rounded-lg border border-warning/50 bg-warning/10 p-3">
+            <p className="text-sm font-semibold">Esta rua tem mais de um CEP. Toque no do cliente:</p>
+            <div className="flex flex-wrap gap-2">
+              {candidatosCep.map((x) => (
+                <button
+                  key={x.cep}
+                  type="button"
+                  onClick={() => setCliente({ cep: mascararCep(x.cep), ...(x.bairro ? { bairro: x.bairro } : {}) })}
+                  className="flex min-h-12 flex-col items-start justify-center rounded-lg border border-border bg-card px-3 text-left hover:bg-secondary"
+                >
+                  <span className="font-mono font-semibold">{mascararCep(x.cep)}</span>
+                  {x.bairro && <span className="text-xs text-muted-foreground">{x.bairro}</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <Campo id="pc-cidade" label="Cidade" value={c.cidade} onChange={(v) => setCliente({ cidade: v })} erro={erros.cidade} dica={doMapa("cidade")} className="col-span-2" />
         <Campo id="pc-comp" label="Complemento" value={c.complemento} onChange={(v) => setCliente({ complemento: v })} placeholder="Casa B, apto 102" opcional className="col-span-2" />
         <Campo id="pc-ref" label="Ponto de referência" value={c.referencia} onChange={(v) => setCliente({ referencia: v })} placeholder="Portão azul, ao lado da padaria" opcional className="col-span-2" />
       </fieldset>
 
+      {falta && (
+        <p className="text-sm text-muted-foreground" aria-live="polite">
+          Falta preencher: <span className="font-semibold text-foreground">{falta}</span>
+        </p>
+      )}
       <BarraAcao>
         <Button type="button" variant="outline" className="h-13 px-4" onClick={onVoltar} aria-label="Voltar">
           <ArrowLeft />
         </Button>
-        <Button type="button" variant="brand" className="h-13 flex-1 text-base" disabled={!valido} onClick={onAvancar}>
+        <Button type="button" variant="brand" className="h-13 flex-1 text-base" disabled={!!falta} onClick={onAvancar}>
           Revisar
         </Button>
       </BarraAcao>

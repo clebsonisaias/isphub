@@ -17,7 +17,15 @@ export interface CoberturaResposta {
   tratarComoCoberto: boolean;
   zona?: { id: string; nome: string } | null;
   cidade?: string | null;
-  local?: { bairro: string | null; cidade: string | null } | null;
+  /** Endereco do ponto (geocodificacao do AtendAI) — pre-preenche o cadastro. */
+  local?: {
+    bairro: string | null;
+    cidade: string | null;
+    logradouro?: string | null;
+    cep?: string | null;
+    /** A rua tem mais de um CEP e o bairro nao decidiu: a vendedora escolhe. */
+    candidatosCep?: { cep: string; bairro: string }[];
+  } | null;
   lat?: number | null;
   lng?: number | null;
   popId?: number | null;
