@@ -42,10 +42,17 @@
   "submit": {
     "production": {
       "android": {
+        "serviceAccountKeyPath": "/Users/clebson/.citmax-android/play-service-account.json",
         "track": "internal",
         "releaseStatus": "draft"
       },
-      "ios": {}
+      "ios": {
+        "ascAppId": "6781145807",
+        "appleTeamId": "N65RQHG95F",
+        "ascApiKeyPath": "/Users/clebson/.citmax-ios/AuthKey_Q8435H2NB4.p8",
+        "ascApiKeyId": "Q8435H2NB4",
+        "ascApiKeyIssuerId": "dd5df56b-440c-4143-ae03-d8ed0eaaec21"
+      }
     }
   }
 }

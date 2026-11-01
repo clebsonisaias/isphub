@@ -1,8 +1,8 @@
 {
   "expo": {
     "name": "ISPhub",
-    "slug": "isphub-tecnico",
-    "version": "1.0.0",
+    "slug": "citmax-equipe",
+    "version": "3.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/marca-icone-1024.png",
     "scheme": "isphub",
@@ -16,7 +16,7 @@
         ],
         "ITSAppUsesNonExemptEncryption": false
       },
-      "bundleIdentifier": "br.net.isphub.app",
+      "bundleIdentifier": "br.com.citmax.equipe",
       "supportsTablet": false
     },
     "android": {
@@ -26,7 +26,7 @@
         "monochromeImage": "./assets/images/marca-monocromatico.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "br.net.isphub.app",
+      "package": "br.com.citmax.equipe",
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
@@ -97,12 +97,12 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "43324a7a-92e3-42d7-8dbb-fd10f6bd7e2e"
+        "projectId": "3893d120-4cf8-495f-a975-d31ffa00d75d"
       }
     },
     "owner": "clebsonisaias",
     "updates": {
-      "url": "https://u.expo.dev/43324a7a-92e3-42d7-8dbb-fd10f6bd7e2e",
+      "url": "https://u.expo.dev/3893d120-4cf8-495f-a975-d31ffa00d75d",
       "fallbackToCacheTimeout": 10000
     },
     "runtimeVersion": {
