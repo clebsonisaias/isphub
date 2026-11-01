@@ -1,31 +1,34 @@
 {
   "expo": {
-    "name": "ISPhub Técnico",
+    "name": "ISPhub",
     "slug": "isphub-tecnico",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/marca-icone-1024.png",
     "scheme": "isphub",
     "//userInterfaceStyle": "Era 'automatic', mas a paleta em src/theme/tokens.ts e SO clara (alto contraste, pensada pra leitura sob sol) e nao existe useColorScheme em lugar nenhum — o app declarava que se adaptava ao tema do sistema e nao se adaptava, o que so causava incoerencia visual em aparelho no escuro. Fica 'light' ate existir uma paleta escura de verdade.",
     "userInterfaceStyle": "light",
     "ios": {
-      "icon": "./assets/expo.icon",
+      "icon": "./assets/images/marca-icone-1024.png",
       "infoPlist": {
         "UIBackgroundModes": [
           "remote-notification"
-        ]
-      }
+        ],
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "br.net.isphub.app",
+      "supportsTablet": false
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundImage": "./assets/images/marca-adaptativo-fundo.png",
+        "foregroundImage": "./assets/images/marca-adaptativo-frente.png",
+        "monochromeImage": "./assets/images/marca-monocromatico.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.clebsonisaias.isphubtecnico",
+      "package": "br.net.isphub.app",
       "permissions": [
+        "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.FOREGROUND_SERVICE",
@@ -45,9 +48,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "backgroundColor": "#5149DC",
+          "image": "./assets/images/marca-splash.png",
+          "imageWidth": 120
         }
       ],
       "expo-secure-store",
@@ -60,14 +63,14 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Permite escolher fotos da galeria pra enviar no chat interno.",
-          "cameraPermission": "Permite tirar fotos pra enviar no chat interno."
+          "photosPermission": "Permite escolher fotos da galeria para as evidências da ordem de serviço, para o chat e para a sua foto de perfil.",
+          "cameraPermission": "Permite tirar fotos das evidências da ordem de serviço, para o chat e para a sua foto de perfil."
         }
       ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Permite compartilhar sua localização atual no chat interno."
+          "locationWhenInUsePermission": "Usa sua localização para conferir a cobertura no endereço do cliente, mostrar a rota do dia e compartilhar onde você está no chat."
         }
       ],
       [
@@ -80,7 +83,7 @@
         "expo-notifications",
         {
           "//": "Icone monocromatico: o Android desenha a notificacao como silhueta na barra de status — um PNG colorido vira um quadrado branco.",
-          "icon": "./assets/images/android-icon-monochrome.png",
+          "icon": "./assets/images/marca-monocromatico.png",
           "color": "#4F46E5",
           "defaultChannel": "isphub-avisos"
         }

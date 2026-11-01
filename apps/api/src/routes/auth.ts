@@ -233,6 +233,45 @@ authRouter.post(
   }),
 );
 
+/** Uma sessao de painel por abertura do app ja basta; mais que isso por minuto e loop. */
+const sessaoWebLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.sub ?? ipKeyGenerator(req.ip ?? ""),
+  message: { error: "Muitas aberturas do painel em pouco tempo. Aguarde um instante." },
+});
+
+/**
+ * `POST /auth/sessao-web` — o app abre o painel web dentro dele (WebView) ja
+ * logado, com uma sessao PROPRIA.
+ *
+ * Por que nao reaproveitar o refresh do app: ele e rotativo, e um refresh ja
+ * queimado que volta fora da janela de graca e tratado como roubo (revoga TUDO
+ * do usuario). App e painel renovando o mesmo token derrubariam um ao outro.
+ * Com uma sessao separada cada lado rotaciona a sua; "sair de todos" continua
+ * derrubando as duas, como deve.
+ */
+authRouter.post(
+  "/sessao-web",
+  requireAuth,
+  sessaoWebLimiter,
+  asyncHandler(async (req, res) => {
+    const usuario = await prisma.usuario.findUnique({ where: { id: req.user!.sub } });
+    if (!usuario || !usuario.ativo) throw new HttpError(401, "Sessao encerrada. Entre novamente.");
+    const token = signToken({
+      sub: usuario.id,
+      email: usuario.email,
+      role: usuario.role as UsuarioPublic["role"],
+      provedorId: usuario.provedorId,
+      tv: usuario.tokenVersion,
+    });
+    const refreshToken = await emitirRefresh(usuario.id, contextoDaRequisicao(req));
+    res.json({ token, refreshToken, usuario: toPublic(usuario) });
+  }),
+);
+
 const recuperarSchema = z.object({ email: z.string().email() });
 const redefinirSchema = z.object({
   token: z.string().min(1).max(500),

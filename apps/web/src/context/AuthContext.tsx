@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { avisarApp } from "@/lib/modoApp";
 import type { UsuarioPublic } from "@isphub/shared";
 import {
   api,
@@ -39,6 +40,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     registrarPerdaDeSessao(() => setUsuario(null));
     return () => registrarPerdaDeSessao(null);
   }, []);
+
+  /*
+   * Dentro do app ISPhub: ficou sem usuario (saiu, sessao caiu, 401 ao abrir)?
+   * Avisa o app, que volta ao login nativo — o login do painel nao aparece la.
+   */
+  useEffect(() => {
+    if (!carregando && !usuario) avisarApp({ tipo: "saiu" });
+  }, [carregando, usuario]);
 
   useEffect(() => {
     async function restaurarSessao() {

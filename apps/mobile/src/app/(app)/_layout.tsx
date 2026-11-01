@@ -3,6 +3,7 @@ import { Redirect, Tabs } from "expo-router";
 import { ActivityIndicator, View } from "react-native";
 import type { ModuloId } from "@isphub/shared";
 import { useAuth } from "@/lib/auth";
+import { usaTelasNativas } from "@/lib/destino";
 import { useModulos } from "@/lib/config";
 import { useRealtime } from "@/lib/realtime";
 import { usePush } from "@/features/notificacoes/push-hook";
@@ -20,7 +21,7 @@ import { colors } from "@/theme/tokens";
 const TITULO_ABA: Partial<Record<string, string>> = { "chat-clientes": "Clientes" };
 
 export default function AppLayout() {
-  const { token, carregando } = useAuth();
+  const { token, usuario, carregando } = useAuth();
   const { modulos } = useModulos();
   useRealtime(); // canal SSE ao vivo enquanto o tecnico esta logado
   usePush(); // notificacao no aparelho — o unico canal que chega com o app fechado
@@ -35,6 +36,8 @@ export default function AppLayout() {
     );
   }
   if (!token) return <Redirect href="/login" />;
+  // Abas nativas sao do tecnico; vendedor, gestor, admin e atendente usam o painel.
+  if (!usaTelasNativas(usuario?.role)) return <Redirect href="/painel" />;
 
   const tabs = modulos.filter((m) => ROTAS_MODULO[m.id]);
   const habilitadas = new Set(tabs.map((m) => m.id));

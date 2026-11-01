@@ -11,12 +11,18 @@ import { limparBadge, obterTokenPush, registrarPush, rotaDoPush } from "@/lib/pu
  * leva pra tela certa quando o tecnico toca no aviso.
  *
  * Montar UMA vez, no layout de dentro da sessao.
+ *
+ * `aoTocar`: quem esta no painel (WebView) navega la dentro em vez de ir pra
+ * uma tela nativa. Sem ele, vale a rota nativa do tecnico (rotaDoPush).
  */
-export function usePush() {
+export function usePush(aoTocar?: (dados: unknown) => void) {
   const { token } = useAuth();
   const router = useRouter();
   const qc = useQueryClient();
   const jaRegistrou = useRef(false);
+  // Ref: trocar o callback a cada render nao pode re-registrar os listeners.
+  const aoTocarRef = useRef(aoTocar);
+  aoTocarRef.current = aoTocar;
 
   // Registro: uma vez por sessao. A API e idempotente, mas repetir a cada
   // render seria uma escrita no banco por render.
@@ -49,10 +55,15 @@ export function usePush() {
       qc.invalidateQueries({ queryKey: ["fila"] });
     });
 
-    // Toque no aviso: aqui sim navega — foi o usuario que pediu.
-    const aoTocar = Notifications.addNotificationResponseReceivedListener((resposta) => {
-      const rota = rotaDoPush(resposta.notification.request.content.data);
+    const navegar = (dados: unknown) => {
+      if (aoTocarRef.current) return aoTocarRef.current(dados);
+      const rota = rotaDoPush(dados);
       if (rota) router.push(rota as never);
+    };
+
+    // Toque no aviso: aqui sim navega — foi o usuario que pediu.
+    const aoTocarAviso = Notifications.addNotificationResponseReceivedListener((resposta) => {
+      navegar(resposta.notification.request.content.data);
       void limparBadge();
     });
 
@@ -60,13 +71,12 @@ export function usePush() {
     // caso — o evento aconteceu antes de existir componente pra escutar.
     void Notifications.getLastNotificationResponseAsync().then((resposta) => {
       if (!resposta) return;
-      const rota = rotaDoPush(resposta.notification.request.content.data);
-      if (rota) router.push(rota as never);
+      navegar(resposta.notification.request.content.data);
     });
 
     return () => {
       aoReceber.remove();
-      aoTocar.remove();
+      aoTocarAviso.remove();
     };
   }, [token, router, qc]);
 }

@@ -162,14 +162,15 @@ export default function Login() {
     ).start();
   }, [erro, reduzir, treme]);
 
-  if (token) return <Redirect href="/minhas-os" />;
+  // A porta de entrada (/) decide pelo papel: tecnico no nativo, o resto no painel.
+  if (token) return <Redirect href="/" />;
 
   async function entrar() {
     setErro(null);
     setEnviando(true);
     try {
       await login(email.trim(), senha);
-      router.replace("/minhas-os");
+      router.replace("/");
     } catch (e) {
       setErro(e instanceof ApiError ? e.message : "Falha ao conectar com o servidor");
     } finally {
