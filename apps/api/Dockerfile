@@ -55,4 +55,10 @@ WORKDIR /repo/apps/api
 
 EXPOSE 4000
 
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/seed.js && node dist/server.js"]
+# A migracao 20261029T220000_os_avaliacao_cliente falhou na primeira tentativa
+# em producao (01/11/2026) e o Prisma recusa qualquer migracao com uma falha
+# registrada (P3009) — a API ficou em loop de reinicio. Marcar como desfeita
+# antes do deploy deixa a versao idempotente dela rodar de novo. Depois que ela
+# estiver aplicada, o resolve so falha (e o `|| true` segue) — inofensivo.
+# ponytail: remover esta linha num deploy futuro, quando a migracao ja constar aplicada.
+CMD ["sh", "-c", "npx prisma migrate resolve --rolled-back 20261029T220000_os_avaliacao_cliente >/dev/null 2>&1 || true; npx prisma migrate deploy && node dist/seed.js && node dist/server.js"]
