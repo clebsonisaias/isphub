@@ -16,6 +16,7 @@ import { BrandLoader } from "@/components/BrandLoader";
 const RecuperarSenhaPage = lazy(() => import("@/pages/RecuperarSenhaPage").then((m) => ({ default: m.RecuperarSenhaPage })));
 const SmtpPage = lazy(() => import("@/pages/admin/SmtpPage").then((m) => ({ default: m.SmtpPage })));
 const RedefinirSenhaPage = lazy(() => import("@/pages/RedefinirSenhaPage").then((m) => ({ default: m.RedefinirSenhaPage })));
+const PrivacidadePage = lazy(() => import("@/pages/PrivacidadePage").then((m) => ({ default: m.PrivacidadePage })));
 const PainelPage = lazy(() => import("@/pages/PainelPage").then((m) => ({ default: m.PainelPage })));
 const OsPage = lazy(() => import("@/pages/OsPage").then((m) => ({ default: m.OsPage })));
 const RetiradasPage = lazy(() => import("@/pages/RetiradasPage").then((m) => ({ default: m.RetiradasPage })));
@@ -63,6 +64,7 @@ function App() {
                   <Route path="/login" element={<LoginPage />} />
                   <Route path="/recuperar-senha" element={<RecuperarSenhaPage />} />
                   <Route path="/redefinir-senha" element={<RedefinirSenhaPage />} />
+                  <Route path="/privacidade" element={<PrivacidadePage />} />
                   <Route
                     path="/"
                     element={

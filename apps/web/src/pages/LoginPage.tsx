@@ -374,6 +374,11 @@ export function LoginPage() {
               Esqueci minha senha
             </Link>
           </p>
+          <p className="mt-2 text-center text-xs">
+            <Link to="/privacidade" className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+              Política de privacidade
+            </Link>
+          </p>
         </div>
       </main>
     </div>
