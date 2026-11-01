@@ -6,6 +6,8 @@ import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import * as agenda from "../services/agendaService.js";
 import * as pc from "../services/preCadastroService.js";
+import { producaoDoVendedor } from "../services/producaoVendedorService.js";
+import { iniciarComCliente } from "../services/clienteAtendaiService.js";
 
 /**
  * Pre-cadastro do vendedor em campo. O vendedor so enxerga os PROPRIOS
@@ -133,6 +135,16 @@ preCadastroRouter.get(
   }),
 );
 
+/** `GET /pre-cadastro/producao` — o mes do vendedor: vendas, meta, nivel, sequencia e posicao. */
+preCadastroRouter.get(
+  "/producao",
+  asyncHandler(async (req, res) => {
+    const u = req.user!;
+    if (u.role !== UserRole.VENDEDOR || !u.provedorId) throw new HttpError(403, "A produção é do vendedor");
+    res.json(await producaoDoVendedor(u.sub, u.provedorId));
+  }),
+);
+
 /**
  * `GET /pre-cadastro/:id/os` — a OS de instalacao ja apareceu no SGP? Com ela,
  * devolve as proximas vagas da regiao. Uma consulta por chamada; a tela repete.
@@ -168,5 +180,40 @@ preCadastroRouter.post(
     await prisma.preCadastro.update({ where: { id: linha.id }, data: { status: "agendado" } });
     res.status(201).json({ dia, turno, agendamentoId: marcado.id });
     void agenda.enviarAoSgp(marcado.id);
+  }),
+);
+
+/**
+ * `POST /pre-cadastro/:id/conversa` — o vendedor fala com o cliente dele pelo
+ * WhatsApp oficial do provedor (AtendAI), sem precisar da OS espelhada. A
+ * conversa fica com ele: a caixa de "Clientes" do vendedor so mostra o que ele abriu.
+ */
+preCadastroRouter.post(
+  "/:id/conversa",
+  asyncHandler(async (req, res) => {
+    const { texto } = z.object({ texto: z.string().trim().max(1000).optional() }).parse(req.body ?? {});
+    const linha = await doUsuario(req, req.params.id!);
+    const provedor = await prisma.provedor.findUniqueOrThrow({ where: { id: linha.provedorId }, select: { nome: true } });
+    const os = linha.sgpOsId
+      ? await prisma.ordemServico.findUnique({
+          where: { provedorId_sgpOsId: { provedorId: linha.provedorId, sgpOsId: linha.sgpOsId } },
+          select: { id: true },
+        })
+      : null;
+    res.json(
+      await iniciarComCliente(
+        req.user!,
+        {
+          provedorId: linha.provedorId,
+          provedorNome: provedor.nome,
+          telefone: linha.celular,
+          clienteNome: linha.clienteNome,
+          numeroOs: linha.sgpOsId,
+          ordemServicoId: os?.id ?? null,
+          semCelular: "Este cadastro não tem um celular válido do cliente.",
+        },
+        texto,
+      ),
+    );
   }),
 );

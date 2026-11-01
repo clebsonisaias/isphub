@@ -82,6 +82,8 @@ export function ClientesChatPage() {
   const podeVerTudo = usuario?.role === UserRole.ADMIN || usuario?.role === UserRole.GESTOR;
   // Atendente so conversa pelo AtendAI, aberta pela OS — nao inicia por modelo nem assume da fila.
   const ehAtendente = usuario?.role === UserRole.ATENDENTE;
+  // Vendedor tambem nao inicia por modelo: abre a conversa pelo pre-cadastro do cliente dele.
+  const ehVendedor = usuario?.role === UserRole.VENDEDOR;
   // `?conversa=` vem do botao "Conversar com o cliente" da OS (abre em "todas":
   // a conversa nasce com dono, entao nao esta na fila).
   const [params, setParams] = useSearchParams();
@@ -211,7 +213,7 @@ export function ClientesChatPage() {
             ) : (
               <span className="flex-1 px-2 text-sm font-medium text-foreground">Minhas conversas</span>
             )}
-            {!ehAtendente && (
+            {!ehAtendente && !ehVendedor && (
               <Button variant="ghost" size="icon" title="Nova conversa" aria-label="Nova conversa" onClick={() => setNovaAberta(true)}>
                 <SquarePen />
               </Button>
@@ -227,7 +229,11 @@ export function ClientesChatPage() {
                 <EmptyState
                   className="m-3"
                   title="Nenhuma conversa ainda"
-                  description="Aqui aparecem as conversas que você mesmo iniciar por template. Toque no lápis para começar uma."
+                  description={
+                    ehVendedor
+                      ? "Aqui aparecem as conversas com os seus clientes. Abra uma pelo botão \"WhatsApp do cliente\", no fim do pré-cadastro."
+                      : "Aqui aparecem as conversas que você mesmo iniciar por template. Toque no lápis para começar uma."
+                  }
                 />
               )
             ) : (

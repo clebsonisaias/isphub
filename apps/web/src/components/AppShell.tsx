@@ -93,6 +93,22 @@ const NAV_ITEMS: {
     icon: CalendarPlus,
     ocultoPara: [UserRole.PROVEDOR, UserRole.TECNICO],
   },
+  // Vendedor: "Meu mes" (producao com meta e conquistas) so existe pra ele.
+  {
+    to: "/producao",
+    label: "Meu mês",
+    labelCurto: "Meu mês",
+    icon: Trophy,
+    ocultoPara: [UserRole.ADMIN, UserRole.GESTOR, UserRole.TECNICO, UserRole.PROVEDOR, UserRole.ATENDENTE],
+  },
+  // Vendedor: o perfil (foto, senha, telefone) vira aba da barra — os outros papeis o abrem pelo menu do avatar.
+  {
+    to: "/perfil",
+    label: "Meu perfil",
+    labelCurto: "Perfil",
+    icon: UserCircle,
+    ocultoPara: [UserRole.ADMIN, UserRole.GESTOR, UserRole.TECNICO, UserRole.PROVEDOR, UserRole.ATENDENTE],
+  },
   {
     to: "/pre-cadastro",
     label: "Pré-cadastro",
@@ -230,7 +246,11 @@ const NAV_ITEMS: {
 /** O que a atendente ve na barra: lista de permissao, nao de exclusao. */
 const NAV_ATENDENTE = new Set(["/", "/marcar-visita", "/agenda"]);
 /** Vendedor: so o pre-cadastro (a API fecha o resto pra ele). */
-const NAV_VENDEDOR = new Set(["/pre-cadastro"]);
+/**
+ * Vendedor: pre-cadastro, os dois chats e o perfil. A tela dele e fixa pelo
+ * papel, entao nao depende do liga/desliga de modulos (feito para a equipe).
+ */
+const NAV_VENDEDOR = new Set(["/pre-cadastro", "/producao", "/chat-clientes", "/chat", "/perfil"]);
 
 /**
  * As abas FIXAS da barra do rodape no celular vem de `fixosRodapeDoPapel`
@@ -752,7 +772,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           : usuario.role === UserRole.VENDEDOR
             ? NAV_VENDEDOR.has(item.to)
             : !item.ocultoPara.includes(usuario.role)) &&
-        (!item.modulo || modulosHabilitados.has(item.modulo)),
+        (usuario.role === UserRole.VENDEDOR || !item.modulo || modulosHabilitados.has(item.modulo)),
     );
     if (usuario?.role === UserRole.ADMIN) {
       base.push({

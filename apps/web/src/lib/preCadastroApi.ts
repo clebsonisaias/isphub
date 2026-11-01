@@ -86,6 +86,8 @@ export const preCadastroApi = {
   enviar: (f: FormularioEnvio, provedorId?: string | null) => api.post<PreCadastro>("/pre-cadastro", { ...f, ...(provedorId ? { provedorId } : {}) }),
   listar: () => api.get<PreCadastro[]>("/pre-cadastro"),
   os: (id: string) => api.get<BuscaOs>(`/pre-cadastro/${id}/os`),
+  /** Abre (ou retoma) a conversa com o cliente pelo WhatsApp oficial do provedor. */
+  conversa: (id: string) => api.post<{ conversaId: string }>(`/pre-cadastro/${id}/conversa`, {}),
   agendar: (id: string, dia: string, turno: TurnoAgenda) =>
     api.post<{ dia: string; turno: TurnoAgenda }>(`/pre-cadastro/${id}/agendar`, { dia, turno }),
 };

@@ -3,7 +3,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MapContainer, Marker, useMap } from "react-leaflet";
-import { ArrowLeft, Check, CheckCircle2, Copy, Crosshair, Loader2, MapPin, RotateCcw, Search, TriangleAlert, XCircle } from "lucide-react";
+import { ArrowLeft, Check, CheckCircle2, Copy, Crosshair, Loader2, MapPin, MessageCircle, RotateCcw, Search, TriangleAlert, XCircle } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { ROTULO_TURNO, UserRole, type TurnoAgenda } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
 import { AnimatedPage } from "@/components/AnimatedPage";
@@ -950,6 +951,9 @@ function EtapaAgendar({ pc, onNovo }: { pc: PreCadastro; onNovo: () => void }) {
             O cadastro foi feito. Quando a OS de instalação aparecer, o robô de agendamento manda as datas para o WhatsApp do cliente. Você também pode tentar
             de novo daqui a pouco, em "Enviados sem visita marcada".
           </p>
+          <div className="flex">
+            <BotaoConversa pc={pc} />
+          </div>
           <BarraAcao>
             <Button type="button" variant="outline" className="h-13 flex-1" onClick={() => setTentativa(0)}>
               <RotateCcw /> Procurar de novo
@@ -1006,6 +1010,30 @@ function EtapaAgendar({ pc, onNovo }: { pc: PreCadastro; onNovo: () => void }) {
   );
 }
 
+/** Fala com o cliente pelo WhatsApp oficial do provedor e abre a conversa em "Clientes". */
+function BotaoConversa({ pc }: { pc: PreCadastro }) {
+  const { toast } = useToast();
+  const navigate = useNavigate();
+  const [abrindo, setAbrindo] = useState(false);
+  async function abrir() {
+    setAbrindo(true);
+    try {
+      const { conversaId } = await preCadastroApi.conversa(pc.id);
+      navigate(`/chat-clientes?conversa=${conversaId}`);
+    } catch (e) {
+      toast({ titulo: "Não deu para abrir a conversa", descricao: mensagem(e), variante: "erro" });
+    } finally {
+      setAbrindo(false);
+    }
+  }
+  return (
+    <Button type="button" variant="outline" className="h-13 flex-1" disabled={abrindo} onClick={() => void abrir()}>
+      {abrindo ? <Loader2 className="animate-spin" /> : <MessageCircle />}
+      {abrindo ? "Abrindo…" : "WhatsApp do cliente"}
+    </Button>
+  );
+}
+
 /** O fim: o que o vendedor mostra ao cliente antes de ir embora. */
 function Comprovante({ pc, visita, onNovo }: { pc: PreCadastro; visita: { dia: string; turno: TurnoAgenda } | null; onNovo: () => void }) {
   const { toast } = useToast();
@@ -1052,6 +1080,7 @@ function Comprovante({ pc, visita, onNovo }: { pc: PreCadastro; visita: { dia: s
         </div>
       </div>
       <BarraAcao>
+        <BotaoConversa pc={pc} />
         <Button type="button" variant="brand" className="h-13 flex-1 text-base" onClick={onNovo}>
           Novo cadastro
         </Button>

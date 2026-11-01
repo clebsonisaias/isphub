@@ -34,6 +34,7 @@ const AgendaPage = lazy(() => import("@/pages/AgendaPage").then((m) => ({ defaul
 const DespachoPage = lazy(() => import("@/pages/DespachoPage").then((m) => ({ default: m.DespachoPage })));
 const MarcarVisitaPage = lazy(() => import("@/pages/MarcarVisitaPage").then((m) => ({ default: m.MarcarVisitaPage })));
 const PreCadastroPage = lazy(() => import("@/pages/PreCadastroPage").then((m) => ({ default: m.PreCadastroPage })));
+const ProducaoVendedorPage = lazy(() => import("@/pages/ProducaoVendedorPage").then((m) => ({ default: m.ProducaoVendedorPage })));
 const FrotaBiPage = lazy(() => import("@/pages/FrotaBiPage").then((m) => ({ default: m.FrotaBiPage })));
 const ProdutividadePage = lazy(() => import("@/pages/ProdutividadePage").then((m) => ({ default: m.ProdutividadePage })));
 const FrotaMapaPage = lazy(() => import("@/pages/FrotaMapaPage").then((m) => ({ default: m.FrotaMapaPage })));
@@ -215,6 +216,15 @@ function App() {
                       </RequireAuth>
                     }
                   />
+                  {/* Meu mes: a producao do vendedor, com meta, nivel e conquistas. */}
+                  <Route
+                    path="/producao"
+                    element={
+                      <RequireAuth roles={[UserRole.VENDEDOR]}>
+                        <ProducaoVendedorPage />
+                      </RequireAuth>
+                    }
+                  />
                   {/* Pre-cadastro: o vendedor em campo cadastra e agenda a instalacao na hora. */}
                   <Route
                     path="/pre-cadastro"
@@ -303,6 +313,7 @@ function App() {
                           UserRole.ADMIN,
                           UserRole.GESTOR,
                           UserRole.TECNICO,
+                          UserRole.VENDEDOR,
                         ]}
                       >
                         <ChatPage />
@@ -318,6 +329,7 @@ function App() {
                           UserRole.GESTOR,
                           UserRole.TECNICO,
                           UserRole.ATENDENTE,
+                          UserRole.VENDEDOR,
                         ]}
                       >
                         <ClientesChatPage />

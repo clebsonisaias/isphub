@@ -332,7 +332,11 @@ export function PerfilPage() {
         <Card>
           <CardHeader>
             <CardTitle>Trocar senha</CardTitle>
-            <CardDescription>Você precisa da sua senha atual para definir uma nova.</CardDescription>
+            <CardDescription>
+              Você precisa da sua senha atual para definir uma nova. Esqueceu? Em "Esqueci minha senha", no login, o link
+              chega no seu e-mail de acesso: <span className="font-semibold text-foreground">{usuario.email}</span>. Para
+              trocar esse e-mail, fale com o administrador.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleTrocarSenha} className="flex flex-col gap-4">

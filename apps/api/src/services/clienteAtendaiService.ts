@@ -112,17 +112,50 @@ export async function iniciarComClienteDaOs(user: JwtPayload, osId: string, text
   if (!os) throw new HttpError(404, "OS não encontrada");
   if (!podeAcessarOs(user, os)) throw new HttpError(403, "Você não tem acesso a esta OS");
 
-  const telefone = telefoneDaOs(os.telefone);
-  if (!telefone) throw new HttpError(409, "Esta OS não tem um celular válido do cliente. Ligue ou atualize o cadastro no SGP.");
+  return iniciarComCliente(
+    user,
+    {
+      provedorId: os.provedorId,
+      provedorNome: os.provedor.nome,
+      telefone: os.telefone,
+      clienteNome: os.clienteNome,
+      numeroOs: os.numero ?? os.sgpOsId,
+      ordemServicoId: os.id,
+      semCelular: "Esta OS não tem um celular válido do cliente. Ligue ou atualize o cadastro no SGP.",
+    },
+    texto,
+  );
+}
+
+/** Para quem falar: o cliente, o provedor dele e (se houver) a OS que motivou a conversa. */
+export interface AlvoConversaCliente {
+  provedorId: string;
+  provedorNome: string;
+  telefone: string | null;
+  clienteNome: string | null;
+  numeroOs: string | null;
+  /** Nulo quando a conversa nasce fora de uma OS (ex.: o vendedor no pre-cadastro). */
+  ordemServicoId: string | null;
+  /** O erro quando o telefone nao serve — cada origem explica de um jeito. */
+  semCelular: string;
+}
+
+/**
+ * Abre (ou retoma) a conversa com o cliente pelo canal do provedor no AtendAI.
+ * Quem chama ja conferiu que o usuario pode falar com esse cliente.
+ */
+export async function iniciarComCliente(user: JwtPayload, alvo: AlvoConversaCliente, texto?: string): Promise<{ conversaId: string }> {
+  const telefone = telefoneDaOs(alvo.telefone);
+  if (!telefone) throw new HttpError(409, alvo.semCelular);
 
   const cfg = await prisma.atendaiConfig.findUnique({
-    where: { provedorId: os.provedorId },
+    where: { provedorId: alvo.provedorId },
     select: { ativo: true, canalClientesId: true },
   });
   if (!cfg?.ativo || !cfg.canalClientesId) {
     throw new HttpError(
       409,
-      `A ${os.provedor.nome} ainda não definiu por qual WhatsApp saem as conversas com o cliente. Um supervisor escolhe em Provedores > ${os.provedor.nome} > AtendAI.`,
+      `A ${alvo.provedorNome} ainda não definiu por qual WhatsApp saem as conversas com o cliente. Um supervisor escolhe em Provedores > ${alvo.provedorNome} > AtendAI.`,
     );
   }
   const canalId = cfg.canalClientesId;
@@ -130,27 +163,27 @@ export async function iniciarComClienteDaOs(user: JwtPayload, osId: string, text
   const chave = { telefone_canal_canalRef: { telefone, canal: CanalWhatsapp.ATENDAI, canalRef: canalId } };
   const existente = await prisma.conversaCliente.findUnique({ where: chave, select: { id: true, arquivada: true, agenteId: true } });
   if (existente && !existente.arquivada && existente.agenteId === user.sub && !texto?.trim()) {
-    await prisma.conversaCliente.update({ where: { id: existente.id }, data: { ordemServicoId: os.id } });
+    if (alvo.ordemServicoId) await prisma.conversaCliente.update({ where: { id: existente.id }, data: { ordemServicoId: alvo.ordemServicoId } });
     return { conversaId: existente.id };
   }
 
-  const cred = await credencialOuErro(os.provedorId);
+  const cred = await credencialOuErro(alvo.provedorId);
   const autor = await prisma.usuario.findUniqueOrThrow({ where: { id: user.sub }, select: { id: true, nome: true, role: true } });
   const corpo =
     texto?.trim() ||
-    saudacao({ cliente: os.clienteNome, autor: autor.nome, role: autor.role, provedor: os.provedor.nome, numeroOs: os.numero ?? os.sgpOsId });
+    saudacao({ cliente: alvo.clienteNome, autor: autor.nome, role: autor.role, provedor: alvo.provedorNome, numeroOs: alvo.numeroOs });
 
   let r: { conversaId: string; envio: "texto" | "template"; mensagemId: string };
   try {
-    await cadastrarNoAtendai(cred, os.provedorId, autor);
+    await cadastrarNoAtendai(cred, alvo.provedorId, autor);
     r = await chamar(cred, "POST", "/atendimentos", {
       canalId,
       telefone,
-      nomeContato: os.clienteNome ?? undefined,
+      nomeContato: alvo.clienteNome ?? undefined,
       deIdExterno: autor.id,
       texto: corpo,
       // So usado pela Meta fora da janela de 24h; o Evolution manda o texto.
-      template: { nome: MODELO_PRIMEIRO_CONTATO, parametros: [os.clienteNome?.trim().split(/\s+/)[0] || "cliente", autor.nome] },
+      template: { nome: MODELO_PRIMEIRO_CONTATO, parametros: [alvo.clienteNome?.trim().split(/\s+/)[0] || "cliente", autor.nome] },
     });
   } catch (e) {
     erroDoAtendai(e);
@@ -163,18 +196,25 @@ export async function iniciarComClienteDaOs(user: JwtPayload, osId: string, text
       telefone,
       canal: CanalWhatsapp.ATENDAI,
       canalRef: canalId,
-      nomeContato: os.clienteNome,
+      nomeContato: alvo.clienteNome,
       agenteId: user.sub,
       iniciadaPorId: user.sub,
       origem: OrigemConversaCliente.SAIDA,
       ultimaMensagemEm: agora,
       atendaiConversaId: r.conversaId,
-      provedorId: os.provedorId,
-      ordemServicoId: os.id,
+      provedorId: alvo.provedorId,
+      ordemServicoId: alvo.ordemServicoId,
     },
     // Quem clicou passa a atender (abriu pela OS em que trabalha). `iniciadaPorId`
     // fica: quem abriu antes continua vendo a conversa dele.
-    update: { arquivada: false, agenteId: user.sub, atendaiConversaId: r.conversaId, ordemServicoId: os.id, ultimaMensagemEm: agora },
+    // Sem OS (pre-cadastro), a ligacao que a conversa ja tinha fica.
+    update: {
+      arquivada: false,
+      agenteId: user.sub,
+      atendaiConversaId: r.conversaId,
+      ...(alvo.ordemServicoId ? { ordemServicoId: alvo.ordemServicoId } : {}),
+      ultimaMensagemEm: agora,
+    },
     select: { id: true },
   });
   const mensagem = await prisma.mensagemCliente.create({

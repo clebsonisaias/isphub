@@ -97,6 +97,13 @@ const PERMITIDO_VENDEDOR: [RegExp, RegExp][] = [
   // `eventos`: o SSE e por usuario (so o que e dele); sem ele a casca do app reconecta em loop.
   [/^GET$/, /^\/(hora|config|eventos)(\/|$)/],
   [/./, /^\/pre-cadastro(\/|$)/],
+  // Chat interno da equipe (grupo e avisos ja exigem gestao na propria rota).
+  [/./, /^\/chat(\/|$)/],
+  // Chat com o cliente: as mesmas rotas da atendente — ler, responder e encerrar
+  // as conversas DELE (o escopo fica no servico). Iniciar conversa com numero
+  // avulso (template pago) fica fechado: ele abre pelo pre-cadastro do cliente.
+  [/^GET$/, /^\/chat-clientes\/(conversas|conversas\/[^/]+\/mensagens|mensagens\/[^/]+\/anexo)$/],
+  [/^POST$/, /^\/chat-clientes\/conversas\/[^/]+\/(mensagens|encerrar)$/],
 ];
 
 export function vendedorPode(metodo: string, url: string): boolean {

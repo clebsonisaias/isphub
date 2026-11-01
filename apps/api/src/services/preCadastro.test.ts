@@ -115,6 +115,19 @@ describe("vendedor: só o pré-cadastro", () => {
     expect(vendedorPode("POST", "/pre-cadastro/abc/agendar")).toBe(true);
     expect(vendedorPode("POST", "/auth/login")).toBe(true);
     expect(vendedorPode("GET", "/eventos")).toBe(true);
+    expect(vendedorPode("POST", "/pre-cadastro/abc/conversa")).toBe(true);
+  });
+  it("chats: o interno inteiro e, no de clientes, só as conversas dele", () => {
+    expect(vendedorPode("GET", "/chat/conversas")).toBe(true);
+    expect(vendedorPode("POST", "/chat/conversas/abc/mensagens")).toBe(true);
+    expect(vendedorPode("GET", "/chat-clientes/conversas?filtro=todas")).toBe(true);
+    expect(vendedorPode("GET", "/chat-clientes/conversas/abc/mensagens")).toBe(true);
+    expect(vendedorPode("POST", "/chat-clientes/conversas/abc/mensagens")).toBe(true);
+    expect(vendedorPode("POST", "/chat-clientes/conversas/abc/encerrar")).toBe(true);
+    // template pago para numero avulso, assumir e transferir: fechados
+    expect(vendedorPode("POST", "/chat-clientes/conversas")).toBe(false);
+    expect(vendedorPode("POST", "/chat-clientes/conversas/abc/assumir")).toBe(false);
+    expect(vendedorPode("POST", "/chat-clientes/conversas/abc/transferir")).toBe(false);
   });
   it("fila, OS, agenda e administração ficam fechadas", () => {
     expect(vendedorPode("GET", "/fila")).toBe(false);
