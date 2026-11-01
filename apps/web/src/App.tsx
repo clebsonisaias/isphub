@@ -33,6 +33,7 @@ const EscalaPage = lazy(() => import("@/pages/EscalaPage").then((m) => ({ defaul
 const AgendaPage = lazy(() => import("@/pages/AgendaPage").then((m) => ({ default: m.AgendaPage })));
 const DespachoPage = lazy(() => import("@/pages/DespachoPage").then((m) => ({ default: m.DespachoPage })));
 const MarcarVisitaPage = lazy(() => import("@/pages/MarcarVisitaPage").then((m) => ({ default: m.MarcarVisitaPage })));
+const PreCadastroPage = lazy(() => import("@/pages/PreCadastroPage").then((m) => ({ default: m.PreCadastroPage })));
 const FrotaBiPage = lazy(() => import("@/pages/FrotaBiPage").then((m) => ({ default: m.FrotaBiPage })));
 const ProdutividadePage = lazy(() => import("@/pages/ProdutividadePage").then((m) => ({ default: m.ProdutividadePage })));
 const FrotaMapaPage = lazy(() => import("@/pages/FrotaMapaPage").then((m) => ({ default: m.FrotaMapaPage })));
@@ -211,6 +212,15 @@ function App() {
                     element={
                       <RequireAuth roles={[UserRole.ADMIN, UserRole.GESTOR]}>
                         <DespachoPage />
+                      </RequireAuth>
+                    }
+                  />
+                  {/* Pre-cadastro: o vendedor em campo cadastra e agenda a instalacao na hora. */}
+                  <Route
+                    path="/pre-cadastro"
+                    element={
+                      <RequireAuth roles={[UserRole.ADMIN, UserRole.GESTOR, UserRole.VENDEDOR]}>
+                        <PreCadastroPage />
                       </RequireAuth>
                     }
                   />

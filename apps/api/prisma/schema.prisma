@@ -18,6 +18,7 @@ enum UserRole {
   tecnico
   provedor
   atendente
+  vendedor
 }
 
 enum ErpTipo {
@@ -81,6 +82,7 @@ model Provedor {
   agendamentos       Agendamento[]
   agendamentoEventos AgendamentoEvento[]
   ofertasAgenda      OfertaAgenda[]
+  preCadastros       PreCadastro[]
   /// Lancamentos em que este provedor e a CONTRAPARTE (quem deve a hub).
   /// Diferente de todas as relacoes acima: nao e particao multi-tenant.
   lancamentos        Lancamento[]
@@ -455,6 +457,7 @@ model Usuario {
   osComoApoio   OrdemServico[] @relation("OsApoio")
   eventos       OsEvento[]
   notificacoes  Notificacao[]
+  preCadastros  PreCadastro[]
   tecnicosSgp   TecnicoSgp[]
 
   conversasCriadas  Conversa[]             @relation("ConversasCriadas")
@@ -2423,6 +2426,38 @@ model TecnicoSgp {
 /// Chave `(provedorId, sgpOsId)` e nao a OS espelhada, pelo mesmo motivo do `Agendamento`: o
 /// AtendAI abre e marca antes de o sync trazer a OS. Por isso nao e `OsEvento` (que exige a OS
 /// espelhada e autor `Usuario`).
+/// Pre-cadastro feito pelo vendedor em campo. O cadastro em si mora no SGP (via
+/// AtendAI); aqui fica o rastro: quem vendeu, o contrato, a OS de instalacao e
+/// se a visita ja saiu agendada. Sem CPF de proposito — o SGP ja guarda, e o
+/// ISPhub nao precisa dele pra nada.
+model PreCadastro {
+  id            String   @id @default(uuid())
+  provedorId    String
+  provedor      Provedor @relation(fields: [provedorId], references: [id], onDelete: Cascade)
+  vendedorId    String
+  vendedor      Usuario  @relation(fields: [vendedorId], references: [id], onDelete: Cascade)
+  clienteNome   String
+  celular       String?
+  cidade        String?
+  bairro        String?
+  plano         String?
+  vencimentoDia Int?
+  contratoId    String?
+  protocolo     String?
+  /// OS de instalacao que o SGP abriu junto com o contrato. Nulo ate ela aparecer.
+  sgpOsId       String?
+  /// POP da OS — a regiao do teto regional da agenda.
+  regiao        String?
+  /// enviado | os_encontrada | agendado
+  status        String   @default("enviado")
+  criadoEm      DateTime @default(now())
+  atualizadoEm  DateTime @updatedAt
+
+  @@index([provedorId, criadoEm])
+  @@index([vendedorId, criadoEm])
+  @@map("pre_cadastros")
+}
+
 /// O robo de agendamento oferecendo datas ao cliente de uma OS, por WhatsApp.
 /// Mesma chave do `Agendamento` — a OS pode ainda nao estar espelhada.
 model OfertaAgenda {

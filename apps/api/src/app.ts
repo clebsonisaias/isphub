@@ -26,6 +26,7 @@ import { horaRouter } from "./routes/hora.js";
 import { configRouter, adminModulosRouter } from "./routes/config.js";
 import { eventosRouter } from "./routes/eventos.js";
 import { agendaRouter, adminAgendaRouter } from "./routes/agenda.js";
+import { preCadastroRouter } from "./routes/preCadastro.js";
 import { parceiroAgendaRouter } from "./routes/parceiroAgenda.js";
 import { planilhaReceberRouter } from "./routes/planilhaReceber.js";
 import { atendaiChatWebhookRouter } from "./routes/atendaiChatWebhook.js";
@@ -125,6 +126,7 @@ export function createApp() {
   app.use("/config", configRouter);
   app.use("/admin/modulos", adminModulosRouter);
   app.use("/agenda", agendaRouter);
+  app.use("/pre-cadastro", preCadastroRouter);
   /*
    * Porta de sistemas PARCEIROS (o AtendAI do provedor). Versionada e sob
    * /api/parceiro porque e contrato com outro deploy: as rotas internas podem

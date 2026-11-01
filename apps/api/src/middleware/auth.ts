@@ -53,6 +53,9 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
   if (payload.role === UserRole.ATENDENTE && !atendentePode(req.method, req.originalUrl)) {
     return next(new HttpError(403, "Atendente nao tem acesso a este recurso"));
   }
+  if (payload.role === UserRole.VENDEDOR && !vendedorPode(req.method, req.originalUrl)) {
+    return next(new HttpError(403, "Vendedor nao tem acesso a este recurso"));
+  }
   tocarPresenca(payload.sub);
   next();
 }
@@ -81,6 +84,24 @@ const PERMITIDO_ATENDENTE: [RegExp, RegExp][] = [
 export function atendentePode(metodo: string, url: string): boolean {
   const caminho = url.split("?")[0]!;
   return PERMITIDO_ATENDENTE.some(([m, c]) => m.test(metodo) && c.test(caminho));
+}
+
+/**
+ * O que o VENDEDOR alcanca — so o pre-cadastro (que ja agenda a instalacao) e o
+ * basico da sessao. Agenda, fila e OS ficam fechadas: ele agenda pela rota do
+ * proprio pre-cadastro, nunca em OS de outro.
+ */
+const PERMITIDO_VENDEDOR: [RegExp, RegExp][] = [
+  [/./, /^\/auth(\/|$)/],
+  [/./, /^\/notificacoes(\/|$)/],
+  // `eventos`: o SSE e por usuario (so o que e dele); sem ele a casca do app reconecta em loop.
+  [/^GET$/, /^\/(hora|config|eventos)(\/|$)/],
+  [/./, /^\/pre-cadastro(\/|$)/],
+];
+
+export function vendedorPode(metodo: string, url: string): boolean {
+  const caminho = url.split("?")[0]!;
+  return PERMITIDO_VENDEDOR.some(([m, c]) => m.test(metodo) && c.test(caminho));
 }
 
 /**

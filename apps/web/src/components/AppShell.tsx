@@ -42,6 +42,7 @@ import {
   CalendarClock,
   CalendarDays,
   CalendarPlus,
+  UserPlus,
   Route,
 } from "lucide-react";
 
@@ -91,6 +92,13 @@ const NAV_ITEMS: {
     labelCurto: "Marcar",
     icon: CalendarPlus,
     ocultoPara: [UserRole.PROVEDOR, UserRole.TECNICO],
+  },
+  {
+    to: "/pre-cadastro",
+    label: "Pré-cadastro",
+    labelCurto: "Vender",
+    icon: UserPlus,
+    ocultoPara: [UserRole.PROVEDOR, UserRole.TECNICO, UserRole.ATENDENTE],
   },
   { to: "/mapa", label: "Mapa", icon: Map, ocultoPara: [] },
   {
@@ -221,6 +229,8 @@ const NAV_ITEMS: {
 
 /** O que a atendente ve na barra: lista de permissao, nao de exclusao. */
 const NAV_ATENDENTE = new Set(["/", "/marcar-visita", "/agenda"]);
+/** Vendedor: so o pre-cadastro (a API fecha o resto pra ele). */
+const NAV_VENDEDOR = new Set(["/pre-cadastro"]);
 
 /**
  * As abas FIXAS da barra do rodape no celular vem de `fixosRodapeDoPapel`
@@ -737,7 +747,11 @@ export function AppShell({ children }: { children: ReactNode }) {
       (item) =>
         !!usuario &&
         // Atendente: lista de PERMISSAO (Painel e Agenda). Item novo nao aparece pra ela por engano.
-        (usuario.role === UserRole.ATENDENTE ? NAV_ATENDENTE.has(item.to) : !item.ocultoPara.includes(usuario.role)) &&
+        (usuario.role === UserRole.ATENDENTE
+          ? NAV_ATENDENTE.has(item.to)
+          : usuario.role === UserRole.VENDEDOR
+            ? NAV_VENDEDOR.has(item.to)
+            : !item.ocultoPara.includes(usuario.role)) &&
         (!item.modulo || modulosHabilitados.has(item.modulo)),
     );
     if (usuario?.role === UserRole.ADMIN) {

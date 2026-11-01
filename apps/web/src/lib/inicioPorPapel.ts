@@ -13,6 +13,7 @@ const INICIO: Partial<Record<UserRole, string>> = {
   [UserRole.ADMIN]: "/despacho",
   [UserRole.GESTOR]: "/despacho",
   [UserRole.ATENDENTE]: "/marcar-visita",
+  [UserRole.VENDEDOR]: "/pre-cadastro",
 };
 
 /** A tela de trabalho do papel. Técnico e provedor: o Painel (as OS dele). */
@@ -33,6 +34,7 @@ const ORDEM: Partial<Record<UserRole, string[]>> = {
   [UserRole.ADMIN]: DESPACHO,
   [UserRole.GESTOR]: DESPACHO,
   [UserRole.ATENDENTE]: ["/marcar-visita", "/agenda", "/"],
+  [UserRole.VENDEDOR]: ["/pre-cadastro"],
 };
 
 /** Itens do menu na ordem do trabalho do papel; o que não está na lista mantém a ordem original, no fim. */
@@ -51,6 +53,7 @@ const FIXOS: Partial<Record<UserRole, string[]>> = {
   [UserRole.ADMIN]: ["/despacho", "/", "/agenda", "/mapa", "/chat"],
   [UserRole.GESTOR]: ["/despacho", "/", "/agenda", "/mapa", "/chat"],
   [UserRole.ATENDENTE]: ["/marcar-visita", "/agenda", "/"],
+  [UserRole.VENDEDOR]: ["/pre-cadastro"],
 };
 
 /** Abas fixas da barra do celular, em ordem de preferência (ficam as que o perfil enxerga). */

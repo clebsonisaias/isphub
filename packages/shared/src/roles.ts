@@ -14,6 +14,12 @@ export enum UserRole {
    * `atendentePode` (middleware/auth.ts) responde 403 por padrao.
    */
   ATENDENTE = "atendente",
+  /**
+   * Vendedor do provedor, em campo: faz o pre-cadastro do cliente e agenda a
+   * instalacao na hora — mais nada. Mesma negacao por padrao do atendente
+   * (`vendedorPode` em middleware/auth.ts).
+   */
+  VENDEDOR = "vendedor",
 }
 
 export const ALL_ROLES: UserRole[] = [
@@ -22,6 +28,7 @@ export const ALL_ROLES: UserRole[] = [
   UserRole.TECNICO,
   UserRole.PROVEDOR,
   UserRole.ATENDENTE,
+  UserRole.VENDEDOR,
 ];
 
 /** Papeis com acesso a visao unificada (todos os provedores). */
@@ -33,9 +40,10 @@ export const USER_ROLE_LABEL: Record<UserRole, string> = {
   [UserRole.TECNICO]: "Tecnico",
   [UserRole.PROVEDOR]: "Provedor",
   [UserRole.ATENDENTE]: "Atendente",
+  [UserRole.VENDEDOR]: "Vendedor",
 };
 
 /** Papeis presos a UM provedor (provedorId obrigatorio): so enxergam o dele. */
 export function escopadoPorProvedor(role: UserRole | string): boolean {
-  return role === UserRole.PROVEDOR || role === UserRole.ATENDENTE;
+  return role === UserRole.PROVEDOR || role === UserRole.ATENDENTE || role === UserRole.VENDEDOR;
 }
