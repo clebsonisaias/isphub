@@ -57,7 +57,8 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "Permite gravar áudios pra enviar no chat interno."
+          "microphonePermission": "Permite gravar áudios pra enviar no chat interno.",
+          "enableBackgroundPlayback": false
         }
       ],
       [
