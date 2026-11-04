@@ -217,11 +217,9 @@ export async function tratarRespostaConfirmacao(
       },
     });
 
-    emitParaTodos("agendamento:confirmado", {
-      id: agendamento.id,
-      sgpOsId: agendamento.sgpOsId,
-      dia: agendamento.dia,
-      turno: agendamento.turno,
+    emitParaTodos({
+      tipo: "os-alterada",
+      em: new Date().toISOString(),
     });
 
     if (agendamento.ordemServicoId) {
@@ -256,11 +254,9 @@ export async function tratarRespostaConfirmacao(
       },
     });
 
-    emitParaTodos("agendamento:reagendamento_solicitado", {
-      id: agendamento.id,
-      sgpOsId: agendamento.sgpOsId,
-      dia: agendamento.dia,
-      turno: agendamento.turno,
+    emitParaTodos({
+      tipo: "os-alterada",
+      em: new Date().toISOString(),
     });
 
     if (agendamento.ordemServicoId) {

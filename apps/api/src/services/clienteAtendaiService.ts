@@ -426,11 +426,11 @@ export async function avisarClienteACaminho(ordemServicoId: string, autorId: str
     // Busca veiculo ativo do tecnico se houver
     const ocupacao = await prisma.ocupacaoVeiculo.findFirst({
       where: { usuarioId: autor.id, fimEm: null },
-      include: { veiculo: { select: { rotulo: true, placa: true } } },
+      include: { veiculo: { select: { apelido: true, placa: true } } },
     });
 
     const veiculoInfo = ocupacao?.veiculo
-      ? { rotulo: ocupacao.veiculo.rotulo, placa: ocupacao.veiculo.placa }
+      ? { rotulo: ocupacao.veiculo.apelido || "Viatura de serviço", placa: ocupacao.veiculo.placa }
       : null;
 
     const fotoUrl = autor.temFoto
