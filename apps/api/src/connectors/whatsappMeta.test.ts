@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  enviarBotoes,
   enviarTemplate,
   extrairVariaveis,
   limparCacheTemplates,
@@ -331,5 +332,35 @@ describe("catalogo e disparo (Graph API mockada)", () => {
   it("enviarTemplate recusa definicao sem idioma em vez de assumir pt_BR", async () => {
     await expect(enviarTemplate(config, "5584999998888", def({ idioma: "" }), {})).rejects.toThrow(/sem idioma/);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  describe("enviarBotoes", () => {
+    it("monta payload de mensagem interativa com até 3 botões", async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ messages: [{ id: "wamid.btn1" }] }));
+
+      const res = await enviarBotoes(
+        config,
+        "84 99999-8888",
+        "Confirma sua visita?",
+        [
+          { id: "btn_1", titulo: "Sim, confirmar" },
+          { id: "btn_2", titulo: "Quero reagendar" },
+        ],
+      );
+
+      expect(res.ok).toBe(true);
+      expect(res.waMessageId).toBe("wamid.btn1");
+
+      const [url, options] = fetchMock.mock.calls[0];
+      expect(url).toContain("/1112223334/messages");
+      const body = JSON.parse(options.body as string);
+      expect(body.type).toBe("interactive");
+      expect(body.to).toBe("5584999998888");
+      expect(body.interactive.type).toBe("button");
+      expect(body.interactive.body.text).toBe("Confirma sua visita?");
+      expect(body.interactive.action.buttons).toHaveLength(2);
+      expect(body.interactive.action.buttons[0].reply.id).toBe("btn_1");
+      expect(body.interactive.action.buttons[0].reply.title).toBe("Sim, confirmar");
+    });
   });
 });

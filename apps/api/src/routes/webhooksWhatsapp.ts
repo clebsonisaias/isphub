@@ -5,6 +5,7 @@ import { verificarAssinaturaMeta, verificarTokenEvolution } from "../lib/webhook
 import * as canaisWhatsappService from "../services/canaisWhatsappService.js";
 import * as clienteChatService from "../services/clienteChatService.js";
 import * as whatsappMeta from "../connectors/whatsappMeta.js";
+import * as confirmacaoVisitaService from "../services/confirmacaoVisitaService.js";
 
 /**
  * PRIMEIRA ROTA VERDADEIRAMENTE PUBLICA do backend — sem requireAuth. Um
@@ -42,6 +43,11 @@ interface MetaMessage {
   audio?: { id: string; mime_type: string };
   document?: { id: string; mime_type: string; filename?: string };
   location?: { latitude: number; longitude: number };
+  interactive?: {
+    type: "button_reply" | "list_reply";
+    button_reply?: { id: string; title: string };
+    list_reply?: { id: string; title: string; description?: string };
+  };
 }
 
 function tipoMetaParaMensagemCliente(tipo: string): MensagemClienteTipo {
@@ -92,17 +98,26 @@ webhooksWhatsappRouter.post(
                 midia = null; // segue sem midia (placeholder) em vez de derrubar o webhook inteiro
               }
             }
+            const corpoInterativo = msg.interactive?.button_reply?.id ?? msg.interactive?.button_reply?.title;
+            const corpo = corpoInterativo ?? msg.text?.body ?? msg.image?.caption ?? null;
+
             await clienteChatService.receberMensagemWebhook({
               canal: CanalWhatsapp.META,
               telefone: msg.from,
               nomeContato,
               waMessageId: msg.id,
               tipo,
-              corpo: msg.text?.body ?? msg.image?.caption ?? null,
+              corpo: msg.interactive?.button_reply?.title ?? corpo,
               midia,
               lat: msg.location?.latitude ?? null,
               lng: msg.location?.longitude ?? null,
             });
+
+            if (corpo) {
+              void confirmacaoVisitaService
+                .tratarRespostaConfirmacao(undefined, msg.from, corpo)
+                .catch((err) => console.warn("[webhook-meta] erro ao tratar confirmacao:", err));
+            }
           }
         }
       }
@@ -158,6 +173,12 @@ webhooksWhatsappRouter.post(
         corpo,
         midia,
       });
+
+      if (corpo) {
+        void confirmacaoVisitaService
+          .tratarRespostaConfirmacao(undefined, telefone, corpo)
+          .catch((err) => console.warn("[webhook-evolution] erro ao tratar confirmacao:", err));
+      }
     } catch (err) {
       console.error("[webhook-evolution] falha ao processar payload:", err instanceof Error ? err.message : err);
     }

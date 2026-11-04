@@ -64,6 +64,51 @@ export async function enviarTexto(config: MetaConfig, telefone: string, corpo: s
   }
 }
 
+export interface BotaoWhatsapp {
+  id: string;
+  titulo: string;
+}
+
+/**
+ * Envia mensagem interativa com botões de resposta rápida (Quick Reply).
+ * A Meta Cloud API permite no máximo 3 botões, com títulos de até 20 caracteres cada.
+ */
+export async function enviarBotoes(
+  config: MetaConfig,
+  telefone: string,
+  corpo: string,
+  botoes: BotaoWhatsapp[],
+  cabecalho?: string,
+  rodape?: string,
+): Promise<EnviarResultado> {
+  try {
+    const data = await metaPostJson(config, `/${config.phoneNumberId}/messages`, {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: normalizarTelefoneBR(telefone),
+      type: "interactive",
+      interactive: {
+        type: "button",
+        body: { text: corpo },
+        ...(cabecalho ? { header: { type: "text", text: cabecalho } } : {}),
+        ...(rodape ? { footer: { text: rodape } } : {}),
+        action: {
+          buttons: botoes.slice(0, 3).map((b) => ({
+            type: "reply",
+            reply: {
+              id: b.id,
+              title: b.titulo.slice(0, 20),
+            },
+          })),
+        },
+      },
+    });
+    return { ok: true, waMessageId: data?.messages?.[0]?.id };
+  } catch (err) {
+    return { ok: false, erro: err instanceof Error ? err.message : "Falha ao enviar botões interativos" };
+  }
+}
+
 export async function enviarMidia(
   config: MetaConfig,
   telefone: string,
