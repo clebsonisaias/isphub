@@ -443,23 +443,17 @@ function classeVisibilidade(soNoExcesso: boolean, foraDoRodape: boolean): string
 
 function navItemClass(ativo: boolean): string {
   return cn(
-    // `lg:shrink-0` + `whitespace-nowrap`: agora que o nav rola (ver a nota no
-    // <nav>), a pilula nao pode ser comprimida nem quebrar o rotulo em duas
-    // linhas — ela sai de vista rolando, inteira, e volta do mesmo jeito.
-    "group relative flex min-w-16 flex-1 flex-col items-center justify-center gap-1 whitespace-nowrap rounded-lg px-1.5 py-2 text-[0.7rem] font-medium transition-colors lg:min-w-0 lg:flex-none lg:shrink-0 lg:flex-row lg:gap-1.5 lg:rounded-full lg:px-3 lg:py-1.5 lg:text-sm min-h-12 pointer-coarse:min-h-12",
+    // No mobile: aba com icone empilhado. No desktop: segmented pill horizontal.
+    "group relative flex min-w-16 flex-1 flex-col items-center justify-center gap-1 whitespace-nowrap rounded-lg px-1.5 py-2 text-[0.7rem] font-medium transition-all lg:min-w-0 lg:flex-none lg:shrink-0 lg:flex-row lg:gap-1.5 lg:rounded-lg lg:px-3 lg:py-1.5 lg:text-xs lg:font-medium min-h-12 pointer-coarse:min-h-12 lg:min-h-8",
     ativo
-      ? "text-primary"
-      : "text-muted-foreground hover:text-foreground lg:hover:bg-secondary/60",
+      ? "text-primary font-semibold"
+      : "text-muted-foreground hover:text-foreground lg:hover:bg-background/50",
   );
 }
 
 /**
- * Pilula de fundo do item de rota ativo no desktop — um unico elemento com
- * `layoutId` compartilhado entre os Links (motor de layout do Framer Motion
- * ve a posicao/tamanho mudar entre renders com IDs iguais e anima a
- * transicao), entao ela DESLIZA pra pilula seguinte em vez de piscar. So no
- * desktop (`hidden lg:block`) — no mobile o destaque já vem do icone-chip do
- * NavIcon, que não precisa de deslizamento (abas fixas, sem espaço de sobra).
+ * Pilula de fundo do item de rota ativo no desktop — efeito segmented control
+ * deslizante suave via Framer Motion com sombra sutil e relevo limpo.
  */
 function NavActivePill({
   shouldReduceMotion,
@@ -470,11 +464,11 @@ function NavActivePill({
     <motion.span
       aria-hidden
       layoutId="nav-active-pill"
-      className="absolute inset-0 hidden rounded-full bg-primary/12 lg:block"
+      className="absolute inset-0 hidden rounded-lg bg-background shadow-xs border border-border/60 lg:block"
       transition={
         shouldReduceMotion
           ? { duration: 0 }
-          : { type: "spring", stiffness: 500, damping: 34 }
+          : { type: "spring", stiffness: 450, damping: 32 }
       }
     />
   );
@@ -537,29 +531,24 @@ function UserMenu({
         <button
           type="button"
           title={`${nome} — ${USER_ROLE_LABEL[role]}`}
-          /*
-           * Rotulo explicito: abaixo de `xl` o nome fica escondido e sobram so
-           * as INICIAIS, entao o leitor de tela anunciava "EA, botao". Quem usa
-           * o app no celular — a maior parte dos tecnicos — nao tinha como
-           * saber o que esse botao abre.
-           */
           aria-label={`Menu do usuário — ${nome}`}
-          className="flex items-center gap-2 rounded-full py-1 pl-1 pr-1 outline-none transition-colors hover:bg-secondary/60 focus-visible:ring-2 focus-visible:ring-ring lg:pr-2.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+          className="flex items-center gap-2 rounded-xl py-1 pl-1 pr-1 outline-none transition-colors hover:bg-secondary/60 focus-visible:ring-2 focus-visible:ring-ring lg:pr-2.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
         >
-          <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-secondary font-display text-xs font-semibold text-foreground">
+          <span className="relative flex size-8 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 font-display text-xs font-bold text-primary shadow-2xs">
             {iniciais(nome)}
+            <span className="absolute -bottom-0.5 -right-0.5 size-2 rounded-full border border-background bg-emerald-500" />
           </span>
           <span className="hidden text-left leading-tight xl:block">
-            <span className="block text-sm font-medium text-foreground">
-              {nome}
+            <span className="block text-xs font-semibold text-foreground">
+              {nome.split(" ")[0]}
             </span>
-            <span className="block text-xs text-muted-foreground">
+            <span className="block text-[10px] font-medium text-muted-foreground">
               {USER_ROLE_LABEL[role]}
             </span>
           </span>
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-56 p-1.5">
+      <PopoverContent className="w-56 rounded-xl border border-border/60 bg-background/98 p-1.5 shadow-xl backdrop-blur-md">
         <div className="border-b border-border px-2.5 pb-2 pt-1 lg:hidden">
           <p className="truncate text-sm font-medium text-foreground">{nome}</p>
           <p className="text-xs text-muted-foreground">
@@ -650,6 +639,10 @@ function UserMenu({
           <LogOut className="size-4" />
           Sair
         </button>
+        <div className="mt-1 flex items-center justify-between border-t border-border/50 px-2.5 pt-2 text-[10px] font-mono text-muted-foreground">
+          <span>ISPhub</span>
+          <span>{APP_VERSION_LABEL}</span>
+        </div>
       </PopoverContent>
     </Popover>
   );
@@ -693,13 +686,10 @@ function NavExcesso({
             rodape
               ? cn(navItemClass(contemAtual), "lg:hidden")
               : cn(
-                  // `pointer-coarse:min-h-11` como os demais itens: em tablet
-                  // paisagem (1024px COM toque) o botao ficava 76x32px, abaixo do
-                  // minimo de 44px.
-                  "hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition-colors lg:flex pointer-coarse:min-h-11",
+                  "hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors lg:flex lg:min-h-8 pointer-coarse:min-h-11",
                   contemAtual
-                    ? "bg-primary/12 text-foreground"
-                    : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
+                    ? "bg-background text-foreground shadow-xs border border-border/60"
+                    : "text-muted-foreground hover:bg-background/50 hover:text-foreground",
                 )
           }
         >
@@ -710,13 +700,13 @@ function NavExcesso({
             </>
           ) : (
             <>
-              <MoreHorizontal className="size-4 shrink-0" />
+              <MoreHorizontal className="size-3.5 shrink-0" />
               Mais
             </>
           )}
         </button>
       </PopoverTrigger>
-      <PopoverContent align="end" side={rodape ? "top" : undefined} className="w-52 p-1.5">
+      <PopoverContent align="end" side={rodape ? "top" : undefined} className="w-56 rounded-xl border border-border/60 bg-background/98 p-1.5 shadow-xl backdrop-blur-md">
         {itens.map(({ to, label, icon: Icon }) => {
           const ativo = to === "/admin" ? caminhoAtual.startsWith("/admin") : caminhoAtual === to;
           return (
@@ -841,53 +831,24 @@ export function AppShell({ children }: { children: ReactNode }) {
           aria-hidden
           className="h-[2px] w-full brand-gradient-bg opacity-70"
         />
-        <div className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-3 sm:gap-3 sm:px-4 lg:gap-2">
-          <Link to={inicioDoPapel(usuario?.role)} className="flex shrink-0 items-center gap-2 pointer-coarse:min-h-11">
+        <div className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-3 sm:gap-3 sm:px-4 lg:gap-3">
+          <Link to={inicioDoPapel(usuario?.role)} className="flex shrink-0 items-center gap-2 pointer-coarse:min-h-11 mr-1">
             <span className="font-display text-lg font-bold tracking-tight">
               <span className="brand-gradient-text">ISP</span>
               <span className="text-foreground">hub</span>
-            </span>
-            <span
-              className="hidden rounded-full border border-border bg-secondary/60 px-1.5 py-0.5 font-mono text-[0.6rem] font-medium tabular-nums text-muted-foreground xl:inline"
-              title={APP_BUILD_ID ? `Build ${APP_BUILD_ID}` : undefined}
-            >
-              {APP_VERSION_LABEL}
             </span>
           </Link>
 
           {/*
             Navegacao unica: aba fixa no rodape abaixo de `lg` (alcance de
             polegar pro tecnico em campo no celular), pilulas no proprio
-            cabecalho a partir de `lg`. `position: fixed` tira o elemento do
-            fluxo do header no mobile sem precisar de outro componente —
-            `lg:static` devolve ao fluxo normal da linha no desktop.
+            cabecalho a partir de `lg` organizadas em dock/segmented control.
           */}
           {usuario && (
             <nav
               ref={navRef}
-              /*
-               * `lg:min-w-0` + `lg:overflow-x-auto` no desktop: com `flex-1`
-               * sozinho o nav nunca encolhia abaixo do seu min-content, e as
-               * pilulas (cujo numero varia — modulos ligam e desligam)
-               * empurravam o grupo da direita PARA FORA da tela. Medido a
-               * 1440px: busca, notificacoes e menu do usuario ficavam 111px
-               * alem da borda, com a pagina rolando na horizontal.
-               *
-               * Com `min-w-0` o nav cede espaco e, se ainda faltar, rola dentro
-               * de si — nada sai da tela e os controles da direita ficam
-               * sempre no lugar.
-               *
-               * No celular a barra do rodape tem no maximo 5 abas: as fixas do
-               * perfil + "Mais" (ver FIXOS_RODAPE). Com as 13 do admin em 375px,
-               * `flex-1` comprimia cada aba a 36px e as ultimas saiam da tela.
-               */
-              className="fixed inset-x-0 bottom-0 z-30 flex items-stretch justify-around border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:static lg:inset-auto lg:z-auto lg:min-w-0 lg:flex-1 lg:items-center lg:justify-start lg:gap-1 lg:overflow-x-auto lg:border-t-0 lg:bg-transparent lg:pb-0 lg:backdrop-blur-none lg:scrollbar-none"
+              className="fixed inset-x-0 bottom-0 z-30 flex items-stretch justify-around border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:static lg:inset-auto lg:z-auto lg:min-w-0 lg:flex-1 lg:items-center lg:justify-start lg:gap-0.5 lg:overflow-x-auto lg:border lg:border-border/40 lg:bg-secondary/40 lg:p-1 lg:rounded-xl lg:shadow-2xs lg:pb-0 lg:backdrop-blur-none lg:scrollbar-none"
               aria-label="Navegação principal"
-              /*
-               * `false` enquanto a medicao nao concluiu — nesse instante a
-               * barra mostra todos os itens porque ainda nao se SABE quais
-               * cabem, nao porque cabem. Deixa isso legivel de fora.
-               */
               data-nav-medido={navMedido}
             >
               {itensNav.map(({ to, label, labelCurto, icon: Icon, soDesktop }, i) => {

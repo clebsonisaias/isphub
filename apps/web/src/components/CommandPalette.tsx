@@ -161,9 +161,13 @@ export function CommandPalette() {
         onClick={() => setAberto(true)}
         title="Buscar (Ctrl+K)"
         aria-label="Abrir busca rápida"
-        className="flex size-9 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-secondary hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:size-11"
+        className="flex h-9 items-center gap-2 rounded-xl border border-border/50 bg-secondary/30 px-2.5 text-xs text-muted-foreground outline-none transition-all hover:border-border hover:bg-secondary/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <Search className="size-4" />
+        <Search className="size-3.5 shrink-0" />
+        <span className="hidden xl:inline font-medium">Buscar...</span>
+        <kbd className="hidden items-center gap-0.5 rounded-md border border-border/40 bg-background/80 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-muted-foreground shadow-2xs sm:inline-flex">
+          <span className="text-[11px]">⌘</span>K
+        </kbd>
       </button>
 
       <Dialog open={aberto} onOpenChange={setAberto}>
