@@ -288,7 +288,12 @@ export async function salvarConfig(patch: Partial<AgendaConfigDto>): Promise<Age
  * Uma consulta agrupada em vez de uma por dia: 14 dias x 2 turnos seriam 28
  * idas ao banco a cada vez que alguem abre a tela.
  */
-export async function ocupacoesEntre(de: string, ate: string, regiao?: string | null): Promise<Map<string, Ocupacao>> {
+export async function ocupacoesEntre(
+  de: string,
+  ate: string,
+  regiao?: string | null,
+  equipe?: "interna" | "externa" | "todas",
+): Promise<Map<string, Ocupacao>> {
   const linhas = await prisma.agendamento.findMany({
     where: { status: "marcado", dia: { gte: dataDoDia(de), lte: dataDoDia(ate) } },
     select: {
@@ -296,12 +301,16 @@ export async function ocupacoesEntre(de: string, ate: string, regiao?: string | 
       turno: true,
       regiao: true,
       fila: true,
-      ordemServico: { select: { tipoOs: { select: { categoria: { select: { nome: true } } } } } },
+      ordemServico: { select: { tipoOs: { select: { categoria: { select: { nome: true, equipeExterna: true } } } } } },
     },
   });
 
   const mapa = new Map<string, Ocupacao>();
   for (const l of linhas) {
+    const ehRetirada = l.fila === "retirada" || l.ordemServico?.tipoOs?.categoria?.equipeExterna === true;
+    if (equipe === "interna" && ehRetirada) continue;
+    if (equipe === "externa" && !ehRetirada) continue;
+
     const chave = chaveJanela(l.dia.toISOString().slice(0, 10), l.turno);
     const atual = mapa.get(chave) ?? { total: 0, instalacao: 0, reparo: 0, regiao: regiao ? 0 : null, retirada: 0 };
     // A retirada ocupa vaga do turno como qualquer visita; `retirada` so diz
@@ -360,10 +369,16 @@ export async function escaladosEntre(de: string, ate: string): Promise<Map<strin
   return mapa;
 }
 
-export async function grade(args: { de: string; ate: string; regiao?: string | null; agora?: Date }) {
+export async function grade(args: {
+  de: string;
+  ate: string;
+  regiao?: string | null;
+  agora?: Date;
+  equipe?: "interna" | "externa" | "todas";
+}) {
   const config = await lerConfig();
   const [ocupacoes, excecoes, escalados] = await Promise.all([
-    ocupacoesEntre(args.de, args.ate, args.regiao),
+    ocupacoesEntre(args.de, args.ate, args.regiao, args.equipe),
     excecoesEntre(args.de, args.ate),
     config.vagasPorTecnico != null ? escaladosEntre(args.de, args.ate) : undefined,
   ]);
@@ -774,15 +789,49 @@ export async function cancelar(
 }
 
 /** As marcacoes de uma janela, na ordem da rota. A lista do supervisor. */
-export async function doTurno(dia: string, turno: TurnoAgenda, provedorId?: string) {
+export async function doTurno(
+  dia: string,
+  turno: TurnoAgenda,
+  provedorId?: string,
+  equipe?: "interna" | "externa" | "todas",
+) {
+  const where: Record<string, unknown> = {
+    dia: dataDoDia(dia),
+    turno,
+    status: "marcado",
+    ...(provedorId ? { provedorId } : {}),
+  };
+
+  if (equipe === "interna") {
+    where.fila = { not: "retirada" };
+    where.OR = [
+      { ordemServicoId: null },
+      {
+        ordemServico: {
+          OR: [
+            { tipoOsId: null },
+            { tipoOs: { categoriaId: null } },
+            { tipoOs: { categoria: { equipeExterna: false } } },
+          ],
+        },
+      },
+    ];
+  } else if (equipe === "externa") {
+    where.OR = [
+      { fila: "retirada" },
+      { ordemServico: { tipoOs: { categoria: { equipeExterna: true } } } },
+    ];
+  }
+
   return prisma.agendamento.findMany({
-    where: { dia: dataDoDia(dia), turno, status: "marcado", ...(provedorId ? { provedorId } : {}) },
+    where,
     orderBy: [{ ordemRota: { sort: "asc", nulls: "last" } }, { criadoEm: "asc" }],
     select: {
       id: true,
       sgpOsId: true,
       ordemRota: true,
       regiao: true,
+      fila: true,
       origem: true,
       marcadoPor: true,
       observacao: true,
@@ -808,7 +857,7 @@ export async function doTurno(dia: string, turno: TurnoAgenda, provedorId?: stri
           lng: true,
           tecnico: { select: { id: true, nome: true, nomeExibicao: true } },
           apoios: { select: { id: true, nome: true, nomeExibicao: true } },
-          tipoOs: { select: { descricao: true, categoria: { select: { nome: true, cor: true } } } },
+          tipoOs: { select: { descricao: true, categoria: { select: { nome: true, cor: true, equipeExterna: true } } } },
         },
       },
     },

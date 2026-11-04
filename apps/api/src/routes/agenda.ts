@@ -33,6 +33,7 @@ const intervaloSchema = z.object({
   de: DIA.optional(),
   ate: DIA.optional(),
   regiao: z.string().trim().min(1).optional(),
+  equipe: z.enum(["interna", "externa", "todas"]).optional(),
 });
 
 /**
@@ -48,7 +49,7 @@ agendaRouter.get(
     const config = await agenda.lerConfig();
     const de = q.de ?? agenda.diaBrDe(new Date());
     const ate = q.ate ?? agenda.somarDias(de, config.horizonteDias);
-    res.json({ config, vagas: await agenda.grade({ de, ate, regiao: q.regiao }) });
+    res.json({ config, vagas: await agenda.grade({ de, ate, regiao: q.regiao, equipe: q.equipe }) });
   }),
 );
 
@@ -105,10 +106,16 @@ agendaRouter.get(
 agendaRouter.get(
   "/turno",
   asyncHandler(async (req, res) => {
-    const { dia, turno } = z.object({ dia: DIA, turno: z.enum(TURNOS_AGENDA) }).parse(req.query);
+    const { dia, turno, equipe } = z
+      .object({
+        dia: DIA,
+        turno: z.enum(TURNOS_AGENDA),
+        equipe: z.enum(["interna", "externa", "todas"]).optional(),
+      })
+      .parse(req.query);
     // Atendente so ve as paradas (nome, telefone, endereco) do proprio provedor.
     const provedorId = req.user!.role === UserRole.ATENDENTE ? (req.user!.provedorId ?? "__nenhum__") : undefined;
-    res.json(await agenda.doTurno(dia, turno, provedorId));
+    res.json(await agenda.doTurno(dia, turno, provedorId, equipe));
   }),
 );
 

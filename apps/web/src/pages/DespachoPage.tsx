@@ -73,10 +73,16 @@ export function DespachoPage() {
   const dias = useMemo(() => Array.from({ length: 7 }, (_, i) => somarDias(hoje, i)), [hoje]);
   const grade = useQuery({
     queryKey: ["agenda", "grade", "despacho", hoje],
-    queryFn: () => agendaApi.grade({ de: hoje, ate: somarDias(hoje, 6) }),
+    queryFn: () => agendaApi.grade({ de: hoje, ate: somarDias(hoje, 6), equipe: "interna" }),
   });
-  const manha = useQuery({ queryKey: ["agenda", "turno", dia, "manha"], queryFn: () => agendaApi.doTurno(dia, "manha") });
-  const tarde = useQuery({ queryKey: ["agenda", "turno", dia, "tarde"], queryFn: () => agendaApi.doTurno(dia, "tarde") });
+  const manha = useQuery({
+    queryKey: ["agenda", "turno", dia, "manha", "interna"],
+    queryFn: () => agendaApi.doTurno(dia, "manha", { equipe: "interna" }),
+  });
+  const tarde = useQuery({
+    queryKey: ["agenda", "turno", dia, "tarde", "interna"],
+    queryFn: () => agendaApi.doTurno(dia, "tarde", { equipe: "interna" }),
+  });
   const fila = useQuery({
     queryKey: ["fila", { grupo: "abertos", equipe: "interna", despacho: true }],
     queryFn: () => filaApi.listar({ grupo: "abertos", equipe: "interna" }),
@@ -94,10 +100,14 @@ export function DespachoPage() {
 
   const paradas = useMemo(() => {
     const sla = new Map([...filaPorId].map(([id, i]) => [id, i.sla.semaforo]));
-    return [
+    const todas = [
       ...(manha.data ?? []).map((p) => paradaDe(p, "manha", sla)),
       ...(tarde.data ?? []).map((p) => paradaDe(p, "tarde", sla)),
     ];
+    // No despacho não aparecem retiradas: retiradas têm a aba própria (/retiradas)
+    return todas.filter(
+      (p) => !p.equipeExterna && p.fila !== "retirada" && !p.categoria.toLowerCase().includes("retirada"),
+    );
   }, [manha.data, tarde.data, filaPorId]);
 
   const linhas = useMemo(() => {
@@ -105,7 +115,13 @@ export function DespachoPage() {
     return montarQuadro(paradas, tecnicos.data ?? [], escalados, todos);
   }, [paradas, tecnicos.data, escala.data, todos]);
 
-  const pendentes = useMemo(() => paraAgendar(fila.data?.itens ?? []), [fila.data]);
+  const pendentes = useMemo(() => {
+    const abertos = paraAgendar(fila.data?.itens ?? []);
+    // Garantia defensiva extra: remove qualquer retirada que venha da fila
+    return abertos.filter(
+      (i) => !i.categoria?.equipeExterna && !i.categoria?.nome?.toLowerCase().includes("retirada"),
+    );
+  }, [fila.data]);
   const categorias = useMemo(() => {
     const m = new Map<string, { nome: string; cor: string; n: number }>();
     for (const i of pendentes) {

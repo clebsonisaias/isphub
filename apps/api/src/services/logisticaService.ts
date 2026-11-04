@@ -80,14 +80,16 @@ export async function obterSugestaoRotaTecnico(
 
   const condTurno = !turno || turno === "dia_inteiro" ? {} : { turno };
 
-  // Busca agendamentos do técnico no dia
+  // Busca agendamentos do técnico no dia (apenas equipe interna, desconsidera retiradas)
   const agendamentos = await prisma.agendamento.findMany({
     where: {
       dia: new Date(dia),
       ...condTurno,
       status: "marcado",
+      fila: { not: "retirada" },
       ordemServico: {
         tecnicoId: tecnico.id,
+        NOT: { tipoOs: { categoria: { equipeExterna: true } } },
       },
     },
     include: {
@@ -893,9 +895,11 @@ export async function otimizarTodasRotasDoDia(
     where: {
       dia: diaDate,
       status: "marcado",
+      fila: { not: "retirada" },
       ordemServico: {
         tecnicoId: { not: null },
         ...(provedorId ? { provedorId } : {}),
+        NOT: { tipoOs: { categoria: { equipeExterna: true } } },
       },
     },
     select: {

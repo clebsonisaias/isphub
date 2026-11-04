@@ -22,6 +22,8 @@ export interface Parada {
   apoios: { id: string; nome: string }[];
   cor: string;
   categoria: string;
+  equipeExterna: boolean;
+  fila: string;
   local: string | null;
   /** A regiao gravada na marcacao (teto por regiao): remarcar mantem a mesma. */
   regiao: string | null;
@@ -50,6 +52,7 @@ const nomeCurto = (u: { nome: string; nomeExibicao?: string | null }) => u.nomeE
 
 export function paradaDe(p: ParadaAgenda, turno: TurnoAgenda, slaPorOs: Map<string, SlaSemaforo>): Parada {
   const os = p.ordemServico;
+  const ehRetirada = os?.tipoOs?.categoria?.equipeExterna === true || p.fila === "retirada";
   return {
     id: p.id,
     osId: os?.id ?? null,
@@ -61,6 +64,8 @@ export function paradaDe(p: ParadaAgenda, turno: TurnoAgenda, slaPorOs: Map<stri
     apoios: (os?.apoios ?? []).map((a) => ({ id: a.id, nome: nomeCurto(a) })),
     cor: os?.tipoOs?.categoria?.cor ?? COR_SEM_CATEGORIA,
     categoria: os?.tipoOs?.categoria?.nome ?? os?.tipoOs?.descricao ?? "Sem categoria",
+    equipeExterna: ehRetirada,
+    fila: p.fila ?? "normal",
     local: os?.bairro ?? os?.pop ?? p.regiao,
     regiao: p.regiao,
     cliente: os?.clienteNome ?? null,

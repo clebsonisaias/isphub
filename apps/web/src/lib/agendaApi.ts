@@ -71,6 +71,7 @@ export interface ParadaAgenda {
   lembreteEnviadoEm?: string | null;
   remarcacoesCliente: number;
   regiao: string | null;
+  fila?: string;
   origem: string;
   marcadoPor: string | null;
   observacao: string | null;
@@ -90,7 +91,7 @@ export interface ParadaAgenda {
     lng: number | null;
     tecnico: { id: string; nome: string; nomeExibicao: string | null } | null;
     apoios?: { id: string; nome: string; nomeExibicao: string | null }[];
-    tipoOs: { descricao: string | null; categoria: { nome: string; cor: string } | null } | null;
+    tipoOs: { descricao: string | null; categoria: { nome: string; cor: string; equipeExterna?: boolean } | null } | null;
   } | null;
 }
 
@@ -126,11 +127,12 @@ export interface SaudeAgendador {
 }
 
 export const agendaApi = {
-  grade: (params?: { de?: string; ate?: string; regiao?: string }) => {
+  grade: (params?: { de?: string; ate?: string; regiao?: string; equipe?: "interna" | "externa" | "todas" }) => {
     const q = new URLSearchParams();
     if (params?.de) q.set("de", params.de);
     if (params?.ate) q.set("ate", params.ate);
     if (params?.regiao) q.set("regiao", params.regiao);
+    if (params?.equipe) q.set("equipe", params.equipe);
     const s = q.toString();
     return api.get<GradeResposta>(`/agenda/vagas${s ? `?${s}` : ""}`);
   },
@@ -145,8 +147,11 @@ export const agendaApi = {
   /** O que o usuário logado marcou ou remarcou hoje — a lista "Marcadas por você hoje". */
   minhas: () => api.get<MarcadaHoje[]>("/agenda/minhas"),
 
-  doTurno: (dia: string, turno: TurnoAgenda) =>
-    api.get<ParadaAgenda[]>(`/agenda/turno?dia=${dia}&turno=${turno}`),
+  doTurno: (dia: string, turno: TurnoAgenda, opcoes?: { equipe?: "interna" | "externa" | "todas" }) => {
+    const q = new URLSearchParams({ dia, turno });
+    if (opcoes?.equipe) q.set("equipe", opcoes.equipe);
+    return api.get<ParadaAgenda[]>(`/agenda/turno?${q.toString()}`);
+  },
 
   marcar: (d: {
     provedorId: string;
