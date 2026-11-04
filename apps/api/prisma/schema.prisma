@@ -2340,6 +2340,12 @@ model Agendamento {
   /// Nulo = ainda nao respondeu (nao e o mesmo que "nao vem").
   confirmadoEm DateTime?
 
+  /// Se o cliente respondeu ao lembrete solicitando reagendamento.
+  solicitouReagendamento Boolean @default(false)
+
+  /// Quando o lembrete/pedido de confirmacao foi disparado para o cliente via WhatsApp.
+  lembreteEnviadoEm DateTime?
+
   /// Quantas vezes o proprio cliente remarcou. Conta so o que veio DELE — a
   /// atendente e o bot remarcando em nome dele nao gastam o teto.
   remarcacoesCliente Int @default(0)
