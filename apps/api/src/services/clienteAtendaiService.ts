@@ -374,6 +374,38 @@ export async function receberDoCliente(provedorId: string, aviso: AvisoCliente):
 }
 
 /**
+ * Formata o texto de aviso ao cliente quando o técnico inicia o deslocamento.
+ */
+export function formatarMensagemTecnicoACaminho(input: {
+  clienteNome: string;
+  tecnicoNome: string;
+  provedorNome: string;
+  numeroOs: string;
+  veiculoInfo?: { rotulo: string; placa: string } | null;
+  fotoUrl?: string | null;
+}): string {
+  const primeiroNome = input.clienteNome?.trim().split(/\s+/)[0] || "Cliente";
+  const primeiroNomeTecnico = input.tecnicoNome?.trim().split(/\s+/)[0] || "nosso técnico";
+
+  const partes = [
+    `Olá, ${primeiroNome}!`,
+    `O técnico *${primeiroNomeTecnico}* da *${input.provedorNome}* acabou de iniciar o deslocamento e está a caminho do seu endereço para o atendimento da OS nº *${input.numeroOs}*.`,
+  ];
+
+  if (input.veiculoInfo?.placa) {
+    partes.push(`🚗 *Veículo oficial:* ${input.veiculoInfo.rotulo} (Placa ${input.veiculoInfo.placa})`);
+  }
+
+  partes.push("Por favor, fique atento ao portão/interfone para receber nossa equipe.");
+
+  if (input.fotoUrl) {
+    partes.push(`🛡️ *Identificação de segurança:* Por sua segurança, confira a foto do técnico no crachá digital antes de abrir o portão:\n${input.fotoUrl}`);
+  }
+
+  return partes.join("\n\n");
+}
+
+/**
  * Notifica o cliente automaticamente pelo WhatsApp oficial do provedor
  * quando o técnico clica em "Marcar a caminho" no PWA/APK.
  */
@@ -387,13 +419,32 @@ export async function avisarClienteACaminho(ordemServicoId: string, autorId: str
 
     const autor = await prisma.usuario.findUnique({
       where: { id: autorId },
-      select: { id: true, nome: true, role: true },
+      select: { id: true, nome: true, role: true, temFoto: true, fotoVersao: true },
     });
     if (!autor) return false;
 
-    const primeiroNome = os.clienteNome?.trim().split(/\s+/)[0] || "Cliente";
-    const primeiroNomeTecnico = autor.nome.trim().split(/\s+/)[0] || "nosso técnico";
-    const texto = `Olá, ${primeiroNome}! O técnico ${primeiroNomeTecnico} da ${os.provedor.nome} acabou de iniciar o deslocamento e está a caminho do seu endereço para o atendimento da OS nº ${os.numero ?? os.sgpOsId}. Por favor, fique atento ao portão/interfone.`;
+    // Busca veiculo ativo do tecnico se houver
+    const ocupacao = await prisma.ocupacaoVeiculo.findFirst({
+      where: { usuarioId: autor.id, fimEm: null },
+      include: { veiculo: { select: { rotulo: true, placa: true } } },
+    });
+
+    const veiculoInfo = ocupacao?.veiculo
+      ? { rotulo: ocupacao.veiculo.rotulo, placa: ocupacao.veiculo.placa }
+      : null;
+
+    const fotoUrl = autor.temFoto
+      ? `https://api.isphub.net.br/auth/foto/${autor.id}?v=${autor.fotoVersao}`
+      : null;
+
+    const texto = formatarMensagemTecnicoACaminho({
+      clienteNome: os.clienteNome || "Cliente",
+      tecnicoNome: autor.nome,
+      provedorNome: os.provedor.nome,
+      numeroOs: os.numero ?? os.sgpOsId,
+      veiculoInfo,
+      fotoUrl,
+    });
 
     const user: JwtPayload = { sub: autor.id, email: "", role: autor.role as any, provedorId: os.provedorId };
     await iniciarComClienteDaOs(user, ordemServicoId, texto);
