@@ -1,6 +1,6 @@
 import { rotuloDataHora } from "@isphub/shared";
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import type { Categoria, ErpConfigPublic, Provedor, TipoOs } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
 import { AnimatedPage } from "@/components/AnimatedPage";
@@ -18,7 +18,8 @@ import { atendaiConfigApi, categoriasApi, chaveParceiroApi, erpConfigApi, proved
 import type { AtendaiConfigPublic, ChaveParceiroPublic, FuncaoCampo, PapelSgp, TecnicoIsphubResumo, TecnicoSgpItem } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
-import { ArrowLeft, CalendarDays, CheckCircle2, Copy, Download, KeyRound, Link2, RefreshCw, Sparkles, XCircle } from "lucide-react";
+import { ArrowLeft, CalendarDays, CheckCircle2, Copy, Download, KeyRound, Link2, RefreshCw, Sparkles, Trash2, XCircle } from "lucide-react";
+import { ExcluirProvedorDialog } from "@/components/admin/ExcluirProvedorDialog";
 
 function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
@@ -26,7 +27,9 @@ function mensagem(err: unknown): string {
 
 export function ProvedorDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [provedor, setProvedor] = useState<Provedor | null>(null);
+  const [excluindoAberto, setExcluindoAberto] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -47,11 +50,29 @@ export function ProvedorDetailPage() {
       </Link>
 
       {provedor && (
-        <div className="mb-6 flex items-center gap-3">
-          <span className="size-3 rounded-full" style={{ backgroundColor: provedor.cor }} />
-          <h1 className="text-2xl font-bold">{provedor.nome}</h1>
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="size-3.5 shrink-0 rounded-full" style={{ backgroundColor: provedor.cor }} />
+            <h1 className="text-2xl font-bold truncate">{provedor.nome}</h1>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive gap-1.5"
+            onClick={() => setExcluindoAberto(true)}
+          >
+            <Trash2 className="size-4" />
+            Excluir provedor
+          </Button>
         </div>
       )}
+
+      <ExcluirProvedorDialog
+        provedor={provedor}
+        aberto={excluindoAberto}
+        onOpenChange={setExcluindoAberto}
+        onExcluido={() => navigate("/admin")}
+      />
 
       <Tabs defaultValue="sgp">
         <TabsList>

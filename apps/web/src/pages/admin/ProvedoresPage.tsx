@@ -22,7 +22,8 @@ import {
 import { provedoresApi } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
-import { Plus, Settings } from "lucide-react";
+import { Plus, Settings, Trash2 } from "lucide-react";
+import { ExcluirProvedorDialog } from "@/components/admin/ExcluirProvedorDialog";
 
 const CORES_SUGERIDAS = ["#6366f1", "#22c55e", "#f59e0b", "#ec4899", "#06b6d4", "#ef4444"];
 
@@ -31,6 +32,7 @@ export function ProvedoresPage() {
   const [provedores, setProvedores] = useState<Provedor[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [dialogAberto, setDialogAberto] = useState(false);
+  const [provedorExcluir, setProvedorExcluir] = useState<Provedor | null>(null);
 
   async function carregar() {
     setCarregando(true);
@@ -93,16 +95,37 @@ export function ProvedoresPage() {
                   <CardTitle className="text-base">{p.nome}</CardTitle>
                   <CardDescription>{p.ativo ? "Ativo" : "Inativo"}</CardDescription>
                 </div>
-                <Button asChild variant="ghost" size="icon" title="Configurar">
-                  <Link to={`/admin/provedores/${p.id}`}>
-                    <Settings />
-                  </Link>
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button asChild variant="ghost" size="icon" title="Configurar">
+                    <Link to={`/admin/provedores/${p.id}`}>
+                      <Settings className="size-4" />
+                    </Link>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    title="Excluir provedor"
+                    className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => setProvedorExcluir(p)}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
               </CardHeader>
             </Card>
           ))}
         </div>
       )}
+
+      <ExcluirProvedorDialog
+        provedor={provedorExcluir}
+        aberto={!!provedorExcluir}
+        onOpenChange={(v) => !v && setProvedorExcluir(null)}
+        onExcluido={() => {
+          setProvedorExcluir(null);
+          void carregar();
+        }}
+      />
       </AnimatedPage>
     </AppShell>
   );
