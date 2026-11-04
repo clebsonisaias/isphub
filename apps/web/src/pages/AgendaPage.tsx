@@ -654,6 +654,14 @@ export function AgendaPage() {
                                   <CheckCircle2 className="size-3" aria-hidden />
                                   confirmada
                                 </span>
+                              ) : p.solicitouReagendamento ? (
+                                <span
+                                  title="Cliente respondeu solicitando reagendamento pelo WhatsApp"
+                                  className="inline-flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400"
+                                >
+                                  <RefreshCw className="size-3" aria-hidden />
+                                  reagendar
+                                </span>
                               ) : null}
                               {p.remarcacoesCliente > 0 ? (
                                 <span

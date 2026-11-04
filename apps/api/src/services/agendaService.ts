@@ -788,6 +788,8 @@ export async function doTurno(dia: string, turno: TurnoAgenda, provedorId?: stri
       observacao: true,
       sgpConfirmadoEm: true,
       confirmadoEm: true,
+      solicitouReagendamento: true,
+      lembreteEnviadoEm: true,
       remarcacoesCliente: true,
       provedor: { select: { id: true, nome: true, cor: true } },
       ordemServico: {

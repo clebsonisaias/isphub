@@ -67,6 +67,8 @@ export interface ParadaAgenda {
   ordemRota: number | null;
   /** Nulo = o cliente ainda não respondeu o lembrete (≠ "não vem"). */
   confirmadoEm: string | null;
+  solicitouReagendamento?: boolean;
+  lembreteEnviadoEm?: string | null;
   remarcacoesCliente: number;
   regiao: string | null;
   origem: string;

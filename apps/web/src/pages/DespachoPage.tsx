@@ -663,16 +663,33 @@ function ParadaNo({
         arrastando && "opacity-40",
       )}
     >
-      <span
-        className={cn(
-          "flex size-8 items-center justify-center rounded-full text-sm font-bold tabular-nums text-white shadow-sm",
-          ANEL[p.sla ?? "sem_sla"],
-          encerrada && "opacity-45",
-        )}
-        style={{ background: p.cor }}
-      >
-        {p.status === OsStatus.CONCLUIDA ? <Check className="size-4" aria-hidden /> : ordem}
-      </span>
+      <div className="relative">
+        <span
+          className={cn(
+            "flex size-8 items-center justify-center rounded-full text-sm font-bold tabular-nums text-white shadow-sm",
+            ANEL[p.sla ?? "sem_sla"],
+            encerrada && "opacity-45",
+          )}
+          style={{ background: p.cor }}
+        >
+          {p.status === OsStatus.CONCLUIDA ? <Check className="size-4" aria-hidden /> : ordem}
+        </span>
+        {p.confirmadoEm ? (
+          <span
+            className="absolute -bottom-1 -right-1 flex size-3.5 items-center justify-center rounded-full bg-emerald-500 text-[10px] text-white shadow-xs"
+            title="Confirmado pelo cliente via WhatsApp"
+          >
+            ✓
+          </span>
+        ) : p.solicitouReagendamento ? (
+          <span
+            className="absolute -bottom-1 -right-1 flex size-3.5 items-center justify-center rounded-full bg-amber-500 text-[10px] text-white shadow-xs font-bold"
+            title="Cliente solicitou reagendamento pelo WhatsApp"
+          >
+            !
+          </span>
+        ) : null}
+      </div>
       <span className="line-clamp-2 text-xs font-semibold leading-tight">{p.local ?? "Sem local"}</span>
       <span className="text-[11px] tabular-nums text-muted-foreground">{p.sgpOsId}</span>
     </button>

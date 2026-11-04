@@ -29,6 +29,8 @@ export interface Parada {
   status: OsStatus | null;
   ordemRota: number | null;
   sla: SlaSemaforo | null;
+  confirmadoEm: string | null;
+  solicitouReagendamento: boolean;
   lat: number | null;
   lng: number | null;
 }
@@ -65,6 +67,8 @@ export function paradaDe(p: ParadaAgenda, turno: TurnoAgenda, slaPorOs: Map<stri
     status: os?.status ?? null,
     ordemRota: p.ordemRota,
     sla: os ? (slaPorOs.get(os.id) ?? null) : null,
+    confirmadoEm: p.confirmadoEm,
+    solicitouReagendamento: !!p.solicitouReagendamento,
     lat: os?.lat ?? null,
     lng: os?.lng ?? null,
   };

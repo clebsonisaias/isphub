@@ -5,7 +5,8 @@ import { acaoDoDrop, montarQuadro, paraAgendar, type Parada } from "./despacho";
 const parada = (o: Partial<Parada> = {}): Parada => ({
   id: "m1", osId: "os1", sgpOsId: "213346", provedorId: "netgo", turno: "manha",
   tecnicoId: null, tecnicoNome: null, apoios: [], cor: "#1F63B8", categoria: "Instalação",
-  local: "Centro", regiao: null, cliente: null, status: OsStatus.ABERTA, ordemRota: null, sla: null, lat: null, lng: null,
+  local: "Centro", regiao: null, cliente: null, status: OsStatus.ABERTA, ordemRota: null, sla: null,
+  confirmadoEm: null, solicitouReagendamento: false, lat: null, lng: null,
   ...o,
 });
 const tecnicos = [
