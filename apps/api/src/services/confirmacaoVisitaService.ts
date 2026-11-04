@@ -151,6 +151,44 @@ export async function dispararConfirmacoesDoDia(dataAlvo: Date): Promise<{ envia
 }
 
 /**
+ * Compara o telefone cadastrado na OS com o telefone que respondeu no webhook.
+ * Exige correspondência precisa de DDD + número ou dos dígitos significativos completos,
+ * evitando que os 8 dígitos finais colidam entre DDDs distintos ou com números aleatórios.
+ */
+export function matchTelefone(telCadastrado: string | null | undefined, telRecebido: string): boolean {
+  if (!telCadastrado || !telRecebido) return false;
+
+  const rNorm = normalizarTelefoneBR(telRecebido);
+  const cNorm = normalizarTelefoneBR(telCadastrado);
+
+  // 1. Match exato pós-normalização (ambos com DDI + DDD + 9 dígitos)
+  if (rNorm === cNorm) return true;
+
+  // 2. Match dos 11 dígitos nacionais (DDD + 9 dígitos)
+  const rNacional = rNorm.startsWith("55") && rNorm.length >= 12 ? rNorm.slice(2) : rNorm;
+  const cNacional = cNorm.startsWith("55") && cNorm.length >= 12 ? cNorm.slice(2) : cNorm;
+  if (rNacional.length >= 10 && rNacional === cNacional) return true;
+
+  // 3. Caso o cadastro tenha DDD + 8 dígitos (celular legado sem o 9º dígito): mesmo DDD e mesmos 8 dígitos finais
+  if (cNacional.length === 10 && rNacional.length === 11) {
+    const cDdd = cNacional.slice(0, 2);
+    const rDdd = rNacional.slice(0, 2);
+    if (cDdd === rDdd && cNacional.slice(2) === rNacional.slice(3)) {
+      return true;
+    }
+  }
+
+  // 4. Caso o cadastro contenha apenas o número local (sem DDD no cadastro do SGP: 8 ou 9 dígitos)
+  const cDigitos = telCadastrado.replace(/\D/g, "");
+  if (cDigitos.length === 8 || cDigitos.length === 9) {
+    const rLocal = rNacional.slice(-cDigitos.length);
+    if (cDigitos === rLocal) return true;
+  }
+
+  return false;
+}
+
+/**
  * Trata mensagem recebida do cliente no webhook e atualiza o agendamento correspondente.
  */
 export async function tratarRespostaConfirmacao(
@@ -163,28 +201,27 @@ export async function tratarRespostaConfirmacao(
 
   const telNorm = normalizarTelefoneBR(telefone) ?? telefone.replace(/\D/g, "");
 
-  // Localiza a OS mais recente desse telefone no provedor que tenha agendamento futuro ou de hoje
+  // Localiza os agendamentos marcados de hoje em diante para encontrar a OS do telefone
   const hoje = new Date();
   hoje.setHours(0, 0, 0, 0);
 
-  const agendamento = await prisma.agendamento.findFirst({
+  const candidatos = await prisma.agendamento.findMany({
     where: {
       provedorId,
       status: "marcado",
       dia: { gte: hoje },
       ordemServico: {
-        OR: [
-          { telefone: { contains: telNorm.slice(-8) } },
-          { telefone: { contains: telNorm } },
-        ],
+        isNot: null,
       },
     },
     orderBy: { dia: "asc" },
     include: {
       provedor: { select: { id: true, nome: true } },
-      ordemServico: { select: { id: true, sgpOsId: true, clienteNome: true } },
+      ordemServico: { select: { id: true, sgpOsId: true, clienteNome: true, telefone: true } },
     },
   });
+
+  const agendamento = candidatos.find((ag) => matchTelefone(ag.ordemServico?.telefone, telNorm));
 
   if (!agendamento) return "ignorado";
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   interpretarRespostaCliente,
+  matchTelefone,
   montarMensagemConfirmacao,
 } from "./confirmacaoVisitaService.js";
 
@@ -63,6 +64,38 @@ describe("confirmacaoVisitaService", () => {
         "12345",
       );
       expect(msg).toContain("tarde (13h às 18h)");
+    });
+  });
+
+  describe("matchTelefone", () => {
+    it("faz match exato de telefone formatado com E.164 e DDD", () => {
+      expect(matchTelefone("(84) 99876-5432", "5584998765432")).toBe(true);
+      expect(matchTelefone("84998765432", "5584998765432")).toBe(true);
+      expect(matchTelefone("5584998765432", "5584998765432")).toBe(true);
+    });
+
+    it("faz match quando telefone cadastrado tem 8 dígitos (celular legado sem 9)", () => {
+      // 84 9876-5432 deve casar com 5584998765432 (que ganha o 9 pelo normalizarTelefoneBR)
+      expect(matchTelefone("(84) 9876-5432", "5584998765432")).toBe(true);
+    });
+
+    it("rejeita telefones com DDDs diferentes mesmo que tenham os mesmos 8 ou 9 dígitos finais", () => {
+      // (83) Paraíba NÃO deve casar com (84) Rio Grande do Norte
+      expect(matchTelefone("(83) 99876-5432", "5584998765432")).toBe(false);
+      expect(matchTelefone("83998765432", "5584998765432")).toBe(false);
+    });
+
+    it("faz fallback seguro caso cadastro contenha apenas os 8 ou 9 dígitos locais sem DDD", () => {
+      expect(matchTelefone("998765432", "5584998765432")).toBe(true);
+      expect(matchTelefone("98765432", "5584998765432")).toBe(true);
+      // Número totalmente diferente
+      expect(matchTelefone("991112222", "5584998765432")).toBe(false);
+    });
+
+    it("retorna false para valores nulos ou vazios", () => {
+      expect(matchTelefone(null, "5584998765432")).toBe(false);
+      expect(matchTelefone(undefined, "5584998765432")).toBe(false);
+      expect(matchTelefone("", "5584998765432")).toBe(false);
     });
   });
 });

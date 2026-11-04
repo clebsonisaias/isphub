@@ -122,4 +122,41 @@ describe("agendaService - separação de equipe interna e retiradas", () => {
     expect(tarde?.total).toBe(1);
     expect(tarde?.reparo).toBe(1);
   });
+
+  it("ocupacoesEntre libera a vaga imediatamente quando solicitouReagendamento é true", async () => {
+    mockFindMany.mockResolvedValueOnce([
+      {
+        dia: new Date("2026-11-04T00:00:00.000Z"),
+        turno: "manha",
+        regiao: "Centro",
+        fila: "normal",
+        solicitouReagendamento: true, // Cliente pediu reagendamento pelo WhatsApp
+        ordemServico: {
+          tipoOs: {
+            categoria: { nome: "Reparo", equipeExterna: false },
+          },
+        },
+      },
+      {
+        dia: new Date("2026-11-04T00:00:00.000Z"),
+        turno: "manha",
+        regiao: "Centro",
+        fila: "normal",
+        solicitouReagendamento: false,
+        ordemServico: {
+          tipoOs: {
+            categoria: { nome: "Instalação", equipeExterna: false },
+          },
+        },
+      },
+    ]);
+
+    const mapa = await ocupacoesEntre("2026-11-04", "2026-11-04", undefined, "interna");
+    const manha = mapa.get("2026-11-04|manha");
+
+    // Somente o agendamento ativo (não reagendando) conta como ocupado (total = 1 em vez de 2)
+    expect(manha?.total).toBe(1);
+    expect(manha?.instalacao).toBe(1);
+    expect(manha?.reparo).toBe(0);
+  });
 });

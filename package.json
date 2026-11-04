@@ -12,6 +12,7 @@
     "dev:api": "npm run dev -w @isphub/api",
     "dev:web": "npm run dev -w @isphub/web",
     "build": "npm run build:shared && npm run build -w @isphub/api && npm run build -w @isphub/web",
+    "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "engines": {

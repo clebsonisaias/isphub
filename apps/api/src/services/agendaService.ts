@@ -301,12 +301,17 @@ export async function ocupacoesEntre(
       turno: true,
       regiao: true,
       fila: true,
+      solicitouReagendamento: true,
       ordemServico: { select: { tipoOs: { select: { categoria: { select: { nome: true, equipeExterna: true } } } } } },
     },
   });
 
   const mapa = new Map<string, Ocupacao>();
   for (const l of linhas) {
+    // Quando o cliente solicitou reagendamento (ex.: WhatsApp), a vaga é liberada
+    // imediatamente para novos agendamentos sem precisar de cancelamento manual.
+    if (l.solicitouReagendamento) continue;
+
     const ehRetirada = l.fila === "retirada" || l.ordemServico?.tipoOs?.categoria?.equipeExterna === true;
     if (equipe === "interna" && ehRetirada) continue;
     if (equipe === "externa" && !ehRetirada) continue;
@@ -680,6 +685,7 @@ export async function marcar(args: MarcarArgs) {
       observacao: args.observacao === undefined ? undefined : args.observacao,
       fila: args.fila,
       status: "marcado" as const,
+      solicitouReagendamento: false,
       ordemServicoId: os?.id ?? null,
       // So muda quando quem marcou disse; ausente mantem o que a marcacao tinha.
       osSituacao: args.contexto?.osSituacao === undefined ? undefined : args.contexto.osSituacao,
@@ -746,7 +752,7 @@ async function ocupacoesNaTransacao(
   regiao: string | null,
 ): Promise<Map<string, Ocupacao>> {
   const linhas = await tx.agendamento.findMany({
-    where: { status: "marcado", dia: dataDoDia(dia) },
+    where: { status: "marcado", dia: dataDoDia(dia), solicitouReagendamento: false },
     select: { turno: true, regiao: true },
   });
   const mapa = new Map<string, Ocupacao>();
