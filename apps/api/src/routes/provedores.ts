@@ -5,6 +5,7 @@ import { prisma } from "../lib/prisma.js";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { chaveDoProvedor, gerarChaveEntrada, revogarChaveEntrada } from "../services/chaveParceiroService.js";
+import { emitParaTodos } from "../services/realtimeHub.js";
 
 export const provedoresRouter = Router();
 
@@ -74,9 +75,11 @@ provedoresRouter.delete(
   "/:id",
   requireRole(UserRole.ADMIN),
   asyncHandler(async (req, res) => {
-    await prisma.provedor.delete({ where: { id: req.params.id } }).catch(() => {
-      throw new HttpError(404, "Provedor nao encontrado");
-    });
+    const alvo = await prisma.provedor.findUnique({ where: { id: req.params.id }, select: { id: true, nome: true } });
+    if (!alvo) throw new HttpError(404, "Provedor nao encontrado");
+
+    await prisma.provedor.delete({ where: { id: req.params.id } });
+    emitParaTodos({ tipo: "config-alterada", em: new Date().toISOString() });
     res.status(204).send();
   }),
 );
