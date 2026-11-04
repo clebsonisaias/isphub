@@ -29,20 +29,46 @@ export class ApiError extends Error {
   }
 }
 
-let token: string | null = localStorage.getItem(TOKEN_STORAGE_KEY);
-let refreshToken: string | null = localStorage.getItem(REFRESH_STORAGE_KEY);
+const safeStorage = {
+  getItem: (key: string): string | null => {
+    try {
+      return typeof localStorage !== "undefined" && typeof localStorage.getItem === "function"
+        ? localStorage.getItem(key)
+        : null;
+    } catch {
+      return null;
+    }
+  },
+  setItem: (key: string, value: string): void => {
+    try {
+      if (typeof localStorage !== "undefined" && typeof localStorage.setItem === "function") {
+        localStorage.setItem(key, value);
+      }
+    } catch {}
+  },
+  removeItem: (key: string): void => {
+    try {
+      if (typeof localStorage !== "undefined" && typeof localStorage.removeItem === "function") {
+        localStorage.removeItem(key);
+      }
+    } catch {}
+  },
+};
+
+let token: string | null = safeStorage.getItem(TOKEN_STORAGE_KEY);
+let refreshToken: string | null = safeStorage.getItem(REFRESH_STORAGE_KEY);
 
 /** Chamado pelo AuthContext ao logar/deslogar; persiste entre recarregamentos. */
 export function setAuthToken(newToken: string | null) {
   token = newToken;
-  if (newToken) localStorage.setItem(TOKEN_STORAGE_KEY, newToken);
-  else localStorage.removeItem(TOKEN_STORAGE_KEY);
+  if (newToken) safeStorage.setItem(TOKEN_STORAGE_KEY, newToken);
+  else safeStorage.removeItem(TOKEN_STORAGE_KEY);
 }
 
 export function setRefreshToken(novo: string | null) {
   refreshToken = novo;
-  if (novo) localStorage.setItem(REFRESH_STORAGE_KEY, novo);
-  else localStorage.removeItem(REFRESH_STORAGE_KEY);
+  if (novo) safeStorage.setItem(REFRESH_STORAGE_KEY, novo);
+  else safeStorage.removeItem(REFRESH_STORAGE_KEY);
 }
 
 export function getAuthToken(): string | null {

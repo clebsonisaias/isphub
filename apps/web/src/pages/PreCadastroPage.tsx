@@ -33,6 +33,7 @@ import {
   soDigitos,
 } from "@/lib/preCadastro";
 import { preCadastroApi, type BuscaOs, type CoberturaResposta, type PlanoZona, type PreCadastro } from "@/lib/preCadastroApi";
+import { integracoesApi } from "@/lib/integracoesApi";
 import { cn } from "@/lib/utils";
 
 /**
@@ -674,6 +675,30 @@ function EtapaCliente({ r, setCliente, onVoltar, onAvancar }: { r: Rascunho; set
   const pj = soDigitos(c.documento).length === 14;
   const falta = faltando(erros);
   const candidatosCep = r.cobertura?.local?.candidatosCep ?? [];
+  const [buscandoCep, setBuscandoCep] = useState(false);
+
+  async function handleCepChange(v: string) {
+    const formatado = mascararCep(v);
+    setCliente({ cep: formatado });
+    const limpo = soDigitos(v);
+    if (limpo.length === 8) {
+      setBuscandoCep(true);
+      try {
+        const res = await integracoesApi.consultarCep(limpo);
+        if (res?.endereco) {
+          setCliente({
+            cep: formatado,
+            logradouro: c.logradouro || res.endereco.logradouro,
+            bairro: c.bairro || res.endereco.bairro,
+            cidade: c.cidade || res.endereco.cidade,
+          });
+        }
+      } finally {
+        setBuscandoCep(false);
+      }
+    }
+  }
+
   // Campo ainda com o valor que o mapa pos: a vendedora so confere.
   const doMapa = (k: keyof EnderecoMapa) => (c[k] && c[k] === r.autoEndereco?.[k] ? "Veio do mapa, confira." : undefined);
 
@@ -716,7 +741,7 @@ function EtapaCliente({ r, setCliente, onVoltar, onAvancar }: { r: Rascunho; set
         <Campo id="pc-rua" label="Rua" value={c.logradouro} onChange={(v) => setCliente({ logradouro: v })} erro={erros.logradouro} dica={doMapa("logradouro")} autoComplete="address-line1" />
         <Campo id="pc-num" label="Nº" value={c.numero} onChange={(v) => setCliente({ numero: v })} inputMode="numeric" placeholder="S/N" />
         <Campo id="pc-bairro" label="Bairro" value={c.bairro} onChange={(v) => setCliente({ bairro: v })} erro={erros.bairro} dica={doMapa("bairro")} className="col-span-2 sm:col-span-1" />
-        <Campo id="pc-cep" label="CEP" value={c.cep} onChange={(v) => setCliente({ cep: mascararCep(v) })} erro={erros.cep} dica={doMapa("cep")} inputMode="numeric" autoComplete="postal-code" className="col-span-2 sm:col-span-1" />
+        <Campo id="pc-cep" label="CEP" value={c.cep} onChange={handleCepChange} erro={erros.cep} dica={buscandoCep ? "Buscando endereço pelo CEP…" : doMapa("cep")} inputMode="numeric" autoComplete="postal-code" className="col-span-2 sm:col-span-1" />
         {candidatosCep.length > 0 && soDigitos(c.cep).length !== 8 && (
           <div className="col-span-2 flex flex-col gap-2 rounded-lg border border-warning/50 bg-warning/10 p-3">
             <p className="text-sm font-semibold">Esta rua tem mais de um CEP. Toque no do cliente:</p>
@@ -725,7 +750,7 @@ function EtapaCliente({ r, setCliente, onVoltar, onAvancar }: { r: Rascunho; set
                 <button
                   key={x.cep}
                   type="button"
-                  onClick={() => setCliente({ cep: mascararCep(x.cep), ...(x.bairro ? { bairro: x.bairro } : {}) })}
+                  onClick={() => handleCepChange(x.cep)}
                   className="flex min-h-12 flex-col items-start justify-center rounded-lg border border-border bg-card px-3 text-left hover:bg-secondary"
                 >
                   <span className="font-mono font-semibold">{mascararCep(x.cep)}</span>
