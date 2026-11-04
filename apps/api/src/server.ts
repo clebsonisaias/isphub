@@ -16,6 +16,7 @@ import { startOfertaAgendaScheduler } from "./jobs/ofertaAgendaScheduler.js";
 import { startPlanilhaScheduler } from "./jobs/planilhaScheduler.js";
 import { startTecnicosSgpScheduler } from "./jobs/tecnicosSgpScheduler.js";
 import { startRoboRoteirizacaoScheduler } from "./jobs/roboRoteirizacaoScheduler.js";
+import { startConfirmacaoVisitaScheduler } from "./jobs/confirmacaoVisitaScheduler.js";
 import { fecharTodasConexoes } from "./services/realtimeHub.js";
 
 const app = createApp();
@@ -37,6 +38,7 @@ const server = app.listen(env.PORT, () => {
   startPlanilhaScheduler();
   startTecnicosSgpScheduler();
   startRoboRoteirizacaoScheduler();
+  startConfirmacaoVisitaScheduler();
 });
 
 /**

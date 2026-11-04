@@ -9,6 +9,7 @@ import { podeAcessarOs } from "./escopoService.js";
 import { cadastrarNoAtendai } from "./ponteChatAtendaiService.js";
 import { emitParaTodos } from "./realtimeHub.js";
 import { dispararPush } from "./pushService.js";
+import { tratarRespostaConfirmacao } from "./confirmacaoVisitaService.js";
 
 /**
  * CONVERSA COM O CLIENTE DA OS PELO NUMERO DA EMPRESA (aprovado em 23/10/2026).
@@ -365,6 +366,10 @@ export async function receberDoCliente(provedorId: string, aviso: AvisoCliente):
       dados: { tela: "chat-clientes", conversaId: conversa.id },
     });
   }
+
+  // Se a mensagem for resposta de confirmacao ou reagendamento de visita
+  void tratarRespostaConfirmacao(provedorId, conversa.telefone, corpo).catch(() => {});
+
   return "ok";
 }
 
