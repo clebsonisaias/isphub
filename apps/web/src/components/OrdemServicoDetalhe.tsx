@@ -252,7 +252,12 @@ export function OrdemServicoDetalhe({
       if (navigator.onLine) {
         try {
           const atualizado = await ordensServicoApi.mudarStatus(os.id, alvo, geo);
-          setOs((prev) => ({ ...prev, status: atualizado.status as OsStatus }));
+          setOs((prev) => ({
+            ...prev,
+            status: atualizado.status as OsStatus,
+            // Pendente sai sem técnico nem apoio (a API desvincula na mesma escrita).
+            ...(atualizado.status === OsStatus.PENDENTE ? { tecnicoId: null, tecnicoNome: null, apoioNomes: [] } : {}),
+          }));
           void offlineStorage.salvarOs({ ...os, status: atualizado.status as OsStatus });
           toast({ titulo: "Status atualizado", variante: "sucesso" });
           marcarMudanca();
@@ -642,7 +647,11 @@ export function OrdemServicoDetalhe({
                       </Button>
                     ))}
                 </div>
-                {podeDespachar && (
+                {/* Pendente não tem técnico: a API recusa (409). Retomar é mudar o status. */}
+                {podeDespachar && os.status === OsStatus.PENDENTE && (
+                  <p className="text-sm text-muted-foreground">OS pendente: mude o status antes de designar um técnico.</p>
+                )}
+                {podeDespachar && os.status !== OsStatus.PENDENTE && (
                 <div className="flex flex-wrap items-center gap-2">
                 <Select
                   aria-label="Atribuir técnico"

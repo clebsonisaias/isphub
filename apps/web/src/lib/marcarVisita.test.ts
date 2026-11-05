@@ -37,7 +37,7 @@ describe("busca da atendente", () => {
 });
 
 describe("falta marcar", () => {
-  it("só aberta/pendente sem visita, a mais antiga primeiro", () => {
+  it("só aberta sem visita, a mais antiga primeiro (pendente tem aba própria)", () => {
     const lista = [
       os({ sgpOsId: "1", status: OsStatus.ABERTA, dataCadastro: "2026-10-22" }),
       os({ sgpOsId: "2", status: OsStatus.ABERTA, dataCadastro: "2026-10-20", diaAgenda: "2026-10-30" }),
@@ -45,7 +45,13 @@ describe("falta marcar", () => {
       os({ sgpOsId: "4", status: OsStatus.PENDENTE, dataCadastro: "2026-10-18" }),
       os({ sgpOsId: "5", status: OsStatus.ABERTA, dataCadastro: null }),
     ];
-    expect(faltaMarcar(lista).map((i) => i.sgpOsId)).toEqual(["4", "1", "5"]);
+    expect(faltaMarcar(lista).map((i) => i.sgpOsId)).toEqual(["1", "5"]);
+  });
+
+  it("a busca ainda acha a pendente: é por ela que se remarca quando o cliente responde", () => {
+    const pendente = os({ sgpOsId: "213399", clienteNome: "José Sem Retorno", status: OsStatus.PENDENTE });
+    expect(faltaMarcar([pendente])).toEqual([]);
+    expect(buscarOs([pendente], "sem retorno").map((i) => i.sgpOsId)).toEqual(["213399"]);
   });
 });
 

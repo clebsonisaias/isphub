@@ -54,6 +54,12 @@ describe("para agendar", () => {
   const item = (id: string, semaforo: FilaItem["sla"]["semaforo"], min: number | null, cadastro: string, dia: string | null = null) =>
     ({ id, diaAgenda: dia, sla: { semaforo, minutosRestantes: min }, dataCadastro: cadastro }) as unknown as FilaItem;
 
+  it("pendente não entra, nem estourada: tem aba própria e não recebe técnico", () => {
+    const pendente = { ...item("pendente", "vermelho", -900, "2026-09-01"), status: OsStatus.PENDENTE };
+    const aberta = { ...item("aberta", "verde", 3000, "2026-10-20"), status: OsStatus.ABERTA };
+    expect(paraAgendar([pendente, aberta]).map((i) => i.id)).toEqual(["aberta"]);
+  });
+
   it("só sem visita; estourado, vencendo, depois as mais antigas", () => {
     const r = paraAgendar([
       item("velha", "sem_sla", null, "2026-09-01"),
@@ -99,5 +105,14 @@ describe("soltar no quadro", () => {
     const orfa = { tipo: "parada", parada: parada({ osId: null }) } as const;
     expect(acaoDoDrop(orfa, { tecnicoId: "dison", turno: "manha" }, aberto).tipo).toBe("recusar");
     expect(acaoDoDrop(orfa, { tecnicoId: null, turno: "tarde" }, aberto)).toEqual({ tipo: "fazer", marcarTurno: "tarde", atribuir: null });
+  });
+
+  it("parada de OS pendente: não recebe técnico, mas pode mudar de turno sem ele", () => {
+    const pendente = { tipo: "parada", parada: parada({ status: OsStatus.PENDENTE }) } as const;
+    expect(acaoDoDrop(pendente, { tecnicoId: "dison", turno: "manha" }, aberto)).toEqual({
+      tipo: "recusar",
+      motivo: "OS pendente: mude o status antes de designar um técnico.",
+    });
+    expect(acaoDoDrop(pendente, { tecnicoId: null, turno: "tarde" }, aberto)).toEqual({ tipo: "fazer", marcarTurno: "tarde", atribuir: null });
   });
 });

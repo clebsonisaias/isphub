@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { OS_STATUS_ABERTOS, UserRole, diaBrHoje, escopadoPorProvedor, type Categoria, type EquipeFiltro, type FilaItem, type Provedor } from "@isphub/shared";
+import { OS_STATUS_ABERTOS, UserRole, diaBrHoje, escopadoPorProvedor, type Categoria, type EquipeFiltro, type FilaItem, type PendentesFiltro, type Provedor } from "@isphub/shared";
 import { rotuloDiaAgenda } from "@/lib/agendaApi";
 import { AppShell } from "@/components/AppShell";
 import { Input } from "@/components/ui/input";
@@ -105,6 +105,9 @@ export interface FilaWorkspaceProps {
   /** Qual fila esta tela mostra. Vai direto pro servidor — o corte é feito no
    *  banco, nunca na memória do cliente (senão contadores e paginação mentem). */
   equipe: EquipeFiltro;
+  /** OS PENDENTE: o Painel exclui, a aba Pendentes mostra só elas. Sem a prop, o
+   *  servidor inclui (Retiradas segue com todas as retiradas). */
+  pendentes?: PendentesFiltro;
   titulo: string;
   subtitulo: string;
   /** Rótulos da aba/estat de "abertas" (Painel: "Fila"/"Na fila"; Retiradas: "A retirar"). */
@@ -127,6 +130,7 @@ export interface FilaWorkspaceProps {
  */
 export function FilaWorkspace({
   equipe,
+  pendentes,
   titulo,
   subtitulo,
   rotuloAbertas = "Fila",
@@ -137,6 +141,8 @@ export function FilaWorkspace({
 }: FilaWorkspaceProps) {
   const { usuario } = useAuth();
   const { toast } = useToast();
+  // Pendente nunca está concluída: sem a aba e o contador de concluídas (seriam sempre zero).
+  const soPendentes = pendentes === "so";
   // Atendente, como o provedor, so enxerga um provedor: sem seletor de provedores.
   const ehProvedor = !!usuario && escopadoPorProvedor(usuario.role);
   const ehTecnico = usuario?.role === UserRole.TECNICO;
@@ -233,13 +239,14 @@ export function FilaWorkspace({
   const fila = useQuery({
     // So o grupo da aba ativa: sem isso, uma base com muita OS encerrada
     // consome o teto de registros e esconde as abertas.
-    queryKey: ["fila", { grupo: visao === "concluidas" ? "fechados" : "abertos", busca: buscaDebounced || undefined, equipe }],
+    queryKey: ["fila", { grupo: visao === "concluidas" ? "fechados" : "abertos", busca: buscaDebounced || undefined, equipe, pendentes }],
     queryFn: async () => {
       try {
         const res = await filaApi.listar({
           busca: buscaDebounced || undefined,
           grupo: visao === "concluidas" ? "fechados" : "abertos",
           equipe,
+          pendentes,
         });
         if (res.itens && res.itens.length > 0) {
           void offlineStorage.salvarOs(res.itens);
@@ -498,7 +505,7 @@ export function FilaWorkspace({
             {/* `=== false` e nao `!aoVivo`: `null` significa "primeira conexao
                 ainda em curso", e tratar isso como queda faria a tela gritar a
                 cada carregamento. */}
-            <VisoesSalvas equipe={equipe} qsAtual={qsAtual} temFiltro={temFiltroAtivo || ordenacao !== "urgencia" || visao !== "fila"} onAplicar={aplicarVisao} />
+            <VisoesSalvas equipe={soPendentes ? "pendentes" : equipe} qsAtual={qsAtual} temFiltro={temFiltroAtivo || ordenacao !== "urgencia" || visao !== "fila"} onAplicar={aplicarVisao} />
             {aoVivo === false && (
               <span
                 className="inline-flex items-center gap-1 text-xs font-medium text-warning"
@@ -525,12 +532,14 @@ export function FilaWorkspace({
             label="SLA estourado"
             tom="bg-destructive/10 text-destructive"
           />
-          <EstatCard
-            icon={<ListChecks className="size-4" />}
-            valor={estat.concluidas}
-            label="concluídas"
-            tom="bg-secondary text-muted-foreground"
-          />
+          {!soPendentes && (
+            <EstatCard
+              icon={<ListChecks className="size-4" />}
+              valor={estat.concluidas}
+              label="concluídas"
+              tom="bg-secondary text-muted-foreground"
+            />
+          )}
         </div>
       </div>
 
@@ -570,7 +579,7 @@ export function FilaWorkspace({
               <TabsTrigger value="fila">
                 {rotuloAbertas} ({totais.osAbertas})
               </TabsTrigger>
-              <TabsTrigger value="concluidas">Concluídas ({totais.osFechadas})</TabsTrigger>
+              {!soPendentes && <TabsTrigger value="concluidas">Concluídas ({totais.osFechadas})</TabsTrigger>}
             </TabsList>
           </Tabs>
 

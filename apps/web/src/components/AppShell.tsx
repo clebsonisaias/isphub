@@ -29,6 +29,7 @@ import {
   Gauge,
   Settings,
   PackageX,
+  PhoneMissed,
   Router,
   UserCircle,
   Sun,
@@ -130,6 +131,13 @@ const NAV_ITEMS: {
     icon: MessageSquareText,
     ocultoPara: [UserRole.PROVEDOR],
     modulo: "chat-clientes",
+  },
+  // OS pendente nao tem tecnico (a API desvincula): a tela seria sempre vazia pro tecnico.
+  {
+    to: "/pendentes",
+    label: "Pendentes",
+    icon: PhoneMissed,
+    ocultoPara: [UserRole.TECNICO],
   },
   // Retirada e feita por equipe de fora — tecnico da ISPhub nunca executa
   // uma, a tela seria sempre vazia pra ele.
@@ -243,8 +251,11 @@ const NAV_ITEMS: {
   },
 ];
 
-/** O que a atendente ve na barra: lista de permissao, nao de exclusao. */
-const NAV_ATENDENTE = new Set(["/", "/marcar-visita", "/agenda"]);
+/**
+ * O que a atendente ve na barra: lista de permissao, nao de exclusao. Pendentes
+ * entra: e ela quem remarca quando o cliente sem retorno finalmente responde.
+ */
+const NAV_ATENDENTE = new Set(["/", "/marcar-visita", "/agenda", "/pendentes"]);
 /** Vendedor: so o pre-cadastro (a API fecha o resto pra ele). */
 /**
  * Vendedor: pre-cadastro, os dois chats e o perfil. A tela dele e fixa pelo

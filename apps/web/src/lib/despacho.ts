@@ -131,10 +131,13 @@ export function montarQuadro(
 
 const PESO_SLA: Record<SlaSemaforo, number> = { vermelho: 0, amarelo: 1, verde: 2, sem_sla: 3 };
 
-/** OS abertas sem visita, urgentes primeiro: prazo estourado, vencendo, depois as mais antigas. */
+/**
+ * OS abertas sem visita, urgentes primeiro: prazo estourado, vencendo, depois as
+ * mais antigas. Pendente fica de fora: tem aba propria e nao recebe tecnico.
+ */
 export function paraAgendar(itens: FilaItem[]): FilaItem[] {
   return itens
-    .filter((i) => !i.diaAgenda)
+    .filter((i) => !i.diaAgenda && i.status !== OsStatus.PENDENTE)
     .sort(
       (a, b) =>
         PESO_SLA[a.sla.semaforo] - PESO_SLA[b.sla.semaforo] ||
@@ -175,6 +178,8 @@ export function acaoDoDrop(a: Arrasto, d: Destino, turnoFechado: (t: TurnoAgenda
   }
   const atribuir = d.tecnicoId && d.tecnicoId !== p.tecnicoId ? d.tecnicoId : null;
   if (atribuir && !p.osId) return { tipo: "recusar", motivo: "Esta OS ainda não chegou do SGP; atribua depois do próximo sync." };
+  // A API recusa (409); recusar aqui evita mudar o turno e falhar so na atribuicao.
+  if (atribuir && p.status === OsStatus.PENDENTE) return { tipo: "recusar", motivo: "OS pendente: mude o status antes de designar um técnico." };
   if (!mudaTurno && !atribuir) return { tipo: "nada" };
   return { tipo: "fazer", marcarTurno: mudaTurno ? d.turno : null, atribuir };
 }

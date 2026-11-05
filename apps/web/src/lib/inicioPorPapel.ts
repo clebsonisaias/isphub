@@ -27,13 +27,13 @@ export function destinoDoLogin(role: UserRole, pedida: string | undefined): stri
 }
 
 const DESPACHO = [
-  "/despacho", "/", "/marcar-visita", "/agenda", "/mapa", "/chat", "/chat-clientes", "/retiradas",
+  "/despacho", "/", "/marcar-visita", "/agenda", "/mapa", "/chat", "/chat-clientes", "/pendentes", "/retiradas",
   "/escala", "/frota", "/produtividade", "/provisionamento", "/dashboard", "/frota/bi", "/financeiro",
 ];
 const ORDEM: Partial<Record<UserRole, string[]>> = {
   [UserRole.ADMIN]: DESPACHO,
   [UserRole.GESTOR]: DESPACHO,
-  [UserRole.ATENDENTE]: ["/marcar-visita", "/agenda", "/"],
+  [UserRole.ATENDENTE]: ["/marcar-visita", "/agenda", "/", "/pendentes"],
   [UserRole.VENDEDOR]: ["/pre-cadastro", "/producao", "/chat-clientes", "/chat", "/perfil"],
 };
 

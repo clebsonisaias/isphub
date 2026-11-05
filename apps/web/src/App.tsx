@@ -20,6 +20,7 @@ const PrivacidadePage = lazy(() => import("@/pages/PrivacidadePage").then((m) =>
 const PainelPage = lazy(() => import("@/pages/PainelPage").then((m) => ({ default: m.PainelPage })));
 const OsPage = lazy(() => import("@/pages/OsPage").then((m) => ({ default: m.OsPage })));
 const RetiradasPage = lazy(() => import("@/pages/RetiradasPage").then((m) => ({ default: m.RetiradasPage })));
+const PendentesPage = lazy(() => import("@/pages/PendentesPage").then((m) => ({ default: m.PendentesPage })));
 const MapaPage = lazy(() => import("@/pages/MapaPage").then((m) => ({ default: m.MapaPage })));
 const DashboardPage = lazy(() => import("@/pages/DashboardPage").then((m) => ({ default: m.DashboardPage })));
 const ProvisionamentoPage = lazy(() => import("@/pages/ProvisionamentoPage").then((m) => ({ default: m.ProvisionamentoPage })));
@@ -91,6 +92,15 @@ function App() {
                     element={
                       <RequireAuth>
                         <MapaPage />
+                      </RequireAuth>
+                    }
+                  />
+                  {/* Mesmos papeis do Painel: quem ve a fila ve as pendentes dela. */}
+                  <Route
+                    path="/pendentes"
+                    element={
+                      <RequireAuth>
+                        <PendentesPage />
                       </RequireAuth>
                     }
                   />

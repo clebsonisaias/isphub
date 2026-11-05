@@ -40,13 +40,15 @@ export function buscarOs(itens: FilaItem[], termo: string, limite = 20): FilaIte
 }
 
 /**
- * "Falta marcar": OS aberta ou pendente sem visita, a mais antiga primeiro (é a
- * que espera há mais tempo). Em deslocamento/execução o técnico já está nela.
- * Retirada não entra porque a página já pede só a fila da equipe interna.
+ * "Falta marcar": OS aberta sem visita, a mais antiga primeiro (é a que espera
+ * há mais tempo). Em deslocamento/execução o técnico já está nela. Pendente
+ * tem aba própria (/pendentes) — a busca ainda a acha, para remarcar quando o
+ * cliente responder. Retirada não entra porque a página já pede só a fila da
+ * equipe interna.
  */
 export function faltaMarcar(itens: FilaItem[]): FilaItem[] {
   return itens
-    .filter((i) => !i.diaAgenda && (i.status === OsStatus.ABERTA || i.status === OsStatus.PENDENTE))
+    .filter((i) => !i.diaAgenda && i.status === OsStatus.ABERTA)
     .sort((a, b) => (a.dataCadastro ?? "9").localeCompare(b.dataCadastro ?? "9"));
 }
 
