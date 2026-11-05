@@ -20,7 +20,7 @@ import {
  */
 export const tecnicosSgpRouter = Router({ mergeParams: true });
 
-tecnicosSgpRouter.use(requireAuth, requireRole(UserRole.ADMIN, UserRole.GESTOR));
+tecnicosSgpRouter.use(requireAuth, requireRole(UserRole.ADMIN));
 
 const papelDe = (q: unknown) => z.object({ papel: z.enum(PAPEIS_SGP).default("tecnico") }).parse(q).papel;
 

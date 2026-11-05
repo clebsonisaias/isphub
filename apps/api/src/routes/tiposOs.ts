@@ -9,7 +9,7 @@ import { sugerirCategoriaId } from "../services/categoriaMatch.js";
 
 export const tiposOsRouter = Router({ mergeParams: true });
 
-tiposOsRouter.use(requireAuth, requireRole(UserRole.ADMIN, UserRole.GESTOR));
+tiposOsRouter.use(requireAuth, requireRole(UserRole.ADMIN));
 
 const CATEGORIA_RESUMO_SELECT = { id: true, nome: true, cor: true, icone: true, slaHorasPadrao: true, equipeExterna: true } as const;
 

@@ -7,7 +7,7 @@ import { prisma } from "../lib/prisma.js";
 
 export const syncRouter = Router({ mergeParams: true });
 
-syncRouter.use(requireAuth, requireRole(UserRole.ADMIN, UserRole.GESTOR));
+syncRouter.use(requireAuth, requireRole(UserRole.ADMIN));
 
 /** Dispara uma sincronizacao imediata (fora do ciclo do scheduler). */
 syncRouter.post(

@@ -10,7 +10,7 @@ import { buildConnector } from "../services/erpConnectorService.js";
 
 export const erpConfigRouter = Router({ mergeParams: true });
 
-erpConfigRouter.use(requireAuth, requireRole(UserRole.ADMIN, UserRole.GESTOR));
+erpConfigRouter.use(requireAuth, requireRole(UserRole.ADMIN));
 
 const erpConfigSchema = z.object({
   tipo: z.literal("SGP").default("SGP"),

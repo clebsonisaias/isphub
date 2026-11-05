@@ -27,7 +27,9 @@ const SELECT_PUBLICO = {
 
 usuariosRouter.get(
   "/",
-  requireRole(UserRole.ADMIN, UserRole.GESTOR),
+  // So admin: a lista traz a equipe de TODOS os provedores. O gestor volta a
+  // listar quando houver o filtro pelo escopo dele.
+  requireRole(UserRole.ADMIN),
   asyncHandler(async (req, res) => {
     const roleFiltro = req.query.role;
     const where =

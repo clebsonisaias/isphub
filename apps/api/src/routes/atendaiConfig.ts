@@ -20,7 +20,7 @@ import { canaisDoProvedor, definirCanalClientes } from "../services/clienteAtend
  */
 export const atendaiConfigRouter = Router({ mergeParams: true });
 
-atendaiConfigRouter.use(requireAuth, requireRole(UserRole.ADMIN, UserRole.GESTOR));
+atendaiConfigRouter.use(requireAuth, requireRole(UserRole.ADMIN));
 
 const salvarSchema = z.object({
   baseUrl: z.string().url().superRefine(validarUrlExterna),

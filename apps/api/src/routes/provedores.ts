@@ -93,7 +93,7 @@ const chaveParceiroSchema = z.object({ rotulo: z.string().trim().max(60).nullish
 
 provedoresRouter.get(
   "/:id/chave-parceiro",
-  requireRole(UserRole.ADMIN, UserRole.GESTOR),
+  requireRole(UserRole.ADMIN),
   asyncHandler(async (req, res) => {
     res.json(await chaveDoProvedor(req.params.id));
   }),
@@ -102,7 +102,7 @@ provedoresRouter.get(
 /** Gera ou REGERA (a anterior morre na hora). Devolve em claro uma unica vez. */
 provedoresRouter.post(
   "/:id/chave-parceiro",
-  requireRole(UserRole.ADMIN, UserRole.GESTOR),
+  requireRole(UserRole.ADMIN),
   asyncHandler(async (req, res) => {
     const provedor = await prisma.provedor.findUnique({ where: { id: req.params.id }, select: { id: true } });
     if (!provedor) throw new HttpError(404, "Provedor nao encontrado");
@@ -113,7 +113,7 @@ provedoresRouter.post(
 
 provedoresRouter.delete(
   "/:id/chave-parceiro",
-  requireRole(UserRole.ADMIN, UserRole.GESTOR),
+  requireRole(UserRole.ADMIN),
   asyncHandler(async (req, res) => {
     await revogarChaveEntrada(req.params.id);
     res.status(204).end();
