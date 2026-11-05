@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { OsStatus, SgpOsStatus } from "@isphub/shared";
+import { OsStatus } from "@isphub/shared";
 
 /** Encerrar OS sem visita pela tela de marcar: o SGP fica sabendo quem e por quê. */
 
@@ -32,14 +32,14 @@ vi.mock("./clienteAtendaiService.js", () => ({ encerrarConversasDeOsConcluidas: 
 const { encerrarSemVisita } = await import("./writebackService.js");
 
 let chamadas: string[];
-let sgp: { addOsNote: ReturnType<typeof vi.fn>; updateOsStatus: ReturnType<typeof vi.fn> };
+let sgp: { addOsNote: ReturnType<typeof vi.fn>; encerrarOs: ReturnType<typeof vi.fn> };
 
 beforeEach(() => {
   vi.clearAllMocks();
   chamadas = [];
   sgp = {
     addOsNote: vi.fn(async (_os: string, texto: string) => void chamadas.push(`nota:${texto}`)),
-    updateOsStatus: vi.fn(async (_os: string, codigo: number) => void chamadas.push(`status:${codigo}`)),
+    encerrarOs: vi.fn(async (_os: string, o: { servicoPrestado?: string | null }) => void chamadas.push(`encerra:${o.servicoPrestado}`)),
   };
   m.buildConnector.mockReturnValue(sgp);
   m.osFind.mockResolvedValue({ id: "os-1", provedorId: "netgo", sgpOsId: "213347", tecnicoId: null, status: OsStatus.ABERTA });
@@ -57,7 +57,7 @@ describe("encerrar OS sem visita", () => {
 
     expect(chamadas).toEqual([
       "nota:Encerrada pelo ISPhub por Marília, sem visita. Motivo: A internet voltou, cliente confirmou",
-      `status:${SgpOsStatus.ENCERRADA}`,
+      "encerra:Encerrada sem visita: A internet voltou, cliente confirmou",
     ]);
     expect(m.osUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: OsStatus.CANCELADA }) }));
     expect(m.agendaUpdate).toHaveBeenCalledWith({
@@ -68,8 +68,8 @@ describe("encerrar OS sem visita", () => {
     expect(m.emitParaTodos).toHaveBeenCalledWith(expect.objectContaining({ tipo: "os-alterada" }));
   });
 
-  it("SGP recusou o status: nada muda no ISPhub", async () => {
-    sgp.updateOsStatus.mockRejectedValue(new Error("SGP 500 em https://sgp/api/os/update"));
+  it("SGP recusou o encerramento: nada muda no ISPhub", async () => {
+    sgp.encerrarOs.mockRejectedValue(new Error("SGP 500 em https://sgp/api/os/update"));
     await expect(encerrarSemVisita("os-1", "Cliente desistiu da visita", "u-marilia")).rejects.toMatchObject({ status: 502 });
     expect(m.tx).not.toHaveBeenCalled();
     expect(m.emitParaTodos).not.toHaveBeenCalled();

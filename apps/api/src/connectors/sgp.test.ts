@@ -482,6 +482,40 @@ describe("createSgpConnector", () => {
     await expect(createSgpConnector(creds).scheduleOs("555", new Date("2026-10-30T16:00:00Z"))).rejects.toThrow(/nao confirmou/);
   });
 
+  it("encerrarOs encerra pelo Chamado – Atualizar: status, servico prestado, ocorrencia e aviso ao cliente", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ msg: "OS alterada com sucesso", os_id: 212935 }));
+
+    await createSgpConnector(creds).encerrarOs("212935", { servicoPrestado: "Troca do conector" });
+
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/api/central/chamado/update/212935/");
+    expect(options.headers["Content-Type"]).toBe("application/json");
+    expect(JSON.parse(options.body as string)).toEqual({
+      app: creds.app,
+      token: creds.token,
+      os_status: 1,
+      ocorrencia_encerrar: 1,
+      notificar_cliente: 1,
+      os_servico_prestado: "Troca do conector",
+    });
+  });
+
+  it("encerrarOs sem servico prestado nao manda o campo", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ msg: "OS alterada com sucesso", os_id: 555 }));
+    await createSgpConnector(creds).encerrarOs("555", { servicoPrestado: null });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).not.toHaveProperty("os_servico_prestado");
+  });
+
+  it("encerrarOs: corpo `500` com HTTP 200 (erro do SGP) vira falha, nao sucesso silencioso", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(500));
+    await expect(createSgpConnector(creds).encerrarOs("555", {})).rejects.toThrow(/nao confirmou/);
+  });
+
+  it("encerrarOs trata 'OS ja foi encerrada' como sucesso idempotente", async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ msg: "OS já foi encerrada", os_id: 6186 }), { status: 422 }));
+    await expect(createSgpConnector(creds).encerrarOs("6186", {})).resolves.toBeUndefined();
+  });
+
   it("unscheduleOs manda data_hora_agendamento NULA em JSON — e so isso", async () => {
     // Desmarcar aqui tem que apagar la: senao o provedor segue vendo no ERP
     // uma visita que nao vai acontecer.

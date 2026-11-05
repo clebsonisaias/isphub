@@ -4,7 +4,6 @@ import {
   OS_STATUS_LABEL,
   OsStatus,
   STATUS_CONTRATO,
-  SgpOsStatus,
   UserRole,
   rotuloDoTexto,
   toSgpOsStatus,
@@ -188,25 +187,47 @@ export async function marcarACaminho(ordemServicoId: string, autorId: string, ge
   return osAtualizada;
 }
 
+// ponytail: sem `servicoPrestado` no PATCH, o "o que foi feito" e a anotacao
+// mais recente do mesmo autor nesta OS nos ultimos 15 min — e o que o app do
+// tecnico faz hoje (anota, depois conclui). Fora da janela, encerra sem texto.
+// Quando o app passar `servicoPrestado` explicito, isto vira so reserva.
+const JANELA_SERVICO_PRESTADO_MS = 15 * 60_000;
+
+async function anotacaoRecente(ordemServicoId: string, autorId: string): Promise<string | null> {
+  const ev = await prisma.osEvento.findFirst({
+    where: { ordemServicoId, autorId, tipo: "anotacao", criadoEm: { gte: new Date(Date.now() - JANELA_SERVICO_PRESTADO_MS) } },
+    orderBy: { criadoEm: "desc" },
+    select: { descricao: true },
+  });
+  return ev?.descricao ?? null;
+}
+
 export async function mudarStatus(
   ordemServicoId: string,
   novoStatus: OsStatus,
   autorId: string,
   geo?: Geo,
+  /** "O que foi feito" — vai pro SGP ao concluir/cancelar. */
+  servicoPrestado?: string,
 ) {
   const { os, connector } = await loadOsWithConnector(ordemServicoId);
 
   if (novoStatus === OsStatus.EM_DESLOCAMENTO) {
     // "A caminho" tem endpoint proprio no SGP; nao e um status generico.
     await chamarSgp(() => connector.setOnTheWay(os.sgpOsId));
+  } else if (novoStatus === OsStatus.CONCLUIDA || novoStatus === OsStatus.CANCELADA) {
+    // Concluida e cancelada mapeiam pro mesmo "Encerrada" (1) do SGP — a
+    // distincao entre as duas vive no espelho local, que e o unico lugar capaz
+    // de representa-la (ver reconciliarStatus no syncService). Encerrar leva
+    // junto o servico prestado, o fim da ocorrencia e o aviso ao cliente.
+    const texto = servicoPrestado || (await anotacaoRecente(os.id, autorId));
+    await chamarSgp(() => connector.encerrarOs(os.sgpOsId, { servicoPrestado: texto }));
   } else {
     const codigo = toSgpOsStatus(novoStatus);
     if (codigo === undefined) {
       throw new HttpError(400, `Status "${novoStatus}" nao tem equivalente de escrita no SGP`);
     }
-    // So o status. Concluida e cancelada mapeiam pro mesmo "Encerrada" (1) do
-    // SGP — a distincao entre as duas vive no espelho local, que e o unico
-    // lugar capaz de representa-la (ver reconciliarStatus no syncService).
+    // So o status (aberta, em execucao, pendente).
     await chamarSgp(() => connector.updateOsStatus(os.sgpOsId, codigo));
   }
 
@@ -244,9 +265,10 @@ export const notaDeEncerramento = (nome: string, motivo: string) => `Encerrada p
 
 /**
  * Encerra a OS sem visita (a internet voltou, o cliente desistiu...), pela tela
- * de marcar. No SGP: anotação com quem e por quê, depois status Encerrada — a
- * anotação vai antes para o motivo nunca faltar lá (se o status falhar, tentar
- * de novo só repete a anotação). No ISPhub vira CANCELADA, não concluída: não
+ * de marcar. No SGP: anotação com quem e por quê, depois o encerramento (com o
+ * motivo como serviço prestado, fim da ocorrência e aviso ao cliente) — a
+ * anotação vai antes para o motivo nunca faltar lá (se o encerramento falhar,
+ * tentar de novo só repete a anotação). No ISPhub vira CANCELADA, não concluída: não
  * conta como serviço feito, e o sync mantém cancelada mesmo com o SGP dizendo
  * "encerrada". A visita marcada sai da agenda e libera a vaga.
  */
@@ -256,7 +278,7 @@ export async function encerrarSemVisita(ordemServicoId: string, motivo: string, 
   const autor = await prisma.usuario.findUnique({ where: { id: autorId }, select: { nome: true } });
 
   await chamarSgp(() => connector.addOsNote(os.sgpOsId, notaDeEncerramento(autor?.nome ?? "usuário do ISPhub", motivo)));
-  await chamarSgp(() => connector.updateOsStatus(os.sgpOsId, SgpOsStatus.ENCERRADA));
+  await chamarSgp(() => connector.encerrarOs(os.sgpOsId, { servicoPrestado: `Encerrada sem visita: ${motivo}` }));
 
   const [osAtualizada] = await prisma.$transaction([
     prisma.ordemServico.update({

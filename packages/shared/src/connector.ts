@@ -322,9 +322,15 @@ export interface ErpConnector {
    * Todo o resto que o endpoint aceita (servico prestado, observacao, checkin,
    * assinaturas, classificacoes, datas) e opcional e nao entra aqui: mudar
    * status no ISPhub nao pede nada a quem clica. O proprio ERP estampa as
-   * datas de alteracao/finalizacao.
+   * datas de alteracao/finalizacao. Encerrar vai por `encerrarOs`.
    */
   updateOsStatus(sgpOsId: string, statusCode: number): Promise<void>;
+
+  /**
+   * Encerra a OS no ERP: status Encerrada, servico prestado (quando houver),
+   * ocorrencia encerrada e aviso ao cliente. "Ja encerrada" e sucesso.
+   */
+  encerrarOs(sgpOsId: string, opts: { servicoPrestado?: string | null }): Promise<void>;
 
   /**
    * Grava a data/hora agendada da OS no ERP.

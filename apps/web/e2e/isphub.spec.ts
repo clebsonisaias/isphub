@@ -150,7 +150,7 @@ test("fluxo despacho -> status: marcar a caminho e concluir uma OS, refletindo n
   // Confirma que as duas acoes de fato chegaram no SGP (write-back real, nao so local).
   const log = await (await request.get(`${MOCK_SGP}/_test/log`)).json();
   expect(log.some((e: any) => e.acao === "acaminho" && e.osId === "e2e-os-1")).toBe(true);
-  // os_status vai como número no corpo JSON (updateOsStatus manda JSON, não
+  // os_status vai como número no corpo JSON (encerrarOs manda JSON, não
   // form) — o mock loga o valor cru, então é 1 (número), não "1".
   expect(log.some((e: any) => e.acao === "status" && e.osId === "e2e-os-1" && e.osStatus === 1)).toBe(true);
 });

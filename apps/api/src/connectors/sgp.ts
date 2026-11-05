@@ -1134,6 +1134,32 @@ export function createSgpConnector(creds: ErpCredentials): ErpConnector {
       }
     },
 
+    async encerrarOs(sgpOsId: string, { servicoPrestado }: { servicoPrestado?: string | null }): Promise<void> {
+      // "Chamado – Atualizar" encerra por inteiro numa chamada so — o
+      // `/api/os/update/` so troca o status. Testado na NetGo em 05/11/2026
+      // (OS 212935): resposta `{"msg":"OS alterada com sucesso","os_id":...}`,
+      // OS Encerrada com `os_servicoprestado` e `os_data_finalizacao`, e a
+      // ocorrencia ganhou data de finalizacao. `notificar_cliente` foi aceito.
+      const path = `/api/central/chamado/update/${encodeURIComponent(sgpOsId)}/`;
+      try {
+        const data = await sgpPostJson(creds, path, {
+          os_status: SgpOsStatus.ENCERRADA,
+          ocorrencia_encerrar: 1,
+          notificar_cliente: 1,
+          ...(servicoPrestado ? { os_servico_prestado: servicoPrestado } : {}),
+        });
+        assertSgpEscritaOk(data, path);
+        // Mesmo caso do scheduleOs: erro aqui vem como 200 com corpo `500`.
+        if (data == null || typeof data !== "object" || !("os_id" in data)) {
+          throw new SgpError(`SGP nao confirmou o encerramento da OS em ${path}: ${JSON.stringify(data)}`);
+        }
+      } catch (err) {
+        // Ja encerrada do lado do SGP: sucesso idempotente, como no updateOsStatus.
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!/j[áa]\s*(foi\s+)?encerrada/i.test(msg)) throw err;
+      }
+    },
+
     /**
      * Muda o status do CONTRATO. Endpoint e formato confirmados contra uma
      * implementacao em PRODUCAO (o Maxxi usa este mesmo endpoint contra o mesmo

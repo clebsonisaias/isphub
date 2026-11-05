@@ -119,15 +119,18 @@ ordensServicoRouter.post(
 
 // `.merge` com o geo: a mudanca de status carrega de ONDE ela foi feita —
 // "chegou" (em execucao) e "concluiu" sao dois dos tres momentos que interessam.
-const statusSchema = z.object({ status: z.nativeEnum(OsStatus) }).merge(geoSchema);
+// `servicoPrestado`: "o que foi feito", vai pro SGP ao concluir/cancelar.
+const statusSchema = z
+  .object({ status: z.nativeEnum(OsStatus), servicoPrestado: z.string().trim().max(2000).optional() })
+  .merge(geoSchema);
 
 ordensServicoRouter.patch(
   "/:id/status",
   requireRole(...acoesRoles),
   asyncHandler(async (req, res) => {
     await assertAcesso(req, req.params.id);
-    const { status, ...geo } = statusSchema.parse(req.body);
-    const os = await writeback.mudarStatus(req.params.id, status, req.user!.sub, geo);
+    const { status, servicoPrestado, ...geo } = statusSchema.parse(req.body);
+    const os = await writeback.mudarStatus(req.params.id, status, req.user!.sub, geo, servicoPrestado);
     res.json(os);
   }),
 );

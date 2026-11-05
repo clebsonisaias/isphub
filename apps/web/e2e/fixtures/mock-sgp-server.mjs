@@ -316,6 +316,14 @@ app.post("/api/os/update/id/:id/", (req, res) => {
   res.json({ ok: true });
 });
 
+// "Chamado – Atualizar": por onde o ISPhub encerra (encerrarOs) e agenda.
+// So `os_id` na resposta prova que gravou — igual ao SGP real.
+app.post("/api/central/chamado/update/:id/", (req, res) => {
+  if (exigirAuth(req, res)) return;
+  if (req.body.os_status !== undefined) registrar({ acao: "status", osId: req.params.id, osStatus: req.body.os_status });
+  res.json({ msg: "OS alterada com sucesso", os_id: req.params.id });
+});
+
 /**
  * Muda o status do contrato. Guarda o texto correspondente ao codigo REST na OS
  * — assim o proximo ciclo de sync devolve o valor novo, e o teste consegue
