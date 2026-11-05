@@ -1,6 +1,7 @@
 import type { TurnoAgenda, VagaTurno } from "./agenda.js";
 import type { OsPrioridade, OsStatus } from "./status.js";
 import type { UserRole } from "./roles.js";
+import type { PermissoesGestor } from "./permissoes.js";
 
 /** ERPs suportados. SGP e o primeiro; outros plugam no mesmo contrato. */
 export type ErpTipo = "SGP";
@@ -213,6 +214,10 @@ export interface UsuarioPublic {
   assinaturaChat?: string | null;
   /** Hex "#rrggbb" — pessoal, nao confundir com Provedor.cor. */
   corDestaque?: string | null;
+  /** So GESTOR: provedores que ele enxerga (vazio = todos). Quem barra e a API; o painel so esconde. */
+  provedoresPermitidos?: string[];
+  /** So GESTOR: areas e niveis (null = acesso total). Ver permissoes.ts. */
+  permissoes?: PermissoesGestor | null;
 }
 
 /** Semaforo de SLA calculado no servidor. */

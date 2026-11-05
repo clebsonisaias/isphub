@@ -91,6 +91,18 @@ export function registrarPerdaDeSessao(cb: AoPerderSessao | null) {
 }
 
 /**
+ * Avisa a aplicacao que a renovacao trouxe o usuario de novo. E o caminho de
+ * quando o admin muda os limites de um supervisor: a API derruba o token
+ * (tokenVersion), o painel renova sozinho e o menu se remonta com os limites
+ * novos, sem pedir login. `unknown` porque o apiClient nao conhece o tipo.
+ */
+type AoRenovarUsuario = (usuario: unknown) => void;
+let aoRenovarUsuario: AoRenovarUsuario | null = null;
+export function registrarUsuarioRenovado(cb: AoRenovarUsuario | null) {
+  aoRenovarUsuario = cb;
+}
+
+/**
  * RENOVACAO SILENCIOSA.
  *
  * Uma renovacao por vez, compartilhada: quando a tela dispara varias chamadas
@@ -119,9 +131,10 @@ async function renovarSessao(): Promise<Renovacao> {
       });
       if (!res.ok) return "recusou";
 
-      const data = (await res.json()) as { token: string; refreshToken: string };
+      const data = (await res.json()) as { token: string; refreshToken: string; usuario?: unknown };
       setAuthToken(data.token);
       setRefreshToken(data.refreshToken);
+      if (data.usuario) aoRenovarUsuario?.(data.usuario);
       return "renovou";
     } catch {
       // Falha de REDE nao e sessao invalida: a chamada original propaga o

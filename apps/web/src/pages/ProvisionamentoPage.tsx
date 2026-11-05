@@ -11,6 +11,8 @@ import { corSinal, rotuloSinal } from "@/lib/sinal";
 import { fttxApi } from "@/lib/fttxApi";
 import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
+import { usePodeEditar } from "@/context/AuthContext";
+import { AvisoSoVer } from "@/components/AvisoSoVer";
 import { Router, Search } from "lucide-react";
 
 function mensagem(err: unknown): string {
@@ -33,6 +35,8 @@ function Pill({ ativo, children, onClick }: { ativo: boolean; children: ReactNod
  */
 export function ProvisionamentoPage() {
   const { toast } = useToast();
+  // Supervisor com o provisionamento so em "ver": lista OLTs e ONUs, sem autorizar nem remover.
+  const podeEditar = usePodeEditar("provisionamento");
   const [provedores, setProvedores] = useState<Provedor[]>([]);
   const [provedorId, setProvedorId] = useState<string | null>(null);
   const [olts, setOlts] = useState<Olt[]>([]);
@@ -130,6 +134,11 @@ export function ProvisionamentoPage() {
           Escolha o provedor e a OLT para autorizar ou remover ONUs. Autorizar provisiona a ONU no SGP do provedor — muda o
           serviço do cliente na rede.
         </p>
+        {podeEditar ? null : (
+          <div className="mt-3">
+            <AvisoSoVer />
+          </div>
+        )}
       </div>
 
       {/* Provedor */}
@@ -196,9 +205,11 @@ export function ProvisionamentoPage() {
                         </p>
                       </div>
                       <span className={`shrink-0 text-sm font-semibold ${corSinal(onu.sinalRxDbm)}`}>{rotuloSinal(onu.sinalRxDbm)}</span>
-                      <Button size="sm" onClick={() => setAlvo(onu)}>
-                        Autorizar
-                      </Button>
+                      {podeEditar ? (
+                        <Button size="sm" onClick={() => setAlvo(onu)}>
+                          Autorizar
+                        </Button>
+                      ) : null}
                     </CardContent>
                   </Card>
                 ))}
@@ -238,9 +249,11 @@ export function ProvisionamentoPage() {
                         </p>
                       </div>
                       <span className={`shrink-0 text-sm font-semibold ${corSinal(onu.sinalRxDbm)}`}>{rotuloSinal(onu.sinalRxDbm)}</span>
-                      <Button variant="destructive" size="sm" onClick={() => desautorizar(onu)}>
-                        Remover
-                      </Button>
+                      {podeEditar ? (
+                        <Button variant="destructive" size="sm" onClick={() => desautorizar(onu)}>
+                          Remover
+                        </Button>
+                      ) : null}
                     </CardContent>
                   </Card>
                 ))}

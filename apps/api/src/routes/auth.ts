@@ -1,7 +1,7 @@
 import { Router } from "express";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
-import { StatusPreset, UserRole, type UsuarioPublic } from "@isphub/shared";
+import { StatusPreset, UserRole, normalizarPermissoes, type UsuarioPublic } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -107,6 +107,8 @@ function toPublic(u: {
   telefoneContato: string | null;
   assinaturaChat: string | null;
   corDestaque: string | null;
+  provedoresPermitidos: string[];
+  permissoes: unknown;
 }): UsuarioPublic {
   return {
     id: u.id,
@@ -124,6 +126,10 @@ function toPublic(u: {
     telefoneContato: u.telefoneContato,
     assinaturaChat: u.assinaturaChat,
     corDestaque: u.corDestaque,
+    // Os limites do supervisor: o painel monta o menu e a tela inicial com eles.
+    // Normalizado como no requireAuth, pra tela e API lerem a MESMA regra.
+    provedoresPermitidos: u.provedoresPermitidos,
+    permissoes: normalizarPermissoes(u.permissoes ?? null),
   };
 }
 

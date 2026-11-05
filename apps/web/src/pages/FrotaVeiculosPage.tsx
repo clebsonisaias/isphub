@@ -33,8 +33,10 @@ import { ErrorState } from "@/components/ErrorState";
 import { veiculosApi, type VeiculoFrota, type VeiculoInput } from "@/lib/veiculosApi";
 import { ApiError } from "@/lib/apiClient";
 import { useToast } from "@/context/ToastContext";
+import { usePodeEditar } from "@/context/AuthContext";
+import { AvisoSoVer } from "@/components/AvisoSoVer";
 import { cn } from "@/lib/utils";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Download, KeyRound, Map as MapIcon, Plus, Truck } from "lucide-react";
 import { ImportarRastreadoresDialog } from "@/components/frota/ImportarRastreadoresDialog";
 import { CredencialRastreamentoDialog } from "@/components/frota/CredencialRastreamentoDialog";
@@ -74,6 +76,10 @@ function Badge({ status }: { status: StatusVeiculo }) {
 
 export function FrotaVeiculosPage() {
   const { toast } = useToast();
+  // Supervisor com a frota so em "ver": sem cadastro, importacao nem credencial;
+  // o clique no carro abre a pagina dele (leitura) em vez do formulario.
+  const podeEditar = usePodeEditar("frota");
+  const navigate = useNavigate();
   const [busca, setBusca] = useState("");
   const [editando, setEditando] = useState<VeiculoFrota | null>(null);
   const [criando, setCriando] = useState(false);
@@ -124,6 +130,8 @@ export function FrotaVeiculosPage() {
                 intencao — pôr carro na frota — por outro caminho: um a um na
                 mão, ou de uma vez a partir de quem ja tem aparelho instalado.
               */}
+              {podeEditar ? (
+              <>
               <Button variant="ghost" onClick={() => setCredencial(true)}>
                 <KeyRound className="size-4" aria-hidden />
                 Credencial
@@ -136,8 +144,12 @@ export function FrotaVeiculosPage() {
                 <Plus className="size-4" aria-hidden />
                 Novo veículo
               </Button>
+              </>
+              ) : null}
             </div>
           </header>
+
+          {podeEditar ? null : <AvisoSoVer />}
 
           <Input
             aria-label="Buscar veículo"
@@ -169,7 +181,7 @@ export function FrotaVeiculosPage() {
                 <li key={v.id}>
                   <button
                     type="button"
-                    onClick={() => setEditando(v)}
+                    onClick={() => (podeEditar ? setEditando(v) : navigate(`/frota/veiculos/${v.id}`))}
                     className="flex w-full items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left transition-colors hover:bg-secondary/40"
                   >
                     <div className="min-w-0 flex-1">

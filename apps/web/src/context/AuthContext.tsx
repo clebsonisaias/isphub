@@ -1,12 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { avisarApp } from "@/lib/modoApp";
-import type { UsuarioPublic } from "@isphub/shared";
+import { UserRole, gestorPode, podeArea, type AreaId, type UsuarioPublic } from "@isphub/shared";
 import {
   api,
   ApiError,
   getAuthToken,
   getRefreshToken,
   registrarPerdaDeSessao,
+  registrarUsuarioRenovado,
   setAuthToken,
   setRefreshToken,
 } from "@/lib/apiClient";
@@ -38,7 +39,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   useEffect(() => {
     registrarPerdaDeSessao(() => setUsuario(null));
-    return () => registrarPerdaDeSessao(null);
+    // Renovou (ex.: o admin mudou os limites do supervisor e derrubou o token):
+    // o usuario que volta do refresh ja traz os limites novos.
+    registrarUsuarioRenovado((u) => setUsuario(u as UsuarioPublic));
+    return () => {
+      registrarPerdaDeSessao(null);
+      registrarUsuarioRenovado(null);
+    };
   }, []);
 
   /*
@@ -127,6 +134,27 @@ export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth deve ser usado dentro de <AuthProvider>");
   return ctx;
+}
+
+/**
+ * O usuario pode ESCREVER nesta area? So o supervisor (GESTOR) com areas
+ * definidas tem "ver" sem "editar"; os demais papeis seguem como sempre. E
+ * conveniencia de tela (esconder o botao que daria 403): quem barra e a API.
+ */
+export function usePodeEditar(area: AreaId): boolean {
+  const { usuario } = useAuth();
+  return usuario?.role !== UserRole.GESTOR || podeArea(usuario.permissoes ?? null, area, "editar");
+}
+
+/**
+ * A chamada (metodo + caminho da API) passa nas areas do supervisor? A MESMA
+ * regra do requireAuth (`gestorPode`) — pra acao que mais de uma area cobre,
+ * como atribuir tecnico (fila, despacho ou agenda).
+ */
+export function usePodeChamar(): (metodo: string, caminho: string) => boolean {
+  const { usuario } = useAuth();
+  const perm = usuario?.role === UserRole.GESTOR ? (usuario.permissoes ?? null) : null;
+  return useCallback((metodo: string, caminho: string) => gestorPode(perm, metodo, caminho), [perm]);
 }
 
 export { ApiError };

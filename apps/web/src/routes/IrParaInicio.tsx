@@ -20,7 +20,7 @@ export function inicioJaDecidido() {
 export function IrParaInicio({ children }: { children: ReactNode }) {
   const { usuario } = useAuth();
   // useState + efeito (e não uma variável mudada no render): o StrictMode renderiza duas vezes.
-  const [destino] = useState(() => (ENTROU_PELA_RAIZ && !decidido ? inicioDoPapel(usuario?.role) : "/"));
+  const [destino] = useState(() => (ENTROU_PELA_RAIZ && !decidido ? inicioDoPapel(usuario?.role, usuario?.permissoes) : "/"));
   useEffect(() => {
     decidido = true;
   }, []);

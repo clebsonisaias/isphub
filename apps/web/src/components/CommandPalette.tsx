@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { UserRole, type FilaItem, type Provedor } from "@isphub/shared";
+import { UserRole, podeRotaWeb, type FilaItem, type Provedor } from "@isphub/shared";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth, usePodeChamar } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 import { filaApi } from "@/lib/filaApi";
 import { provedoresApi } from "@/lib/adminApi";
@@ -47,6 +47,9 @@ export function CommandPalette() {
   const navigate = useNavigate();
   const { usuario } = useAuth();
   const { toggleTheme } = useTheme();
+  // Supervisor sem nenhuma area que leia a fila: buscar OS so renderia 403.
+  const podeChamar = usePodeChamar();
+  const buscaOs = podeChamar("GET", "/fila");
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -71,7 +74,7 @@ export function CommandPalette() {
   }, [aberto, usuario]);
 
   useEffect(() => {
-    if (!aberto || query.trim().length < 2) {
+    if (!aberto || !buscaOs || query.trim().length < 2) {
       setResultadosOs([]);
       return;
     }
@@ -94,7 +97,7 @@ export function CommandPalette() {
       cancelado = true;
       clearTimeout(t);
     };
-  }, [query, aberto]);
+  }, [query, aberto, buscaOs]);
 
   const navegarComandos = useMemo<Comando[]>(() => {
     const base: Comando[] = [
@@ -110,6 +113,7 @@ export function CommandPalette() {
     if (usuario?.role === UserRole.ADMIN) {
       base.push({ tipo: "navegar", id: "admin", label: "Administração", icon: Settings, to: "/admin" });
     }
+    if (usuario?.role === UserRole.GESTOR) return base.filter((c) => c.tipo !== "navegar" || podeRotaWeb(usuario.permissoes ?? null, c.to));
     return base;
   }, [usuario]);
 

@@ -11,6 +11,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { MarcarVisitaDialog } from "@/components/MarcarVisitaDialog";
 import { EncerrarOsDialog } from "@/components/EncerrarOsDialog";
 import { useToast } from "@/context/ToastContext";
+import { usePodeEditar } from "@/context/AuthContext";
+import { AvisoSoVer } from "@/components/AvisoSoVer";
 import { agendaApi } from "@/lib/agendaApi";
 import { filaApi, ordensServicoApi } from "@/lib/filaApi";
 import { ApiError } from "@/lib/apiClient";
@@ -44,6 +46,8 @@ interface Feita {
 export function MarcarVisitaPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  // Supervisor com a agenda so em "ver": busca e vagas ficam; marcar e encerrar somem.
+  const podeEditar = usePodeEditar("agenda");
   const busca = useRef<HTMLInputElement>(null);
   const [termo, setTermo] = useState("");
   const [escolhidaId, setEscolhidaId] = useState<string | null>(null);
@@ -179,6 +183,7 @@ export function MarcarVisitaPage() {
         <div className="flex flex-wrap items-start gap-6">
           <div className="flex min-w-0 flex-[999_1_34rem] flex-col gap-5">
             <h1 className="text-2xl font-bold tracking-tight">Marcar visita</h1>
+            {podeEditar ? null : <AvisoSoVer />}
 
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="busca-cliente" className="text-sm font-semibold">
@@ -334,10 +339,15 @@ export function MarcarVisitaPage() {
                           })}
                         </div>
                       )}
-                      <button type="button" onClick={() => setGradeAberta(true)} className="self-start text-sm font-medium text-primary hover:underline">
-                        Ver outros dias
-                      </button>
+                      {podeEditar ? (
+                        <button type="button" onClick={() => setGradeAberta(true)} className="self-start text-sm font-medium text-primary hover:underline">
+                          Ver outros dias
+                        </button>
+                      ) : null}
                     </fieldset>
+
+                    {podeEditar ? (
+                    <>
 
                     <div className="flex flex-col gap-1.5">
                       <Label htmlFor="obs-visita">
@@ -371,6 +381,8 @@ export function MarcarVisitaPage() {
                         Encerrar OS
                       </Button>
                     </div>
+                    </>
+                    ) : null}
                   </>
                 )}
               </section>

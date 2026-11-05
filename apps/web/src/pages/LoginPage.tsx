@@ -135,7 +135,7 @@ export function LoginPage() {
     try {
       const u = await login(email, senha);
       inicioJaDecidido();
-      navigate(destinoDoLogin(u.role, (location.state as { from?: string } | null)?.from), { replace: true });
+      navigate(destinoDoLogin(u.role, (location.state as { from?: string } | null)?.from, u.permissoes), { replace: true });
     } catch (err) {
       setErro(err instanceof ApiError ? err.message : "Falha ao conectar com o servidor");
     } finally {

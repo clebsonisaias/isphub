@@ -1,5 +1,15 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { UserRole, USER_ROLE_LABEL, escopadoPorProvedor, type Provedor, type UsuarioPublic } from "@isphub/shared";
+import {
+  AREAS,
+  UserRole,
+  USER_ROLE_LABEL,
+  escopadoPorProvedor,
+  normalizarPermissoes,
+  type AreaId,
+  type PermissoesGestor,
+  type Provedor,
+  type UsuarioPublic,
+} from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
 import { AnimatedPage } from "@/components/AnimatedPage";
 import { AdminNav } from "@/components/admin/AdminNav";
@@ -22,6 +32,7 @@ import {
 import { usuariosApi, provedoresApi } from "@/lib/adminApi";
 import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/lib/apiClient";
+import { limitesDoFormulario, resumoLimites } from "@/lib/limitesGestor";
 import { useToast } from "@/context/ToastContext";
 import { Plus, Pencil, KeyRound, Smartphone } from "lucide-react";
 
@@ -30,6 +41,8 @@ const semAcesso = (u: UsuarioPublic) => u.email.endsWith("@sem-login.isphub.inva
 
 import { VincularLinhaDialog } from "@/components/linha-movel/VincularLinhaDialog";
 import { CredencialLinhaMovelDialog } from "@/components/linha-movel/CredencialLinhaMovelDialog";
+
+const AREA_IDS = Object.keys(AREAS) as AreaId[];
 
 function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
@@ -134,6 +147,7 @@ export function UsuariosPage() {
                   <CardDescription className="truncate">
                     {semAcesso(u) ? "sem acesso ao sistema" : u.email} · {USER_ROLE_LABEL[u.role]}
                     {escopadoPorProvedor(u.role) ? ` · ${nomeProvedor(u.provedorId)}` : ""}
+                    {u.role === UserRole.GESTOR ? ` · ${resumoLimites(u.provedoresPermitidos, u.permissoes, nomeProvedor)}` : ""}
                     {!u.ativo && " · inativo"}
                   </CardDescription>
                 </div>
@@ -174,6 +188,7 @@ export function UsuariosPage() {
         onOpenChange={setDialogAberto}
         usuario={editando}
         provedores={provedores}
+        defineLimites={eu?.role === UserRole.ADMIN}
         onSalvo={() => {
           setDialogAberto(false);
           void carregar();
@@ -199,16 +214,26 @@ function UsuarioDialog({
   onOpenChange,
   usuario,
   provedores,
+  defineLimites,
   onSalvo,
 }: {
   aberto: boolean;
   onOpenChange: (v: boolean) => void;
   usuario: UsuarioPublic | null;
   provedores: Provedor[];
+  /** Quem edita e ADMIN: so ele define os limites do supervisor (a API recusa o resto). */
+  defineLimites: boolean;
   onSalvo: () => void;
 }) {
   const { toast } = useToast();
   const editando = !!usuario;
+  // Limites do supervisor. Os "mexeu" decidem o que vai no PUT: campo que o
+  // admin nao tocou nao viaja (ver limitesDoFormulario).
+  const [provedoresPermitidos, setProvedoresPermitidos] = useState<string[]>([]);
+  const [acessoTotal, setAcessoTotal] = useState(true);
+  const [areas, setAreas] = useState<PermissoesGestor>({});
+  const [mexeuProvedores, setMexeuProvedores] = useState(false);
+  const [mexeuAreas, setMexeuAreas] = useState(false);
 
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
@@ -226,7 +251,17 @@ function UsuarioDialog({
     setRole(usuario?.role ?? UserRole.TECNICO);
     setProvedorId(usuario?.provedorId ?? "");
     setAtivo(usuario?.ativo ?? true);
+    const perm = normalizarPermissoes(usuario?.permissoes ?? null);
+    setProvedoresPermitidos(usuario?.provedoresPermitidos ?? []);
+    setAcessoTotal(perm === null);
+    setAreas(perm ?? {});
+    setMexeuProvedores(false);
+    setMexeuAreas(false);
   }, [aberto, usuario]);
+
+  const limites = defineLimites
+    ? limitesDoFormulario({ role, mexeuProvedores, mexeuAreas, provedores: provedoresPermitidos, acessoTotal, areas })
+    : {};
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -239,6 +274,7 @@ function UsuarioDialog({
           role,
           provedorId: escopadoPorProvedor(role) ? provedorId || null : null,
           ativo,
+          ...limites,
         });
         toast({ titulo: "Usuário atualizado", variante: "sucesso" });
       } else {
@@ -248,6 +284,7 @@ function UsuarioDialog({
           senha,
           role,
           provedorId: escopadoPorProvedor(role) ? provedorId || null : null,
+          ...limites,
         });
         toast({ titulo: "Usuário criado", variante: "sucesso" });
       }
@@ -263,7 +300,7 @@ function UsuarioDialog({
 
   return (
     <Dialog open={aberto} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-h-[90svh] max-w-lg overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editando ? "Editar usuário" : "Novo usuário"}</DialogTitle>
           <DialogDescription>
@@ -328,6 +365,77 @@ function UsuarioDialog({
                 ))}
               </Select>
             </div>
+          )}
+          {defineLimites && role === UserRole.GESTOR && (
+            <>
+              <fieldset className="flex flex-col gap-2 rounded-lg border border-border p-3">
+                <legend className="px-1 text-sm font-medium">Provedores</legend>
+                {provedores.map((p) => (
+                  <label key={p.id} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="size-4 accent-primary"
+                      checked={provedoresPermitidos.includes(p.id)}
+                      onChange={(e) => {
+                        setMexeuProvedores(true);
+                        setProvedoresPermitidos((atual) =>
+                          e.target.checked ? [...atual, p.id] : atual.filter((id) => id !== p.id),
+                        );
+                      }}
+                    />
+                    {p.nome}
+                  </label>
+                ))}
+                {provedoresPermitidos.length === 0 && (
+                  <p className="text-xs text-muted-foreground">Nenhum marcado: vê todos os provedores</p>
+                )}
+              </fieldset>
+              <fieldset className="flex flex-col gap-2 rounded-lg border border-border p-3">
+                <legend className="px-1 text-sm font-medium">Áreas</legend>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id="acessoTotal"
+                    checked={acessoTotal}
+                    onCheckedChange={(v) => {
+                      setMexeuAreas(true);
+                      setAcessoTotal(v);
+                    }}
+                  />
+                  <Label htmlFor="acessoTotal">Acesso total (como hoje)</Label>
+                </div>
+                {!acessoTotal &&
+                  AREA_IDS.map((a) => (
+                    <div key={a} className="flex items-center justify-between gap-3">
+                      <Label htmlFor={`area-${a}`} className="font-normal">
+                        {AREAS[a].rotulo}
+                      </Label>
+                      <Select
+                        id={`area-${a}`}
+                        value={areas[a] ?? ""}
+                        onChange={(e) => {
+                          setMexeuAreas(true);
+                          const nivel = e.target.value as "" | "ver" | "editar";
+                          setAreas((atual) => {
+                            const prox = { ...atual };
+                            if (nivel) prox[a] = nivel;
+                            else delete prox[a];
+                            return prox;
+                          });
+                        }}
+                        className="w-32 bg-secondary/40 px-2"
+                      >
+                        <option value="">Nenhum</option>
+                        {/* O chat nao tem "ver": ler sem poder responder nao serve. */}
+                        {!AREAS[a].soEditar && <option value="ver">Ver</option>}
+                        <option value="editar">Editar</option>
+                      </Select>
+                    </div>
+                  ))}
+                {!acessoTotal && Object.keys(areas).length === 0 && (
+                  <p className="text-xs text-muted-foreground">Nenhuma área: o supervisor só abre o próprio perfil.</p>
+                )}
+              </fieldset>
+            </>
           )}
           {editando && (
             <div className="flex items-center gap-2">

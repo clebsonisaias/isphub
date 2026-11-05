@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, useReducedMotion } from "framer-motion";
-import { USER_ROLE_LABEL, UserRole, escopadoPorProvedor, type ModuloId } from "@isphub/shared";
+import { USER_ROLE_LABEL, UserRole, escopadoPorProvedor, podeRotaWeb, type ModuloId } from "@isphub/shared";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useModulosHabilitados } from "@/lib/modulos";
@@ -773,7 +773,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           : usuario.role === UserRole.VENDEDOR
             ? NAV_VENDEDOR.has(item.to)
             : !item.ocultoPara.includes(usuario.role)) &&
-        (usuario.role === UserRole.VENDEDOR || !item.modulo || modulosHabilitados.has(item.modulo)),
+        (usuario.role === UserRole.VENDEDOR || !item.modulo || modulosHabilitados.has(item.modulo)) &&
+        // Supervisor com areas definidas: so as telas das areas dele (null = todas).
+        (usuario.role !== UserRole.GESTOR || podeRotaWeb(usuario.permissoes ?? null, item.to)),
     );
     if (usuario?.role === UserRole.ADMIN) {
       base.push({
@@ -800,8 +802,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
   const maisRodape = doRodape.filter((i) => !fixosRodape.has(i.to));
 
+  // Supervisor sem a area do chat: `/chat/nao-lidas` daria 403 a cada 45 s.
+  const veChat =
+    !!usuario &&
+    !escopadoPorProvedor(usuario.role) &&
+    (usuario.role !== UserRole.GESTOR || podeRotaWeb(usuario.permissoes ?? null, "/chat"));
+
   useEffect(() => {
-    if (!usuario || escopadoPorProvedor(usuario.role)) return;
+    if (!veChat) return;
     async function atualizar() {
       try {
         const { naoLidas } = await chatApi.naoLidas();
@@ -816,10 +824,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       INTERVALO_POLLING_NAO_LIDAS_MS,
     );
     return () => clearInterval(t);
-  }, [usuario]);
+  }, [usuario, veChat]);
 
   useRealtime((evento) => {
-    if (evento.tipo === "chat-mensagem" || evento.tipo === "chat-leitura") {
+    if (veChat && (evento.tipo === "chat-mensagem" || evento.tipo === "chat-leitura")) {
       chatApi
         .naoLidas()
         .then(({ naoLidas }) => setNaoLidasChat(naoLidas))
@@ -843,7 +851,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           className="h-[2px] w-full brand-gradient-bg opacity-70"
         />
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-3 sm:gap-3 sm:px-4 lg:gap-3">
-          <Link to={inicioDoPapel(usuario?.role)} className="flex shrink-0 items-center gap-2 pointer-coarse:min-h-11 mr-1">
+          <Link to={inicioDoPapel(usuario?.role, usuario?.permissoes)} className="flex shrink-0 items-center gap-2 pointer-coarse:min-h-11 mr-1">
             <span className="font-display text-lg font-bold tracking-tight">
               <span className="brand-gradient-text">ISP</span>
               <span className="text-foreground">hub</span>

@@ -12,7 +12,8 @@ import { CamadaOsm } from "@/components/mapa/base";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/context/ToastContext";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth, usePodeEditar } from "@/context/AuthContext";
+import { AvisoSoVer } from "@/components/AvisoSoVer";
 import { Select } from "@/components/ui/select";
 import { provedoresApi } from "@/lib/adminApi";
 import { ApiError } from "@/lib/apiClient";
@@ -104,6 +105,7 @@ export function PreCadastroPage() {
   // Gestao (admin/gestor) vende em nome de um provedor; o vendedor ja e preso ao dele.
   const { usuario } = useAuth();
   const gestao = usuario?.role === UserRole.ADMIN || usuario?.role === UserRole.GESTOR;
+  const podeEditar = usePodeEditar("preCadastro");
   const provedores = useQuery({ queryKey: ["provedores"], queryFn: () => provedoresApi.listar(), enabled: gestao });
 
   // Rascunho a cada mudanca — e so do que ainda nao foi enviado.
@@ -141,6 +143,9 @@ export function PreCadastroPage() {
             <p className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">Venda em campo</p>
             <h1 className="font-display text-2xl font-bold tracking-tight sm:text-3xl">Pré-cadastro</h1>
           </header>
+
+          {/* Só "ver": consulta cobertura e planos e acompanha os enviados; enviar, agendar e conversar ficam desligados. */}
+          {podeEditar ? null : <AvisoSoVer />}
 
           {gestao && !enviado && (
             <div className="flex max-w-sm flex-col gap-1.5">
@@ -787,6 +792,7 @@ function EtapaCliente({ r, setCliente, onVoltar, onAvancar }: { r: Rascunho; set
 // ---------------------------------------------------------------------------
 
 function EtapaRevisar({ r, plano, onEditar, onEnviado }: { r: Rascunho; plano: PlanoZona; onEditar: (etapa: number) => void; onEnviado: (pc: PreCadastro) => void }) {
+  const podeEditar = usePodeEditar("preCadastro");
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const c = r.cliente;
@@ -870,7 +876,7 @@ function EtapaRevisar({ r, plano, onEditar, onEnviado }: { r: Rascunho; plano: P
         <Button type="button" variant="outline" className="h-13 px-4" onClick={() => onEditar(2)} aria-label="Voltar" disabled={enviando}>
           <ArrowLeft />
         </Button>
-        <Button type="button" variant="brand" className="h-13 flex-1 text-base" disabled={enviando} onClick={() => void enviar()}>
+        <Button type="button" variant="brand" className="h-13 flex-1 text-base" disabled={enviando || !podeEditar} onClick={() => void enviar()}>
           {enviando ? <Loader2 className="animate-spin" /> : null}
           {enviando ? "Cadastrando no SGP…" : erro ? "Tentar de novo" : "Enviar pré-cadastro"}
         </Button>
@@ -885,6 +891,7 @@ function EtapaRevisar({ r, plano, onEditar, onEnviado }: { r: Rascunho; plano: P
 
 function EtapaAgendar({ pc, onNovo }: { pc: PreCadastro; onNovo: () => void }) {
   const { toast } = useToast();
+  const podeEditar = usePodeEditar("preCadastro");
   const queryClient = useQueryClient();
   const [busca, setBusca] = useState<BuscaOs | null>(null);
   const [tentativa, setTentativa] = useState(0);
@@ -1024,7 +1031,7 @@ function EtapaAgendar({ pc, onNovo }: { pc: PreCadastro; onNovo: () => void }) {
             <Button type="button" variant="outline" className="h-13 px-4" onClick={onNovo} aria-label="Agendar depois">
               Depois
             </Button>
-            <Button type="button" variant="brand" className="h-13 flex-1 text-base" disabled={escolha == null || marcando} onClick={() => void marcar()}>
+            <Button type="button" variant="brand" className="h-13 flex-1 text-base" disabled={escolha == null || marcando || !podeEditar} onClick={() => void marcar()}>
               {marcando ? <Loader2 className="animate-spin" /> : null}
               {marcando ? "Marcando…" : "Confirmar com o cliente"}
             </Button>
@@ -1039,6 +1046,7 @@ function EtapaAgendar({ pc, onNovo }: { pc: PreCadastro; onNovo: () => void }) {
 function BotaoConversa({ pc }: { pc: PreCadastro }) {
   const { toast } = useToast();
   const navigate = useNavigate();
+  const podeEditar = usePodeEditar("preCadastro");
   const [abrindo, setAbrindo] = useState(false);
   async function abrir() {
     setAbrindo(true);
@@ -1051,6 +1059,7 @@ function BotaoConversa({ pc }: { pc: PreCadastro }) {
       setAbrindo(false);
     }
   }
+  if (!podeEditar) return null;
   return (
     <Button type="button" variant="outline" className="h-13 flex-1" disabled={abrindo} onClick={() => void abrir()}>
       {abrindo ? <Loader2 className="animate-spin" /> : <MessageCircle />}

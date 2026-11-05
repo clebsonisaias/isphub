@@ -1,4 +1,4 @@
-import type { Categoria, ErpConfigPublic, ModuloId, Provedor, TipoOs, UserRole, UsuarioPublic } from "@isphub/shared";
+import type { Categoria, ErpConfigPublic, ModuloId, PermissoesGestor, Provedor, TipoOs, UserRole, UsuarioPublic } from "@isphub/shared";
 import { api } from "@/lib/apiClient";
 
 /** Item do catálogo de módulos com o estado atual (o que GET /admin/modulos devolve). */
@@ -162,13 +162,22 @@ export const categoriasApi = {
   remover: (id: string) => api.delete<Categoria | void>(`/categorias/${id}`),
 };
 
+/**
+ * Limites do supervisor (so o ADMIN manda, so valem pro GESTOR). Campo AUSENTE
+ * = nao mexe: o PUT que so troca `ativo` nao pode apagar limite nenhum.
+ */
+export interface LimitesGestor {
+  provedoresPermitidos?: string[];
+  permissoes?: PermissoesGestor | null;
+}
+
 export const usuariosApi = {
   listar: (role?: UserRole) => api.get<UsuarioPublic[]>(`/usuarios${role ? `?role=${role}` : ""}`),
-  criar: (data: { nome: string; email: string; senha: string; role: UserRole; provedorId?: string | null }) =>
+  criar: (data: { nome: string; email: string; senha: string; role: UserRole; provedorId?: string | null } & LimitesGestor) =>
     api.post<UsuarioPublic>("/usuarios", data),
   atualizar: (
     id: string,
-    data: { nome: string; email: string; role: UserRole; provedorId?: string | null; ativo: boolean },
+    data: { nome: string; email: string; role: UserRole; provedorId?: string | null; ativo: boolean } & LimitesGestor,
   ) => api.put<UsuarioPublic>(`/usuarios/${id}`, data),
   redefinirSenha: (id: string, novaSenha: string) =>
     api.post<UsuarioPublic>(`/usuarios/${id}/senha`, { novaSenha }),

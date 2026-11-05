@@ -26,7 +26,7 @@ import { OsTimeline } from "@/components/OsTimeline";
 import { EvidenciaGallery } from "@/components/EvidenciaGallery";
 import { ordensServicoApi, tecnicosApi, type TecnicoResumo } from "@/lib/filaApi";
 import { ApiError } from "@/lib/apiClient";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth, usePodeChamar } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { CalendarDays, CalendarX2, CheckCircle2, CircleX, ExternalLink, MapPinCheck, MapPinOff, MessageCircle, Navigation, Play, Route, Siren } from "lucide-react";
 import { formatarKm } from "@isphub/shared";
@@ -63,6 +63,24 @@ export function OrdemServicoDetalhe({
   const podeDespachar = usuario?.role === UserRole.ADMIN || usuario?.role === UserRole.GESTOR;
   // Atendente so marca/remarca/desmarca visita: sem status, tecnico nem anotacao.
   const ehAtendente = usuario?.role === UserRole.ATENDENTE;
+  /*
+   * Supervisor com areas definidas: cada acao depende da area da ROTA que ela
+   * chama (mesma regra da API — packages/shared/permissoes.ts). Status,
+   * anotacao, a caminho e situacao do contrato sao da fila; marcar visita, da
+   * agenda ou do despacho; atribuir, de qualquer um dos tres. Os demais papeis
+   * passam direto (a regra so vale pro GESTOR).
+   */
+  const podeChamar = usePodeChamar();
+  const rotaOs = `/ordens-servico/${item.id}`;
+  const editaFila = podeChamar("PATCH", `${rotaOs}/status`);
+  const podeMarcar = podeChamar("POST", "/agenda");
+  const podeDesmarcar = podeChamar("DELETE", "/agenda/id");
+  const podeAtribuir = podeChamar("POST", `${rotaOs}/atribuir`);
+  const podeEmergencial = podeChamar("POST", `/logistica/os/${item.id}/despacho-emergencial`);
+  const podeEncerrar = podeChamar("POST", `${rotaOs}/encerrar`);
+  const podeConversar = podeChamar("POST", `${rotaOs}/conversa-cliente`);
+  const veConexao = podeChamar("GET", `/provedores/${item.provedorId}/conexao/c`);
+  const veViaturas = podeChamar("GET", `/frota${rotaOs}/veiculos`);
   const { toast } = useToast();
   const navigate = useNavigate();
   const [os, setOs] = useState(item);
@@ -161,12 +179,12 @@ export function OrdemServicoDetalhe({
    */
   const [viaturas, setViaturas] = useState<{ veiculoId: string; veiculoPlaca: string; veiculoRotulo: string; usuarioNome: string }[]>([]);
   useEffect(() => {
-    if (!podeDespachar) return;
+    if (!podeDespachar || !veViaturas) return;
     frotaMapaApi
       .veiculosDaOs(os.id)
       .then(setViaturas)
       .catch(() => {});
-  }, [podeDespachar, os.id]);
+  }, [podeDespachar, veViaturas, os.id]);
 
   const marcarMudanca = onMudanca;
 
@@ -387,15 +405,15 @@ export function OrdemServicoDetalhe({
         </Descricao>
       </Cabecalho>
 
-      {(os.telefone && usuario?.role !== UserRole.PROVEDOR) || (podeDespachar && OS_STATUS_ABERTOS.includes(os.status)) ? (
+      {(os.telefone && usuario?.role !== UserRole.PROVEDOR && podeConversar) || (podeDespachar && podeEncerrar && OS_STATUS_ABERTOS.includes(os.status)) ? (
         <div className="flex flex-wrap gap-2.5">
-          {os.telefone && usuario?.role !== UserRole.PROVEDOR ? (
+          {os.telefone && usuario?.role !== UserRole.PROVEDOR && podeConversar ? (
             <Button variant="outline" size="default" className="min-h-11 flex-1 sm:flex-none font-semibold" onClick={() => void handleConversarComCliente()} disabled={acaoEmCurso !== null}>
               <MessageCircle className="size-4.5 text-emerald-500" aria-hidden />
               {acaoEmCurso === "conversa-cliente" ? "Abrindo conversa..." : "Conversar com o cliente"}
             </Button>
           ) : null}
-          {podeDespachar && OS_STATUS_ABERTOS.includes(os.status) ? (
+          {podeDespachar && podeEncerrar && OS_STATUS_ABERTOS.includes(os.status) ? (
             <Button
               variant="outline"
               size="default"
@@ -424,15 +442,17 @@ export function OrdemServicoDetalhe({
         da fila e no popup do mapa, onde um controle de escrita no ERP seria
         um clique acidental esperando acontecer.
       */}
-      <ContratoStatusAcao
-        os={os}
-        onAtualizado={(atualizado) => {
-          // Mesmo padrao das outras acoes: atualiza o eco local (a tela reage
-          // na hora) e avisa o pai pra fila re-buscar.
-          setOs((prev) => ({ ...prev, contratoStatus: atualizado.contratoStatus }));
-          marcarMudanca();
-        }}
-      />
+      {editaFila ? (
+        <ContratoStatusAcao
+          os={os}
+          onAtualizado={(atualizado) => {
+            // Mesmo padrao das outras acoes: atualiza o eco local (a tela reage
+            // na hora) e avisa o pai pra fila re-buscar.
+            setOs((prev) => ({ ...prev, contratoStatus: atualizado.contratoStatus }));
+            marcarMudanca();
+          }}
+        />
+      ) : null}
 
       <Tabs defaultValue="detalhes">
         <TabsList>
@@ -518,7 +538,7 @@ export function OrdemServicoDetalhe({
               O select fica embaixo, discreto, pra quem precisa pular etapa,
               cancelar ou reabrir.
             */}
-            {!ehAtendente && proximoPasso ? (
+            {!ehAtendente && editaFila && proximoPasso ? (
               <Button
                 variant="brand"
                 onClick={proximoPasso.executar}
@@ -529,7 +549,7 @@ export function OrdemServicoDetalhe({
                 {acaoEmCurso ? "Enviando..." : proximoPasso.rotulo}
               </Button>
             ) : null}
-            {!ehAtendente && (
+            {!ehAtendente && editaFila && (
             <div className="flex flex-wrap items-center gap-2.5 text-sm pt-1">
               {/* "A caminho" de novo continua possível com a OS já em
                   deslocamento ou execução (técnico saiu, voltou à rua): a API
@@ -579,6 +599,7 @@ export function OrdemServicoDetalhe({
                 {/* A visita vem ANTES do tecnico: primeiro cabe no dia, depois
                     alguem vai. A agenda (nao o SGP) e a fonte da verdade da data. */}
                 <div className="flex flex-wrap items-center gap-2">
+                  {podeMarcar ? (
                   <Button
                     variant="outline"
                     size="sm"
@@ -588,6 +609,7 @@ export function OrdemServicoDetalhe({
                     <CalendarDays className="size-3.5" />
                     {os.diaAgenda && os.turnoAgenda ? "Remarcar visita" : "Marcar visita"}
                   </Button>
+                  ) : null}
                   {os.diaAgenda && os.turnoAgenda && (
                     <span className="text-sm text-muted-foreground">
                       Visita: <span className="font-medium text-foreground">{rotuloVisita(os.diaAgenda, os.turnoAgenda)}</span>
@@ -618,7 +640,7 @@ export function OrdemServicoDetalhe({
                       {deslocamento.fonte === "estimado" ? <span className="text-xs">(estimado)</span> : null}
                     </span>
                   )}
-                  {os.agendamentoId &&
+                  {os.agendamentoId && podeDesmarcar &&
                     (confirmandoDesmarcar ? (
                       <span className="flex items-center gap-1.5 text-sm">
                         <span className="text-muted-foreground">Desmarcar?</span>
@@ -648,11 +670,13 @@ export function OrdemServicoDetalhe({
                     ))}
                 </div>
                 {/* Pendente não tem técnico: a API recusa (409). Retomar é mudar o status. */}
-                {podeDespachar && os.status === OsStatus.PENDENTE && (
+                {podeDespachar && podeAtribuir && os.status === OsStatus.PENDENTE && (
                   <p className="text-sm text-muted-foreground">OS pendente: mude o status antes de designar um técnico.</p>
                 )}
-                {podeDespachar && os.status !== OsStatus.PENDENTE && (
+                {podeDespachar && (podeAtribuir || podeEmergencial) && os.status !== OsStatus.PENDENTE && (
                 <div className="flex flex-wrap items-center gap-2">
+                {podeAtribuir ? (
+                <>
                 <Select
                   aria-label="Atribuir técnico"
                   value={tecnicoSelecionado}
@@ -675,6 +699,9 @@ export function OrdemServicoDetalhe({
                 >
                   {acaoEmCurso === "atribuir" ? "Atribuindo..." : "Atribuir"}
                 </Button>
+                </>
+                ) : null}
+                {podeEmergencial ? (
                 <Button
                   variant="destructive"
                   size="default"
@@ -686,6 +713,7 @@ export function OrdemServicoDetalhe({
                   <Siren className="size-4 animate-pulse" />
                   Emergência por Proximidade
                 </Button>
+                ) : null}
                 </div>
                 )}
               </div>
@@ -695,7 +723,7 @@ export function OrdemServicoDetalhe({
                 registrado na OS. Plano/sinal/PPPoE ficam na aba Conexão. */}
             <FichaSgpIdentificacao ficha={ficha} estado={estadoFicha} />
 
-            {!ehAtendente && (
+            {!ehAtendente && editaFila && (
             <div className="flex flex-col gap-2">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Anotação</p>
               <textarea
@@ -727,7 +755,12 @@ export function OrdemServicoDetalhe({
             duvida "qual dBm vale?": agora o valor de agora e o ultimo
             registrado aparecem um ao lado do outro, cada um rotulado.
           */}
-          <ConexaoStatus provedorId={os.provedorId} contratoId={os.contratoId} onDetalhes={setDetalhesLive} />
+          {/* A sonda ao vivo e da area Fila e OS: sem ela a API daria 403. */}
+          {veConexao ? (
+            <ConexaoStatus provedorId={os.provedorId} contratoId={os.contratoId} onDetalhes={setDetalhesLive} />
+          ) : (
+            <p className="text-sm text-muted-foreground">A consulta ao vivo da conexão é da área Fila e OS, que não está liberada para você.</p>
+          )}
           <FichaSgpConexao ficha={ficha} estado={estadoFicha} />
         </TabsContent>
 

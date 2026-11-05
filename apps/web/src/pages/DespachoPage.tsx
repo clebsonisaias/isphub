@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OrdemServicoDetailDialog } from "@/components/OrdemServicoDetailDialog";
 import { useToast } from "@/context/ToastContext";
+import { usePodeEditar } from "@/context/AuthContext";
+import { AvisoSoVer } from "@/components/AvisoSoVer";
 import { agendaApi, rotuloDiaAgenda } from "@/lib/agendaApi";
 import { fechadoNoCalendario, textoBloqueio } from "@/lib/agendaUi";
 import { escalaApi } from "@/lib/escalaApi";
@@ -55,6 +57,9 @@ function prazoDe(i: FilaItem): string {
 export function DespachoPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  // Supervisor com o Despacho so em "ver": o quadro e a fila ficam, arrastar,
+  // robo, otimizar e emergencia somem (a API recusaria).
+  const podeEditar = usePodeEditar("despacho");
   const hoje = diaBrHoje();
   const [dia, setDia] = useState(hoje);
   const [todos, setTodos] = useState(false);
@@ -208,6 +213,10 @@ export function DespachoPage() {
   }
 
   const arrastar = (a: Arrasto) => (e: DragEvent) => {
+    if (!podeEditar) {
+      e.preventDefault();
+      return;
+    }
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", a.tipo === "nova" ? a.item.sgpOsId : a.parada.sgpOsId);
     setArrastando(a);
@@ -262,10 +271,11 @@ export function DespachoPage() {
             <div>
               <h1 className="text-2xl font-bold tracking-tight">Despacho</h1>
               <p className="text-sm text-muted-foreground">
-                Arraste uma OS para o turno e o técnico. Clique para abrir a OS.
+                {podeEditar ? "Arraste uma OS para o turno e o técnico. Clique para abrir a OS." : "Clique numa OS para abri-la."}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
+              {podeEditar ? (
               <Button
                 variant="outline"
                 onClick={() => void handleRoboRoteirizar()}
@@ -276,12 +286,15 @@ export function DespachoPage() {
                 {roteirizandoRobo ? <Loader2 className="size-4 animate-spin text-primary" /> : <Bot className="size-4 text-primary" />}
                 Robô: Roteirizar Todos
               </Button>
+              ) : null}
               <Button variant={mapaAberto ? "default" : "outline"} onClick={() => setMapaAberto((v) => !v)} aria-pressed={mapaAberto}>
                 <MapIcon className="size-4" aria-hidden />
                 {mapaAberto ? "Esconder mapa" : "Ver no mapa"}
               </Button>
             </div>
           </header>
+
+          {podeEditar ? null : <AvisoSoVer />}
 
           <div role="tablist" aria-label="Dia" className="flex gap-1.5 overflow-x-auto pb-1">
             {dias.map((d, i) => {
@@ -383,12 +396,13 @@ export function DespachoPage() {
                     <li key={i.id} className="group relative flex items-center hover:bg-secondary/40 transition-colors">
                       <button
                         type="button"
-                        draggable
+                        draggable={podeEditar}
                         onDragStart={arrastar({ tipo: "nova", item: i })}
                         onDragEnd={fimDoArrasto}
                         onClick={() => setSelecionado(i)}
                         className={cn(
-                          "flex min-w-0 flex-1 cursor-grab gap-3 px-4 py-3 text-left active:cursor-grabbing",
+                          "flex min-w-0 flex-1 gap-3 px-4 py-3 text-left",
+                          podeEditar && "cursor-grab active:cursor-grabbing",
                           arrastando?.tipo === "nova" && arrastando.item.id === i.id && "opacity-40",
                         )}
                       >
@@ -406,6 +420,7 @@ export function DespachoPage() {
                         </span>
                       </button>
 
+                      {podeEditar ? (
                       <button
                         type="button"
                         onClick={() => setEmergencialOsId(i.id)}
@@ -414,6 +429,7 @@ export function DespachoPage() {
                       >
                         <Siren className="size-4" />
                       </button>
+                      ) : null}
                     </li>
                   ))}
                 </ul>
@@ -492,7 +508,7 @@ export function DespachoPage() {
                           arrastar={arrastar}
                           fimDoArrasto={fimDoArrasto}
                           aoAbrir={(osId) => void abrirOs(osId)}
-                          onOtimizar={(id, nome) => setOtimizarTecnico({ id, nome })}
+                          onOtimizar={podeEditar ? (id, nome) => setOtimizarTecnico({ id, nome }) : undefined}
                         />
                       ))}
                 </div>
@@ -562,7 +578,8 @@ function LinhaDoQuadro({
   arrastar: (a: Arrasto) => (e: DragEvent) => void;
   fimDoArrasto: () => void;
   aoAbrir: (osId: string) => void;
-  onOtimizar: (tecnicoId: string, nome: string) => void;
+  /** Ausente no modo "ver": otimizar grava a rota. */
+  onOtimizar?: (tecnicoId: string, nome: string) => void;
 }) {
   const semTecnico = linha.tecnicoId === null;
   const total = linha.manha.length + linha.tarde.length;
@@ -581,7 +598,7 @@ function LinhaDoQuadro({
                 ? "Sem paradas"
                 : `${total} parada${total === 1 ? "" : "s"}`}
         </span>
-        {!semTecnico && total >= 2 && (
+        {!semTecnico && total >= 2 && onOtimizar && (
           <button
             type="button"
             onClick={() => onOtimizar(linha.tecnicoId!, linha.nome)}

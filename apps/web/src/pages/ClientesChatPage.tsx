@@ -14,7 +14,8 @@ import { EmptyState } from "@/components/EmptyState";
 import { MensagemClienteBolha } from "@/components/chat-clientes/MensagemClienteBolha";
 import { NovaConversaClienteDialog } from "@/components/chat-clientes/NovaConversaClienteDialog";
 import { TransferirConversaDialog } from "@/components/chat-clientes/TransferirConversaDialog";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth, usePodeChamar, usePodeEditar } from "@/context/AuthContext";
+import { AvisoSoVer } from "@/components/AvisoSoVer";
 import { useRealtime } from "@/lib/realtime";
 import { clientesChatApi } from "@/lib/clientesChatApi";
 import { Button } from "@/components/ui/button";
@@ -84,6 +85,12 @@ export function ClientesChatPage() {
   const ehAtendente = usuario?.role === UserRole.ATENDENTE;
   // Vendedor tambem nao inicia por modelo: abre a conversa pelo pre-cadastro do cliente dele.
   const ehVendedor = usuario?.role === UserRole.VENDEDOR;
+  // Supervisor com o chat de clientes so em "ver": le as conversas, nao escreve,
+  // nao assume, nao encerra nem inicia. Transferir lista a equipe pelo chat
+  // INTERNO (`/chat/contatos`), que e outra area.
+  const podeEditar = usePodeEditar("chatClientes");
+  const podeChamar = usePodeChamar();
+  const podeTransferir = podeEditar && podeChamar("GET", "/chat/contatos");
   // `?conversa=` vem do botao "Conversar com o cliente" da OS (abre em "todas":
   // a conversa nasce com dono, entao nao esta na fila).
   const [params, setParams] = useSearchParams();
@@ -188,7 +195,7 @@ export function ClientesChatPage() {
   const souEuQueAssumi = selecionada?.agenteId === usuario?.id;
   // Intervenção: ADMIN/GESTOR escrevem em conversa de outro sem tomar a posse dela.
   const intervindo = !!selecionada && podeVerTudo && jaAssumida && !souEuQueAssumi;
-  const podeEscrever = !!selecionada && (souEuQueAssumi || !jaAssumida || podeVerTudo);
+  const podeEscrever = !!selecionada && podeEditar && (souEuQueAssumi || !jaAssumida || podeVerTudo);
   // A janela de 24h e regra da API oficial da Meta. No Evolution (nao oficial)
   // ela nao existe — avisar ali seria mentira na tela.
   //
@@ -213,7 +220,7 @@ export function ClientesChatPage() {
             ) : (
               <span className="flex-1 px-2 text-sm font-medium text-foreground">Minhas conversas</span>
             )}
-            {!ehAtendente && !ehVendedor && (
+            {!ehAtendente && !ehVendedor && podeEditar && (
               <Button variant="ghost" size="icon" title="Nova conversa" aria-label="Nova conversa" onClick={() => setNovaAberta(true)}>
                 <SquarePen />
               </Button>
@@ -256,12 +263,12 @@ export function ClientesChatPage() {
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  {podeVerTudo && (
+                  {podeVerTudo && podeTransferir && (
                     <Button variant="outline" size="sm" onClick={() => setTransferirAberta(true)}>
                       Passar para outro atendente
                     </Button>
                   )}
-                  {jaAssumida ? (
+                  {!podeEditar ? null : jaAssumida ? (
                     <Button variant="outline" size="sm" onClick={handleEncerrar}>
                       Encerrar
                     </Button>
@@ -287,6 +294,11 @@ export function ClientesChatPage() {
                   Fora da janela de 24h: o WhatsApp só entrega template agora. Texto livre será recusado pela Meta.
                 </p>
               )}
+              {!podeEditar ? (
+                <div className="border-t border-border p-3">
+                  <AvisoSoVer />
+                </div>
+              ) : (
               <div className="flex gap-2 border-t border-border p-3">
                 <Input
                   value={texto}
@@ -301,6 +313,7 @@ export function ClientesChatPage() {
                   Enviar
                 </Button>
               </div>
+              )}
             </>
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Selecione uma conversa para começar.</div>

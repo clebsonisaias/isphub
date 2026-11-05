@@ -5,6 +5,7 @@ import { ordensServicoApi } from "@/lib/filaApi";
 import { api, ApiError } from "@/lib/apiClient";
 import { comprimirImagem } from "@/lib/imagem";
 import { useToast } from "@/context/ToastContext";
+import { usePodeChamar } from "@/context/AuthContext";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { Camera, ImageOff, Clock } from "lucide-react";
@@ -77,6 +78,9 @@ function Thumbnail({ ordemServicoId, evidencia }: { ordemServicoId: string; evid
 /** Galeria de evidências fotográficas de uma OS + botão pra anexar foto nova (comprimida no cliente). */
 export function EvidenciaGallery({ ordemServicoId }: { ordemServicoId: string }) {
   const { toast } = useToast();
+  // Supervisor sem a fila em "editar": o POST daria 403 — e o 403 cairia no
+  // caminho offline abaixo, enfileirando uma foto que nunca vai subir.
+  const podeAnexar = usePodeChamar()("POST", `/ordens-servico/${ordemServicoId}/evidencias`);
   const [evidencias, setEvidencias] = useState<EvidenciaResumo[] | null>(null);
   const [offlineBlobs, setOfflineBlobs] = useState<OfflineBlobItem[]>([]);
   const [enviando, setEnviando] = useState(false);
@@ -153,16 +157,18 @@ export function EvidenciaGallery({ ordemServicoId }: { ordemServicoId: string })
         className="hidden"
         onChange={handleArquivo}
       />
-      <Button
-        variant="outline"
-        size="sm"
-        className="w-fit"
-        onClick={() => inputRef.current?.click()}
-        disabled={enviando}
-      >
-        <Camera className={enviando ? "animate-pulse" : ""} />
-        {enviando ? "Processando..." : "Adicionar foto"}
-      </Button>
+      {podeAnexar ? (
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-fit"
+          onClick={() => inputRef.current?.click()}
+          disabled={enviando}
+        >
+          <Camera className={enviando ? "animate-pulse" : ""} />
+          {enviando ? "Processando..." : "Adicionar foto"}
+        </Button>
+      ) : null}
 
       {evidencias === null && offlineBlobs.length === 0 ? (
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">

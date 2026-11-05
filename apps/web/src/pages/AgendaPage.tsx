@@ -9,7 +9,8 @@ import { AnimatedPage } from "@/components/AnimatedPage";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/context/ToastContext";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth, usePodeEditar } from "@/context/AuthContext";
+import { AvisoSoVer } from "@/components/AvisoSoVer";
 import { filaApi, ordensServicoApi, tecnicosApi, type TecnicoResumo } from "@/lib/filaApi";
 import { Input } from "@/components/ui/input";
 import { fechadoNoCalendario, textoBloqueio, tomDaVaga } from "@/lib/agendaUi";
@@ -46,6 +47,10 @@ export function AgendaPage() {
   // Atendente usa a mesma agenda pra marcar e desmarcar; rota, tecnico e limites sao do supervisor.
   const { usuario } = useAuth();
   const supervisor = usuario?.role === UserRole.ADMIN || usuario?.role === UserRole.GESTOR;
+  // Supervisor com a agenda so em "ver": a grade e as rotas ficam; marcar,
+  // desmarcar, reordenar, atribuir, limites e proposta somem (a API recusaria).
+  const podeEditar = usePodeEditar("agenda");
+  const gere = supervisor && podeEditar;
   const [janela, setJanela] = useState<{ dia: string; turno: TurnoAgenda } | null>(null);
   const [paradas, setParadas] = useState<ParadaAgenda[]>([]);
   const [carregandoParadas, setCarregandoParadas] = useState(false);
@@ -90,7 +95,7 @@ export function AgendaPage() {
     queryKey: ["tecnicos"],
     queryFn: () => tecnicosApi.listar(),
     staleTime: 5 * 60_000,
-    enabled: supervisor,
+    enabled: gere,
   });
 
   const carregarParadas = useCallback(
@@ -279,8 +284,9 @@ export function AgendaPage() {
     try {
       await ordensServicoApi.atribuir(parada.ordemServico.id, tecnicoId);
       if (janela) void carregarParadas(janela.dia, janela.turno);
-    } catch {
-      toast({ variante: "erro", titulo: "Não foi possível atribuir o técnico." });
+    } catch (e) {
+      // 409 chega com o motivo do servidor (ex.: OS pendente nao recebe tecnico).
+      toast({ variante: "erro", titulo: e instanceof ApiError ? e.message : "Não foi possível atribuir o técnico." });
     }
   }
 
@@ -341,12 +347,12 @@ export function AgendaPage() {
                 <ChevronRight className="size-4" aria-hidden />
               </button>
             </div>
-            {config && !supervisor ? (
+            {config && !gere ? (
               <span className="flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
                 {config.vagasManha} manhã · {config.vagasTarde} tarde por dia
               </span>
             ) : null}
-            {config && supervisor ? (
+            {config && gere ? (
               <button
                 type="button"
                 onClick={() => setEditandoLimites(true)}
@@ -360,7 +366,7 @@ export function AgendaPage() {
                 {config.vagasPorTecnico != null ? ` · ${config.vagasPorTecnico} por técnico (escala)` : ""}
               </button>
             ) : null}
-            {supervisor ? (
+            {gere ? (
               <button
                 type="button"
                 onClick={() => void propor()}
@@ -381,6 +387,8 @@ export function AgendaPage() {
               Painel 14 dias
             </button>
           </header>
+
+          {podeEditar ? null : <AvisoSoVer />}
 
           {painelAberto ? <PainelQuinzena hoje={hoje} aoFechar={() => setPainelAberto(false)} /> : null}
 
@@ -546,7 +554,7 @@ export function AgendaPage() {
                   os dois percursos lado a lado — sem o numero da ordem atual, a
                   sugestao nao tem contra o que ser julgada.
                 */}
-                {supervisor && paradas.length > 1 ? (
+                {gere && paradas.length > 1 ? (
                   <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2 text-xs">
                     <button
                       type="button"
@@ -601,7 +609,7 @@ export function AgendaPage() {
                             desktop quanto no celular na rua, e arrastar não
                             funciona com teclado nem com leitor de tela.
                           */}
-                          {supervisor ? (
+                          {gere ? (
                           <div className="flex flex-col">
                             <button
                               type="button"
@@ -717,7 +725,7 @@ export function AgendaPage() {
                             ) : null}
                           </div>
 
-                          {supervisor ? (
+                          {gere ? (
                           <select
                             aria-label={`Técnico de ${os?.clienteNome ?? p.sgpOsId}`}
                             disabled={!os}
@@ -738,7 +746,7 @@ export function AgendaPage() {
                             </span>
                           )}
 
-                          {confirmandoId === p.id ? (
+                          {!podeEditar ? null : confirmandoId === p.id ? (
                             <span className="flex items-center gap-1 text-xs">
                               <span className="text-muted-foreground">Desmarcar?</span>
                               <button
@@ -772,6 +780,7 @@ export function AgendaPage() {
                   </ol>
                 )}
               
+                {podeEditar ? (
                 <section className="border-t border-border">
                   <header className="flex items-center gap-2 px-4 pb-2 pt-3">
                     <CalendarPlus className="size-4 text-muted-foreground" aria-hidden />
@@ -830,6 +839,7 @@ export function AgendaPage() {
                     </ul>
                   )}
                 </section>
+                ) : null}
               </motion.aside>
             ) : null}
           </AnimatePresence>

@@ -8,6 +8,8 @@ import { AnimatedPage } from "@/components/AnimatedPage";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/context/ToastContext";
+import { usePodeEditar } from "@/context/AuthContext";
+import { AvisoSoVer } from "@/components/AvisoSoVer";
 import { tecnicosApi, type TecnicoResumo } from "@/lib/filaApi";
 import { veiculosApi, type VeiculoFrota } from "@/lib/veiculosApi";
 import { diaISO, escalaApi, type LinhaEscala } from "@/lib/escalaApi";
@@ -25,6 +27,8 @@ import { diaISO, escalaApi, type LinhaEscala } from "@/lib/escalaApi";
  */
 export function EscalaPage() {
   const { toast } = useToast();
+  // Supervisor com a escala so em "ver": os controles ficam a vista, desligados.
+  const podeEditar = usePodeEditar("escala");
   const [dia, setDia] = useState(() => diaISO(new Date()));
   const [tecnicos, setTecnicos] = useState<TecnicoResumo[]>([]);
   const [veiculos, setVeiculos] = useState<VeiculoFrota[]>([]);
@@ -161,6 +165,8 @@ export function EscalaPage() {
             </label>
           </header>
 
+          {podeEditar ? null : <AvisoSoVer />}
+
           <Card>
             <CardContent className="p-0">
               {carregando ? (
@@ -176,7 +182,8 @@ export function EscalaPage() {
                   {tecnicos.map((t) => {
                     const e = porUsuario.get(t.id);
                     const parceiros = parceirosDe(t.id, e?.veiculoId ?? null);
-                    const ocupado = salvando === t.id;
+                    // Desligar tudo pelo `ocupado` cobre turnos, viatura, papel, falta e redistribuir.
+                    const ocupado = salvando === t.id || !podeEditar;
                     return (
                       <li key={t.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
                         <div className="min-w-0 flex-1">

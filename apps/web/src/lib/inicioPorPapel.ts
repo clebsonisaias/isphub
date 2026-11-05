@@ -1,4 +1,4 @@
-import { UserRole } from "@isphub/shared";
+import { UserRole, podeRotaWeb, type PermissoesGestor } from "@isphub/shared";
 
 /**
  * CADA PAPEL COMEÇA NO SEU TRABALHO — onde o app abre e em que ordem o menu
@@ -16,20 +16,29 @@ const INICIO: Partial<Record<UserRole, string>> = {
   [UserRole.VENDEDOR]: "/pre-cadastro",
 };
 
-/** A tela de trabalho do papel. Técnico e provedor: o Painel (as OS dele). */
-export function inicioDoPapel(role: UserRole | string | undefined): string {
+// Pré-cadastro no fim: é do menu do gestor, mas não do trabalho de todo dia.
+const DESPACHO = [
+  "/despacho", "/", "/marcar-visita", "/agenda", "/mapa", "/chat", "/chat-clientes", "/pendentes", "/retiradas",
+  "/escala", "/frota", "/produtividade", "/provisionamento", "/dashboard", "/frota/bi", "/financeiro",
+  "/pre-cadastro",
+];
+
+/**
+ * A tela de trabalho do papel. Técnico e provedor: o Painel (as OS dele).
+ *
+ * Supervisor com áreas definidas: a primeira tela que ele pode abrir, na ordem
+ * do menu dele; sem nenhuma, o perfil (que é livre). Sem `permissoes` (null) é
+ * o gestor de sempre, no Despacho.
+ */
+export function inicioDoPapel(role: UserRole | string | undefined, permissoes?: PermissoesGestor | null): string {
+  if (role === UserRole.GESTOR && permissoes) return DESPACHO.find((to) => podeRotaWeb(permissoes, to)) ?? "/perfil";
   return INICIO[role as UserRole] ?? "/";
 }
 
 /** Para onde ir depois do login: a página que pediu o login, ou a tela do papel se ela era a raiz. */
-export function destinoDoLogin(role: UserRole, pedida: string | undefined): string {
-  return !pedida || pedida === "/" ? inicioDoPapel(role) : pedida;
+export function destinoDoLogin(role: UserRole, pedida: string | undefined, permissoes?: PermissoesGestor | null): string {
+  return !pedida || pedida === "/" ? inicioDoPapel(role, permissoes) : pedida;
 }
-
-const DESPACHO = [
-  "/despacho", "/", "/marcar-visita", "/agenda", "/mapa", "/chat", "/chat-clientes", "/pendentes", "/retiradas",
-  "/escala", "/frota", "/produtividade", "/provisionamento", "/dashboard", "/frota/bi", "/financeiro",
-];
 const ORDEM: Partial<Record<UserRole, string[]>> = {
   [UserRole.ADMIN]: DESPACHO,
   [UserRole.GESTOR]: DESPACHO,
