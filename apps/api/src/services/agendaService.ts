@@ -798,14 +798,15 @@ export async function cancelar(
 export async function doTurno(
   dia: string,
   turno: TurnoAgenda,
-  provedorId?: string,
+  /** Um provedor ou a lista dos que o usuario alcanca; ausente = todos. */
+  provedorId?: string | string[],
   equipe?: "interna" | "externa" | "todas",
 ) {
   const where: Record<string, unknown> = {
     dia: dataDoDia(dia),
     turno,
     status: "marcado",
-    ...(provedorId ? { provedorId } : {}),
+    ...(provedorId ? { provedorId: Array.isArray(provedorId) ? { in: provedorId } : provedorId } : {}),
   };
 
   if (equipe === "interna") {

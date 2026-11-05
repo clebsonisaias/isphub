@@ -31,6 +31,11 @@ export interface JwtPayload {
    * mudanca: ausente e tratado como 0, que e o default da coluna.
    */
   tv?: number;
+  /**
+   * So GESTOR: provedores que ele alcanca (vazio/ausente = todos). Nunca vem
+   * do token: o requireAuth preenche do banco.
+   */
+  provedores?: string[];
 }
 
 export async function hashPassword(plain: string): Promise<string> {

@@ -14,7 +14,7 @@ import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../middleware/errorHandler.js";
 import { emitParaUsuario } from "./realtimeHub.js";
 import { dispararPush } from "./pushService.js";
-import { podeAcessarOs } from "./escopoService.js";
+import { podeAcessarOs, whereInternosDoProvedor } from "./escopoService.js";
 import * as writebackService from "./writebackService.js";
 import { enviarAoAtendai } from "./ponteChatAtendaiService.js";
 import type { JwtPayload } from "./authService.js";
@@ -337,8 +337,9 @@ export async function garantirConversaDeOs(user: JwtPayload, ordemServicoId: str
     throw new HttpError(403, "Acesso restrito ao proprio provedor/tecnico");
   }
 
+  // Internos que enxergam o provedor da OS (gestor limitado a outros fica fora).
   const internos = await prisma.usuario.findMany({
-    where: { ativo: true, role: { in: ROLES_INTERNOS } },
+    where: { ativo: true, ...whereInternosDoProvedor(os.provedorId) },
     select: { id: true },
   });
   const participanteIds = new Set<string>([...internos.map((u) => u.id), autorId]);

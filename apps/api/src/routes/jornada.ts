@@ -1,7 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
 import { PAPEIS_OCUPACAO, TURNOS_AGENDA, UserRole, type JornadaResposta, type TecnicoEmJornada } from "@isphub/shared";
-import { asyncHandler } from "../middleware/errorHandler.js";
+import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
+import { prisma } from "../lib/prisma.js";
+import { podeAcessarVeiculo } from "../services/escopoService.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import * as escala from "../services/escalaService.js";
 import { registrarChecklist } from "../services/checklistService.js";
@@ -208,6 +210,11 @@ jornadaRouter.put(
   requireRole(UserRole.ADMIN, UserRole.GESTOR),
   asyncHandler(async (req, res) => {
     const b = escalarSchema.parse(req.body);
+    if (b.veiculoId) {
+      // Gestor limitado so escala em viatura do escopo dele (ou da hub).
+      const v = await prisma.veiculo.findUnique({ where: { id: b.veiculoId }, select: { provedorId: true } });
+      if (v && !podeAcessarVeiculo(req.user!, v)) throw new HttpError(403, "Veiculo de outro provedor");
+    }
     await escala.escalar({
       usuarioId: b.usuarioId,
       dia: new Date(`${b.dia}T00:00:00Z`),

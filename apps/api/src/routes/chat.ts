@@ -7,6 +7,7 @@ import { requireAuth, requireRole } from "../middleware/auth.js";
 import * as chatService from "../services/chatService.js";
 import { contatosAtendai, conversaComAtendente } from "../services/ponteChatAtendaiService.js";
 import { prisma } from "../lib/prisma.js";
+import { exigirProvedor, podeProvedor } from "../services/escopoService.js";
 
 export const chatRouter = Router();
 
@@ -74,8 +75,9 @@ chatRouter.get(
 /** Atendentes do AtendAI (provedores com o chat ligado) — para abrir conversa com elas. */
 chatRouter.get(
   "/atendai/contatos",
-  asyncHandler(async (_req, res) => {
-    res.json(await contatosAtendai());
+  asyncHandler(async (req, res) => {
+    // Gestor limitado: so as atendentes dos provedores dele.
+    res.json((await contatosAtendai()).filter((c) => podeProvedor(req.user!, c.provedorId)));
   }),
 );
 
@@ -86,6 +88,7 @@ chatRouter.post(
     const b = z
       .object({ provedorId: z.string().uuid(), colaboradorId: z.string().min(1).max(64), nome: z.string().trim().min(1).max(120) })
       .parse(req.body);
+    exigirProvedor(req.user!, b.provedorId);
     const eu = await prisma.usuario.findUniqueOrThrow({ where: { id: req.user!.sub }, select: { id: true, nome: true, role: true } });
     res.status(201).json(await conversaComAtendente(eu, b.provedorId, b.colaboradorId, b.nome));
   }),

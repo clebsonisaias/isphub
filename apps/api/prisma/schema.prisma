@@ -396,6 +396,15 @@ model Usuario {
   /// Incrementa em: desativacao, troca de papel, troca de provedor e troca de
   /// senha. Ver services/authService.ts e routes/usuarios.ts.
   tokenVersion      Int       @default(0)
+  /// So GESTOR: provedores que ele enxerga. Vazio = todos (como sempre foi).
+  /// Sem FK de proposito: apagar um provedor deixa um id orfao na lista, e o
+  /// gestor continua limitado aos que sobraram — com FK em cascata a lista
+  /// poderia esvaziar e virar "todos" em silencio.
+  provedoresPermitidos String[] @default([])
+  /// So GESTOR: `{ [areaId]: "ver" | "editar" }` (areas em packages/shared/
+  /// permissoes.ts). Null = acesso total (como sempre foi); area ausente =
+  /// nenhum acesso.
+  permissoes        Json?
   /// Presenca barata do chat: atualizado (com throttle de ~60s, ver
   /// middleware de presenca) a cada request autenticado. online = visto nos
   /// ultimos ~2min — nunca calculado no cliente.

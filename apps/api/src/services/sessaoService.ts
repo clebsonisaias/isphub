@@ -22,6 +22,8 @@ const TTL_MS = 15_000;
 export interface EstadoSessao {
   ativo: boolean;
   tokenVersion: number;
+  /** So GESTOR: provedores permitidos (vazio = todos). Vem do banco, nunca do token. */
+  provedores: string[];
 }
 
 const cache = new Map<string, { valor: EstadoSessao | null; expiraEm: number }>();
@@ -33,9 +35,11 @@ export async function obterEstadoSessao(usuarioId: string): Promise<EstadoSessao
 
   const usuario = await prisma.usuario.findUnique({
     where: { id: usuarioId },
-    select: { ativo: true, tokenVersion: true },
+    select: { ativo: true, tokenVersion: true, provedoresPermitidos: true },
   });
-  const valor = usuario ? { ativo: usuario.ativo, tokenVersion: usuario.tokenVersion } : null;
+  const valor = usuario
+    ? { ativo: usuario.ativo, tokenVersion: usuario.tokenVersion, provedores: usuario.provedoresPermitidos }
+    : null;
   cache.set(usuarioId, { valor, expiraEm: agora + TTL_MS });
   return valor;
 }

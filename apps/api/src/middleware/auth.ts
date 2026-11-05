@@ -36,20 +36,23 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     return next(new HttpError(401, "Token invalido ou expirado"));
   }
 
+  let sessao;
   try {
-    const sessao = await obterEstadoSessao(payload.sub);
-    if (!sessao || !sessao.ativo) {
-      return next(new HttpError(401, "Usuario nao encontrado ou inativo"));
-    }
-    // `tv` ausente = token emitido antes desta mudanca; vale contra a versao 0.
-    if ((payload.tv ?? 0) !== sessao.tokenVersion) {
-      return next(new HttpError(401, "Sessao encerrada. Entre novamente."));
-    }
+    sessao = await obterEstadoSessao(payload.sub);
   } catch (err) {
     return next(err);
   }
+  if (!sessao || !sessao.ativo) {
+    return next(new HttpError(401, "Usuario nao encontrado ou inativo"));
+  }
+  // `tv` ausente = token emitido antes desta mudanca; vale contra a versao 0.
+  if ((payload.tv ?? 0) !== sessao.tokenVersion) {
+    return next(new HttpError(401, "Sessao encerrada. Entre novamente."));
+  }
 
-  req.user = payload;
+  // O escopo do gestor vem do BANCO e sobrescreve o que viesse no token: um
+  // token forjado/antigo nao escolhe os proprios provedores.
+  req.user = { ...payload, provedores: sessao.provedores };
   if (payload.role === UserRole.ATENDENTE && !atendentePode(req.method, req.originalUrl)) {
     return next(new HttpError(403, "Atendente nao tem acesso a este recurso"));
   }

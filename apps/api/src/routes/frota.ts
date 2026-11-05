@@ -3,7 +3,13 @@ import { z } from "zod";
 import { STATUS_VEICULO, TIPOS_VEICULO, UserRole, diaBrasileiro } from "@isphub/shared";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
-import { escopoVeiculoWhere, podeAcessarVeiculo } from "../services/escopoService.js";
+import {
+  escopoVeiculoWhere,
+  exigirProvedor,
+  podeAcessarVeiculo,
+  podeProvedor,
+  provedoresDoUsuario,
+} from "../services/escopoService.js";
 import * as veiculos from "../services/veiculoService.js";
 import * as ocupacao from "../services/ocupacaoService.js";
 import * as rastreadores from "../services/rastreadorService.js";
@@ -61,20 +67,44 @@ frotaRouter.get(
   }),
 );
 
+type Req = Parameters<Parameters<typeof asyncHandler>[0]>[0];
+
+/** Dono novo de um veiculo: a hub (nulo) ou um provedor do escopo de quem grava. */
+function exigirDonoNovo(req: Req, provedorId: string | null | undefined) {
+  if (provedorId) exigirProvedor(req.user!, provedorId);
+}
+
 frotaRouter.post(
   "/veiculos",
   requireRole(...rolesLeitura),
   asyncHandler(async (req, res) => {
-    res.status(201).json(await veiculos.criar(criarSchema.parse(req.body)));
+    const dados = criarSchema.parse(req.body);
+    exigirDonoNovo(req, dados.provedorId);
+    res.status(201).json(await veiculos.criar(dados));
   }),
 );
 
 /** Carrega e confere o acesso — 404 quando nao existe, 403 quando e de outro dono. */
-async function assertAcesso(req: Parameters<Parameters<typeof asyncHandler>[0]>[0], id: string) {
+async function assertAcesso(req: Req, id: string) {
   const v = await veiculos.obter(id);
   if (!v) throw new HttpError(404, "Veiculo nao encontrado");
   if (!podeAcessarVeiculo(req.user!, v)) throw new HttpError(403, "Veiculo de outro provedor");
   return v;
+}
+
+/**
+ * Rastreador: mesma regra do veiculo (o da hub, nulo, e de todos) — e o carro
+ * em que ele esta preso agora tambem tem de ser do escopo.
+ */
+async function assertRastreador(req: Req, id: string) {
+  const r = await prisma.rastreador.findUnique({
+    where: { id },
+    select: { provedorId: true, vinculos: { where: { fimEm: null }, select: { veiculo: { select: { provedorId: true } } } } },
+  });
+  if (!r) throw new HttpError(404, "Rastreador nao encontrado");
+  if (!podeAcessarVeiculo(req.user!, r) || r.vinculos.some((v) => !podeAcessarVeiculo(req.user!, v.veiculo))) {
+    throw new HttpError(403, "Rastreador de outro provedor");
+  }
 }
 
 frotaRouter.get(
@@ -91,7 +121,9 @@ frotaRouter.patch(
   requireRole(...rolesLeitura),
   asyncHandler(async (req, res) => {
     await assertAcesso(req, req.params.id);
-    res.json(await veiculos.editar(req.params.id, editarSchema.parse(req.body)));
+    const dados = editarSchema.parse(req.body);
+    exigirDonoNovo(req, dados.provedorId);
+    res.json(await veiculos.editar(req.params.id, dados));
   }),
 );
 
@@ -150,8 +182,12 @@ frotaRouter.get(
 frotaRouter.get(
   "/ocupacoes/abertas",
   requireRole(...rolesLeitura),
-  asyncHandler(async (_req, res) => {
-    res.json(await ocupacao.ocupantesAbertos());
+  asyncHandler(async (req, res) => {
+    // Gestor limitado: so as viaturas do escopo dele (as da hub incluidas).
+    const ids = provedoresDoUsuario(req.user!)
+      ? (await prisma.veiculo.findMany({ where: escopoVeiculoWhere(req.user!), select: { id: true } })).map((v) => v.id)
+      : undefined;
+    res.json(await ocupacao.ocupantesAbertos(ids));
   }),
 );
 
@@ -159,6 +195,8 @@ frotaRouter.patch(
   "/ocupacoes/:id/encerrar",
   requireRole(...rolesLeitura),
   asyncHandler(async (req, res) => {
+    const o = await prisma.ocupacaoVeiculo.findUnique({ where: { id: req.params.id }, select: { veiculoId: true } });
+    if (o) await assertAcesso(req, o.veiculoId);
     res.json(await ocupacao.encerrarPorAjuste(req.params.id));
   }),
 );
@@ -191,6 +229,8 @@ frotaRouter.get(
   "/ordens-servico/:osId/veiculos",
   requireRole(...rolesLeitura),
   asyncHandler(async (req, res) => {
+    const os = await prisma.ordemServico.findUnique({ where: { id: req.params.osId }, select: { provedorId: true } });
+    if (os) exigirProvedor(req.user!, os.provedorId);
     res.json(await ocupacao.veiculosDaOs(req.params.osId));
   }),
 );
@@ -246,7 +286,10 @@ frotaRouter.get(
 frotaRouter.get(
   "/rastreadores",
   requireRole(...rolesLeitura),
-  asyncHandler(async (_req, res) => res.json(await rastreadores.listarRastreadores())),
+  asyncHandler(async (req, res) => {
+    const lista = await rastreadores.listarRastreadores();
+    res.json(lista.filter((r) => r.provedorId == null || podeProvedor(req.user!, r.provedorId)));
+  }),
 );
 
 /**
@@ -312,6 +355,8 @@ frotaRouter.post(
   requireRole(...rolesLeitura),
   asyncHandler(async (req, res) => {
     const { veiculoId } = z.object({ veiculoId: z.string().uuid() }).parse(req.body);
+    await assertRastreador(req, req.params.id);
+    await assertAcesso(req, veiculoId);
     res.json(await rastreadores.vincular(req.params.id, veiculoId, req.user!.sub));
   }),
 );
@@ -320,6 +365,7 @@ frotaRouter.post(
   "/rastreadores/:id/desvincular",
   requireRole(...rolesLeitura),
   asyncHandler(async (req, res) => {
+    await assertRastreador(req, req.params.id);
     await rastreadores.desvincular(req.params.id);
     res.status(204).end();
   }),
@@ -328,7 +374,10 @@ frotaRouter.post(
 frotaRouter.get(
   "/rastreadores/:id/vinculos",
   requireRole(...rolesLeitura),
-  asyncHandler(async (req, res) => res.json(await rastreadores.historicoVinculos(req.params.id))),
+  asyncHandler(async (req, res) => {
+    await assertRastreador(req, req.params.id);
+    res.json(await rastreadores.historicoVinculos(req.params.id));
+  }),
 );
 
 // ---------------------------------------------------------------------------
@@ -418,12 +467,19 @@ frotaRouter.post(
   }),
 );
 
+/** Plano de manutencao: o acesso e o do veiculo dele. Inexistente segue pro servico (404/no-op). */
+async function assertAcessoPlano(req: Req, id: string) {
+  const p = await prisma.planoManutencao.findUnique({ where: { id }, select: { veiculoId: true } });
+  if (p) await assertAcesso(req, p.veiculoId);
+}
+
 /** "Feita": carimba km (o informado, senao o odometro atual) e data de hoje. */
 frotaRouter.post(
   "/manutencoes/:id/concluir",
   requireRole(...rolesLeitura),
   asyncHandler(async (req, res) => {
     const { km } = z.object({ km: z.number().int().min(0).max(9_999_999).nullish() }).parse(req.body ?? {});
+    await assertAcessoPlano(req, req.params.id);
     const p = await manutencao.concluirPlano(req.params.id, km);
     res.json(await manutencao.listarPlanos(p.veiculoId));
   }),
@@ -433,6 +489,7 @@ frotaRouter.delete(
   "/manutencoes/:id",
   requireRole(...rolesLeitura),
   asyncHandler(async (req, res) => {
+    await assertAcessoPlano(req, req.params.id);
     await manutencao.removerPlano(req.params.id);
     res.status(204).end();
   }),
@@ -454,6 +511,8 @@ frotaRouter.get(
   "/checklists/:id/foto",
   requireRole(...rolesLeitura),
   asyncHandler(async (req, res) => {
+    const c = await prisma.checklistViatura.findUnique({ where: { id: req.params.id }, select: { veiculoId: true } });
+    if (c) await assertAcesso(req, c.veiculoId);
     const f = await checklist.fotoDoChecklist(req.params.id);
     if (!f) throw new HttpError(404, "Sem foto");
     res.setHeader("Cache-Control", "private, max-age=31536000, immutable");

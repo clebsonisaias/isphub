@@ -8,6 +8,7 @@ import * as agenda from "../services/agendaService.js";
 import * as pc from "../services/preCadastroService.js";
 import { producaoDoVendedor } from "../services/producaoVendedorService.js";
 import { iniciarComCliente } from "../services/clienteAtendaiService.js";
+import { exigirProvedor, filtroProvedor, podeProvedor } from "../services/escopoService.js";
 
 /**
  * Pre-cadastro do vendedor em campo. O vendedor so enxerga os PROPRIOS
@@ -19,7 +20,7 @@ preCadastroRouter.use(requireAuth, requireRole(UserRole.VENDEDOR, UserRole.ADMIN
 
 const DIA = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
-/** Vendedor: o provedor dele, sempre. Gestao: o que pediu. */
+/** Vendedor: o provedor dele, sempre. Gestao: o que pediu (gestor limitado, so da lista dele). */
 function provedorDe(req: Express.Request, pedido?: string | null): string {
   const u = req.user!;
   if (u.role === UserRole.VENDEDOR) {
@@ -27,14 +28,19 @@ function provedorDe(req: Express.Request, pedido?: string | null): string {
     return u.provedorId;
   }
   if (!pedido) throw new HttpError(400, "Informe o provedor");
+  exigirProvedor(u, pedido);
   return pedido;
 }
 
-/** O pre-cadastro, se quem pede pode ve-lo. 404 (e nao 403) para o de outro vendedor. */
+/**
+ * O pre-cadastro, se quem pede pode ve-lo. 404 (e nao 403) para o de outro
+ * vendedor ou de provedor fora do escopo do gestor.
+ */
 async function doUsuario(req: Express.Request, id: string) {
   const u = req.user!;
   const linha = await prisma.preCadastro.findUnique({ where: { id } });
-  if (!linha || (u.role === UserRole.VENDEDOR && linha.vendedorId !== u.sub)) throw new HttpError(404, "Pré-cadastro não encontrado");
+  const alheio = u.role === UserRole.VENDEDOR ? linha?.vendedorId !== u.sub : !!linha && !podeProvedor(u, linha.provedorId);
+  if (!linha || alheio) throw new HttpError(404, "Pré-cadastro não encontrado");
   return linha;
 }
 
@@ -123,7 +129,7 @@ preCadastroRouter.get(
     const where =
       u.role === UserRole.VENDEDOR
         ? { vendedorId: u.sub, criadoEm: { gte: desde } }
-        : { criadoEm: { gte: desde }, ...(provedorId ? { provedorId } : {}) };
+        : { criadoEm: { gte: desde }, ...filtroProvedor(u, provedorId) };
     res.json(
       await prisma.preCadastro.findMany({
         where,

@@ -1,11 +1,12 @@
 import { Router } from "express";
 import { z } from "zod";
-import { UserRole, escopadoPorProvedor } from "@isphub/shared";
+import { UserRole } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { chaveDoProvedor, gerarChaveEntrada, revogarChaveEntrada } from "../services/chaveParceiroService.js";
 import { emitParaTodos } from "../services/realtimeHub.js";
+import { exigirProvedor, provedoresDoUsuario } from "../services/escopoService.js";
 
 export const provedoresRouter = Router();
 
@@ -26,11 +27,12 @@ const provedorSchema = z.object({
   ativo: z.boolean().optional(),
 });
 
-/** Lista provedores. Admin/gestor veem todos; provedor ve so o proprio. */
+/** Lista provedores. Admin ve todos; gestor, os do escopo dele; provedor, so o proprio. */
 provedoresRouter.get(
   "/",
   asyncHandler(async (req, res) => {
-    const where = escopadoPorProvedor(req.user!.role) ? { id: req.user!.provedorId ?? "" } : {};
+    const lista = provedoresDoUsuario(req.user!);
+    const where = lista ? { id: { in: lista } } : {};
     const provedores = await prisma.provedor.findMany({ where, orderBy: { nome: "asc" } });
     res.json(provedores);
   }),
@@ -39,9 +41,7 @@ provedoresRouter.get(
 provedoresRouter.get(
   "/:id",
   asyncHandler(async (req, res) => {
-    if (escopadoPorProvedor(req.user!.role) && req.user!.provedorId !== req.params.id) {
-      throw new HttpError(403, "Acesso restrito ao proprio provedor");
-    }
+    exigirProvedor(req.user!, req.params.id);
     const provedor = await prisma.provedor.findUnique({ where: { id: req.params.id } });
     if (!provedor) throw new HttpError(404, "Provedor nao encontrado");
     res.json(provedor);

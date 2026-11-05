@@ -1,4 +1,5 @@
 import { UserRole, escopadoPorProvedor } from "@isphub/shared";
+import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../middleware/errorHandler.js";
 import type { JwtPayload } from "./authService.js";
 
@@ -9,8 +10,77 @@ import type { JwtPayload } from "./authService.js";
  * - tecnico: e pessoal da ISPhub (nao de um provedor especifico) — so ve/age
  *   nas OS em que trabalha (responsavel ou apoio), de qualquer provedor.
  * - admin/gestor: sem restricao (visao unificada), respeitando um filtro
- *   opcional de provedor escolhido na tela.
+ *   opcional de provedor escolhido na tela. O GESTOR pode ser limitado a uma
+ *   lista de provedores (`Usuario.provedoresPermitidos`, vazia = todos).
  */
+
+/** Sentinela de "nenhum provedor": casa com nada, nunca vira "sem filtro". */
+const NENHUM = "__nenhum__";
+
+/**
+ * Provedores que o usuario alcanca; `null` = todos (admin, gestor sem limite,
+ * tecnico — cujo escopo e por OS, nao por provedor).
+ */
+export function provedoresDoUsuario(user: JwtPayload): string[] | null {
+  if (escopadoPorProvedor(user.role)) return [user.provedorId ?? NENHUM];
+  if (user.role === UserRole.GESTOR && user.provedores?.length) return user.provedores;
+  return null;
+}
+
+/**
+ * Fragmento `where` por `provedorId` (OS, agendamento, pre-cadastro...).
+ * `pedido` e o filtro escolhido na tela: fora do escopo vira o sentinela, nunca
+ * "todos".
+ */
+export function filtroProvedor(user: JwtPayload, pedido?: string): Record<string, unknown> {
+  const lista = provedoresDoUsuario(user);
+  if (!lista) return pedido ? { provedorId: pedido } : {};
+  if (pedido) return { provedorId: lista.includes(pedido) ? pedido : NENHUM };
+  return { provedorId: { in: lista } };
+}
+
+export function podeProvedor(user: JwtPayload, provedorId: string): boolean {
+  const lista = provedoresDoUsuario(user);
+  return !lista || lista.includes(provedorId);
+}
+
+export function exigirProvedor(user: JwtPayload, provedorId: string): void {
+  if (!podeProvedor(user, provedorId)) throw new HttpError(403, "Provedor fora do seu escopo");
+}
+
+/**
+ * Operacao que mexe em TODOS os provedores de uma vez (robo da agenda, planilha,
+ * redistribuicao do dia): quem tem escopo limitado nao dispara.
+ */
+export function exigirEscopoTotal(user: JwtPayload): void {
+  if (provedoresDoUsuario(user)) {
+    throw new HttpError(403, "Operacao afeta todos os provedores; seu acesso e limitado");
+  }
+}
+
+/** Todos os agendamentos de `ids` precisam estar no escopo (lote misto = 403). */
+export async function exigirAgendamentosNoEscopo(user: JwtPayload, ids: string[]): Promise<void> {
+  if (!provedoresDoUsuario(user) || ids.length === 0) return;
+  const unicos = [...new Set(ids)];
+  const total = await prisma.agendamento.count({ where: { id: { in: unicos }, ...filtroProvedor(user) } });
+  if (total !== unicos.length) throw new HttpError(403, "Agendamento fora do seu escopo");
+}
+
+/**
+ * Usuarios internos (admin e gestor) que enxergam um provedor: admin sempre;
+ * gestor sem lista ou com o provedor na lista.
+ */
+export function whereInternosDoProvedor(provedorId: string): Record<string, unknown> {
+  return {
+    OR: [
+      { role: UserRole.ADMIN },
+      {
+        role: UserRole.GESTOR,
+        OR: [{ provedoresPermitidos: { isEmpty: true } }, { provedoresPermitidos: { has: provedorId } }],
+      },
+    ],
+  };
+}
 
 /**
  * OS em que o tecnico trabalha: responsavel (`tecnicoId`) OU apoio (`apoios`,
@@ -37,7 +107,7 @@ export function escopoOsWhere(user: JwtPayload, filtroProvedorId?: string): Reco
   if (user.role === UserRole.TECNICO) {
     return osDoTecnicoWhere(user.sub);
   }
-  return filtroProvedorId ? { provedorId: filtroProvedorId } : {};
+  return filtroProvedor(user, filtroProvedorId);
 }
 
 /**
@@ -52,7 +122,7 @@ export function podeAcessarOs(
   if (user.role === UserRole.TECNICO) {
     return os.tecnicoId === user.sub || !!os.apoios?.some((a) => a.id === user.sub);
   }
-  return true;
+  return podeProvedor(user, os.provedorId);
 }
 
 /**
@@ -69,6 +139,9 @@ export function podeAcessarOs(
  *
  * Ver o veiculo na lista NAO da direito a ver a TRILHA dele; aquilo e mais
  * estreito e tem guarda propria.
+ *
+ * GESTOR limitado ve os carros dos provedores dele E os da hub (nulos): ele
+ * despacha a equipe da ISPhub, que roda nesses carros.
  */
 export function escopoVeiculoWhere(user: JwtPayload, filtroProvedorId?: string): Record<string, unknown> {
   if (user.role === UserRole.PROVEDOR) {
@@ -77,7 +150,9 @@ export function escopoVeiculoWhere(user: JwtPayload, filtroProvedorId?: string):
   if (user.role === UserRole.TECNICO) {
     return { status: { not: "inativo" } };
   }
-  return filtroProvedorId ? { provedorId: filtroProvedorId } : {};
+  if (filtroProvedorId) return filtroProvedor(user, filtroProvedorId);
+  const lista = provedoresDoUsuario(user);
+  return lista ? { OR: [{ provedorId: { in: lista } }, { provedorId: null }] } : {};
 }
 
 /** Confere se o usuario pode ler/editar um veiculo especifico. */
@@ -87,7 +162,7 @@ export function podeAcessarVeiculo(user: JwtPayload, veiculo: { provedorId: stri
     // a ele os carros da hub. A checagem explicita fecha isso.
     return veiculo.provedorId != null && veiculo.provedorId === user.provedorId;
   }
-  return true;
+  return veiculo.provedorId == null || podeProvedor(user, veiculo.provedorId);
 }
 
 /**
@@ -130,5 +205,9 @@ export async function assertProvedorPermitido(
     return;
   }
 
-  // admin/gestor: livre por desenho (despacham entre todos os provedores).
+  // admin/gestor: livres por desenho (despacham entre todos os provedores),
+  // salvo o gestor limitado a uma lista.
+  if (!podeProvedor(user, provedorId)) {
+    throw new HttpError(403, "Provedor fora do seu escopo");
+  }
 }

@@ -14,6 +14,13 @@ import {
   saudeDoAgendador,
 } from "../services/autoAgendaService.js";
 import { aplicarRedistribuicao, propostaRedistribuicao } from "../services/redistribuicaoService.js";
+import {
+  exigirAgendamentosNoEscopo,
+  exigirEscopoTotal,
+  exigirProvedor,
+  podeProvedor,
+  provedoresDoUsuario,
+} from "../services/escopoService.js";
 
 /**
  * A agenda de OS — o que a operacao mantinha numa planilha no Drive.
@@ -113,18 +120,10 @@ agendaRouter.get(
         equipe: z.enum(["interna", "externa", "todas"]).optional(),
       })
       .parse(req.query);
-    // Atendente so ve as paradas (nome, telefone, endereco) do proprio provedor.
-    const provedorId = req.user!.role === UserRole.ATENDENTE ? (req.user!.provedorId ?? "__nenhum__") : undefined;
-    res.json(await agenda.doTurno(dia, turno, provedorId, equipe));
+    // Atendente (e gestor limitado) so ve as paradas (nome, telefone, endereco) dos provedores dele.
+    res.json(await agenda.doTurno(dia, turno, provedoresDoUsuario(req.user!) ?? undefined, equipe));
   }),
 );
-
-/** Atendente marca e desmarca so no proprio provedor. */
-function exigirProvedorDoAtendente(user: Express.Request["user"], provedorId: string) {
-  if (user?.role === UserRole.ATENDENTE && user.provedorId !== provedorId) {
-    throw new HttpError(403, "Acesso restrito ao proprio provedor");
-  }
-}
 
 /**
  * `GET /agenda/turno/sugestao` — a ordem sugerida pra rota de uma janela.
@@ -135,7 +134,10 @@ agendaRouter.get(
   requireRole(UserRole.ADMIN, UserRole.GESTOR),
   asyncHandler(async (req, res) => {
     const { dia, turno } = z.object({ dia: DIA, turno: z.enum(TURNOS_AGENDA) }).parse(req.query);
-    const [paradas, config] = await Promise.all([agenda.doTurno(dia, turno), agenda.lerConfig()]);
+    const [paradas, config] = await Promise.all([
+      agenda.doTurno(dia, turno, provedoresDoUsuario(req.user!) ?? undefined),
+      agenda.lerConfig(),
+    ]);
     const origem = config.baseLat != null && config.baseLng != null ? { lat: config.baseLat, lng: config.baseLng } : null;
     const lista = paradas.map((p) => ({ id: p.id, lat: p.ordemServico?.lat ?? null, lng: p.ordemServico?.lng ?? null }));
     const sugestao = sugerirOrdem(lista, origem);
@@ -152,8 +154,11 @@ agendaRouter.get(
 agendaRouter.get(
   "/auto/proposta",
   requireRole(UserRole.ADMIN, UserRole.GESTOR),
-  asyncHandler(async (_req, res) => {
-    res.json(await proporAgendaDoBanco());
+  asyncHandler(async (req, res) => {
+    const r = await proporAgendaDoBanco();
+    // Gestor limitado: so o que e dos provedores dele (a capacidade continua global).
+    const dele = <T extends { provedorId: string }>(xs: T[]) => xs.filter((x) => podeProvedor(req.user!, x.provedorId));
+    res.json({ ...r, propostas: dele(r.propostas), revisao: dele(r.revisao), semVaga: dele(r.semVaga) });
   }),
 );
 
@@ -176,6 +181,7 @@ agendaRouter.post(
   requireRole(UserRole.ADMIN, UserRole.GESTOR),
   asyncHandler(async (req, res) => {
     const { propostas } = z.object({ propostas: z.array(propostaParaAplicar).min(1).max(200) }).parse(req.body);
+    for (const p of propostas) exigirProvedor(req.user!, p.provedorId);
     res.json(await aplicarPropostas(propostas, req.user?.email ?? "supervisor"));
   }),
 );
@@ -184,7 +190,8 @@ agendaRouter.post(
 agendaRouter.post(
   "/auto/desfazer",
   requireRole(UserRole.ADMIN, UserRole.GESTOR),
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
+    exigirEscopoTotal(req.user!);
     res.json(await desfazerLoteAuto());
   }),
 );
@@ -202,7 +209,8 @@ agendaRouter.get(
 agendaRouter.get(
   "/planilha",
   requireRole(UserRole.ADMIN, UserRole.GESTOR),
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
+    exigirEscopoTotal(req.user!);
     res.json(ultimaRodadaPlanilha());
   }),
 );
@@ -211,7 +219,8 @@ agendaRouter.get(
 agendaRouter.post(
   "/planilha/rodar",
   requireRole(UserRole.ADMIN, UserRole.GESTOR),
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
+    exigirEscopoTotal(req.user!);
     res.json(await rodarPlanilha());
   }),
 );
@@ -221,6 +230,7 @@ agendaRouter.get(
   "/redistribuicao",
   requireRole(UserRole.ADMIN, UserRole.GESTOR),
   asyncHandler(async (req, res) => {
+    exigirEscopoTotal(req.user!);
     const q = z.object({ dia: DIA, turno: z.enum(TURNOS_AGENDA), usuarioId: z.string().uuid() }).parse(req.query);
     res.json(await propostaRedistribuicao(q.dia, q.turno, q.usuarioId));
   }),
@@ -234,6 +244,7 @@ agendaRouter.post(
     const b = z
       .object({ itens: z.array(z.object({ agendamentoId: z.string().uuid(), tecnicoId: z.string().uuid() })).min(1).max(100) })
       .parse(req.body);
+    await exigirAgendamentosNoEscopo(req.user!, b.itens.map((i) => i.agendamentoId));
     res.json({ aplicadas: await aplicarRedistribuicao(b.itens, req.user!.sub) });
   }),
 );
@@ -259,7 +270,8 @@ agendaRouter.post(
   requireRole(UserRole.ADMIN, UserRole.GESTOR, UserRole.ATENDENTE),
   asyncHandler(async (req, res) => {
     const b = marcarSchema.parse(req.body);
-    exigirProvedorDoAtendente(req.user, b.provedorId);
+    // Atendente so no proprio provedor; gestor limitado, nos da lista dele.
+    exigirProvedor(req.user!, b.provedorId);
     const marcado = await agenda.marcar({ ...b, marcadoPor: req.user!.email });
     // Responde ANTES do write-back: a marcacao ja e verdade aqui, e o ERP do
     // provedor fora do ar nao pode virar espera na tela de quem esta ao
@@ -274,10 +286,10 @@ agendaRouter.delete(
   "/:id",
   requireRole(UserRole.ADMIN, UserRole.GESTOR, UserRole.ATENDENTE),
   asyncHandler(async (req, res) => {
-    if (req.user!.role === UserRole.ATENDENTE) {
+    if (provedoresDoUsuario(req.user!)) {
       const m = await prisma.agendamento.findUnique({ where: { id: req.params.id }, select: { provedorId: true } });
       if (!m) throw new HttpError(404, "Agendamento nao encontrado");
-      exigirProvedorDoAtendente(req.user, m.provedorId);
+      exigirProvedor(req.user!, m.provedorId);
     }
     const cancelado = await agenda.cancelar(req.params.id, { origem: "isphub", autor: req.user!.email });
     res.json(cancelado);
@@ -299,8 +311,9 @@ agendaRouter.put(
     const { dia, turno, ids } = z
       .object({ dia: DIA, turno: z.enum(TURNOS_AGENDA), ids: z.array(z.string().uuid()).max(200) })
       .parse(req.body);
+    await exigirAgendamentosNoEscopo(req.user!, ids);
     await agenda.definirRota(ids);
-    res.json(await agenda.doTurno(dia, turno));
+    res.json(await agenda.doTurno(dia, turno, provedoresDoUsuario(req.user!) ?? undefined));
   }),
 );
 
@@ -309,7 +322,12 @@ export const adminAgendaRouter = Router();
 
 // ADMIN e GESTOR: o gestor ja ve o botao de limites na tela e ja pode marcar
 // visita — recusar aqui so dava 403 depois de ele preencher o formulario.
-adminAgendaRouter.use(requireAuth, requireRole(UserRole.ADMIN, UserRole.GESTOR));
+// A grade e uma so pra todos os provedores: ler e livre, mas ESCREVER exige
+// escopo total (gestor limitado a alguns provedores nao mexe na dos outros).
+adminAgendaRouter.use(requireAuth, requireRole(UserRole.ADMIN, UserRole.GESTOR), (req, _res, next) => {
+  if (req.method !== "GET" && req.method !== "HEAD") exigirEscopoTotal(req.user!);
+  next();
+});
 
 adminAgendaRouter.get(
   "/",

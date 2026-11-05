@@ -3,6 +3,8 @@ import { z } from "zod";
 import { UserRole } from "@isphub/shared";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
+import { prisma } from "../lib/prisma.js";
+import { exigirAgendamentosNoEscopo, exigirEscopoTotal, exigirProvedor } from "../services/escopoService.js";
 import {
   obterSugestaoRotaTecnico,
   aplicarOrdemRotaTecnico,
@@ -17,6 +19,12 @@ export const logisticaRouter = Router();
 logisticaRouter.use(requireAuth);
 
 const DIA_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+/** OS urgente: so do provedor que o usuario alcanca. Inexistente segue pro servico (404). */
+async function exigirOsNoEscopo(user: Express.Request["user"], osId: string) {
+  const os = await prisma.ordemServico.findUnique({ where: { id: osId }, select: { provedorId: true } });
+  if (os) exigirProvedor(user!, os.provedorId);
+}
 
 /**
  * `GET /logistica/minha-rota-do-dia`
@@ -50,6 +58,8 @@ logisticaRouter.post(
       })
       .parse(req.body);
 
+    // Reordena a rota de TODOS os tecnicos do dia, de todos os provedores.
+    exigirEscopoTotal(req.user!);
     const resultado = await otimizarTodasRotasDoDia(dia, req.user?.provedorId);
     res.json(resultado);
   }),
@@ -70,6 +80,8 @@ logisticaRouter.get(
       })
       .parse(req.query);
 
+    // O tecnico roda pra todos os provedores: a rota dele mistura paradas de varios.
+    exigirEscopoTotal(req.user!);
     const resultado = await obterSugestaoRotaTecnico(req.params.tecnicoId, dia, turno);
     res.json(resultado);
   }),
@@ -89,6 +101,7 @@ logisticaRouter.post(
       })
       .parse(req.body);
 
+    await exigirAgendamentosNoEscopo(req.user!, ids);
     await aplicarOrdemRotaTecnico(ids);
     res.json({ ok: true, total: ids.length });
   }),
@@ -102,6 +115,7 @@ logisticaRouter.get(
   "/os/:osId/proximidade-tecnicos",
   requireRole(UserRole.ADMIN, UserRole.GESTOR),
   asyncHandler(async (req, res) => {
+    await exigirOsNoEscopo(req.user, req.params.osId);
     const resultado = await obterTecnicosProximos(req.params.osId);
     res.json(resultado);
   }),
@@ -123,6 +137,7 @@ logisticaRouter.post(
       })
       .parse(req.body);
 
+    await exigirOsNoEscopo(req.user, req.params.osId);
     const resultado = await despacharEmergencial(req.params.osId, tecnicoId, {
       encaixarPrimeiro: encaixarPrimeiro ?? true,
       turno,

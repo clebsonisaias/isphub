@@ -22,6 +22,7 @@ import * as canaisWhatsappService from "./canaisWhatsappService.js";
 import * as whatsappMeta from "../connectors/whatsappMeta.js";
 import * as whatsappEvolution from "../connectors/whatsappEvolution.js";
 import * as clienteAtendai from "./clienteAtendaiService.js";
+import { podeProvedor, provedoresDoUsuario } from "./escopoService.js";
 
 /**
  * Chat com clientes via WhatsApp — caixa compartilhada entre todo staff
@@ -37,14 +38,19 @@ import * as clienteAtendai from "./clienteAtendaiService.js";
  * `iniciadaPorId`, NAO `agenteId`: transferir uma conversa troca o agente e
  * tiraria do tecnico justamente a conversa que ele abriu.
  *
- * - ADMIN/GESTOR: veem todas e podem intervir (ver enviarMensagem).
+ * - ADMIN/GESTOR: veem todas e podem intervir (ver enviarMensagem). O GESTOR
+ *   limitado a alguns provedores ve as deles, mais o que ele iniciou ou esta
+ *   com ele (conversa sem provedor so nesses dois casos).
  * - TECNICO: o que ele mesmo iniciou OU o que esta com ele agora (abriu pela
  *   OS ou recebeu por transferencia) — nao ve fila nem conversa entrante.
  * - ATENDENTE: as conversas pelo AtendAI do provedor dela.
  * - PROVEDOR: fora do modulo.
  */
 export function escopoConversaClienteWhere(user: JwtPayload): Record<string, unknown> {
-  if (user.role === UserRole.ADMIN || user.role === UserRole.GESTOR) return {};
+  if (user.role === UserRole.ADMIN || user.role === UserRole.GESTOR) {
+    const lista = provedoresDoUsuario(user);
+    return lista ? { OR: [{ provedorId: { in: lista } }, { iniciadaPorId: user.sub }, { agenteId: user.sub }] } : {};
+  }
   // Sentinela pro PROVEDOR (mesma ideia do escopoOsWhere): o router ja barra o
   // papel, mas um papel sem lugar no modulo nunca pode cair no `{}` e enxergar
   // a caixa inteira se um caminho novo esquecer aquele guard.
@@ -58,7 +64,11 @@ export function podeAcessarConversaCliente(
   user: JwtPayload,
   conversa: { iniciadaPorId: string | null; agenteId?: string | null; canal?: string; provedorId?: string | null },
 ): boolean {
-  if (user.role === UserRole.ADMIN || user.role === UserRole.GESTOR) return true;
+  if (user.role === UserRole.ADMIN || user.role === UserRole.GESTOR) {
+    if (!provedoresDoUsuario(user)) return true;
+    if (conversa.provedorId && podeProvedor(user, conversa.provedorId)) return true;
+    return conversa.iniciadaPorId === user.sub || (!!conversa.agenteId && conversa.agenteId === user.sub);
+  }
   if (user.role === UserRole.PROVEDOR) return false;
   if (user.role === UserRole.ATENDENTE) {
     return conversa.canal === CanalWhatsapp.ATENDAI && !!user.provedorId && conversa.provedorId === user.provedorId;

@@ -18,7 +18,7 @@ import { z } from "zod";
 import * as agenda from "../services/agendaService.js";
 import { semPresencaDesde } from "../services/auditoriaVisitaService.js";
 import { calcularSla } from "../services/slaService.js";
-import { escopoOsWhere } from "../services/escopoService.js";
+import { escopoOsWhere, filtroProvedor, provedoresDoUsuario } from "../services/escopoService.js";
 import { produtividade } from "../services/meuDiaService.js";
 import { OS_EXTERNA_WHERE, OS_INTERNA_WHERE } from "../services/equipeService.js";
 
@@ -45,7 +45,8 @@ dashboardRouter.get(
     // Escopo dentro do AND: o do tecnico usa `OR` e o espalhamento perderia a chave.
     const where = { AND: [escopo, OS_INTERNA_WHERE] };
     const whereRetiradas = { AND: [escopo, OS_EXTERNA_WHERE] };
-    const provedorIdRestrito = req.user!.role === UserRole.PROVEDOR ? (req.user!.provedorId ?? "__nenhum__") : undefined;
+    // Mesmo recorte do GET /provedores: provedor ve o proprio, gestor limitado os dele.
+    const provedoresVisiveis = provedoresDoUsuario(req.user!);
 
     const [totalAbertas, totalConcluidas, ordensAbertasComSla, provedores, statusGroups, tecnicoGroups, ordensCategoria] =
       await Promise.all([
@@ -60,7 +61,7 @@ dashboardRouter.get(
             tipoOs: { select: { slaHoras: true, categoria: { select: { slaHorasPadrao: true } } } },
           },
         }),
-        prisma.provedor.findMany({ where: provedorIdRestrito ? { id: provedorIdRestrito } : {} }),
+        prisma.provedor.findMany({ where: provedoresVisiveis ? { id: { in: provedoresVisiveis } } : {} }),
         prisma.ordemServico.groupBy({ by: ["status"], where, _count: { _all: true } }),
         prisma.ordemServico.groupBy({
           by: ["tecnicoId"],
@@ -248,9 +249,9 @@ dashboardRouter.get(
  * a fila do contato humano. Some da lista sozinha quando alguem marca a visita
  * ou a OS fecha.
  */
-async function ofertasSemRetorno(): Promise<DashboardAgenda["ofertaSemRetorno"]> {
+async function ofertasSemRetorno(escopo: Record<string, unknown>): Promise<DashboardAgenda["ofertaSemRetorno"]> {
   const ofertas = await prisma.ofertaAgenda.findMany({
-    where: { status: "sem_retorno" },
+    where: { status: "sem_retorno", ...escopo },
     orderBy: { ultimaEm: "asc" },
     take: 200,
   });
@@ -283,6 +284,9 @@ async function ofertasSemRetorno(): Promise<DashboardAgenda["ofertaSemRetorno"]>
  * esta marcando. O ranking por funcionario le `marcadoPor` (e-mail de quem
  * marcou no painel, nome da atendente vindo do AtendAI); quando nao ha nome, a
  * origem responde — "atendai_ia" e o bot.
+ *
+ * Gestor limitado ve so os numeros dos provedores dele; a ocupacao da grade
+ * continua global (a equipe e uma so e atende todos).
  */
 dashboardRouter.get(
   "/agenda",
@@ -292,25 +296,37 @@ dashboardRouter.get(
     const hoje = diaBrHoje();
     const fimSemana = somarDias(hoje, 6);
     const desde = new Date(Date.now() - dias * 86_400_000);
+    const escopo = filtroProvedor(req.user!);
 
     const [ocupacao, semConfirmacaoCliente, pendentesSgp, linhas, semPresenca7d] = await Promise.all([
       agenda.grade({ de: hoje, ate: fimSemana }),
       prisma.agendamento.count({
-        where: { status: "marcado", dia: { gte: agenda.dataDoDia(hoje), lte: agenda.dataDoDia(fimSemana) }, confirmadoEm: null },
+        where: {
+          status: "marcado",
+          dia: { gte: agenda.dataDoDia(hoje), lte: agenda.dataDoDia(fimSemana) },
+          confirmadoEm: null,
+          ...escopo,
+        },
       }),
       // Mesmo recorte de `confirmarComSgp`: so conta o que ja tem OS ligada,
       // porque marcacao orfa nem teve chance de ser lida de volta.
       prisma.agendamento.count({
-        where: { status: "marcado", sgpConfirmadoEm: null, ordemServicoId: { not: null }, dia: { gte: agenda.dataDoDia(hoje) } },
+        where: {
+          status: "marcado",
+          sgpConfirmadoEm: null,
+          ordemServicoId: { not: null },
+          dia: { gte: agenda.dataDoDia(hoje) },
+          ...escopo,
+        },
       }),
       prisma.agendamento.groupBy({
         by: ["marcadoPor", "origem", "status"],
-        where: { criadoEm: { gte: desde } },
+        where: { criadoEm: { gte: desde }, ...escopo },
         _count: { _all: true },
       }),
-      semPresencaDesde(new Date(Date.now() - 7 * 86_400_000)),
+      semPresencaDesde(new Date(Date.now() - 7 * 86_400_000), escopo),
     ]);
-    const ofertaSemRetorno = await ofertasSemRetorno();
+    const ofertaSemRetorno = await ofertasSemRetorno(escopo);
 
     const resposta: DashboardAgenda = {
       dias,

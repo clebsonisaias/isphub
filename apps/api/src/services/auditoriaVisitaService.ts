@@ -140,6 +140,9 @@ export async function notificarAusentes(): Promise<number> {
 }
 
 /** Contagem pro Dashboard. */
-export async function semPresencaDesde(desde: Date): Promise<number> {
-  return prisma.auditoriaVisita.count({ where: { veredito: "ausente", auditadaEm: { gte: desde } } });
+/** `escopoOs`: recorte por provedor da OS (gestor limitado); vazio = todas. */
+export async function semPresencaDesde(desde: Date, escopoOs: Record<string, unknown> = {}): Promise<number> {
+  return prisma.auditoriaVisita.count({
+    where: { veredito: "ausente", auditadaEm: { gte: desde }, ...(Object.keys(escopoOs).length ? { ordemServico: escopoOs } : {}) },
+  });
 }
