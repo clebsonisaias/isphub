@@ -170,7 +170,8 @@ const NAV_ITEMS: {
   {
     to: "/produtividade",
     label: "Produtividade",
-    labelCurto: "Equipe",
+    // "Produção", não "Equipe": "Equipe" agora é o cadastro da equipe do supervisor (/equipe).
+    labelCurto: "Produção",
     icon: Trophy,
     ocultoPara: [UserRole.PROVEDOR, UserRole.TECNICO],
   },
