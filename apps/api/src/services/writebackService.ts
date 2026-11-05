@@ -174,8 +174,8 @@ export async function marcarACaminho(ordemServicoId: string, autorId: string, ge
     }),
   ]);
   notificarTecnico(osAtualizada.tecnicoId, "os-alterada", os.id);
-  // Notifica o cliente automaticamente pelo WhatsApp oficial da NetGO
-  void avisarClienteACaminho(os.id, autorId).catch(() => {});
+  // Notifica o cliente automaticamente pelo WhatsApp oficial da NetGO com cálculo dinâmico de trânsito (TomTom)
+  void avisarClienteACaminho(os.id, autorId, geo).catch(() => {});
   return osAtualizada;
 }
 

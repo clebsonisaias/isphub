@@ -21,6 +21,30 @@ describe("tecnicoACaminho", () => {
     expect(texto).toContain("Identificação de segurança");
   });
 
+  it("monta mensagem limpa com previsão de chegada (tempo estimado e distância TomTom)", () => {
+    const texto = formatarMensagemTecnicoACaminho({
+      clienteNome: "Clebson Isaias",
+      tecnicoNome: "Lucas Silva",
+      provedorNome: "NetGo Fibra",
+      numeroOs: "213680",
+      veiculoInfo: { rotulo: "Strada 02", placa: "RGF8H99" },
+      tempoEstimado: {
+        faixaMinutos: "15 a 20 minutos",
+        distanciaTexto: "3,8 km",
+      },
+      fotoUrl: null,
+    });
+
+    expect(texto).toContain("Clebson");
+    expect(texto).toContain("Lucas");
+    expect(texto).toContain("NetGo Fibra");
+    expect(texto).toContain("213680");
+    expect(texto).toContain("⏱️ *Previsão de chegada:* cerca de 15 a 20 minutos (~3,8 km de distância).");
+    expect(texto).toContain("Strada 02 (Placa RGF8H99)");
+    expect(texto).not.toContain("Identificação de segurança");
+    expect(texto).not.toContain("http");
+  });
+
   it("monta mensagem sem veiculo e sem foto graciosa quando nao disponiveis", () => {
     const texto = formatarMensagemTecnicoACaminho({
       clienteNome: "Maria Oliveira",

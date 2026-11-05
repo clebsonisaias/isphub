@@ -1,4 +1,4 @@
-import { CanalWhatsapp, MensagemClienteDirecao, MensagemClienteTipo, OrigemConversaCliente, OsStatus, UserRole } from "@isphub/shared";
+import { CanalWhatsapp, MensagemClienteDirecao, MensagemClienteTipo, OrigemConversaCliente, OsStatus, UserRole, haversineMetros } from "@isphub/shared";
 import type { ConversaCliente } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../middleware/errorHandler.js";
@@ -9,7 +9,8 @@ import { podeAcessarOs } from "./escopoService.js";
 import { cadastrarNoAtendai } from "./ponteChatAtendaiService.js";
 import { emitParaTodos } from "./realtimeHub.js";
 import { dispararPush } from "./pushService.js";
-import { tratarRespostaConfirmacao } from "./confirmacaoVisitaService.js";
+import { tratarRespostaConfirmacao, enviarMensagemParaCliente } from "./confirmacaoVisitaService.js";
+import { calcularRotaComTransito } from "../integrations/rotas/tomTomRouting.js";
 
 /**
  * CONVERSA COM O CLIENTE DA OS PELO NUMERO DA EMPRESA (aprovado em 23/10/2026).
@@ -382,6 +383,7 @@ export function formatarMensagemTecnicoACaminho(input: {
   provedorNome: string;
   numeroOs: string;
   veiculoInfo?: { rotulo: string; placa: string } | null;
+  tempoEstimado?: { faixaMinutos: string; distanciaTexto: string } | null;
   fotoUrl?: string | null;
 }): string {
   const primeiroNome = input.clienteNome?.trim().split(/\s+/)[0] || "Cliente";
@@ -391,6 +393,10 @@ export function formatarMensagemTecnicoACaminho(input: {
     `Olá, ${primeiroNome}!`,
     `O técnico *${primeiroNomeTecnico}* da *${input.provedorNome}* acabou de iniciar o deslocamento e está a caminho do seu endereço para o atendimento da OS nº *${input.numeroOs}*.`,
   ];
+
+  if (input.tempoEstimado) {
+    partes.push(`⏱️ *Previsão de chegada:* cerca de ${input.tempoEstimado.faixaMinutos} (~${input.tempoEstimado.distanciaTexto} de distância).`);
+  }
 
   if (input.veiculoInfo?.placa) {
     partes.push(`🚗 *Veículo oficial:* ${input.veiculoInfo.rotulo} (Placa ${input.veiculoInfo.placa})`);
@@ -406,10 +412,15 @@ export function formatarMensagemTecnicoACaminho(input: {
 }
 
 /**
- * Notifica o cliente automaticamente pelo WhatsApp oficial do provedor
+ * Notifica o cliente automaticamente pelo WhatsApp oficial do provedor (Meta/NetGo)
  * quando o técnico clica em "Marcar a caminho" no PWA/APK.
+ * Calcula a rota em tempo real com trânsito (TomTom Routing API) entre o veículo e a casa do cliente.
  */
-export async function avisarClienteACaminho(ordemServicoId: string, autorId: string): Promise<boolean> {
+export async function avisarClienteACaminho(
+  ordemServicoId: string,
+  autorId: string,
+  geo?: { lat?: number | null; lng?: number | null } | null,
+): Promise<boolean> {
   try {
     const os = await prisma.ordemServico.findUnique({
       where: { id: ordemServicoId },
@@ -423,19 +434,48 @@ export async function avisarClienteACaminho(ordemServicoId: string, autorId: str
     });
     if (!autor) return false;
 
-    // Busca veiculo ativo do tecnico se houver
+    // Busca veiculo ativo do tecnico se houver e seu rastreador GPS
     const ocupacao = await prisma.ocupacaoVeiculo.findFirst({
       where: { usuarioId: autor.id, fimEm: null },
-      include: { veiculo: { select: { apelido: true, placa: true } } },
+      include: {
+        veiculo: {
+          select: {
+            id: true,
+            apelido: true,
+            placa: true,
+            vinculos: {
+              where: { fimEm: null },
+              select: { rastreadorId: true },
+              take: 1,
+            },
+          },
+        },
+      },
     });
 
     const veiculoInfo = ocupacao?.veiculo
       ? { rotulo: ocupacao.veiculo.apelido || "Viatura de serviço", placa: ocupacao.veiculo.placa }
       : null;
 
-    const fotoUrl = autor.temFoto
-      ? `https://api.isphub.net.br/auth/foto/${autor.id}?v=${autor.fotoVersao}`
-      : null;
+    // Determina a posição de origem (GPS do carro via rastreador ou GPS enviado pelo app)
+    let posOrigem: { lat: number; lng: number } | null = null;
+    if (geo && typeof geo.lat === "number" && typeof geo.lng === "number") {
+      posOrigem = { lat: geo.lat, lng: geo.lng };
+    } else if (ocupacao?.veiculo?.vinculos?.[0]?.rastreadorId) {
+      const rastreadorId = ocupacao.veiculo.vinculos[0].rastreadorId;
+      const ultimaPos = await prisma.posicaoRastreador.findFirst({
+        where: { rastreadorId },
+        orderBy: { registradoEm: "desc" },
+        select: { lat: true, lng: true, registradoEm: true },
+      });
+      // Aceita posições registradas nas últimas 4 horas
+      if (ultimaPos && Date.now() - ultimaPos.registradoEm.getTime() < 4 * 60 * 60 * 1000) {
+        posOrigem = { lat: ultimaPos.lat, lng: ultimaPos.lng };
+      }
+    }
+
+    const posDestino = os.lat && os.lng ? { lat: os.lat, lng: os.lng } : null;
+    const rota = await calcularRotaComTransito(posOrigem, posDestino);
 
     const texto = formatarMensagemTecnicoACaminho({
       clienteNome: os.clienteNome || "Cliente",
@@ -443,11 +483,22 @@ export async function avisarClienteACaminho(ordemServicoId: string, autorId: str
       provedorNome: os.provedor.nome,
       numeroOs: os.numero ?? os.sgpOsId,
       veiculoInfo,
-      fotoUrl,
+      tempoEstimado: rota
+        ? {
+            faixaMinutos: rota.faixaMinutos,
+            distanciaTexto: rota.distanciaTexto,
+          }
+        : null,
+      fotoUrl: null, // Opção 1 escolhida: sem links
     });
 
-    const user: JwtPayload = { sub: autor.id, email: "", role: autor.role as any, provedorId: os.provedorId };
-    await iniciarComClienteDaOs(user, ordemServicoId, texto);
+    await enviarMensagemParaCliente({
+      provedorId: os.provedorId,
+      telefone: os.telefone,
+      ordemServicoId: os.id,
+      texto,
+    });
+
     return true;
   } catch (err) {
     console.warn("[avisarClienteACaminho] Aviso ao cliente não enviado:", err instanceof Error ? err.message : err);
