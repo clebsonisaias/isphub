@@ -1,7 +1,14 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
-import { UserRole, escopadoPorProvedor, normalizarPermissoes, type PermissoesGestor } from "@isphub/shared";
+import {
+  PAPEIS_DA_EQUIPE,
+  UserRole,
+  escopadoPorProvedor,
+  normalizarPermissoes,
+  podeGerirUsuario,
+  type PermissoesGestor,
+} from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
@@ -11,10 +18,38 @@ import { invalidarCacheSessao } from "../services/sessaoService.js";
 /**
  * CRUD de usuarios (admin/gestor/tecnico/provedor). Tecnico e um usuario com
  * role=tecnico, sem vinculo com provedor — ver services/escopoService.ts.
+ *
+ * O ADMIN gere todos. O GESTOR (supervisor) gere so a EQUIPE: tecnico,
+ * atendente e vendedor — e, se ele e limitado a provedores, atendente/vendedor
+ * so desses provedores (`podeGerirUsuario`, packages/shared/permissoes.ts).
+ * Admin e gestor nunca aparecem nem mudam pela mao dele, nem ele mesmo.
+ * O gestor com areas definidas ainda precisa da area "equipe" (requireAuth).
  */
 export const usuariosRouter = Router();
 
 usuariosRouter.use(requireAuth);
+
+const GERE_USUARIOS = requireRole(UserRole.ADMIN, UserRole.GESTOR);
+
+/** 403 se quem chama nao pode gerir o usuario nesse estado (papel + provedor). */
+function exigirGerir(req: Request, alvo: { role: UserRole | string; provedorId: string | null }) {
+  if (!podeGerirUsuario(req.user!, alvo)) throw new HttpError(403, "Sem permissao para gerir este usuario");
+}
+
+/**
+ * Quem o GESTOR enxerga na lista: so a equipe que ele pode gerir. Sem lista de
+ * provedores, a equipe toda; com lista, todo tecnico (e da ISPhub, atende
+ * todos) e atendente/vendedor so dos provedores dele.
+ */
+function equipeDoGestor(provedores: string[] | undefined): Prisma.UsuarioWhereInput {
+  if (!provedores?.length) return { role: { in: PAPEIS_DA_EQUIPE } };
+  return {
+    OR: [
+      { role: UserRole.TECNICO },
+      { role: { in: [UserRole.ATENDENTE, UserRole.VENDEDOR] }, provedorId: { in: provedores } },
+    ],
+  };
+}
 
 const SELECT_PUBLICO = {
   id: true,
@@ -30,15 +65,15 @@ const SELECT_PUBLICO = {
 
 usuariosRouter.get(
   "/",
-  // So admin: a lista traz a equipe de TODOS os provedores. O gestor volta a
-  // listar quando houver o filtro pelo escopo dele.
-  requireRole(UserRole.ADMIN),
+  GERE_USUARIOS,
   asyncHandler(async (req, res) => {
     const roleFiltro = req.query.role;
-    const where =
+    const filtro: Prisma.UsuarioWhereInput =
       typeof roleFiltro === "string" && (Object.values(UserRole) as string[]).includes(roleFiltro)
         ? { role: roleFiltro as UserRole }
         : {};
+    // O gestor so ve a equipe dele: `AND` pra o `?role=` nunca alargar o escopo.
+    const where = req.user!.role === UserRole.ADMIN ? filtro : { AND: [filtro, equipeDoGestor(req.user!.provedores)] };
     const usuarios = await prisma.usuario.findMany({ where, select: SELECT_PUBLICO, orderBy: { nome: "asc" } });
     res.json(usuarios);
   }),
@@ -81,9 +116,11 @@ async function limitesParaGravar(
   role: UserRole,
   b: { provedoresPermitidos?: string[]; permissoes?: Record<string, string> | null },
 ): Promise<Limites> {
-  if (role !== UserRole.GESTOR) return { provedoresPermitidos: [], permissoes: null };
+  // Antes do papel: o gestor nunca manda limite, nem num tecnico (onde seria
+  // ignorado) — quem manda esta tentando algo que nao e dele.
   const mexe = b.provedoresPermitidos !== undefined || b.permissoes !== undefined;
   if (mexe && quemChama !== UserRole.ADMIN) throw new HttpError(403, "So o administrador define os limites do gestor");
+  if (role !== UserRole.GESTOR) return { provedoresPermitidos: [], permissoes: null };
 
   const limites: Limites = {};
   if (b.provedoresPermitidos !== undefined) {
@@ -118,11 +155,12 @@ const criarSchema = z.object({
 
 usuariosRouter.post(
   "/",
-  requireRole(UserRole.ADMIN),
+  GERE_USUARIOS,
   asyncHandler(async (req, res) => {
     const data = criarSchema.parse(req.body);
     const provedorId = normalizarProvedorId(data.role, data.provedorId);
     validarProvedorObrigatorio(data.role, provedorId);
+    exigirGerir(req, { role: data.role, provedorId });
     const limites = await limitesParaGravar(req.user!.role, data.role, data);
 
     const senhaHash = await hashPassword(data.senha);
@@ -150,7 +188,7 @@ const atualizarSchema = z.object({
 
 usuariosRouter.put(
   "/:id",
-  requireRole(UserRole.ADMIN),
+  GERE_USUARIOS,
   asyncHandler(async (req, res) => {
     const data = atualizarSchema.parse(req.body);
     const alvo = await prisma.usuario.findUnique({ where: { id: req.params.id } });
@@ -158,6 +196,10 @@ usuariosRouter.put(
 
     const provedorId = normalizarProvedorId(data.role, data.provedorId);
     validarProvedorObrigatorio(data.role, provedorId);
+    // Os DOIS estados: o atual (gestor nao mexe em admin/gestor, nem em si) e o
+    // novo (nao promove ninguem a admin/gestor nem leva pra provedor alheio).
+    exigirGerir(req, alvo);
+    exigirGerir(req, { role: data.role, provedorId });
     const limites = await limitesParaGravar(req.user!.role, data.role, data);
 
     const deixaDeSerAdminAtivo =
@@ -220,9 +262,13 @@ const resetSenhaSchema = z.object({
 
 usuariosRouter.post(
   "/:id/senha",
-  requireRole(UserRole.ADMIN),
+  GERE_USUARIOS,
   asyncHandler(async (req, res) => {
     const { novaSenha } = resetSenhaSchema.parse(req.body);
+    const alvo = await prisma.usuario.findUnique({ where: { id: req.params.id } });
+    if (!alvo) throw new HttpError(404, "Usuario nao encontrado");
+    // Trocar a senha de alguem e tomar a conta dele: so de quem se pode gerir.
+    exigirGerir(req, alvo);
     const senhaHash = await hashPassword(novaSenha);
     // Reset feito pelo admin normalmente e resposta a conta comprometida ou
     // saida do funcionario: tem que derrubar as sessoes abertas.
@@ -243,10 +289,11 @@ usuariosRouter.post(
 /** Soft-delete (ativo=false) — OS e atribuicoes referenciam o usuario, nao da pra apagar de verdade. */
 usuariosRouter.delete(
   "/:id",
-  requireRole(UserRole.ADMIN),
+  GERE_USUARIOS,
   asyncHandler(async (req, res) => {
     const alvo = await prisma.usuario.findUnique({ where: { id: req.params.id } });
     if (!alvo) throw new HttpError(404, "Usuario nao encontrado");
+    exigirGerir(req, alvo);
     if (alvo.id === req.user!.sub) throw new HttpError(400, "Voce nao pode desativar sua propria conta");
     if (alvo.role === UserRole.ADMIN && alvo.ativo && (await contarOutrosAdminsAtivos(alvo.id)) === 0) {
       throw new HttpError(409, "Nao e possivel desativar o ultimo administrador ativo");

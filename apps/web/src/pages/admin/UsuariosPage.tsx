@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import {
   AREAS,
+  PAPEIS_DA_EQUIPE,
   UserRole,
   USER_ROLE_LABEL,
   escopadoPorProvedor,
@@ -30,7 +31,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { usuariosApi, provedoresApi } from "@/lib/adminApi";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth, usePodeEditar } from "@/context/AuthContext";
+import { AvisoSoVer } from "@/components/AvisoSoVer";
 import { ApiError } from "@/lib/apiClient";
 import { limitesDoFormulario, resumoLimites } from "@/lib/limitesGestor";
 import { useToast } from "@/context/ToastContext";
@@ -48,9 +50,16 @@ function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
 }
 
-export function UsuariosPage() {
+/**
+ * `equipe`: a mesma tela em /equipe, pro supervisor cadastrar a propria equipe
+ * (tecnico, atendente, vendedor). Sem o menu do admin, sem telefonia movel e
+ * sem os limites do gestor — tudo isso e so do admin, e a API recusa o resto.
+ */
+export function UsuariosPage({ equipe = false }: { equipe?: boolean }) {
   const { usuario: eu } = useAuth();
   const { toast } = useToast();
+  // Supervisor com a area Equipe so em "ver": lista, sem cadastrar nem editar.
+  const podeEditar = usePodeEditar("equipe");
   const [usuarios, setUsuarios] = useState<UsuarioPublic[]>([]);
   const [provedores, setProvedores] = useState<Provedor[]>([]);
   const [carregando, setCarregando] = useState(true);
@@ -103,27 +112,40 @@ export function UsuariosPage() {
     return provedores.find((p) => p.id === id)?.nome ?? "—";
   }
 
+  // A API ja filtra a equipe do gestor; o filtro aqui e pro admin que abrir /equipe.
+  const lista = equipe ? usuarios.filter((u) => PAPEIS_DA_EQUIPE.includes(u.role)) : usuarios;
+
   return (
     <AppShell>
       <AnimatedPage>
-      <AdminNav />
+      {equipe ? null : <AdminNav />}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Usuários</h1>
+          <h1 className="text-2xl font-bold">{equipe ? "Equipe" : "Usuários"}</h1>
           <p className="text-sm text-muted-foreground">
-            Administradores, gestores, técnicos (login próprio — cada um vê só as OS atribuídas a ele), atendentes
-            (marcam visitas no provedor delas) e provedores.
+            {equipe
+              ? "Técnicos (cada um vê só as OS atribuídas a ele), atendentes (marcam visitas no provedor delas) e vendedores."
+              : "Administradores, gestores, técnicos (login próprio — cada um vê só as OS atribuídas a ele), atendentes (marcam visitas no provedor delas) e provedores."}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setCredencialAberta(true)}>
-            <Smartphone className="size-4" /> Telefonia móvel
-          </Button>
-          <Button variant="brand" onClick={abrirNovo}>
-            <Plus /> Novo usuário
-          </Button>
+          {equipe ? null : (
+            <Button variant="outline" onClick={() => setCredencialAberta(true)}>
+              <Smartphone className="size-4" /> Telefonia móvel
+            </Button>
+          )}
+          {podeEditar ? (
+            <Button variant="brand" onClick={abrirNovo}>
+              <Plus /> Novo usuário
+            </Button>
+          ) : null}
         </div>
       </div>
+      {podeEditar ? null : (
+        <div className="mb-4">
+          <AvisoSoVer />
+        </div>
+      )}
 
       {carregando ? (
         <div className="flex flex-col gap-3">
@@ -131,7 +153,7 @@ export function UsuariosPage() {
             <Skeleton key={i} className="h-16 rounded-xl" />
           ))}
         </div>
-      ) : usuarios.length === 0 ? (
+      ) : lista.length === 0 ? (
         <Card>
           <CardContent>
             <EmptyState title="Nenhum usuário cadastrado ainda" />
@@ -139,7 +161,7 @@ export function UsuariosPage() {
         </Card>
       ) : (
         <div className="flex flex-col gap-3">
-          {usuarios.map((u) => (
+          {lista.map((u) => (
             <Card key={u.id} className={u.ativo ? undefined : "opacity-60"}>
               <CardHeader className="flex-row items-center gap-3 space-y-0">
                 <div className="min-w-0 flex-1">
@@ -154,18 +176,20 @@ export function UsuariosPage() {
                 <Switch
                   checked={u.ativo}
                   onCheckedChange={() => handleToggleAtivo(u)}
-                  disabled={u.id === eu?.id}
+                  disabled={u.id === eu?.id || !podeEditar}
                   title={u.id === eu?.id ? "Você não pode desativar sua própria conta" : "Ativo"}
                 />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setLinhaAlvo(u)}
-                  title="Linha móvel (chip corporativo)"
-                >
-                  <Smartphone className="size-4" />
-                </Button>
-                {semAcesso(u) ? (
+                {equipe ? null : (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setLinhaAlvo(u)}
+                    title="Linha móvel (chip corporativo)"
+                  >
+                    <Smartphone className="size-4" />
+                  </Button>
+                )}
+                {!podeEditar ? null : semAcesso(u) ? (
                   <Button variant="outline" size="sm" onClick={() => setSenhaAlvo(u)}>
                     <KeyRound className="size-4" /> Liberar acesso
                   </Button>
@@ -174,9 +198,11 @@ export function UsuariosPage() {
                     <KeyRound className="size-4" />
                   </Button>
                 )}
-                <Button variant="ghost" size="icon" onClick={() => abrirEdicao(u)} title="Editar">
-                  <Pencil className="size-4" />
-                </Button>
+                {podeEditar ? (
+                  <Button variant="ghost" size="icon" onClick={() => abrirEdicao(u)} title="Editar">
+                    <Pencil className="size-4" />
+                  </Button>
+                ) : null}
               </CardHeader>
             </Card>
           ))}
@@ -188,7 +214,8 @@ export function UsuariosPage() {
         onOpenChange={setDialogAberto}
         usuario={editando}
         provedores={provedores}
-        defineLimites={eu?.role === UserRole.ADMIN}
+        defineLimites={!equipe && eu?.role === UserRole.ADMIN}
+        papeis={equipe ? PAPEIS_DA_EQUIPE : Object.values(UserRole)}
         onSalvo={() => {
           setDialogAberto(false);
           void carregar();
@@ -199,11 +226,15 @@ export function UsuariosPage() {
         onClose={() => setSenhaAlvo(null)}
         onSalvo={() => void carregar()}
       />
-      <VincularLinhaDialog usuario={linhaAlvo} onFechar={() => setLinhaAlvo(null)} />
-      <CredencialLinhaMovelDialog
-        aberto={credencialAberta}
-        aoFechar={() => setCredencialAberta(false)}
-      />
+      {equipe ? null : (
+        <>
+          <VincularLinhaDialog usuario={linhaAlvo} onFechar={() => setLinhaAlvo(null)} />
+          <CredencialLinhaMovelDialog
+            aberto={credencialAberta}
+            aoFechar={() => setCredencialAberta(false)}
+          />
+        </>
+      )}
       </AnimatedPage>
     </AppShell>
   );
@@ -215,6 +246,7 @@ function UsuarioDialog({
   usuario,
   provedores,
   defineLimites,
+  papeis,
   onSalvo,
 }: {
   aberto: boolean;
@@ -223,6 +255,8 @@ function UsuarioDialog({
   provedores: Provedor[];
   /** Quem edita e ADMIN: so ele define os limites do supervisor (a API recusa o resto). */
   defineLimites: boolean;
+  /** Papeis do seletor: o supervisor so cadastra a equipe (a API recusa o resto). */
+  papeis: UserRole[];
   onSalvo: () => void;
 }) {
   const { toast } = useToast();
@@ -340,7 +374,7 @@ function UsuarioDialog({
               onChange={(e) => setRole(e.target.value as UserRole)}
               className="bg-secondary/40 px-2"
             >
-              {Object.values(UserRole).map((r) => (
+              {papeis.map((r) => (
                 <option key={r} value={r}>
                   {USER_ROLE_LABEL[r]}
                 </option>

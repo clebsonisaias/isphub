@@ -45,6 +45,7 @@ import {
   CalendarPlus,
   UserPlus,
   Route,
+  Users,
 } from "lucide-react";
 
 const INTERVALO_POLLING_NAO_LIDAS_MS = 45_000;
@@ -227,6 +228,13 @@ const NAV_ITEMS: {
     icon: Gauge,
     ocultoPara: [UserRole.PROVEDOR, UserRole.TECNICO],
     modulo: "frota",
+  },
+  // Equipe: o supervisor cadastra tecnico, atendente e vendedor. O admin tem /admin/usuarios.
+  {
+    to: "/equipe",
+    label: "Equipe",
+    icon: Users,
+    ocultoPara: [UserRole.ADMIN, UserRole.PROVEDOR, UserRole.TECNICO],
   },
   /*
    * Dinheiro da PROPRIA HubISP. Escondido de todo mundo menos ADMIN, e nao so

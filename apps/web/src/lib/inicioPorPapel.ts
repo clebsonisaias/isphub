@@ -16,11 +16,11 @@ const INICIO: Partial<Record<UserRole, string>> = {
   [UserRole.VENDEDOR]: "/pre-cadastro",
 };
 
-// Pré-cadastro no fim: é do menu do gestor, mas não do trabalho de todo dia.
+// Pré-cadastro e Equipe no fim: são do menu do gestor, mas não do trabalho de todo dia.
 const DESPACHO = [
   "/despacho", "/", "/marcar-visita", "/agenda", "/mapa", "/chat", "/chat-clientes", "/pendentes", "/retiradas",
   "/escala", "/frota", "/produtividade", "/provisionamento", "/dashboard", "/frota/bi", "/financeiro",
-  "/pre-cadastro",
+  "/pre-cadastro", "/equipe",
 ];
 
 /**

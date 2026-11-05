@@ -380,6 +380,18 @@ function App() {
                       </RequireAuth>
                     }
                   />
+                  {/*
+                    Equipe: o supervisor cadastra tecnico, atendente e vendedor
+                    (a API limita a equipe dele). O admin segue em /admin/usuarios.
+                  */}
+                  <Route
+                    path="/equipe"
+                    element={
+                      <RequireAuth roles={[UserRole.ADMIN, UserRole.GESTOR]}>
+                        <UsuariosPage equipe />
+                      </RequireAuth>
+                    }
+                  />
                   <Route
                     path="/admin/usuarios"
                     element={

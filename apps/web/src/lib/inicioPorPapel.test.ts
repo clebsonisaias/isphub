@@ -29,6 +29,7 @@ describe("supervisor com áreas definidas", () => {
     expect(inicioDoPapel(UserRole.GESTOR, { agenda: "ver" })).toBe("/marcar-visita");
     expect(inicioDoPapel(UserRole.GESTOR, { frota: "editar", indicadores: "ver" })).toBe("/frota");
     expect(inicioDoPapel(UserRole.GESTOR, { preCadastro: "editar" })).toBe("/pre-cadastro");
+    expect(inicioDoPapel(UserRole.GESTOR, { equipe: "ver" })).toBe("/equipe");
   });
 
   it("nenhuma área: o perfil, que é livre", () => {
@@ -58,6 +59,7 @@ describe("supervisor com áreas definidas", () => {
     expect(podeRotaWeb(p, "/agenda")).toBe(false);
     expect(podeRotaWeb(p, "/perfil")).toBe(true);
     expect(podeRotaWeb(p, "/equipe")).toBe(false);
+    expect(podeRotaWeb({ equipe: "ver" }, "/equipe")).toBe(true);
   });
 });
 
