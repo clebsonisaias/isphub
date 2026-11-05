@@ -29,3 +29,4 @@ export * from "./bi.js";
 export * from "./produtividade.js";
 export * from "./linhaDoTempo.js";
 export * from "./linhaMovel.js";
+export * from "./permissoes.js";

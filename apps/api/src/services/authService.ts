@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import type { UserRole } from "@isphub/shared";
+import type { PermissoesGestor, UserRole } from "@isphub/shared";
 import { env } from "../config/env.js";
 import { HttpError } from "../middleware/errorHandler.js";
 import { MIMES_FOTO } from "./chatService.js";
@@ -36,6 +36,8 @@ export interface JwtPayload {
    * do token: o requireAuth preenche do banco.
    */
   provedores?: string[];
+  /** So GESTOR: areas e niveis (null = total). Nunca vem do token: o requireAuth preenche do banco. */
+  permissoes?: PermissoesGestor | null;
 }
 
 export async function hashPassword(plain: string): Promise<string> {

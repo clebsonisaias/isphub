@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
-import { UserRole, escopadoPorProvedor } from "@isphub/shared";
+import { Prisma } from "@prisma/client";
+import { UserRole, escopadoPorProvedor, normalizarPermissoes, type PermissoesGestor } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
@@ -23,6 +24,8 @@ const SELECT_PUBLICO = {
   provedorId: true,
   ativo: true,
   criadoEm: true,
+  provedoresPermitidos: true,
+  permissoes: true,
 } as const;
 
 usuariosRouter.get(
@@ -57,12 +60,60 @@ async function contarOutrosAdminsAtivos(excluirId: string): Promise<number> {
   return prisma.usuario.count({ where: { role: UserRole.ADMIN, ativo: true, id: { not: excluirId } } });
 }
 
+/**
+ * Limites do supervisor (so papel GESTOR, so o ADMIN define): provedores que
+ * ele enxerga (vazio = todos) e areas com nivel (null = acesso total).
+ * Campo AUSENTE = nao mexe — o PUT que so troca `ativo` nao apaga limite.
+ */
+const limitesSchema = {
+  provedoresPermitidos: z.array(z.string().uuid()).max(100).optional(),
+  permissoes: z.record(z.string(), z.enum(["ver", "editar"])).nullable().optional(),
+};
+
+interface Limites {
+  provedoresPermitidos?: string[];
+  permissoes?: PermissoesGestor | null;
+}
+
+/** O que gravar dos limites. Papel que nao e gestor fica sem limite nenhum. */
+async function limitesParaGravar(
+  quemChama: UserRole,
+  role: UserRole,
+  b: { provedoresPermitidos?: string[]; permissoes?: Record<string, string> | null },
+): Promise<Limites> {
+  if (role !== UserRole.GESTOR) return { provedoresPermitidos: [], permissoes: null };
+  const mexe = b.provedoresPermitidos !== undefined || b.permissoes !== undefined;
+  if (mexe && quemChama !== UserRole.ADMIN) throw new HttpError(403, "So o administrador define os limites do gestor");
+
+  const limites: Limites = {};
+  if (b.provedoresPermitidos !== undefined) {
+    const lista = [...new Set(b.provedoresPermitidos)].sort();
+    if (lista.length && (await prisma.provedor.count({ where: { id: { in: lista } } })) !== lista.length) {
+      throw new HttpError(400, "Provedor inexistente na lista de provedores permitidos");
+    }
+    limites.provedoresPermitidos = lista;
+  }
+  if (b.permissoes !== undefined) limites.permissoes = normalizarPermissoes(b.permissoes);
+  return limites;
+}
+
+/** Limites no formato do Prisma: `null` em coluna Json vira `DbNull` (SQL NULL). */
+function limitesNoPrisma(l: Limites) {
+  return {
+    ...(l.provedoresPermitidos !== undefined ? { provedoresPermitidos: l.provedoresPermitidos } : {}),
+    ...(l.permissoes !== undefined
+      ? { permissoes: l.permissoes === null ? Prisma.DbNull : (l.permissoes as Prisma.InputJsonObject) }
+      : {}),
+  };
+}
+
 const criarSchema = z.object({
   nome: z.string().min(1),
   email: z.string().email(),
   senha: z.string().min(8, "A senha deve ter pelo menos 8 caracteres"),
   role: z.nativeEnum(UserRole),
   provedorId: z.string().uuid().nullable().optional(),
+  ...limitesSchema,
 });
 
 usuariosRouter.post(
@@ -72,11 +123,12 @@ usuariosRouter.post(
     const data = criarSchema.parse(req.body);
     const provedorId = normalizarProvedorId(data.role, data.provedorId);
     validarProvedorObrigatorio(data.role, provedorId);
+    const limites = await limitesParaGravar(req.user!.role, data.role, data);
 
     const senhaHash = await hashPassword(data.senha);
     const usuario = await prisma.usuario
       .create({
-        data: { nome: data.nome, email: data.email, role: data.role, provedorId, senhaHash },
+        data: { nome: data.nome, email: data.email, role: data.role, provedorId, senhaHash, ...limitesNoPrisma(limites) },
         select: SELECT_PUBLICO,
       })
       .catch((err) => {
@@ -93,6 +145,7 @@ const atualizarSchema = z.object({
   role: z.nativeEnum(UserRole),
   provedorId: z.string().uuid().nullable().optional(),
   ativo: z.boolean(),
+  ...limitesSchema,
 });
 
 usuariosRouter.put(
@@ -105,6 +158,7 @@ usuariosRouter.put(
 
     const provedorId = normalizarProvedorId(data.role, data.provedorId);
     validarProvedorObrigatorio(data.role, provedorId);
+    const limites = await limitesParaGravar(req.user!.role, data.role, data);
 
     const deixaDeSerAdminAtivo =
       alvo.role === UserRole.ADMIN && alvo.ativo && (data.role !== UserRole.ADMIN || !data.ativo);
@@ -122,8 +176,16 @@ usuariosRouter.put(
     // ANTIGO por ate 8h. Rebaixar um admin era o pior caso: o token dele
     // continuava passando por requireRole(ADMIN), e com ele dava pra criar um
     // novo admin — a demissao virava reescalada garantida.
+    // Os limites do gestor nao vao no token (o requireAuth le do banco), mas
+    // mudar o que ele enxerga derruba a sessao do mesmo jeito: o painel dele
+    // montou o menu com os limites antigos.
+    const limitesMudaram =
+      (limites.provedoresPermitidos !== undefined &&
+        [...alvo.provedoresPermitidos].sort().join() !== limites.provedoresPermitidos.join()) ||
+      (limites.permissoes !== undefined &&
+        JSON.stringify(normalizarPermissoes(alvo.permissoes ?? null)) !== JSON.stringify(limites.permissoes));
     const sessaoInvalidada =
-      alvo.role !== data.role || alvo.provedorId !== provedorId || (alvo.ativo && !data.ativo);
+      alvo.role !== data.role || alvo.provedorId !== provedorId || (alvo.ativo && !data.ativo) || limitesMudaram;
 
     const usuario = await prisma.usuario
       .update({
@@ -134,6 +196,7 @@ usuariosRouter.put(
           role: data.role,
           provedorId,
           ativo: data.ativo,
+          ...limitesNoPrisma(limites),
           ...(sessaoInvalidada ? { tokenVersion: { increment: 1 } } : {}),
         },
         select: SELECT_PUBLICO,

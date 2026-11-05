@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
-import { UserRole } from "@isphub/shared";
+import { UserRole, gestorPode } from "@isphub/shared";
 import { verifyToken, type JwtPayload } from "../services/authService.js";
 import { obterEstadoSessao } from "../services/sessaoService.js";
 import { HttpError } from "./errorHandler.js";
@@ -51,13 +51,18 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
   }
 
   // O escopo do gestor vem do BANCO e sobrescreve o que viesse no token: um
-  // token forjado/antigo nao escolhe os proprios provedores.
-  req.user = { ...payload, provedores: sessao.provedores };
+  // token forjado/antigo nao escolhe os proprios provedores nem as areas.
+  req.user = { ...payload, provedores: sessao.provedores, permissoes: sessao.permissoes };
   if (payload.role === UserRole.ATENDENTE && !atendentePode(req.method, req.originalUrl)) {
     return next(new HttpError(403, "Atendente nao tem acesso a este recurso"));
   }
   if (payload.role === UserRole.VENDEDOR && !vendedorPode(req.method, req.originalUrl)) {
     return next(new HttpError(403, "Vendedor nao tem acesso a este recurso"));
+  }
+  // Gestor com areas definidas: negacao por padrao fora delas (packages/shared/
+  // permissoes.ts). `permissoes` nulo = acesso total, como sempre foi.
+  if (payload.role === UserRole.GESTOR && sessao.permissoes && !gestorPode(sessao.permissoes, req.method, req.originalUrl)) {
+    return next(new HttpError(403, "Sem acesso a esta area"));
   }
   tocarPresenca(payload.sub);
   next();

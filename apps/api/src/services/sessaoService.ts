@@ -1,3 +1,4 @@
+import { normalizarPermissoes, type PermissoesGestor } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 
 /**
@@ -24,6 +25,8 @@ export interface EstadoSessao {
   tokenVersion: number;
   /** So GESTOR: provedores permitidos (vazio = todos). Vem do banco, nunca do token. */
   provedores: string[];
+  /** So GESTOR: areas e niveis; null = acesso total. Ja normalizado. */
+  permissoes: PermissoesGestor | null;
 }
 
 const cache = new Map<string, { valor: EstadoSessao | null; expiraEm: number }>();
@@ -35,10 +38,15 @@ export async function obterEstadoSessao(usuarioId: string): Promise<EstadoSessao
 
   const usuario = await prisma.usuario.findUnique({
     where: { id: usuarioId },
-    select: { ativo: true, tokenVersion: true, provedoresPermitidos: true },
+    select: { ativo: true, tokenVersion: true, provedoresPermitidos: true, permissoes: true },
   });
   const valor = usuario
-    ? { ativo: usuario.ativo, tokenVersion: usuario.tokenVersion, provedores: usuario.provedoresPermitidos }
+    ? {
+        ativo: usuario.ativo,
+        tokenVersion: usuario.tokenVersion,
+        provedores: usuario.provedoresPermitidos,
+        permissoes: normalizarPermissoes(usuario.permissoes ?? null),
+      }
     : null;
   cache.set(usuarioId, { valor, expiraEm: agora + TTL_MS });
   return valor;
