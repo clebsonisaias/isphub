@@ -30,6 +30,15 @@ function notificarTecnico(tecnicoId: string | null, tipo: RealtimeEventoTipo, os
 }
 
 /**
+ * OS PENDENTE (pedido de 05/11/2026): geralmente a instalacao foi tentada varias
+ * vezes sem retorno do cliente. Ela vai pra aba Pendentes e sai do despacho —
+ * sem tecnico nem apoio no ISPhub. So aqui: o SGP continua com o tecnico
+ * designado, e quando a OS volta a andar o espelho do despacho o traz de volta.
+ */
+export const DESVINCULO_PENDENTE = "Pendente: técnico desvinculado automaticamente";
+const SEM_TECNICO = { tecnicoId: null, apoios: { set: [] } };
+
+/**
  * Servico de write-back: toda acao do usuario sobre uma OS chama primeiro o
  * SGP do provedor dono da OS e, so em caso de sucesso, atualiza o espelho
  * local. Isso garante que o espelho nunca fique "adiantado" em relacao ao
@@ -201,16 +210,27 @@ export async function mudarStatus(
     await chamarSgp(() => connector.updateOsStatus(os.sgpOsId, codigo));
   }
 
+  // OS PENDENTE nao tem tecnico no ISPhub: titular e apoios saem na mesma
+  // transacao do status (o SGP continua com o tecnico designado).
+  const apoioIds =
+    novoStatus === OsStatus.PENDENTE
+      ? ((await prisma.ordemServico.findUnique({ where: { id: os.id }, select: { apoios: { select: { id: true } } } }))?.apoios ?? []).map((a) => a.id)
+      : [];
+  const desvincula = novoStatus === OsStatus.PENDENTE && (!!os.tecnicoId || apoioIds.length > 0);
+
   const descricao = `Status alterado: ${OS_STATUS_LABEL[os.status as OsStatus]} → ${OS_STATUS_LABEL[novoStatus]}`;
   // Pega a OS atualizada (1o elemento), nao o evento (2o) — ver marcarACaminho.
   const [osAtualizada] = await prisma.$transaction([
     prisma.ordemServico.update({
       where: { id: os.id },
-      data: { status: novoStatus, sincronizadoEm: new Date(), statusAlteradoEm: new Date() },
+      data: { status: novoStatus, sincronizadoEm: new Date(), statusAlteradoEm: new Date(), ...(desvincula ? SEM_TECNICO : {}) },
     }),
     evento(os.id, "status", autorId, descricao, geo, { de: os.status as OsStatus, para: novoStatus }),
+    ...(desvincula ? [evento(os.id, "atribuicao", autorId, DESVINCULO_PENDENTE)] : []),
   ]);
   notificarTecnico(osAtualizada.tecnicoId, "os-alterada", os.id);
+  // Quem estava na OS perde ela: a lista dele refaz na hora.
+  if (desvincula) for (const u of [os.tecnicoId, ...apoioIds]) notificarTecnico(u, "os-removida", os.id);
   // Painel e Despacho das outras telas recarregam na hora (antes so o tecnico sabia).
   emitParaTodos({ tipo: "os-alterada", em: new Date().toISOString() });
   // OS concluida: a conversa com o cliente aberta por ela encerra e a CláudIA
@@ -436,6 +456,9 @@ export async function atribuirTecnico(
 ) {
   const os = await prisma.ordemServico.findUnique({ where: { id: ordemServicoId } });
   if (!os) throw new HttpError(404, "Ordem de servico nao encontrada");
+  // Pendente nao tem tecnico (ver DESVINCULO_PENDENTE): o proximo sync tiraria
+  // de novo. Retomar e mudar o status; ai sim se designa.
+  if (os.status === OsStatus.PENDENTE) throw new HttpError(409, "OS pendente: mude o status antes de designar um técnico");
 
   const tecnico = await prisma.usuario.findUnique({ where: { id: tecnicoId } });
   if (!tecnico || tecnico.role !== UserRole.TECNICO) throw new HttpError(404, "Tecnico nao encontrado");
@@ -497,4 +520,27 @@ export async function atribuirTecnico(
     });
   }
   return osAtualizada;
+}
+
+/**
+ * Passo do sync: toda OS PENDENTE do provedor que ainda tem tecnico ou apoio no
+ * ISPhub perde os dois (ver DESVINCULO_PENDENTE). Cobre a que virou pendente no
+ * SGP e as que ja estavam pendentes com tecnico antes desta regra existir.
+ * Um evento por OS, sem autor (foi o sistema); quem perdeu a OS e avisado.
+ */
+export async function desvincularPendentes(provedorId: string): Promise<number> {
+  const oss = await prisma.ordemServico.findMany({
+    where: { provedorId, status: OsStatus.PENDENTE, OR: [{ tecnicoId: { not: null } }, { apoios: { some: {} } }] },
+    select: { id: true, tecnicoId: true, apoios: { select: { id: true } } },
+  });
+  for (const os of oss) {
+    await prisma.$transaction([
+      prisma.ordemServico.update({ where: { id: os.id }, data: SEM_TECNICO }),
+      evento(os.id, "atribuicao", null, DESVINCULO_PENDENTE),
+    ]);
+    for (const u of [os.tecnicoId, ...os.apoios.map((a) => a.id)]) notificarTecnico(u, "os-removida", os.id);
+  }
+  // Um aviso so pras telas de quem despacha, como o resto do sync.
+  if (oss.length > 0) emitParaTodos({ tipo: "os-alterada", em: new Date().toISOString() });
+  return oss.length;
 }

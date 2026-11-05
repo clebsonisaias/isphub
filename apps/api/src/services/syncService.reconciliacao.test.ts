@@ -45,6 +45,7 @@ const {
 }));
 const { buildConnector } = vi.hoisted(() => ({ buildConnector: vi.fn() }));
 const { emitParaTodos, emitParaUsuario } = vi.hoisted(() => ({ emitParaTodos: vi.fn(), emitParaUsuario: vi.fn() }));
+const { desvincularPendentes } = vi.hoisted(() => ({ desvincularPendentes: vi.fn() }));
 
 vi.mock("../lib/prisma.js", () => ({
   prisma: {
@@ -68,6 +69,12 @@ vi.mock("../lib/prisma.js", () => ({
 }));
 vi.mock("./erpConnectorService.js", () => ({ buildConnector }));
 vi.mock("./realtimeHub.js", () => ({ emitParaTodos, emitParaUsuario }));
+// O desvinculo de pendentes tem teste proprio (pendenteSemTecnico.test.ts);
+// aqui so a ligacao dele no ciclo — e ele fora das contas de $transaction.
+vi.mock("./writebackService.js", async (original) => ({
+  ...(await original<typeof import("./writebackService.js")>()),
+  desvincularPendentes,
+}));
 
 const { syncProvedor } = await import("./syncService.js");
 
@@ -115,6 +122,7 @@ beforeEach(() => {
     return [osAberta()];
   });
 
+  desvincularPendentes.mockResolvedValue(0);
   listServiceOrders = vi.fn().mockResolvedValue({ itens: [], total: 0, completo: true });
   obterStatusOs = vi.fn();
   buildConnector.mockReturnValue({ listServiceOrders, obterStatusOs, getContratoCadastro: vi.fn() });
@@ -125,6 +133,19 @@ it("as tres varreduras cobrem so os status ABERTOS — ENCERRADA nao e mais cons
   expect(listServiceOrders).toHaveBeenCalledTimes(3);
   const statusConsultados = listServiceOrders.mock.calls.map(([params]) => params.status).sort();
   expect(statusConsultados).toEqual([0, 2, 3]); // ABERTA, EM_EXECUCAO, PENDENTE — sem ENCERRADA(1)
+});
+
+describe("OS pendente sai do despacho a cada ciclo", () => {
+  it("o sync desvincula as pendentes do provedor", async () => {
+    await syncProvedor(PROVEDOR_ID);
+    expect(desvincularPendentes).toHaveBeenCalledWith(PROVEDOR_ID);
+  });
+
+  it("falha no desvinculo nao derruba o sync", async () => {
+    desvincularPendentes.mockRejectedValue(new Error("banco fora"));
+    obterStatusOs.mockResolvedValue({ tipo: "encontrada", statusBruto: 0 }); // ainda aberta: a reconciliacao nao mexe
+    expect((await syncProvedor(PROVEDOR_ID)).ok).toBe(true);
+  });
 });
 
 describe("varredura incompleta — nao ha evidencia confiavel", () => {

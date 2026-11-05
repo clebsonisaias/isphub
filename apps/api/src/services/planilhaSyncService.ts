@@ -218,7 +218,8 @@ async function aplicarDetalhes(
   ]);
   const marcacaoDe = new Map(marcacoes.map((m) => [m.sgpOsId, m]));
   const osDe = new Map(ordens.map((o) => [o.sgpOsId, o]));
-  const ABERTA = ["aberta", "pendente", "em_deslocamento", "em_execucao"];
+  // Sem "pendente": pendente nao tem tecnico no ISPhub e atribuirTecnico recusa (409).
+  const ABERTA = ["aberta", "em_deslocamento", "em_execucao"];
 
   for (const l of ativas) {
     // Ordem da rota e observacao: so na marcacao da planilha que bate com a linha.

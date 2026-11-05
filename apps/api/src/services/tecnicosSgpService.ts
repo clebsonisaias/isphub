@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { OS_STATUS_ABERTOS, UserRole, chaveNome } from "@isphub/shared";
+import { OS_STATUS_ABERTOS, OsStatus, UserRole, chaveNome } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../middleware/errorHandler.js";
 import { hashPassword } from "./authService.js";
@@ -239,7 +239,8 @@ export function decidirDespachoSgp(os: DespachoOs, idDoLogin: (login: string) =>
 /**
  * Espelha no ISPhub o tecnico e o apoio que a OS ja tem no SGP (pedido de
  * 23/10/2026). So OS abertas, so logins vinculados na aba "Tecnicos do SGP".
- * Tecnico posto por gente no ISPhub vence (vira conflito no log).
+ * Tecnico posto por gente no ISPhub vence (vira conflito no log). PENDENTE fica
+ * de fora: nao tem tecnico no ISPhub (ver writebackService.desvincularPendentes).
  * ponytail: tirar o tecnico no SGP nao desatribui aqui; fazer se a equipe pedir.
  */
 export async function espelharDespachoSgp(provedorId: string) {
@@ -257,7 +258,7 @@ export async function espelharDespachoSgp(provedorId: string) {
   const oss = await prisma.ordemServico.findMany({
     where: {
       provedorId,
-      status: { in: OS_STATUS_ABERTOS },
+      status: { in: OS_STATUS_ABERTOS.filter((st) => st !== OsStatus.PENDENTE) },
       OR: [{ tecnicoSgpNome: { not: null } }, { tecnicosAuxiliaresSgp: { isEmpty: false } }, { apoios: { some: {} } }],
     },
     select: {

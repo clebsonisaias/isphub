@@ -46,7 +46,7 @@ export interface DefinicaoArea {
 export const AREAS: Record<AreaId, DefinicaoArea> = {
   fila: {
     rotulo: "Fila e OS",
-    web: ["/", "/os", "/mapa", "/retiradas"],
+    web: ["/", "/os", "/mapa", "/retiradas", "/pendentes"],
     api: [/^\/fila(\/|$)/, /^\/ordens-servico(\/|$)/, /^\/provedores\/[^/]+\/conexao(\/|$)/, /^\/sync\/minhas-os$/],
     // `/agenda/turno`: o modo rota da tela /mapa desenha as paradas da janela.
     leitura: [/^\/tecnicos$/, /^\/frota\/ordens-servico\/[^/]+\/veiculos$/, /^\/agenda\/turno$/],

@@ -7,7 +7,7 @@ import { asyncHandler } from "../middleware/errorHandler.js";
 import { requireAuth } from "../middleware/auth.js";
 import { calcularSla } from "../services/slaService.js";
 import { escopoOsWhere } from "../services/escopoService.js";
-import { prepararFila } from "../services/filaService.js";
+import { prepararFila, wherePendentes } from "../services/filaService.js";
 import { resumoMarcacao } from "../lib/eventosAgenda.js";
 import { whereEquipeParaUsuario } from "../services/equipeService.js";
 
@@ -156,6 +156,12 @@ const filtrosSchema = z.object({
    * pede "externa" explicitamente. Retirada nunca "some": tem tela propria.
    */
   equipe: z.enum(["interna", "externa", "todas"]).default("interna"),
+  /**
+   * OS PENDENTE: o Painel pede "excluir", a aba Pendentes pede "so". Default
+   * "incluir" pra quem nao passa nada (app do tecnico, Mapa, Retiradas) ver o
+   * mesmo de antes. Ver filaService.wherePendentes.
+   */
+  pendentes: z.enum(["incluir", "excluir", "so"]).default("incluir"),
   // Teto de tamanho: `busca` vira ate 5 ILIKE '%...%' sem indice; string
   // gigante so serve pra fazer o banco trabalhar a toa.
   busca: z.string().max(120).optional(),
@@ -226,6 +232,10 @@ filaRouter.get(
     // atribuida que a lista esconde e OS perdida. Ver whereEquipeParaUsuario.
     const clausulaEquipe = whereEquipeParaUsuario(f.equipe, req.user!.role);
     if (clausulaEquipe) osWhere.AND = [...(osWhere.AND ?? []), clausulaEquipe];
+    // No AND tambem: `status` do topo e apagado pros contadores das abas, e
+    // estes tem que respeitar o recorte (o "Fila (N)" do Painel sem pendentes).
+    const clausulaPendentes = wherePendentes(f.pendentes);
+    if (clausulaPendentes) osWhere.AND = [...osWhere.AND, clausulaPendentes];
     Object.keys(osWhere).forEach((k) => osWhere[k] === undefined && delete osWhere[k]);
 
     const [ordens, totalOs] = await Promise.all([

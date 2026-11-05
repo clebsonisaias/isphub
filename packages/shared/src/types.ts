@@ -67,6 +67,13 @@ export interface Categoria {
 export type EquipeFiltro = "interna" | "externa" | "todas";
 
 /**
+ * O que a fila faz com OS PENDENTE (cliente sem retorno, instalacao que nao
+ * andou): "incluir" (padrao — quem nao pede nada ve o mesmo de antes),
+ * "excluir" (Painel) ou "so" (aba Pendentes).
+ */
+export type PendentesFiltro = "incluir" | "excluir" | "so";
+
+/**
  * Vista resumida da categoria, embutida em TipoOs/FilaItem (sem palavrasChave/ativo).
  *
  * `equipeExterna` entra aqui porque o cliente precisa DISTINGUIR retirada de
@@ -237,6 +244,8 @@ export interface FilaFiltros {
   grupo?: "abertos" | "fechados";
   /** Quem executa a OS. Default do servidor: "interna" (fila da equipe ISPhub). */
   equipe?: EquipeFiltro;
+  /** OS PENDENTE. Default do servidor: "incluir". */
+  pendentes?: PendentesFiltro;
   /** Busca livre (cliente, protocolo, endereco). */
   busca?: string;
   /** ISO date range (sobre `dataAgendamento` do SGP). */

@@ -14,6 +14,7 @@ import { emitParaTodos, emitParaUsuario } from "./realtimeHub.js";
 import { sugerirCategoriaId } from "./categoriaMatch.js";
 import { confirmarComSgp, ligarOrfas, reconciliarDoSgp, reenviarNaoConfirmadas } from "./agendaService.js";
 import { espelharDespachoSgp } from "./tecnicosSgpService.js";
+import { desvincularPendentes } from "./writebackService.js";
 import { encerrarConversasDeOsConcluidas } from "./clienteAtendaiService.js";
 
 /**
@@ -25,7 +26,7 @@ import { encerrarConversasDeOsConcluidas } from "./clienteAtendaiService.js";
  * Tecnico: o upsert nunca escreve `tecnicoId`. O passo 2c espelha o que o SGP
  * ja designou (responsavel e apoio, por login vinculado na aba "Tecnicos do
  * SGP") via writebackService.atribuirTecnico; tecnico posto por gente no
- * ISPhub vence.
+ * ISPhub vence. OS PENDENTE nao tem tecnico: o mesmo passo a desvincula.
  */
 
 /**
@@ -489,6 +490,14 @@ async function syncProvedorSemTrava(provedorId: string): Promise<{ ok: boolean; 
       }
     } catch (e) {
       console.warn(`[sync] despacho do SGP falhou no provedor ${provedorId}:`, e);
+    }
+    // Pendente sai do despacho daqui (o SGP fica como esta). Try proprio: o
+    // espelho acima falhar nao pode deixar tecnico preso numa OS pendente.
+    try {
+      const n = await desvincularPendentes(provedorId);
+      if (n > 0) console.log(`[sync] pendentes: ${n} OS desvinculada(s) (provedor ${provedorId})`);
+    } catch (e) {
+      console.warn(`[sync] pendentes: desvinculo falhou no provedor ${provedorId}:`, e);
     }
 
     // --- 3. Backfill do cadastro do cliente (endereco de rua + geo + telefone) ---

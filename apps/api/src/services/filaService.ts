@@ -11,6 +11,8 @@
  * certo, escondendo o problema).
  */
 
+import { OsStatus, type PendentesFiltro } from "@isphub/shared";
+
 /** Campos minimos que a ordenacao le — FilaItem (do @isphub/shared) os tem todos. */
 export interface ItemOrdenavel {
   dataAgendamento?: string | null;
@@ -52,4 +54,15 @@ export function prepararFila<T extends ItemOrdenavel>(itens: T[], total: number,
   const cortados = ordenados.slice(0, limite);
   const truncado = cortados.length < total;
   return { itens: cortados, total, truncado };
+}
+
+/**
+ * Recorte de OS PENDENTE na fila, ou `null` pra nao recortar. Vai no `AND` do
+ * where, como o de equipe. "incluir" e o padrao: app do tecnico, Mapa,
+ * Retiradas e quem mais chama /fila sem o parametro continuam iguais.
+ */
+export function wherePendentes(p: PendentesFiltro): Record<string, unknown> | null {
+  if (p === "excluir") return { status: { not: OsStatus.PENDENTE } };
+  if (p === "so") return { status: OsStatus.PENDENTE };
+  return null;
 }

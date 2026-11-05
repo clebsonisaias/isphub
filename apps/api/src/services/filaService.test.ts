@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { dataRelevante, prepararFila, type ItemOrdenavel } from "./filaService.js";
+import { OsStatus } from "@isphub/shared";
+import { dataRelevante, prepararFila, wherePendentes, type ItemOrdenavel } from "./filaService.js";
 
 function os(id: string, over: Partial<ItemOrdenavel> = {}): ItemOrdenavel & { id: string } {
   return { id, dataAgendamento: null, criadoEm: "2026-07-01T00:00:00.000Z", ...over };
@@ -66,5 +67,16 @@ describe("prepararFila", () => {
     expect(ids).toContain("citmax-2");
     expect(ids).toContain("netgo-1");
     expect(ids).toContain("netgo-2");
+  });
+});
+
+describe("wherePendentes", () => {
+  it("incluir (o padrao) nao recorta: quem nao passa o parametro ve o mesmo de antes", () => {
+    expect(wherePendentes("incluir")).toBeNull();
+  });
+
+  it("excluir tira as pendentes (Painel); so deixa so elas (aba Pendentes)", () => {
+    expect(wherePendentes("excluir")).toEqual({ status: { not: OsStatus.PENDENTE } });
+    expect(wherePendentes("so")).toEqual({ status: OsStatus.PENDENTE });
   });
 });

@@ -1,5 +1,6 @@
-import { TurnoAgenda, haversineMetros, metrosDaOrdem, sugerirOrdem, type ParadaRota, diaBrHoje } from "@isphub/shared";
+import { OsStatus, TurnoAgenda, haversineMetros, metrosDaOrdem, sugerirOrdem, type ParadaRota, diaBrHoje } from "@isphub/shared";
 import { prisma } from "../lib/prisma.js";
+import { HttpError } from "../middleware/errorHandler.js";
 import { emitParaTodos, emitParaUsuario } from "./realtimeHub.js";
 import { mapaAoVivo } from "./rastreamentoService.js";
 
@@ -478,6 +479,8 @@ export async function despacharEmergencial(
   if (!os) {
     throw new Error("Ordem de serviço não encontrada");
   }
+  // Mesma regra de writebackService.atribuirTecnico: pendente nao tem tecnico.
+  if (os.status === OsStatus.PENDENTE) throw new HttpError(409, "OS pendente: mude o status antes de designar um técnico");
 
   const tecnico = await prisma.usuario.findUnique({
     where: { id: tecnicoId },
