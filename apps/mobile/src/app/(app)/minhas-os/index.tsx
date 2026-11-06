@@ -256,7 +256,13 @@ export default function MinhasOs() {
             // Escalado com carro: checklist de saida antes (km e foto do painel). A pe: inicia direto.
             onIniciar={() => (escala.data?.veiculoId ? setChecklist("saida") : iniciar.mutate(undefined))}
             onEncerrar={confirmarEncerrar}
-            onTrocarViatura={jornada ? () => setFolha("trocar") : undefined}
+            /*
+              So o gestor troca o carro de quem tem carro fixo ou escala: a
+              linha vira informacao e a folha de troca nem abre. `fonte` falta
+              em servidor antigo; escalado sem ela e escala.
+            */
+            viaturaDoGestor={escala.data?.escalado ? (escala.data.fonte ?? "escala") : null}
+            onTrocarViatura={jornada && !escala.data?.escalado ? () => setFolha("trocar") : undefined}
           />
 
           {/*
