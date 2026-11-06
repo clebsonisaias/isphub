@@ -186,4 +186,9 @@ export interface EscalaDoDia {
   papel: "motorista" | "passageiro";
   /** Quem mais foi escalado pro MESMO veiculo hoje (primeiro nome). */
   parceiros: string[];
+  /**
+   * De onde veio a viatura: `escala` = o gestor escalou ESTE dia (excecao);
+   * `fixa` = o carro fixo do tecnico (padrao). Ausente em respostas antigas.
+   */
+  fonte?: "escala" | "fixa";
 }

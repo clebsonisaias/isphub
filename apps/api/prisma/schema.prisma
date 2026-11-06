@@ -496,6 +496,7 @@ model Usuario {
   /// colega). Sem separar, "quem me pos nesse carro?" nao teria resposta.
   ocupacoesVeiculo    OcupacaoVeiculo[]   @relation("OcupacoesVeiculo")
   escalas             EscalaJornada[]     @relation("EscalasDoTecnico")
+  viaturasFixas       ViaturaFixa[]       @relation("ViaturasFixasDoTecnico")
   ocupacoesDeclaradas OcupacaoVeiculo[]   @relation("OcupacoesDeclaradas")
   vinculosRastreador  VinculoRastreador[] @relation("VinculosRastreador")
 
@@ -729,6 +730,43 @@ model EscalaJornada {
   @@unique([usuarioId, dia])
   @@index([dia, veiculoId])
   @@map("escalas_jornada")
+}
+
+/// O carro FIXO do tecnico — quem o gestor pos em qual viatura, e desde quando.
+///
+/// E o PADRAO; a `EscalaJornada` do dia e a EXCECAO. Na abertura do turno vale,
+/// nesta ordem: escala do dia > viatura fixa > o que o app mandar. Sem isto o
+/// gestor teria de escalar todo mundo todo dia so pra repetir o mesmo carro.
+///
+/// Historico e nao coluna em `Usuario`: trocar o carro FECHA a linha anterior
+/// (`fimEm`) e abre outra. Uma coluna mutavel responderia "quem tinha o carro X
+/// em marco?" com o dono de HOJE — o mesmo erro que `OcupacaoVeiculo` evita.
+///
+/// Varios tecnicos podem ter o MESMO carro fixo (dupla motorista + ajudante);
+/// o que nao existe e um tecnico com DOIS carros fixos ao mesmo tempo — indice
+/// parcial escrito a mao na migracao.
+model ViaturaFixa {
+  id        String  @id @default(uuid())
+  usuarioId String
+  usuario   Usuario @relation("ViaturasFixasDoTecnico", fields: [usuarioId], references: [id], onDelete: Cascade)
+  veiculoId String
+  veiculo   Veiculo @relation(fields: [veiculoId], references: [id], onDelete: Restrict)
+
+  papel PapelOcupacao @default(motorista)
+
+  inicioEm DateTime  @default(now())
+  /// Nulo = vinculo VIGENTE. Intervalo semiaberto `[inicioEm, fimEm)`.
+  fimEm    DateTime?
+
+  /// Quem definiu e quem encerrou. Sem FK, como `EscalaJornada.definidoPor`:
+  /// se o gestor sair da empresa, o historico nao pode sumir junto.
+  definidoPor  String
+  encerradoPor String?
+  observacao   String? @db.VarChar(200)
+
+  @@index([veiculoId, inicioEm])
+  @@index([usuarioId, inicioEm])
+  @@map("viaturas_fixas")
 }
 
 enum MotivoPausa {
@@ -1559,6 +1597,7 @@ model Veiculo {
   viagens        Viagem[]
   lancamentos    Lancamento[]
   escalas        EscalaJornada[]
+  viaturasFixas  ViaturaFixa[]
 
   @@index([provedorId, status])
   @@map("veiculos")
