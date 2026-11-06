@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { STATUS_VEICULO, TIPOS_VEICULO, UserRole, diaBrasileiro } from "@isphub/shared";
+import { PAPEIS_OCUPACAO, STATUS_VEICULO, TIPOS_VEICULO, UserRole, diaBrasileiro } from "@isphub/shared";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import {
@@ -12,6 +12,7 @@ import {
 } from "../services/escopoService.js";
 import * as veiculos from "../services/veiculoService.js";
 import * as ocupacao from "../services/ocupacaoService.js";
+import * as viaturaFixa from "../services/viaturaFixaService.js";
 import * as rastreadores from "../services/rastreadorService.js";
 import * as rastreamento from "../services/rastreamentoService.js";
 import * as manutencao from "../services/manutencaoService.js";
@@ -232,6 +233,66 @@ frotaRouter.get(
     const os = await prisma.ordemServico.findUnique({ where: { id: req.params.osId }, select: { provedorId: true } });
     if (os) exigirProvedor(req.user!, os.provedorId);
     res.json(await ocupacao.veiculosDaOs(req.params.osId));
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// VIATURA FIXA — o gestor diz "o carro X e do tecnico Y"
+// ---------------------------------------------------------------------------
+
+/** O quadro do gestor: cada tecnico com o carro fixo dele. */
+frotaRouter.get(
+  "/viaturas-fixas",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    res.json(await viaturaFixa.quadro((provedorId) => podeAcessarVeiculo(req.user!, { provedorId })));
+  }),
+);
+
+/** Quem tem este carro como fixo agora, e o historico de quem ja teve. */
+frotaRouter.get(
+  "/veiculos/:id/viatura-fixa",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    await assertAcesso(req, req.params.id);
+    const [vigentes, historico] = await Promise.all([
+      viaturaFixa.vigentesDoVeiculo(req.params.id),
+      viaturaFixa.historicoDoVeiculo(req.params.id),
+    ]);
+    res.json({ vigentes, historico });
+  }),
+);
+
+const viaturaFixaSchema = z.object({
+  /** Nulo = tirar o carro fixo do tecnico. */
+  veiculoId: z.string().uuid().nullable(),
+  papel: z.enum(PAPEIS_OCUPACAO).default("motorista"),
+  observacao: z.string().trim().max(200).nullish(),
+});
+
+/**
+ * Define, troca ou tira o carro fixo do tecnico. So ADMIN/GESTOR: o tecnico
+ * nao escolhe o proprio carro. Se ele estiver em turno (e sem escala hoje), a
+ * troca vale NA HORA.
+ */
+frotaRouter.put(
+  "/tecnicos/:usuarioId/viatura-fixa",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    const b = viaturaFixaSchema.parse(req.body);
+    if (b.veiculoId) await assertAcesso(req, b.veiculoId);
+    // Gestor limitado tambem nao TIRA o tecnico de um carro de outro provedor.
+    const atual = await viaturaFixa.vigenteDe(req.params.usuarioId);
+    if (atual) await assertAcesso(req, atual.veiculoId);
+    res.json(
+      await viaturaFixa.definir({
+        usuarioId: req.params.usuarioId,
+        veiculoId: b.veiculoId,
+        papel: b.papel,
+        definidoPor: req.user!.sub,
+        observacao: b.observacao ?? null,
+      }),
+    );
   }),
 );
 

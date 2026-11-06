@@ -256,6 +256,17 @@ export async function trocarViatura(
   const jornada = await jornadaAtual(usuarioId);
   if (!jornada) throw new HttpError(409, "Nenhuma jornada aberta — inicie o turno antes de declarar a viatura.");
 
+  /*
+   * SO O GESTOR TROCA. Quem tem escala do dia ou carro fixo nao muda de carro
+   * pelo app: a troca e pedida ao gestor, que a faz pelo painel (e ela vale na
+   * hora, como `ajuste`). Sem escala nem carro fixo, segue o comportamento
+   * antigo — o tecnico declara.
+   */
+  const escala = await escalaDoTecnico(usuarioId, new Date());
+  if (escala.escalado) {
+    throw new HttpError(403, "A troca de viatura é feita pelo gestor. Peça a ele para trocar o seu carro.");
+  }
+
   if (!viatura.veiculoId) {
     const fechada = await prisma.$transaction((tx) =>
       encerrarDentroDaTransacao(tx, usuarioId, "troca_veiculo", geo, viatura.odometro),

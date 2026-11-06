@@ -35,9 +35,7 @@ export async function escalaDoTecnico(usuarioId: string, dia: Date): Promise<Esc
     select: { veiculoId: true, papel: true, turnos: true, veiculo: { select: { placa: true } } },
   });
 
-  if (!escala) {
-    return { escalado: false, turnos: [], veiculoId: null, veiculoPlaca: null, papel: "motorista", parceiros: [] };
-  }
+  if (!escala) return escalaPelaViaturaFixa(usuarioId);
 
   const parceiros = escala.veiculoId
     ? (
@@ -55,7 +53,52 @@ export async function escalaDoTecnico(usuarioId: string, dia: Date): Promise<Esc
     veiculoPlaca: escala.veiculo?.placa ?? null,
     papel: escala.papel,
     parceiros,
+    fonte: "escala",
   };
+}
+
+const SEM_ESCALA: EscalaDoDia = { escalado: false, turnos: [], veiculoId: null, veiculoPlaca: null, papel: "motorista", parceiros: [] };
+
+/**
+ * Sem escala no dia, vale o CARRO FIXO que o gestor definiu. E o padrao; a
+ * escala e a excecao. Sem nenhum dos dois, o comportamento antigo segue.
+ *
+ * Carro fixo parado (manutencao/inativo) nao conta: escalar nele produziria um
+ * turno sem carro na hora de sair. O tecnico sai sem viatura e o gestor escala
+ * outro carro pro dia.
+ */
+async function escalaPelaViaturaFixa(usuarioId: string): Promise<EscalaDoDia> {
+  const fixa = await prisma.viaturaFixa.findFirst({
+    where: { usuarioId, fimEm: null },
+    select: { veiculoId: true, papel: true, veiculo: { select: { placa: true, status: true } } },
+  });
+  if (!fixa) return SEM_ESCALA;
+  return escalaDaFixa(fixa, await parceirosFixos(fixa.veiculoId, usuarioId));
+}
+
+/** Pura: a viatura fixa traduzida pro formato da escala do dia. */
+export function escalaDaFixa(
+  fixa: { veiculoId: string; papel: PapelOcupacao; veiculo: { placa: string; status: string } },
+  parceiros: string[],
+): EscalaDoDia {
+  if (fixa.veiculo.status !== "ativo") return SEM_ESCALA;
+  return {
+    escalado: true,
+    turnos: ["manha", "tarde"],
+    veiculoId: fixa.veiculoId,
+    veiculoPlaca: fixa.veiculo.placa,
+    papel: fixa.papel,
+    parceiros,
+    fonte: "fixa",
+  };
+}
+
+async function parceirosFixos(veiculoId: string, usuarioId: string): Promise<string[]> {
+  const ls = await prisma.viaturaFixa.findMany({
+    where: { veiculoId, fimEm: null, usuarioId: { not: usuarioId } },
+    select: { usuario: { select: { nome: true, nomeExibicao: true } } },
+  });
+  return ls.map((l) => primeiro(l.usuario.nomeExibicao || l.usuario.nome));
 }
 
 /** O quadro do dia inteiro — a tela do supervisor. */
