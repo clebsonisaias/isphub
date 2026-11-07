@@ -12,7 +12,7 @@
  * Fuso do Brasil, -03:00 fixo — o pais aboliu horario de verao em 2019. Mesma
  * decisao ja documentada em `connectors/sgp.ts` (FUSO_SGP) e em `routes/hora.ts`.
  */
-const OFFSET_BR_MIN = -180;
+export const OFFSET_BR_MIN = -180;
 
 /**
  * Comeco (inclusivo) e fim (exclusivo) do dia CIVIL brasileiro que contem

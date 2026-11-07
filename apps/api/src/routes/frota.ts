@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { PAPEIS_OCUPACAO, STATUS_VEICULO, TIPOS_VEICULO, UserRole, diaBrasileiro } from "@isphub/shared";
+import { PAPEIS_OCUPACAO, STATUS_VEICULO, TIPOS_VEICULO, UserRole, diaBrasileiro, diaBrasileiroIso } from "@isphub/shared";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import {
@@ -15,6 +15,7 @@ import * as ocupacao from "../services/ocupacaoService.js";
 import * as viaturaFixa from "../services/viaturaFixaService.js";
 import * as rastreadores from "../services/rastreadorService.js";
 import * as rastreamento from "../services/rastreamentoService.js";
+import * as historicoVeiculo from "../services/historicoVeiculoService.js";
 import * as manutencao from "../services/manutencaoService.js";
 import * as checklist from "../services/checklistService.js";
 import * as bi from "../services/biFrotaService.js";
@@ -493,6 +494,24 @@ frotaRouter.get(
     const fim = ate ? new Date(ate) : new Date();
     const inicio = de ? new Date(de) : new Date(fim.getTime() - 24 * 60 * 60_000);
     res.json(await rastreamento.diaDoVeiculo(req.params.id, inicio, fim));
+  }),
+);
+
+/**
+ * O HISTORICO DE UM DIA: viagens (com motorista), paradas e km do dia.
+ * `dia` e "AAAA-MM-DD" no fuso de Brasilia; sem ele, hoje. O trajeto do mapa
+ * vem de `/veiculos/:id/trilha` com os limites que esta resposta devolve.
+ */
+frotaRouter.get(
+  "/veiculos/:id/historico",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    await assertAcesso(req, req.params.id);
+    const { dia } = z.object({ dia: z.string().date().optional() }).parse(req.query);
+    const hoje = diaBrasileiroIso(new Date());
+    // Dia futuro nao tem historico; responder vazio esconderia um erro de data.
+    if (dia && dia > hoje) throw new HttpError(422, "Escolha hoje ou um dia anterior");
+    res.json(await historicoVeiculo.historicoDoDia(req.params.id, dia ?? hoje));
   }),
 );
 
