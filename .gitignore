@@ -38,8 +38,12 @@ apps/api/uploads/
 .vscode/
 .idea/
 
-# Ferramental local do Claude Code (settings, worktrees) — nao versionado
-.claude/
+# Ferramental local do Claude Code (settings, worktrees) — nao versionado.
+# Versionados: revisores, skills e regras por pasta (kit ECC).
+.claude/*
+!.claude/agents/
+!.claude/skills/
+!.claude/rules/
 
 # Grafo de conhecimento gerado pelo graphify (local, regenerável)
 graphify-out/
