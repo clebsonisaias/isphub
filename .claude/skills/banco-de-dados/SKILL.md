@@ -38,6 +38,10 @@ Fluxo (local, banco de desenvolvimento do README):
 - Backfill grande fora da migração de schema, em lotes.
 - Nunca `prisma migrate reset`/`db push` fora do banco local.
 
+**Índices parciais escritos à mão.** O Prisma não expressa `WHERE` em índice, então várias garantias do banco existem só no SQL da migração, sem nada no `schema.prisma`: uma ocupação aberta por técnico (`ocupacoes_veiculo_uma_aberta_por_usuario`), um motorista aberto por veículo, uma jornada aberta por técnico, um vínculo aberto por rastreador/veículo, uma viagem aberta por veículo, entre outras. Liste com `grep -rn "WHERE \"fimEm\" IS NULL" apps/api/prisma/migrations`. Por isso:
+- O `--create-only` e o `prisma migrate diff` **vão propor `DROP INDEX`** desses índices. Apague essas linhas do `migration.sql` gerado: remover é regressão, não limpeza.
+- Índice parcial novo: escreva-o à mão no `migration.sql`, com um comentário `⚠️ INDICE PARCIAL — ESCRITO A MAO` explicando o que ele garante, e comente o modelo no `schema.prisma` apontando para ele.
+
 ## 3. Idempotência e concorrência
 - O sync com o SGP depende de chaves naturais: `OrdemServico @@unique([provedorId, sgpOsId])`, `TipoOs @@unique([provedorId, sgpCodigo])`, `MensagemCliente @@unique([canal, waMessageId])`, `Lancamento @@unique([recorrenciaId, vencimento])`, posições/eventos de rastreador. Não afrouxe; upsert novo precisa de `@@unique` que o sustente (skill `integracao-sgp`).
 - `@@unique` com coluna nula não impede duplicata quando o valor é NULL.

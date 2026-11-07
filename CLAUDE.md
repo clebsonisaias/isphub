@@ -1,6 +1,6 @@
 # ISPhub
 
-Plataforma de terceirização de campo para provedores de internet: fila única de OS/ocorrências de vários provedores, cada um com o próprio SGP, com sincronização bidirecional (o ISPhub escreve de volta no SGP do provedor). Monorepo npm workspaces, Node 22 no CI (README pede ≥ 20), TypeScript.
+Plataforma de terceirização de campo para provedores de internet: fila única de OS/ocorrências de vários provedores, cada um com o próprio SGP, com sincronização bidirecional (o ISPhub escreve de volta no SGP do provedor). Monorepo npm workspaces, Node 22 (CI e imagens Docker), TypeScript.
 
 | Pasta | O que é |
 |---|---|
@@ -21,7 +21,7 @@ Plataforma de terceirização de campo para provedores de internet: fila única 
 
 ## Branches e publicação
 
-- Só existe a `main`. O CI roda em todo push e PR. A API e o web vão para o Coolify (`apps/api/Dockerfile`, `apps/web/Dockerfile`); de qual branch o Coolify publica: **a confirmar** (presume-se a `main`).
+- Só existe a `main`. O CI roda em todo push e PR. A API e o web vão para o Coolify (`apps/api/Dockerfile`, `apps/web/Dockerfile`); o Coolify publica a partir da `main` — merge na `main` é deploy em produção.
 - Trabalho novo em branch própria a partir da `main`, de volta por pull request.
 - O contêiner da API roda `prisma migrate deploy` ao subir: migração que falha derruba a API em loop (já aconteceu, ver o `CMD` do Dockerfile).
 - App mobile: binário por EAS Build e JS por EAS Update (canais `development`/`preview`/`production` em `apps/mobile/eas.json`). `eas update` no canal `production` chega aos técnicos na hora; não publique sem pedido explícito.
