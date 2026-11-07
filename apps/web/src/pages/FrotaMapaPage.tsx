@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MapContainer, Marker, Polyline, Popup, CircleMarker } from "react-leaflet";
-import { EMOJI_VEICULO, idadeDaPosicao, posicaoVelha } from "@isphub/shared";
+import { EMOJI_VEICULO, diaBrasileiroIso, idadeDaPosicao, limitesDoDia, posicaoVelha } from "@isphub/shared";
 import { AppShell } from "@/components/AppShell";
 import { AnimatedPage } from "@/components/AnimatedPage";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ErrorState";
 import { AjustarLimites, BRASIL_CENTER, CamadaOsm } from "@/components/mapa/base";
@@ -49,6 +51,12 @@ export function FrotaMapaPage() {
   const [selecionado, setSelecionado] = useState<string | null>(null);
   const [trilha, setTrilha] = useState<PontoTrilha[]>([]);
   const [carregandoTrilha, setCarregandoTrilha] = useState(false);
+  /** Dia do percurso ("AAAA-MM-DD", fuso de Brasilia). As posicoes ao vivo sao sempre de agora. */
+  const hoje = diaBrasileiroIso(new Date());
+  const [dia, setDia] = useState(hoje);
+  // So a resposta do ULTIMO pedido vale: trocar de carro ou de dia rapido nao
+  // pode deixar a trilha do anterior na tela.
+  const pedidoTrilha = useRef(0);
   const buscando = useRef(false);
 
   const carregar = useCallback(async () => {
@@ -80,20 +88,38 @@ export function FrotaMapaPage() {
     if (ev.tipo === "posicao-veiculo" || ev.tipo === "ocupacao-alterada") void carregar();
   });
 
-  const abrirTrilha = useCallback(async (veiculoId: string) => {
-    setSelecionado(veiculoId);
-    setCarregandoTrilha(true);
-    try {
-      setTrilha(await frotaMapaApi.trilha(veiculoId));
-    } catch {
-      setTrilha([]);
-    } finally {
-      setCarregandoTrilha(false);
-    }
-  }, []);
+  const abrirTrilha = useCallback(
+    async (veiculoId: string, doDia: string = dia) => {
+      const meu = ++pedidoTrilha.current;
+      setSelecionado(veiculoId);
+      setCarregandoTrilha(true);
+      try {
+        const { inicio, fim } = limitesDoDia(doDia);
+        const t = await frotaMapaApi.trilha(veiculoId, { de: inicio.toISOString(), ate: fim.toISOString() });
+        if (meu === pedidoTrilha.current) setTrilha(t);
+      } catch {
+        if (meu === pedidoTrilha.current) setTrilha([]);
+      } finally {
+        if (meu === pedidoTrilha.current) setCarregandoTrilha(false);
+      }
+    },
+    [dia],
+  );
 
-  const pontos: [number, number][] = (veiculos ?? []).map((v) => [v.lat, v.lng]);
-  const linhaTrilha: [number, number][] = trilha.map((p) => [p.lat, p.lng]);
+  function trocarDia(novo: string) {
+    const d = novo > hoje ? hoje : novo;
+    setDia(d);
+    if (selecionado) void abrirTrilha(selecionado, d);
+  }
+
+  /*
+   * Enquadramento ESTAVEL: os carros so reenquadram quando a frota muda (entra
+   * ou sai carro), nao a cada atualizacao de 30 s — antes o zoom do gestor numa
+   * viatura era desfeito sozinho a cada poll.
+   */
+  const idsFrota = (veiculos ?? []).map((v) => v.veiculoId).join(",");
+  const pontos = useMemo<[number, number][]>(() => (veiculos ?? []).map((v) => [v.lat, v.lng]), [idsFrota]);
+  const linhaTrilha = useMemo<[number, number][]>(() => trilha.map((p) => [p.lat, p.lng]), [trilha]);
   const emMovimento = (veiculos ?? []).filter((v) => v.movendo).length;
   const semComunicacao = (veiculos ?? []).filter((v) => v.comunicando === false).length;
   // Bloqueado e o unico estado que muda o que o gestor FAZ agora — por isso
@@ -117,6 +143,19 @@ export function FrotaMapaPage() {
                     (semComunicacao > 0 ? ` · ${semComunicacao} sem comunicação` : "") +
                     (bloqueados > 0 ? ` · ${bloqueados} bloqueado${bloqueados > 1 ? "s" : ""}` : "")}
               </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="dia-percurso" className="text-sm text-muted-foreground">
+                Percurso do dia
+              </Label>
+              <Input
+                id="dia-percurso"
+                type="date"
+                className="w-40"
+                value={dia}
+                max={hoje}
+                onChange={(e) => e.target.value && trocarDia(e.target.value)}
+              />
             </div>
             <Button variant="ghost" onClick={() => void carregar()} aria-label="Atualizar agora">
               <RefreshCw className="size-4" aria-hidden />
@@ -249,15 +288,22 @@ export function FrotaMapaPage() {
                   <li className="rounded-lg border border-border bg-secondary/30 px-3 py-2 text-xs text-muted-foreground">
                     <p className="flex items-center gap-1 font-medium text-foreground">
                       <Route className="size-3.5" aria-hidden />
-                      Percurso de hoje
+                      Percurso {dia === hoje ? "de hoje" : `de ${new Date(`${dia}T12:00:00Z`).toLocaleDateString("pt-BR")}`}
                     </p>
                     <p>
                       {carregandoTrilha
                         ? "Carregando…"
                         : trilha.length > 1
                           ? `${trilha.length} pontos no traçado`
-                          : "Sem percurso registrado hoje"}
+                          : "Sem percurso registrado neste dia"}
                     </p>
+                    <Link
+                      to={`/frota/veiculos/${selecionado}`}
+                      className="mt-1 inline-flex items-center gap-0.5 font-medium text-primary hover:underline"
+                    >
+                      Viagens e paradas do dia
+                      <ChevronRight className="size-3" aria-hidden />
+                    </Link>
                   </li>
                 ) : null}
               </ul>

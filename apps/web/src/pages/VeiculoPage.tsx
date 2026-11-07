@@ -3,7 +3,6 @@ import { useParams, Link } from "react-router-dom";
 import {
   EMOJI_VEICULO,
   EVENTO_RASTREADOR_ROTULO,
-  formatarDistancia,
   idadeDaPosicao,
   type EventoRastreadorTipo,
 } from "@isphub/shared";
@@ -12,11 +11,12 @@ import { AnimatedPage } from "@/components/AnimatedPage";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ErrorState";
+import { HistoricoDiaCard } from "@/components/frota/HistoricoDiaCard";
 import { ResponsavelVeiculoCard } from "@/components/frota/ResponsavelVeiculoCard";
-import { veiculosApi, frotaMapaApi, type VeiculoFrota } from "@/lib/veiculosApi";
+import { veiculosApi, type VeiculoFrota } from "@/lib/veiculosApi";
 import { ApiError } from "@/lib/apiClient";
 import { cn } from "@/lib/utils";
-import { ArrowLeft, Cpu, Route, Siren } from "lucide-react";
+import { ArrowLeft, Cpu, Siren } from "lucide-react";
 
 /**
  * A PAGINA DE UM VEICULO — o que o aparelho sabe, e o que o carro fez.
@@ -89,29 +89,22 @@ function hora(iso: string): string {
   return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
-function duracao(segundos: number): string {
-  const m = Math.round(segundos / 60);
-  return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}`;
-}
 
 export function VeiculoPage() {
   const { id = "" } = useParams();
   const [veiculo, setVeiculo] = useState<VeiculoFrota | null>(null);
   const [dia, setDia] = useState<DiaDoVeiculo | null>(null);
-  const [trilha, setTrilha] = useState<{ lat: number; lng: number }[]>([]);
   const [erro, setErro] = useState<string | null>(null);
 
   const carregar = useCallback(async () => {
     try {
-      const [v, d, t] = await Promise.all([
+      const [v, d] = await Promise.all([
         veiculosApi.obter(id),
         // Sem cliente proprio: e uma chamada so desta tela.
         (await import("@/lib/apiClient")).api.get<DiaDoVeiculo>(`/frota/veiculos/${id}/dia`),
-        frotaMapaApi.trilha(id).catch(() => []),
       ]);
       setVeiculo(v);
       setDia(d);
-      setTrilha(t);
       setErro(null);
     } catch (e) {
       setErro(e instanceof ApiError ? e.message : "Falha ao comunicar com o servidor");
@@ -243,49 +236,10 @@ export function VeiculoPage() {
             </CardContent>
           </Card>
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            {/* --- VIAGENS --- */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Route className="size-4 text-primary" aria-hidden />
-                  Viagens (24h)
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {dia === null ? (
-                  <Skeleton className="h-16 w-full" />
-                ) : dia.viagens.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    Nenhuma viagem registrada. Uma viagem começa quando a ignição liga.
-                  </p>
-                ) : (
-                  <ul className="flex flex-col gap-2">
-                    {dia.viagens.map((v) => (
-                      <li key={v.id} className="rounded-lg border border-border p-2.5 text-sm">
-                        <p className="flex items-center justify-between gap-2 tabular-nums">
-                          <span className="font-medium">
-                            {hora(v.inicioEm)} → {v.fimEm ? hora(v.fimEm) : "em curso"}
-                          </span>
-                          <span>{v.distanciaMetros != null ? formatarDistancia(v.distanciaMetros) : "—"}</span>
-                        </p>
-                        <p className="text-xs text-muted-foreground tabular-nums">
-                          {v.velocidadeMaxKmh != null ? `máx ${Math.round(v.velocidadeMaxKmh)} km/h` : "—"}
-                          {v.paradoComMotorLigadoSeg && v.paradoComMotorLigadoSeg >= 60
-                            ? ` · ${duracao(v.paradoComMotorLigadoSeg)} parado com o motor ligado`
-                            : ""}
-                          {v.motorista ? ` · ${v.motorista}` : ""}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {trilha.length > 1 ? (
-                  <p className="mt-2 text-xs text-muted-foreground">{trilha.length} pontos no percurso de hoje.</p>
-                ) : null}
-              </CardContent>
-            </Card>
+          {/* --- HISTORICO DO DIA: mapa, paradas, viagens e km, com seletor de data --- */}
+          <HistoricoDiaCard veiculoId={id} />
 
+          <div className="grid gap-4">
             {/* --- EVENTOS --- */}
             <Card>
               <CardHeader className="pb-2">

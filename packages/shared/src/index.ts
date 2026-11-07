@@ -30,3 +30,4 @@ export * from "./produtividade.js";
 export * from "./linhaDoTempo.js";
 export * from "./linhaMovel.js";
 export * from "./permissoes.js";
+export * from "./historicoVeiculo.js";
