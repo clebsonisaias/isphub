@@ -32,13 +32,13 @@ export async function linhaDoVeiculo(veiculoId: string, deDia: string, ateDia: s
   const noPeriodo = { gte: de, lt: ate };
   const usuarioNome = { select: { nome: true, nomeExibicao: true } } as const;
 
-  const [ocupacoes, checklists, abastecimentos, manutencoes, alarmes, fixas] = await Promise.all([
+  const [ocupacoesT, checklistsT, abastecimentosT, manutencoesT, alarmesT, fixasT] = await Promise.all([
     // Pegou OU devolveu dentro do periodo — a ocupacao que comecou antes e
     // terminou dentro aparece so com a devolucao, e vice-versa.
     prisma.ocupacaoVeiculo.findMany({
       where: { veiculoId, OR: [{ inicioEm: noPeriodo }, { fimEm: noPeriodo }] },
       orderBy: { inicioEm: "desc" },
-      take: TETO_POR_FONTE,
+      take: TETO_POR_FONTE + 1,
       select: {
         inicioEm: true,
         fimEm: true,
@@ -54,7 +54,7 @@ export async function linhaDoVeiculo(veiculoId: string, deDia: string, ateDia: s
     prisma.checklistViatura.findMany({
       where: { veiculoId, criadoEm: noPeriodo },
       orderBy: { criadoEm: "desc" },
-      take: TETO_POR_FONTE,
+      take: TETO_POR_FONTE + 1,
       // A foto NAO vem aqui (sao bytes): a tela busca cada uma pela rota da foto.
       select: { id: true, momento: true, odometroKm: true, combustivelPct: true, avarias: true, fotoMime: true, criadoEm: true, usuarioId: true },
     }),
@@ -62,7 +62,7 @@ export async function linhaDoVeiculo(veiculoId: string, deDia: string, ateDia: s
       // `data` e DATE: compara com os dias do periodo, nao com instantes.
       where: { veiculoId, data: { gte: new Date(`${deDia}T00:00:00Z`), lte: new Date(`${ateDia}T00:00:00Z`) } },
       orderBy: { data: "desc" },
-      take: TETO_POR_FONTE,
+      take: TETO_POR_FONTE + 1,
       select: {
         data: true,
         km: true,
@@ -77,22 +77,39 @@ export async function linhaDoVeiculo(veiculoId: string, deDia: string, ateDia: s
     prisma.manutencaoRealizada.findMany({
       where: { veiculoId, em: noPeriodo },
       orderBy: { em: "desc" },
-      take: TETO_POR_FONTE,
+      take: TETO_POR_FONTE + 1,
       select: { tipo: true, km: true, em: true, registradoPor: true },
     }),
     prisma.eventoRastreador.findMany({
       where: { veiculoId, em: noPeriodo, tipo: { in: [...ALARMES_VEICULO] } },
       orderBy: { em: "desc" },
-      take: TETO_POR_FONTE,
+      take: TETO_POR_FONTE + 1,
       select: { tipo: true, em: true },
     }),
     prisma.viaturaFixa.findMany({
       where: { veiculoId, OR: [{ inicioEm: noPeriodo }, { fimEm: noPeriodo }] },
       orderBy: { inicioEm: "desc" },
-      take: TETO_POR_FONTE,
+      take: TETO_POR_FONTE + 1,
       select: { inicioEm: true, fimEm: true, definidoPor: true, encerradoPor: true, usuario: usuarioNome },
     }),
   ]);
+
+  /*
+   * Pede-se UMA linha a mais que o teto: se ela vier, a fonte passou do teto e
+   * o periodo esta incompleto (os mais ANTIGOS ficam de fora, pela ordem desc).
+   * Com exatamente o teto, nao falta nada e nao ha por que avisar.
+   */
+  const fontes = [ocupacoesT, checklistsT, abastecimentosT, manutencoesT, alarmesT, fixasT];
+  const truncado = fontes.some((l) => l.length > TETO_POR_FONTE);
+  const corta = <T,>(l: T[]) => l.slice(0, TETO_POR_FONTE);
+  const [ocupacoes, checklists, abastecimentos, manutencoes, alarmes, fixas] = [
+    corta(ocupacoesT),
+    corta(checklistsT),
+    corta(abastecimentosT),
+    corta(manutencoesT),
+    corta(alarmesT),
+    corta(fixasT),
+  ] as const;
 
   // Nomes sem FK (checklist, manutencao, carro fixo): uma busca so.
   const ids = new Set<string>();
@@ -190,7 +207,6 @@ export async function linhaDoVeiculo(veiculoId: string, deDia: string, ateDia: s
     }
   }
 
-  const truncado = [ocupacoes, checklists, abastecimentos, manutencoes, alarmes, fixas].some((l) => l.length >= TETO_POR_FONTE);
   return {
     de: de.toISOString(),
     ate: ate.toISOString(),

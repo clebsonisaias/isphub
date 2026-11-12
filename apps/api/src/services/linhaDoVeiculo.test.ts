@@ -163,9 +163,19 @@ describe("linhaDoVeiculo (servico)", () => {
     );
   });
 
-  it("avisa quando uma fonte bate no teto (periodo pode estar incompleto)", async () => {
-    f.evento.mockResolvedValue(Array.from({ length: TETO_POR_FONTE }, (_, i) => ({ tipo: "ficou_offline", em: t(`2026-11-06T1${i % 10}:00:00Z`) })));
+  const alarmes = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({ tipo: "ficou_offline", em: t(`2026-11-06T1${i % 10}:00:00Z`) }));
+
+  it("avisa quando uma fonte PASSA do teto e mostra so ate o teto", async () => {
+    f.evento.mockResolvedValue(alarmes(TETO_POR_FONTE + 1));
     const r = await linhaDoVeiculo("v1", "2026-11-06", "2026-11-06");
     expect(r.truncado).toBe(true);
+    expect(r.dias.flatMap((d) => d.itens)).toHaveLength(TETO_POR_FONTE);
+  });
+
+  it("exatamente no teto nao falta nada: sem aviso", async () => {
+    f.evento.mockResolvedValue(alarmes(TETO_POR_FONTE));
+    const r = await linhaDoVeiculo("v1", "2026-11-06", "2026-11-06");
+    expect(r.truncado).toBe(false);
   });
 });

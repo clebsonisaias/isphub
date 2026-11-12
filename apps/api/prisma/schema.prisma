@@ -2229,9 +2229,6 @@ model AgendaConfig {
   @@map("agenda_config")
 }
 
-/// Manutencao preventiva por km e/ou por dias: "troca de oleo a cada 10.000 km".
-/// `ultimaKm`/`ultimaEm` = quando foi feita pela ultima vez; o vencimento e
-/// derivado do odometro atual do veiculo (ver `estadoManutencao`).
 /// Cada vez que uma manutencao foi FEITA. So recebe linhas, nunca altera.
 ///
 /// O `PlanoManutencao` guarda so a ULTIMA execucao (`ultimaKm`/`ultimaEm`), que
@@ -2262,6 +2259,9 @@ model ManutencaoRealizada {
   @@map("manutencoes_realizadas")
 }
 
+/// Manutencao preventiva por km e/ou por dias: "troca de oleo a cada 10.000 km".
+/// `ultimaKm`/`ultimaEm` = quando foi feita pela ultima vez; o vencimento e
+/// derivado do odometro atual do veiculo (ver `estadoManutencao`).
 model PlanoManutencao {
   id        String  @id @default(uuid())
   veiculoId String

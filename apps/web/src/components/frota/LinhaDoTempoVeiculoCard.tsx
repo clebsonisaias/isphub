@@ -143,14 +143,24 @@ function visual(i: ItemLinhaVeiculo): Visual {
 
 /** A foto do painel, buscada com a sessao (a rota exige login) so quando o gestor abre. */
 function FotoPainel({ checklistId, aberto, onFechar, titulo }: { checklistId: string; aberto: boolean; onFechar: () => void; titulo: string }) {
+  /*
+   * O cache guarda o BLOB, nunca o endereco: um endereco revogado que ficasse
+   * no cache daria imagem quebrada ao reabrir a mesma foto. O endereco nasce e
+   * morre aqui, junto com este componente.
+   */
   const foto = useQuery({
     queryKey: ["frota", "checklist-foto", checklistId],
     enabled: aberto,
     staleTime: Infinity,
-    queryFn: async () => URL.createObjectURL(await api.getBlob(`/frota/checklists/${checklistId}/foto`)),
+    queryFn: () => api.getBlob(`/frota/checklists/${checklistId}/foto`),
   });
-  // Libera a memoria da imagem quando o componente sai da tela.
-  useEffect(() => () => void (foto.data && URL.revokeObjectURL(foto.data)), [foto.data]);
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!foto.data) return;
+    const u = URL.createObjectURL(foto.data);
+    setUrl(u);
+    return () => URL.revokeObjectURL(u);
+  }, [foto.data]);
 
   return (
     <Dialog open={aberto} onOpenChange={(v) => !v && onFechar()}>
@@ -160,8 +170,8 @@ function FotoPainel({ checklistId, aberto, onFechar, titulo }: { checklistId: st
         </DialogHeader>
         {foto.isError ? (
           <ErrorState message="Não foi possível carregar a foto." onRetry={() => void foto.refetch()} />
-        ) : foto.data ? (
-          <img src={foto.data} alt={titulo} className="max-h-[70vh] w-full rounded-lg object-contain" />
+        ) : url ? (
+          <img src={url} alt={titulo} className="max-h-[70vh] w-full rounded-lg object-contain" />
         ) : (
           <div className="flex h-64 items-center justify-center">
             <Loader2 className="size-6 animate-spin text-muted-foreground" aria-label="Carregando foto" />
@@ -311,7 +321,8 @@ export function LinhaDoTempoVeiculoCard({ veiculoId }: { veiculoId: string }) {
           <div className="flex flex-col gap-4">
             {linha.data.truncado ? (
               <p className="rounded-md border border-warning/40 bg-warning/10 p-2 text-xs" role="status">
-                Muitos registros neste período: a lista pode estar incompleta. Escolha 7 dias para ver tudo.
+                Muitos registros neste período: os mais antigos ficaram de fora.
+                {janela > 7 ? " Escolha 7 dias para ver tudo." : ""}
               </p>
             ) : null}
             {dias.map((d) => (
