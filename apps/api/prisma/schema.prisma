@@ -1591,6 +1591,7 @@ model Veiculo {
   ocupacoes      OcupacaoVeiculo[]
   deslocamentos  DeslocamentoOs[]
   manutencoes    PlanoManutencao[]
+  manutencoesRealizadas ManutencaoRealizada[]
   checklists     ChecklistViatura[]
   vinculos       VinculoRastreador[]
   eventos        EventoRastreador[]
@@ -2231,6 +2232,36 @@ model AgendaConfig {
 /// Manutencao preventiva por km e/ou por dias: "troca de oleo a cada 10.000 km".
 /// `ultimaKm`/`ultimaEm` = quando foi feita pela ultima vez; o vencimento e
 /// derivado do odometro atual do veiculo (ver `estadoManutencao`).
+/// Cada vez que uma manutencao foi FEITA. So recebe linhas, nunca altera.
+///
+/// O `PlanoManutencao` guarda so a ULTIMA execucao (`ultimaKm`/`ultimaEm`), que
+/// e o que o calculo do proximo vencimento precisa. Concluir de novo
+/// sobrescrevia a anterior, entao "quando trocou o oleo antes desta?" nao tinha
+/// resposta. A linha do tempo do veiculo le daqui.
+///
+/// `tipo` e copiado do plano no momento: renomear o plano depois nao reescreve
+/// o passado.
+model ManutencaoRealizada {
+  id        String           @id @default(uuid())
+  veiculoId String
+  veiculo   Veiculo          @relation(fields: [veiculoId], references: [id], onDelete: Cascade)
+  /// Nulo quando o plano foi apagado — o fato continua.
+  planoId   String?
+  plano     PlanoManutencao? @relation(fields: [planoId], references: [id], onDelete: SetNull)
+
+  tipo String   @db.VarChar(40)
+  km   Int?
+  em   DateTime
+
+  /// Quem marcou como feita. Sem FK, como `EscalaJornada.definidoPor`. Nulo
+  /// nas linhas trazidas do historico antigo (ninguem sabe quem foi).
+  registradoPor String?
+  criadoEm      DateTime @default(now())
+
+  @@index([veiculoId, em])
+  @@map("manutencoes_realizadas")
+}
+
 model PlanoManutencao {
   id        String  @id @default(uuid())
   veiculoId String
@@ -2247,6 +2278,8 @@ model PlanoManutencao {
   avisadoEm DateTime?
 
   criadoEm DateTime @default(now())
+
+  realizadas ManutencaoRealizada[]
 
   @@index([veiculoId, ativo])
   @@map("planos_manutencao")

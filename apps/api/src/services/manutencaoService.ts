@@ -48,11 +48,23 @@ export async function criarPlano(args: { veiculoId: string; tipo: string; interv
 }
 
 /** "Feita": carimba km e data de agora e libera o sino pra proxima vez. */
-export async function concluirPlano(id: string, km?: number | null) {
-  const p = await prisma.planoManutencao.findUnique({ where: { id }, select: { veiculoId: true } });
+export async function concluirPlano(id: string, km?: number | null, registradoPor?: string | null) {
+  const p = await prisma.planoManutencao.findUnique({ where: { id }, select: { veiculoId: true, tipo: true } });
   if (!p) throw new HttpError(404, "Plano nao encontrado");
   const atual = km ?? (await odometroAtual(p.veiculoId));
-  return prisma.planoManutencao.update({ where: { id }, data: { ultimaKm: atual, ultimaEm: new Date(), avisadoEm: null } });
+  const em = new Date();
+  /*
+   * Plano e historico na MESMA transacao: o plano guarda so a ultima vez (pro
+   * proximo vencimento), o historico guarda todas. Separados, uma falha no
+   * meio deixaria o plano "feito" sem a linha que diz quando.
+   */
+  const [plano] = await prisma.$transaction([
+    prisma.planoManutencao.update({ where: { id }, data: { ultimaKm: atual, ultimaEm: em, avisadoEm: null } }),
+    prisma.manutencaoRealizada.create({
+      data: { veiculoId: p.veiculoId, planoId: id, tipo: p.tipo, km: atual, em, registradoPor: registradoPor ?? null },
+    }),
+  ]);
+  return plano;
 }
 
 export async function removerPlano(id: string) {
