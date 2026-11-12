@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ErrorState";
 import { HistoricoDiaCard } from "@/components/frota/HistoricoDiaCard";
+import { LinhaDoTempoVeiculoCard } from "@/components/frota/LinhaDoTempoVeiculoCard";
 import { ResponsavelVeiculoCard } from "@/components/frota/ResponsavelVeiculoCard";
 import { veiculosApi, type VeiculoFrota } from "@/lib/veiculosApi";
 import { ApiError } from "@/lib/apiClient";
@@ -238,6 +239,9 @@ export function VeiculoPage() {
 
           {/* --- HISTORICO DO DIA: mapa, paradas, viagens e km, com seletor de data --- */}
           <HistoricoDiaCard veiculoId={id} />
+
+          {/* --- LINHA DO TEMPO: quem pegou, checklists, abastecimentos, manutencoes, alarmes --- */}
+          <LinhaDoTempoVeiculoCard veiculoId={id} />
 
           <div className="grid gap-4">
             {/* --- EVENTOS --- */}

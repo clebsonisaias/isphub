@@ -16,6 +16,7 @@ import * as viaturaFixa from "../services/viaturaFixaService.js";
 import * as rastreadores from "../services/rastreadorService.js";
 import * as rastreamento from "../services/rastreamentoService.js";
 import * as historicoVeiculo from "../services/historicoVeiculoService.js";
+import * as linhaVeiculo from "../services/linhaDoVeiculoService.js";
 import * as manutencao from "../services/manutencaoService.js";
 import * as checklist from "../services/checklistService.js";
 import * as bi from "../services/biFrotaService.js";
@@ -515,6 +516,27 @@ frotaRouter.get(
   }),
 );
 
+/**
+ * A LINHA DO TEMPO do veiculo: quem pegou e devolveu, checklists, abastecimentos,
+ * manutencoes, alarmes e trocas do carro fixo, agrupados por dia. `de`/`ate` sao
+ * "AAAA-MM-DD" (Brasilia); sem eles, os ultimos 7 dias. No maximo 31 dias.
+ */
+frotaRouter.get(
+  "/veiculos/:id/linha-do-tempo",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    await assertAcesso(req, req.params.id);
+    const q = z.object({ de: z.string().date().optional(), ate: z.string().date().optional() }).parse(req.query);
+    const hoje = diaBrasileiroIso(new Date());
+    const ate = q.ate && q.ate < hoje ? q.ate : hoje;
+    const de = q.de ?? new Date(Date.parse(`${ate}T12:00:00Z`) - 6 * 86_400_000).toISOString().slice(0, 10);
+    if (de > ate) throw new HttpError(422, "O inicio do periodo vem depois do fim");
+    const dias = Math.round((Date.parse(`${ate}T12:00:00Z`) - Date.parse(`${de}T12:00:00Z`)) / 86_400_000) + 1;
+    if (dias > linhaVeiculo.MAX_DIAS) throw new HttpError(422, `Escolha um periodo de no maximo ${linhaVeiculo.MAX_DIAS} dias`);
+    res.json(await linhaVeiculo.linhaDoVeiculo(req.params.id, de, ate));
+  }),
+);
+
 // ---------------------------------------------------------------------------
 // MANUTENCAO PREVENTIVA E CHECKLIST
 // ---------------------------------------------------------------------------
@@ -560,7 +582,7 @@ frotaRouter.post(
   asyncHandler(async (req, res) => {
     const { km } = z.object({ km: z.number().int().min(0).max(9_999_999).nullish() }).parse(req.body ?? {});
     await assertAcessoPlano(req, req.params.id);
-    const p = await manutencao.concluirPlano(req.params.id, km);
+    const p = await manutencao.concluirPlano(req.params.id, km, req.user!.sub);
     res.json(await manutencao.listarPlanos(p.veiculoId));
   }),
 );
