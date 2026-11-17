@@ -212,3 +212,92 @@ export function segmentarParadas(pontos: PontoNoTempo[], opcoes: OpcoesSegmentac
 
   return segmentos;
 }
+
+// ---------------------------------------------------------------------------
+// FILTRO DE RUIDO E OUTLIERS GPS (inspirado no Position Filtering do Traccar)
+// ---------------------------------------------------------------------------
+
+export interface OpcoesFiltroGps {
+  /** Velocidade implícita máxima plausível entre dois pontos consecutivos (km/h). */
+  velocidadeMaximaPlausivelKmh?: number;
+  /** Distância mínima (m) para registrar novo ponto quando parado. */
+  distanciaMinimaParadoM?: number;
+  /** Velocidade abaixo da qual o veículo é considerado parado (km/h). */
+  velocidadeParadoKmh?: number;
+}
+
+function coordenadaValida(p: Ponto): boolean {
+  if (!Number.isFinite(p.lat) || !Number.isFinite(p.lng)) return false;
+  if (p.lat === 0 && p.lng === 0) return false;
+  return p.lat >= -90 && p.lat <= 90 && p.lng >= -180 && p.lng <= 180;
+}
+
+/**
+ * Remove pontos inválidos, saltos impossíveis (teleporte) e micro-oscilações
+ * estacionárias (jitter de GPS parado), preservando sempre o último ponto válido.
+ */
+export function filtrarRuidoGps<T extends PontoNoTempo>(pontos: T[], opcoes: OpcoesFiltroGps = {}): T[] {
+  const maxKmh = opcoes.velocidadeMaximaPlausivelKmh ?? 200;
+  const distMinParadoM = opcoes.distanciaMinimaParadoM ?? 10;
+  const velParadoKmh = opcoes.velocidadeParadoKmh ?? 3;
+
+  const validos = pontos.filter((p) => coordenadaValida(p) && !Number.isNaN(Date.parse(p.em)));
+  if (validos.length <= 1) return validos;
+
+  const filtrados: T[] = [validos[0]!];
+  for (let i = 1; i < validos.length; i++) {
+    const atual = validos[i]!;
+    const anterior = filtrados[filtrados.length - 1]!;
+    const distM = haversineMetros(anterior, atual);
+    const dtSeg = (Date.parse(atual.em) - Date.parse(anterior.em)) / 1000;
+
+    // Salto impossível (teleporte)
+    if (dtSeg > 0) {
+      const velImplicitaKmh = (distM / 1000) / (dtSeg / 3600);
+      if (velImplicitaKmh > maxKmh && distM > 250) {
+        continue;
+      }
+    }
+
+    // Jitter estacionário: mantém o último ponto da série para não perder o fim
+    const ehUltimo = i === validos.length - 1;
+    const parado = (atual.velocidadeKmh ?? 0) <= velParadoKmh;
+    if (!ehUltimo && parado && distM < distMinParadoM) {
+      continue;
+    }
+
+    filtrados.push(atual);
+  }
+
+  return filtrados;
+}
+
+// ---------------------------------------------------------------------------
+// CERCAS VIRTUAIS (GEOFENCES)
+// ---------------------------------------------------------------------------
+
+export type CercaGeometria =
+  | { tipo: "circulo"; centroLat: number; centroLng: number; raioMetros: number }
+  | { tipo: "poligono"; vertices: Ponto[] };
+
+/** Verifica se `ponto` está dentro de uma cerca circular ou poligonal (ray-casting). */
+export function pontoDentroDaCerca(ponto: Ponto, cerca: CercaGeometria): boolean {
+  if (!coordenadaValida(ponto)) return false;
+
+  if (cerca.tipo === "circulo") {
+    return haversineMetros(ponto, { lat: cerca.centroLat, lng: cerca.centroLng }) <= cerca.raioMetros;
+  }
+
+  const v = cerca.vertices;
+  if (v.length < 3) return false;
+  let dentro = false;
+  for (let i = 0, j = v.length - 1; i < v.length; j = i++) {
+    const xi = v[i]!.lng;
+    const yi = v[i]!.lat;
+    const xj = v[j]!.lng;
+    const yj = v[j]!.lat;
+    const intersecta = yi > ponto.lat !== yj > ponto.lat && ponto.lng < ((xj - xi) * (ponto.lat - yi)) / (yj - yi + Number.EPSILON) + xi;
+    if (intersecta) dentro = !dentro;
+  }
+  return dentro;
+}

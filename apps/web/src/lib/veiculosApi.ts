@@ -243,3 +243,38 @@ export interface ResultadoImportacao {
   veiculoCriado: boolean;
   rastreadorId: string;
 }
+
+export interface CercaVirtualDto {
+  id: string;
+  provedorId: string | null;
+  nome: string;
+  tipo: "circulo" | "poligono";
+  centroLat: number | null;
+  centroLng: number | null;
+  raioMetros: number | null;
+  vertices: { lat: number; lng: number }[] | null;
+  cor: string;
+  ativa: boolean;
+  criadoEm: string;
+}
+
+export const cercasApi = {
+  listar: () => api.get<CercaVirtualDto[]>("/frota/cercas"),
+  criar: (dados: {
+    nome: string;
+    tipo?: "circulo" | "poligono";
+    centroLat?: number;
+    centroLng?: number;
+    raioMetros?: number;
+    vertices?: { lat: number; lng: number }[];
+    cor?: string;
+  }) => api.post<CercaVirtualDto>("/frota/cercas", dados),
+  atualizar: (id: string, dados: { nome?: string; ativa?: boolean; cor?: string; raioMetros?: number }) =>
+    api.patch<CercaVirtualDto>(`/frota/cercas/${id}`, dados),
+  excluir: (id: string) => api.delete(`/frota/cercas/${id}`),
+};
+
+export const geocodeApi = {
+  reverter: (lat: number, lng: number) =>
+    api.get<{ endereco: string | null }>(`/frota/geocode?lat=${lat}&lng=${lng}`),
+};

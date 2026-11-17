@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import {
+  filtrarRuidoGps,
   rotuloVeiculo,
   sensoresParaExibir,
   simplificarTrilha,
@@ -11,6 +12,7 @@ import {
 } from "@isphub/shared";
 import { comConcorrenciaLimitada } from "../lib/limitador.js";
 import { prisma } from "../lib/prisma.js";
+import { avaliarCercasParaLeitura } from "./cercaService.js";
 import { checkinAutomatico } from "./checkinService.js";
 import { buildRastreadorConnector } from "./rastreadorService.js";
 import { aplicarLeitura, comoMapaSensores, estadoAnteriorDe, type LeituraNova } from "./frotaEventoService.js";
@@ -337,6 +339,19 @@ export async function coletarDeUmaConfig(
             console.warn(`[rastreamento] check-in falhou para ${leitura.rastreadorId}:`, e),
           );
         }
+        // Cercas virtuais: avalia entrada/saida de geofences de forma isolada.
+        await avaliarCercasParaLeitura({
+          rastreadorId: leitura.rastreadorId,
+          veiculoId: leitura.veiculoId,
+          provedorId: config.provedorId,
+          registradoEm: leitura.registradoEm,
+          lat: leitura.lat,
+          lng: leitura.lng,
+        })
+          .then((n) => {
+            resumo.eventos += n;
+          })
+          .catch((e) => console.warn(`[rastreamento] cercas falhou para ${leitura.rastreadorId}:`, e));
       } catch (err) {
         // Um rastreador problematico nao pode calar os outros — mesma regra do
         // laco de credenciais no scheduler.
@@ -502,10 +517,12 @@ export async function trilha(
     ),
   );
 
-  const pontos = porVinculo
-    .flat()
-    .sort((a, b) => a.registradoEm.getTime() - b.registradoEm.getTime())
-    .map((p) => ({ lat: p.lat, lng: p.lng, em: p.registradoEm.toISOString(), velocidadeKmh: p.velocidadeKmh }));
+  const pontos = filtrarRuidoGps(
+    porVinculo
+      .flat()
+      .sort((a, b) => a.registradoEm.getTime() - b.registradoEm.getTime())
+      .map((p) => ({ lat: p.lat, lng: p.lng, em: p.registradoEm.toISOString(), velocidadeKmh: p.velocidadeKmh })),
+  );
 
   // 5 m mantem curva de esquina; 25 m e o suficiente pra desenhar o trajeto.
   return simplificarTrilha(pontos, precisao === "alta" ? 5 : 25);

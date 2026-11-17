@@ -17,6 +17,8 @@ import * as rastreamento from "../services/rastreamentoService.js";
 import * as manutencao from "../services/manutencaoService.js";
 import * as checklist from "../services/checklistService.js";
 import * as bi from "../services/biFrotaService.js";
+import * as cercas from "../services/cercaService.js";
+import { reverterCoordenada } from "../services/geocodeService.js";
 import { prisma } from "../lib/prisma.js";
 
 /**
@@ -584,5 +586,86 @@ frotaRouter.get(
   asyncHandler(async (req, res) => {
     const { de, ate, provedorId } = periodoBiSchema.parse(req.query);
     res.json(await bi.auditoria(escopoVeiculoWhere(req.user!, provedorId), de, ate));
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// CERCAS VIRTUAIS (GEOFENCES) & GEOCODIFICACAO REVERSA
+// ---------------------------------------------------------------------------
+
+const criarCercaSchema = z.object({
+  nome: z.string().trim().min(1).max(80),
+  tipo: z.enum(["circulo", "poligono"]).default("circulo"),
+  centroLat: z.number().min(-90).max(90).nullish(),
+  centroLng: z.number().min(-180).max(180).nullish(),
+  raioMetros: z.number().min(20).max(50_000).nullish(),
+  vertices: z
+    .array(z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) }))
+    .min(3)
+    .nullish(),
+  cor: z.string().trim().max(16).optional(),
+  provedorId: z.string().uuid().nullish(),
+});
+
+const editarCercaSchema = z.object({
+  nome: z.string().trim().min(1).max(80).optional(),
+  ativa: z.boolean().optional(),
+  cor: z.string().trim().max(16).optional(),
+  raioMetros: z.number().min(20).max(50_000).optional(),
+});
+
+frotaRouter.get(
+  "/cercas",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    const provedores = await provedoresDoUsuario(req.user!);
+    res.json(await cercas.listarCercas(provedores));
+  }),
+);
+
+frotaRouter.post(
+  "/cercas",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    const dados = criarCercaSchema.parse(req.body);
+    if (dados.tipo === "circulo" && (dados.centroLat == null || dados.centroLng == null || dados.raioMetros == null)) {
+      throw new HttpError(400, "Cerca circular exige centroLat, centroLng e raioMetros.");
+    }
+    if (dados.tipo === "poligono" && (!dados.vertices || dados.vertices.length < 3)) {
+      throw new HttpError(400, "Cerca poligonal exige pelo menos 3 vértices.");
+    }
+    res.status(201).json(await cercas.criarCerca(dados));
+  }),
+);
+
+frotaRouter.patch(
+  "/cercas/:id",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    const dados = editarCercaSchema.parse(req.body);
+    res.json(await cercas.atualizarCerca(String(req.params.id), dados));
+  }),
+);
+
+frotaRouter.delete(
+  "/cercas/:id",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    await cercas.excluirCerca(String(req.params.id));
+    res.status(204).end();
+  }),
+);
+
+frotaRouter.get(
+  "/geocode",
+  requireRole(...rolesLeitura),
+  asyncHandler(async (req, res) => {
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      throw new HttpError(400, "Informe lat e lng válidos.");
+    }
+    const endereco = await reverterCoordenada(lat, lng);
+    res.json({ endereco });
   }),
 );

@@ -376,6 +376,8 @@ export const EVENTOS_RASTREADOR = [
    * Object]" na tela.
    */
   "parado_com_motor_ligado",
+  "entrou_cerca",
+  "saiu_cerca",
 ] as const;
 export type EventoRastreadorTipo = (typeof EVENTOS_RASTREADOR)[number];
 
@@ -391,6 +393,8 @@ export const EVENTO_RASTREADOR_ROTULO: Record<EventoRastreadorTipo, string> = {
   voltou_online: "Rastreador voltou a comunicar",
   excesso_velocidade: "Excesso de velocidade",
   parado_com_motor_ligado: "Parado com o motor ligado",
+  entrou_cerca: "Entrou na cerca virtual",
+  saiu_cerca: "Saiu da cerca virtual",
 };
 
 export interface EstadoSensores {

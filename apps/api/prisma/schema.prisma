@@ -94,6 +94,7 @@ model Provedor {
   veiculos          Veiculo[]
   rastreadores      Rastreador[]
   rastreadorConfigs RastreadorConfig[]
+  cercasVirtuais    CercaVirtual[]
 
   @@map("provedores")
 }
@@ -1784,6 +1785,8 @@ enum EventoRastreadorTipo {
   voltou_online
   excesso_velocidade
   parado_com_motor_ligado
+  entrou_cerca
+  saiu_cerca
 }
 
 /// O rastreador e uma COISA, nao uma coluna do veiculo.
@@ -1851,10 +1854,11 @@ model Rastreador {
 
   criadoEm DateTime @default(now())
 
-  posicoes PosicaoRastreador[]
-  vinculos VinculoRastreador[]
-  eventos  EventoRastreador[]
-  viagens  Viagem[]
+  posicoes      PosicaoRastreador[]
+  vinculos      VinculoRastreador[]
+  eventos       EventoRastreador[]
+  viagens       Viagem[]
+  estadosCercas EstadoCercaRastreador[]
 
   @@unique([fornecedor, identificadorExterno])
   @@index([provedorId, ativo])
@@ -2083,6 +2087,47 @@ model RastreadorConfig {
   atualizadoEm DateTime @updatedAt
 
   @@map("rastreador_configs")
+}
+
+/// Cerca virtual (geofence) para monitoramento de entrada/saída de viaturas.
+model CercaVirtual {
+  id         String    @id @default(uuid())
+  provedorId String?
+  provedor   Provedor? @relation(fields: [provedorId], references: [id], onDelete: SetNull)
+
+  nome       String  @db.VarChar(80)
+  /// "circulo" | "poligono"
+  tipo       String  @default("circulo") @db.VarChar(16)
+  centroLat  Float?
+  centroLng  Float?
+  raioMetros Float?
+  /// Array de { lat, lng } quando tipo = "poligono".
+  vertices   Json?
+  cor        String  @default("#2563eb") @db.VarChar(16)
+  ativa      Boolean @default(true)
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  estados EstadoCercaRastreador[]
+
+  @@index([provedorId, ativa])
+  @@map("cercas_virtuais")
+}
+
+/// Estado atual (dentro/fora) de cada rastreador por cerca virtual,
+/// garantindo que eventos `entrou_cerca` / `saiu_cerca` disparem só na transição.
+model EstadoCercaRastreador {
+  id           String       @id @default(uuid())
+  cercaId      String
+  cerca        CercaVirtual @relation(fields: [cercaId], references: [id], onDelete: Cascade)
+  rastreadorId String
+  rastreador   Rastreador   @relation(fields: [rastreadorId], references: [id], onDelete: Cascade)
+  dentro       Boolean
+  atualizadoEm DateTime     @updatedAt
+
+  @@unique([cercaId, rastreadorId])
+  @@map("estados_cerca_rastreador")
 }
 
 /// Credencial da Brazmovel — a telefonia movel corporativa da CITmax.
