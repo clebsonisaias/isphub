@@ -363,3 +363,32 @@ export const EMOJI_VEICULO: Record<TipoVeiculo, string> = {
   caminhao: "🚛",
   utilitario: "🛻",
 };
+
+// ---------------------------------------------------------------------------
+// VIATURA FIXA — o carro de cada tecnico, definido pelo gestor
+// ---------------------------------------------------------------------------
+
+/** Um periodo em que o tecnico teve aquele carro como fixo. `fimEm` nulo = vigente. */
+export interface ViaturaFixaPublic {
+  id: string;
+  usuarioId: string;
+  usuarioNome: string;
+  veiculoId: string;
+  veiculoPlaca: string;
+  veiculoApelido: string | null;
+  papel: "motorista" | "passageiro";
+  inicioEm: string;
+  fimEm: string | null;
+  definidoPor: string;
+  definidoPorNome: string | null;
+  encerradoPor: string | null;
+  encerradoPorNome: string | null;
+  observacao: string | null;
+}
+
+/** Linha do quadro "tecnico → carro fixo" do gestor. Sem carro = `viatura` nula. */
+export interface TecnicoComViaturaFixa {
+  usuarioId: string;
+  nome: string;
+  viatura: ViaturaFixaPublic | null;
+}

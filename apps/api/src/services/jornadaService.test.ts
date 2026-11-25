@@ -52,6 +52,8 @@ vi.mock("../lib/prisma.js", () => ({
     usuario: { update: usuarioUpdate },
     ocupacaoVeiculo: { findFirst: ocupacaoFindFirst, update: ocupacaoUpdate, findMany: ocupacaoFindMany, create: ocupacaoCreate },
     escalaJornada: { findUnique: escalaFindUnique, findMany: escalaFindMany },
+    // Sem carro fixo por padrao: o comportamento antigo segue.
+    viaturaFixa: { findFirst: vi.fn(async () => null), findMany: vi.fn(async () => []) },
     $transaction,
   },
 }));

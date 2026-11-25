@@ -12,6 +12,7 @@ import { AnimatedPage } from "@/components/AnimatedPage";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ErrorState";
+import { ResponsavelVeiculoCard } from "@/components/frota/ResponsavelVeiculoCard";
 import { veiculosApi, frotaMapaApi, type VeiculoFrota } from "@/lib/veiculosApi";
 import { ApiError } from "@/lib/apiClient";
 import { cn } from "@/lib/utils";
@@ -158,6 +159,9 @@ export function VeiculoPage() {
               )}
             </h1>
           </div>
+
+          {/* --- QUEM E O TECNICO DESTE CARRO (definido pelo gestor) --- */}
+          {veiculo ? <ResponsavelVeiculoCard veiculoId={id} rotulo={veiculo.rotulo} /> : null}
 
           {/* --- SENSORES: tudo o que o aparelho reporta, pelo vocabulario dele --- */}
           <Card>

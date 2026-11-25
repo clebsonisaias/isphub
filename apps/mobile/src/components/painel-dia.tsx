@@ -375,6 +375,7 @@ export function CardJornada({
   onIniciar,
   onEncerrar,
   onTrocarViatura,
+  viaturaDoGestor,
   emPausa,
   onPausar,
   onRetomar,
@@ -393,6 +394,12 @@ export function CardJornada({
   onIniciar: () => void;
   onEncerrar: () => void;
   onTrocarViatura?: () => void;
+  /**
+   * Quem decidiu o carro: `fixa` = carro fixo do tecnico, `escala` = escala do
+   * dia. Preenchido, a linha da viatura vira INFORMACAO e nao botao — so o
+   * gestor troca (o servidor recusa a troca pelo app com 403).
+   */
+  viaturaDoGestor?: "fixa" | "escala" | null;
   /** Rotulo da pausa aberta ("Almoço"), ou null quando esta trabalhando. */
   emPausa?: string | null;
   onPausar?: () => void;
@@ -482,7 +489,21 @@ export function CardJornada({
             Toca-la troca de carro sem encerrar a jornada — o caso do carro que
             quebra no meio do dia.
           */}
-          {onTrocarViatura ? (
+          {viaturaDoGestor ? (
+            <View
+              style={estilo.jorGeo}
+              accessible
+              accessibilityLabel={`${viatura ? `Viatura ${viatura}` : "Sem viatura"}, definida pelo gestor. Para trocar, fale com o gestor.`}
+            >
+              <Feather name="truck" size={12} color={colors.ink2} />
+              <Text style={estilo.jorGeoTxt}>
+                {viatura ?? "Sem viatura"}
+                <Text style={{ color: colors.muted }}>
+                  {viaturaDoGestor === "fixa" ? " · seu carro (definido pelo gestor)" : " · escala de hoje (gestor)"}
+                </Text>
+              </Text>
+            </View>
+          ) : onTrocarViatura ? (
             <Pressable
               onPress={onTrocarViatura}
               disabled={ocupado}
