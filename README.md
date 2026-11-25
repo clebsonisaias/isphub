@@ -24,7 +24,7 @@ isphub/
 
 ## Pré-requisitos
 
-- Node.js 20+
+- Node.js 22+ (o mesmo do CI e das imagens Docker)
 - PostgreSQL 16 (local via Homebrew ou remoto)
 
 ## Setup local
@@ -92,8 +92,8 @@ npm run typecheck    # typecheck de todos os pacotes
 
 Hospedado no Coolify (`https://coolify.citmax.com.br`), projeto **ISPhub**
 separado de qualquer outro projeto — banco de dados e variáveis de ambiente
-próprios. Sem domínio configurado ainda (a definir quando o sistema estiver
-pronto para produção).
+próprios. Publica a partir da branch `main`. API em `https://api.isphub.net.br`
+(é o endereço que o app mobile usa, ver `apps/mobile/eas.json`).
 
 ## Fases
 
