@@ -424,7 +424,7 @@ export function DespachoPage() {
                       <button
                         type="button"
                         onClick={() => setEmergencialOsId(i.id)}
-                        className="mr-3 opacity-0 group-hover:opacity-100 focus:opacity-100 rounded-lg border border-destructive/30 bg-destructive/10 p-1.5 text-destructive hover:bg-destructive hover:text-white transition-all shadow-xs"
+                        className="mr-3 opacity-0 group-hover:opacity-100 focus:opacity-100 rounded-lg border border-destructive/30 bg-destructive/10 p-1.5 text-destructive hover:bg-destructive hover:text-destructive-foreground transition-all"
                         title="Despacho emergencial por proximidade física"
                       >
                         <Siren className="size-4" />

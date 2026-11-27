@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { MapContainer, Marker, Polyline, Popup } from "react-leaflet";
-import { AjustarLimites, BRASIL_CENTER, CamadaOsm } from "@/components/mapa/base";
+import { AjustarLimites, BRASIL_CENTER, CamadaOsm, COR_TRACADO_MAPA } from "@/components/mapa/base";
 import { ROTULO_TURNO, TURNOS_AGENDA, diaBrHoje, inicioDaSemana, somarDias, type FilaItem, type Provedor, type TurnoAgenda } from "@isphub/shared";
 import { agendaApi, rotuloDiaAgenda, type ParadaAgenda } from "@/lib/agendaApi";
 import { AppShell } from "@/components/AppShell";
@@ -356,7 +356,7 @@ export function MapaPage() {
             <CamadaOsm />
             <AjustarLimites pontos={pontos} />
             {janela && pontos.length > 1 ? (
-              <Polyline positions={pontos} pathOptions={{ color: "var(--primary)", weight: 3, opacity: 0.7, dashArray: "6 6" }} />
+              <Polyline positions={pontos} pathOptions={{ color: COR_TRACADO_MAPA, weight: 3, opacity: 0.7, dashArray: "6 6" }} />
             ) : null}
             {janela &&
               paradasNoMapa.map(({ parada, numero }) => {

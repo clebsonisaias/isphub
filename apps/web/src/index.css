@@ -2,12 +2,12 @@
 @plugin "tailwindcss-animate";
 
 /*
- * ISPhub — tema "playful-ops": indigo profundo + acentos vibrantes sobre uma
- * base clara lavanda, geometria Memphis discreta e ilustracao flat nos
- * momentos de maior expressao (login, vazios, herois). Densidade de dado
- * (fila, tabelas, formularios) continua branca/neutra — cor ali e so SINAL
- * (categoria/status/SLA), nunca decoracao atras de texto operacional. Tokens
- * seguem a convencao shadcn/ui para os componentes de UI.
+ * ISPhub — tema "central de operacoes": fundo quase-preto frio, superficies
+ * separadas por BORDA de 1px (sem sombra), um unico destaque ciano e o
+ * semaforo vermelho/ambar/verde reservado pra SLA e status. Vem do canvas
+ * "ISPhub — Redesign". O escuro e o desenho; o claro e o equivalente (mesmas
+ * formas e fontes, ciano mais fundo pra manter contraste AA sobre branco).
+ * Tokens seguem a convencao shadcn/ui para os componentes de UI.
  */
 
 @theme inline {
@@ -33,6 +33,13 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
 
+  /* Menu lateral: superficie propria, um degrau acima do fundo. */
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  /* Linha entre itens de lista/tabela — mais fraca que a borda de bloco. */
+  --color-hairline: var(--hairline);
+
   /* Acentos decorativos (KPIs, pilulas, Memphis) — NUNCA o semaforo de SLA. */
   --color-accent-blue: var(--accent-blue);
   --color-accent-blue-foreground: var(--accent-blue-foreground);
@@ -47,51 +54,61 @@
   --color-accent-teal: var(--accent-teal);
   --color-accent-teal-foreground: var(--accent-teal-foreground);
 
-  --radius-sm: calc(var(--radius) - 8px);
-  --radius-md: calc(var(--radius) - 4px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  /* Raios FIXOS, e nao derivados de --radius: com base de 8px a conta antiga
+     (base - 8px) zerava o `rounded-sm`. */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  /* Teto: as telas ainda pedem `rounded-2xl`/`3xl` em blocos grandes; sem isto
+     ficariam com 16/24px ao lado de cards de 8px. */
+  --radius-2xl: 12px;
+  --radius-3xl: 16px;
 
-  /* Tipografia: geometrica com carater (Sora) pra titulos/marca/numeros-heroi;
-     humanista e densa (Plus Jakarta Sans) pro corpo; mono reservado pra dado
-     "duro" (ids de OS, horarios, contadores tabulares) — reforca a identidade
-     de central de operacoes de rede. */
-  --font-display: "Sora", ui-sans-serif, system-ui, sans-serif;
-  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
+  /* Tipografia: Space Grotesk pra titulos e numeros-heroi; Inter, densa e
+     neutra, pro corpo; JetBrains Mono reservada pra dado "duro" (ids de OS,
+     horarios, contadores) — e o que da a cara de central de operacoes. */
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
 }
 
-/* Claro (padrao). Fundo lavanda bem claro, cards brancos, indigo profundo de
-   marca. Cores de status/semanticas (destructive/warning/success) sao SINAL
-   reservado (ver acentos decorativos abaixo) — nao tocadas aqui, ja validadas
-   com contraste >=4.5:1 como texto solido. */
+/* Claro (padrao). Fundo cinza frio, superficies brancas, ciano fundo de
+   marca (#096C89: 5,5:1 sobre o fundo, 6:1 com texto branco por cima).
+   Semaforo (destructive/warning/success) validado com contraste >=4.5:1 como
+   texto solido. */
 :root {
-  --background: oklch(0.965 0.014 292);
-  --foreground: oklch(0.24 0.03 289);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.24 0.03 289);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.24 0.03 289);
-  --primary: oklch(0.46 0.19 289);
-  --primary-foreground: oklch(0.98 0 0);
-  --secondary: oklch(0.935 0.018 292);
-  --secondary-foreground: oklch(0.32 0.03 289);
-  --muted: oklch(0.945 0.014 292);
-  --muted-foreground: oklch(0.47 0.02 285);
-  --accent: oklch(0.91 0.035 289);
-  --accent-foreground: oklch(0.32 0.03 289);
+  --background: #f4f6f8;
+  --foreground: #12181d;
+  --card: #ffffff;
+  --card-foreground: #12181d;
+  --popover: #ffffff;
+  --popover-foreground: #12181d;
+  --primary: #096c89;
+  --primary-foreground: #ffffff;
+  --secondary: #e9edf0;
+  --secondary-foreground: #2a343d;
+  --muted: #eef1f4;
+  --muted-foreground: #55616d;
+  --accent: #e3e8ec;
+  --accent-foreground: #12181d;
   --destructive: oklch(0.5 0.2 25);
-  --destructive-foreground: oklch(0.98 0 0);
-  --border: oklch(0.875 0.018 292);
-  --input: oklch(0.875 0.018 292);
-  --ring: oklch(0.46 0.19 289);
+  --destructive-foreground: #ffffff;
+  --border: #d5dbe1;
+  --input: #c9d1d8;
+  --ring: #096c89;
   --success: oklch(0.45 0.13 145);
   --warning: oklch(0.5 0.15 70);
-  --radius: 1.25rem;
+  --radius: 0.5rem;
 
-  /* Gradiente da marca (logo ISPhub): indigo -> violeta. Igual nos dois temas. */
-  --brand-from: #5b3fe0;
-  --brand-to: #8b5cf6;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #46525e;
+  --sidebar-border: #d5dbe1;
+  --hairline: #e6eaee;
+
+  /* Marca (logo ISPhub): ciano. */
+  --brand-from: #096c89;
+  --brand-to: #1596b8;
 
   /*
    * Paleta de ACENTO decorativa (blocos de KPI, pilulas de categoria/status,
@@ -115,31 +132,38 @@
   --accent-teal-foreground: #00272b;
 }
 
-/* Escuro — mesmo matiz indigo do primary puxado pro fundo (antes era um azul
-   neutro 264; agora 284, mais proximo do primary 289), levemente mais
-   saturado, pra ler como "indigo quase-preto" em vez de cinza-azulado. */
+/* Escuro — os valores do desenho, sem ajuste. O vermelho e o ciano sao CLAROS
+   aqui, entao o texto por cima deles e escuro (branco daria ~2,5:1). */
 [data-theme="dark"] {
-  --background: oklch(0.15 0.025 284);
-  --foreground: oklch(0.97 0.005 289);
-  --card: oklch(0.19 0.028 284);
-  --card-foreground: oklch(0.97 0.005 289);
-  --popover: oklch(0.19 0.028 284);
-  --popover-foreground: oklch(0.97 0.005 289);
-  --primary: oklch(0.64 0.19 289);
-  --primary-foreground: oklch(0.98 0 0);
-  --secondary: oklch(0.25 0.025 284);
-  --secondary-foreground: oklch(0.92 0.01 289);
-  --muted: oklch(0.23 0.025 284);
-  --muted-foreground: oklch(0.66 0.02 285);
-  --accent: oklch(0.29 0.055 289);
-  --accent-foreground: oklch(0.98 0 0);
-  --destructive: oklch(0.6 0.22 25);
-  --destructive-foreground: oklch(0.98 0 0);
-  --border: oklch(0.3 0.025 284 / 60%);
-  --input: oklch(0.3 0.025 284 / 60%);
-  --ring: oklch(0.64 0.19 289);
-  --success: oklch(0.72 0.17 145);
-  --warning: oklch(0.8 0.16 85);
+  --background: #0d1013;
+  --foreground: #e9edf0;
+  --card: #14181d;
+  --card-foreground: #e9edf0;
+  --popover: #14181d;
+  --popover-foreground: #e9edf0;
+  --primary: #5cd4f4;
+  --primary-foreground: #06222b;
+  --secondary: #1b2127;
+  --secondary-foreground: #e9edf0;
+  --muted: #171c21;
+  --muted-foreground: #8793a0;
+  --accent: #1b2127;
+  --accent-foreground: #e9edf0;
+  --destructive: #ff7a6b;
+  --destructive-foreground: #2b0a06;
+  --border: #252c34;
+  --input: #2d3640;
+  --ring: #5cd4f4;
+  --success: #5dd39e;
+  --warning: #f5bd4f;
+
+  --sidebar: #111519;
+  --sidebar-foreground: #a3aeb8;
+  --sidebar-border: #252c34;
+  --hairline: #1b2127;
+
+  --brand-from: #5cd4f4;
+  --brand-to: #9be5f9;
 
   --accent-blue-foreground: #ffffff;
   --accent-yellow-foreground: #1a1400;
@@ -162,21 +186,7 @@ body {
   font-family: var(--font-sans);
   margin: 0;
   transition: background-color 0.2s ease, color 0.2s ease;
-  /* Atmosfera: grade de pontos bem sutil, ecoando mapa de rede/POPs — nunca
-     mais forte que ~6% pra nao brigar com cards e texto. Fixa no viewport
-     (nao rola com o conteudo) pra dar profundidade sem distrair. Opacidade
-     exata definida por tema logo abaixo (contraste precisa ser bem diferente
-     entre claro e escuro pra continuar quase imperceptivel nos dois). */
-  background-size: 28px 28px;
-  background-attachment: fixed;
   background-color: var(--background);
-}
-
-html[data-theme="dark"] body {
-  background-image: radial-gradient(circle at 1px 1px, oklch(1 0 0 / 6%) 1px, transparent 0);
-}
-html:not([data-theme="dark"]) body {
-  background-image: radial-gradient(circle at 1px 1px, oklch(0 0 0 / 4%) 1px, transparent 0);
 }
 
 #root {
@@ -200,31 +210,28 @@ h1, h2, h3 {
 }
 
 /*
- * Sombras com TINTA indigo (nao cinza neutro) — 3 niveis de elevacao usados
- * pelos primitivos de ui/ (card, dialog, popover, tabs, switch). No escuro, a
- * "sombra" vira um leve GLOW violeta: uma sombra escura de verdade nao le como
- * elevacao sobre um fundo ja quase-preto.
+ * Elevacao. O desenho separa superficies por BORDA, nao por sombra: o nivel
+ * `sm` (cards, campos) nao tem sombra nenhuma. `md` e `lg` ficam so pro que
+ * FLUTUA sobre a pagina (popover, dialog), onde a borda sozinha nao descola o
+ * bloco do que esta atras — sombra neutra, sem tinta.
  */
 @layer utilities {
   .shadow-soft-sm {
-    box-shadow: 0 2px 8px -3px rgba(76, 63, 191, 0.16);
+    box-shadow: none;
   }
   .shadow-soft-md {
-    box-shadow: 0 8px 20px -8px rgba(76, 63, 191, 0.2);
+    box-shadow: 0 8px 24px -12px rgba(16, 24, 32, 0.18);
   }
   .shadow-soft-lg {
-    box-shadow: 0 12px 30px -12px rgba(76, 63, 191, 0.22);
+    box-shadow: 0 16px 40px -16px rgba(16, 24, 32, 0.24);
   }
 }
 
-[data-theme="dark"] .shadow-soft-sm {
-  box-shadow: 0 2px 10px -4px rgba(139, 92, 246, 0.25);
-}
 [data-theme="dark"] .shadow-soft-md {
-  box-shadow: 0 10px 24px -10px rgba(139, 92, 246, 0.3);
+  box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.6);
 }
 [data-theme="dark"] .shadow-soft-lg {
-  box-shadow: 0 16px 36px -14px rgba(139, 92, 246, 0.35);
+  box-shadow: 0 16px 40px -14px rgba(0, 0, 0, 0.7);
 }
 
 /*

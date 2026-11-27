@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ErrorState";
-import { AjustarLimites, BRASIL_CENTER, CamadaOsm } from "@/components/mapa/base";
+import { AjustarLimites, BRASIL_CENTER, CamadaOsm, COR_TRACADO_MAPA } from "@/components/mapa/base";
 import { veiculoIcon } from "@/components/mapa/veiculoIcon";
 import { ChipsVeiculo } from "@/components/mapa/chipsVeiculo";
 import { ReplayTrilha } from "@/components/mapa/ReplayTrilha";
@@ -44,7 +44,6 @@ import { Link } from "react-router-dom";
  */
 
 const INTERVALO_MS = 30_000;
-const COR_PADRAO = "#6366f1";
 
 function mensagem(err: unknown): string {
   return err instanceof ApiError ? err.message : "Falha ao comunicar com o servidor";
@@ -238,12 +237,12 @@ export function FrotaMapaPage() {
                     {/* O PERCURSO do veiculo selecionado. */}
                     {linhaTrilha.length > 1 ? (
                       <>
-                        <Polyline positions={linhaTrilha} pathOptions={{ color: COR_PADRAO, weight: 4, opacity: 0.8 }} />
+                        <Polyline positions={linhaTrilha} pathOptions={{ color: COR_TRACADO_MAPA, weight: 4, opacity: 0.8 }} />
                         {/* Ponta inicial marcada: sem ela nao da pra saber o sentido. */}
                         <CircleMarker
                           center={linhaTrilha[0]!}
                           radius={6}
-                          pathOptions={{ color: "#fff", fillColor: COR_PADRAO, fillOpacity: 1, weight: 2 }}
+                          pathOptions={{ color: "#fff", fillColor: COR_TRACADO_MAPA, fillOpacity: 1, weight: 2 }}
                         />
                         {trilha[indiceReplay] ? (
                           <CircleMarker
