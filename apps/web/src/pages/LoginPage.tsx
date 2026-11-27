@@ -220,7 +220,7 @@ export function LoginPage() {
             {CAPACIDADES.map(({ Icone, titulo, texto }) => (
               <li key={titulo} className="flex gap-4">
                 <span
-                  className="flex size-10 shrink-0 items-center justify-center rounded-xl text-white"
+                  className="flex size-10 shrink-0 items-center justify-center rounded-lg text-primary-foreground"
                   style={{ background: "linear-gradient(135deg, var(--brand-from), var(--brand-to))" }}
                 >
                   <Icone className="size-5" aria-hidden />

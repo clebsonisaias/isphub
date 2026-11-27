@@ -11,6 +11,15 @@ import { TileLayer, useMap } from "react-leaflet";
  * ganharia o ajuste de zoom que a outra nao tem, e ninguem notaria.
  */
 
+/**
+ * Cor de tracado sobre o mapa (trilha, rota). FIXA, e nao o `--primary` do
+ * tema: os tiles do mapa sao sempre claros, e o ciano do tema escuro
+ * (#5CD4F4) some em cima deles. Este e o ciano fundo do tema claro, 5:1 sobre
+ * o cinza do mapa. Tambem evita `var()` em atributo SVG, que o Leaflet nao
+ * resolve.
+ */
+export const COR_TRACADO_MAPA = "#096c89";
+
 export const BRASIL_CENTER: [number, number] = [-15.78, -47.93];
 
 /** Camada de tiles padrao — OSM, sem chave e sem custo. */

@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { motion, useReducedMotion } from "framer-motion";
 import { USER_ROLE_LABEL, UserRole, escopadoPorProvedor, podeRotaWeb, type ModuloId } from "@isphub/shared";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useModulosHabilitados } from "@/lib/modulos";
 import { fixosRodapeDoPapel, inicioDoPapel, ordenarPorPapel } from "@/lib/inicioPorPapel";
+import { agruparMenu, rotaAtiva } from "@/lib/menuLateral";
 import {
   Popover,
   PopoverContent,
@@ -283,182 +283,95 @@ const NAV_VENDEDOR = new Set(["/pre-cadastro", "/producao", "/chat-clientes", "/
  */
 const MAX_ABAS_RODAPE = 5;
 
-/** Largura reservada pro botao "Mais" quando ha excesso (medida do proprio botao). */
-const LARGURA_BOTAO_MAIS = 86;
-/** `lg:gap-1` do nav. */
-const GAP_NAV = 4;
-
-/**
- * Quantos itens de navegacao cabem na linha do cabecalho.
- *
- * A quantidade de itens VARIA — modulos ligam e desligam, e o papel do usuario
- * esconde alguns. Calibrar o cabecalho pra um numero fixo e o que fez a
- * navegacao quebrar de novo: com 7 itens cabia, com 8 (modulo de chat de
- * clientes ligado) "Administração" virava "Ad". Aqui a conta e feita com a
- * largura real, entao vale pra qualquer quantidade.
- *
- * As larguras sao medidas UMA vez, com todos os itens visiveis, e guardadas —
- * depois de esconder um item nao da mais pra medi-lo. Os rotulos sao estaticos,
- * entao a medida continua valendo; se a lista mudar, o cache e descartado.
- */
-function useQuantosCabem(qtdItens: number, navRef: React.RefObject<HTMLElement | null>) {
-  const [cabem, setCabem] = useState(qtdItens);
-  /**
-   * A medicao ja chegou a uma conclusao?
-   *
-   * Enquanto for `false`, o cabecalho mostra TODOS os itens — nao porque cabem,
-   * mas porque ainda nao se sabe. E um estado transitorio real, e quem le a
-   * barra nesse instante (pessoa ou teste) le uma linha que ainda vai mudar.
-   * Vira `data-nav-medido` no DOM pra que dê pra esperar por ele.
-   */
-  const [medido, setMedido] = useState(false);
-  const largurasRef = useRef<number[] | null>(null);
-  const retryRef = useRef<number | null>(null);
-
-  const recalcular = useCallback(() => {
-    const el = navRef.current;
-    if (!el) return;
-
-    // Abaixo de `lg` o nav e a barra fixa do rodape, com layout proprio —
-    // nada de esconder item ali.
-    if (!window.matchMedia("(min-width: 1024px)").matches) {
-      setCabem(qtdItens);
-      setMedido(true);
-      return;
-    }
-
-    if (!largurasRef.current) {
-      const itens = [...el.querySelectorAll<HTMLElement>("[data-nav-item]")];
-      const medidas = itens.map((i) => i.offsetWidth);
-      /*
-       * So aceita a medida quando TODOS os itens tem largura real.
-       *
-       * Um item escondido mede ZERO, e zero na conta faz o total encolher — o
-       * calculo conclui "cabe tudo", expande, mede certo, colapsa de novo, e
-       * fica oscilando. Contar os elementos nao bastava: eles EXISTEM no DOM
-       * mesmo colapsados (o colapso e `display:none` via CSS), so nao tem
-       * largura. Medida invalida: sai sem gravar e tenta no proximo quadro.
-       */
-      if (medidas.length < qtdItens || medidas.some((w) => w === 0)) {
-        /*
-         * ESTE agendamento faltava, e o comentario acima prometia ele.
-         *
-         * Sem reagendar, a remedicao so acontecia se algo MAIS causasse um
-         * render — na pratica, o reflow do carregamento da fonte. Ate la o
-         * cabecalho ficava com todos os itens na linha e depois recolhia: um
-         * pulo visivel, e a janela em que o teste do menu lia a barra antes de
-         * ela assentar (falhou duas vezes em 07/08).
-         */
-        if (retryRef.current === null) {
-          retryRef.current = requestAnimationFrame(() => {
-            retryRef.current = null;
-            recalcularRef.current?.();
-          });
-        }
-        return;
-      }
-      largurasRef.current = medidas;
-    }
-
-    const larguras = largurasRef.current;
-    const disponivel = el.clientWidth;
-    const total = larguras.reduce((a, b) => a + b, 0) + GAP_NAV * (larguras.length - 1);
-    setMedido(true);
-    if (total <= disponivel) {
-      setCabem(qtdItens);
-      return;
-    }
-
-    let usado = LARGURA_BOTAO_MAIS + GAP_NAV;
-    let n = 0;
-    for (const w of larguras) {
-      if (usado + w > disponivel) break;
-      usado += w + GAP_NAV;
-      n++;
-    }
-    // Pelo menos um item na linha — um cabecalho so com "Mais" nao ajuda.
-    setCabem(Math.max(1, n));
-  }, [qtdItens, navRef]);
-
-  // O rAF acima precisa chamar a versao ATUAL de `recalcular`; a ref evita a
-  // dependencia circular de referenciar o callback dentro dele mesmo.
-  const recalcularRef = useRef(recalcular);
-  // Escrita fora do render (regra no-ref-current-in-render): roda no commit,
-  // antes do useLayoutEffect(recalcular) abaixo, entao o rAF de retry sempre le
-  // a versao atual. Sem deps = atualiza a cada commit, igual a escrita anterior.
-  useLayoutEffect(() => {
-    recalcularRef.current = recalcular;
-  });
-
-  useEffect(() => () => {
-    if (retryRef.current !== null) cancelAnimationFrame(retryRef.current);
-  }, []);
-
-  // Lista mudou (modulo ligado/desligado, troca de papel): remede do zero.
-  useLayoutEffect(() => {
-    largurasRef.current = null;
-    setMedido(false);
-    setCabem(qtdItens);
-  }, [qtdItens]);
-
-  /*
-   * `useLayoutEffect` roda depois do DOM e ANTES da pintura: mede com tudo na
-   * tela e ja aplica o colapso no MESMO quadro. Em `useEffect` (depois da
-   * pintura) os itens excedentes apareciam por um instante e sumiam — um pisca
-   * visivel pra quem usa, e uma corrida que fazia o teste ler a linha antes de
-   * ela assentar.
-   */
-  useLayoutEffect(recalcular);
-
-  useEffect(() => {
-    const nav = navRef.current;
-    if (!nav) return;
-    const ro = new ResizeObserver(recalcular);
-    ro.observe(nav);
-    // A fonte de display carrega depois do primeiro quadro e muda a largura
-    // dos rotulos; sem isto a medida inicial fica errada por pouco.
-    /*
-     * Fonte carregada: descarta a medida e EXPANDE. Expandir e obrigatorio —
-     * com itens escondidos a remedicao seria invalida (largura zero) e o cache
-     * ficaria vazio pra sempre. Com todos visiveis, o `useLayoutEffect` do
-     * proximo render mede certo e recolapsa antes da pintura.
-     */
-    void document.fonts?.ready.then(() => {
-      largurasRef.current = null;
-      setCabem(qtdItens);
-    });
-    return () => ro.disconnect();
-  }, [recalcular, navRef]);
-
-  return { cabem, medido };
+function MenuLateral({
+  itens,
+  caminhoAtual,
+  naoLidasChat,
+  inicio,
+  nome,
+  papel,
+}: {
+  itens: { to: string; label: string; icon: typeof LayoutGrid }[];
+  caminhoAtual: string;
+  naoLidasChat: number;
+  inicio: string;
+  nome: string;
+  papel: UserRole;
+}) {
+  return (
+    <aside className="sticky top-0 hidden h-svh w-58 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-[0.8125rem] text-sidebar-foreground lg:flex">
+      <Link
+        to={inicio}
+        className="flex items-center gap-2.5 px-5 pb-3 pt-4.5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      >
+        <LogoIsphub className="size-7 shrink-0" />
+        <span className="font-display text-lg font-bold tracking-tight text-foreground">ISPhub</span>
+      </Link>
+      <nav aria-label="Navegação principal" className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 pb-3">
+        {agruparMenu(itens).map((grupo) => (
+          <div key={grupo.titulo} role="group" aria-label={grupo.titulo} className="flex flex-col gap-0.5">
+            <p aria-hidden className="px-2 pb-1.5 pt-3.5 text-[0.6875rem] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              {grupo.titulo}
+            </p>
+            {grupo.itens.map(({ to, label, icon: Icon }) => {
+              const ativo = rotaAtiva(to, caminhoAtual);
+              const contador = to === "/chat" && naoLidasChat > 0 ? naoLidasChat : null;
+              return (
+                <Link
+                  key={to}
+                  to={to}
+                  data-nav-item
+                  aria-current={ativo ? "page" : undefined}
+                  className={cn(
+                    "flex min-h-8.5 items-center gap-2.5 rounded-md px-2 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+                    ativo ? "bg-primary/12 font-semibold text-primary" : "hover:bg-secondary hover:text-foreground",
+                  )}
+                >
+                  <Icon className="size-[1.0625rem] shrink-0" strokeWidth={1.7} aria-hidden />
+                  <span className="min-w-0 flex-1 truncate">{label}</span>
+                  {contador !== null && (
+                    <span className="font-mono text-[0.6875rem] text-muted-foreground">
+                      <span className="sr-only">, </span>
+                      {contador > 99 ? "99+" : contador}
+                      <span className="sr-only"> não lidas</span>
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
+      </nav>
+      <div className="flex items-center gap-2.5 border-t border-sidebar-border px-5 py-3">
+        <span
+          aria-hidden
+          className="flex size-7.5 shrink-0 items-center justify-center rounded-full bg-secondary text-[0.6875rem] font-semibold text-foreground"
+        >
+          {iniciais(nome)}
+        </span>
+        <div className="min-w-0 leading-tight">
+          <p className="truncate font-medium text-foreground">{nome}</p>
+          <p className="truncate text-[0.6875rem] text-muted-foreground">
+            {USER_ROLE_LABEL[papel]} ·{" "}
+            <span className="font-mono" title={APP_BUILD_ID ? `Build ${APP_BUILD_ID}` : undefined}>
+              {APP_VERSION_LABEL}
+            </span>
+          </p>
+        </div>
+      </div>
+    </aside>
+  );
 }
 
-/**
- * Classe de um item de navegacao — um unico elemento serve dois papeis pelo
- * breakpoint `lg`: aba de rodape (mobile/tablet, alcance de polegar) e pilula
- * no cabecalho (desktop). Nunca existem os dois ao mesmo tempo (nao ha
- * duplicacao de Link/nome acessivel — so uma troca de layout via CSS), entao
- * o rotulo "Administração" continua unico na arvore de acessibilidade em
- * qualquer largura, do jeito que os testes e2e esperam.
- */
-/**
- * UMA classe de display, decidida aqui — nunca duas empilhadas no `cn`.
- *
- * Empilhar `"lg:hidden"` com `"hidden lg:flex"` parece somar as duas regras,
- * mas o tailwind-merge deduplica por grupo de utilitario e o ULTIMO vence:
- * `lg:flex` apagava o `lg:hidden`, e o item marcado `soDesktop` nunca
- * conseguia ir pro menu "Mais". Resultado medido: a linha do cabecalho
- * estourava em TODAS as larguras de desktop, de 1024 a 1920.
- */
-function classeVisibilidade(soNoExcesso: boolean, foraDoRodape: boolean): string {
-  // Fora da barra do rodape E ja empurrado pro "Mais": nao aparece em lugar
-  // nenhum como item de linha (o menu "Mais" o renderiza por conta propria).
-  if (foraDoRodape && soNoExcesso) return "hidden";
-  // Fora da barra do rodape, mas cabe na linha do desktop.
-  if (foraDoRodape) return "hidden lg:flex";
-  // Coube no rodape; some so da LINHA do desktop e reaparece no "Mais".
-  if (soNoExcesso) return "lg:hidden";
-  return "";
+/** A marca: um no de rede com tres enlaces, no ciano do tema. */
+function LogoIsphub({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 28 28" className={className} aria-hidden>
+      <rect width="28" height="28" rx="7" className="fill-primary" />
+      <path d="M14 14L7.5 8.5M14 14l6.5-5.5M14 14v7.5" className="stroke-primary-foreground" strokeWidth="2" strokeLinecap="round" />
+      <circle cx="14" cy="14" r="3" className="fill-primary-foreground" />
+    </svg>
+  );
 }
 
 function navItemClass(ativo: boolean): string {
@@ -468,29 +381,6 @@ function navItemClass(ativo: boolean): string {
     ativo
       ? "text-primary font-semibold"
       : "text-muted-foreground hover:text-foreground lg:hover:bg-background/50",
-  );
-}
-
-/**
- * Pilula de fundo do item de rota ativo no desktop — efeito segmented control
- * deslizante suave via Framer Motion com sombra sutil e relevo limpo.
- */
-function NavActivePill({
-  shouldReduceMotion,
-}: {
-  shouldReduceMotion: boolean;
-}) {
-  return (
-    <motion.span
-      aria-hidden
-      layoutId="nav-active-pill"
-      className="absolute inset-0 hidden rounded-lg bg-background shadow-xs border border-border/60 lg:block"
-      transition={
-        shouldReduceMotion
-          ? { duration: 0 }
-          : { type: "spring", stiffness: 450, damping: 32 }
-      }
-    />
   );
 }
 
@@ -552,19 +442,11 @@ function UserMenu({
           type="button"
           title={`${nome} — ${USER_ROLE_LABEL[role]}`}
           aria-label={`Menu do usuário — ${nome}`}
-          className="flex items-center gap-2 rounded-xl py-1 pl-1 pr-1 outline-none transition-colors hover:bg-secondary/60 focus-visible:ring-2 focus-visible:ring-ring lg:pr-2.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+          className="flex items-center gap-2 rounded-lg p-1 outline-none transition-colors hover:bg-secondary/60 focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11 pointer-coarse:min-w-11"
         >
-          <span className="relative flex size-8 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 font-display text-xs font-bold text-primary shadow-2xs">
+          <span className="relative flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-foreground">
             {iniciais(nome)}
-            <span className="absolute -bottom-0.5 -right-0.5 size-2 rounded-full border border-background bg-emerald-500" />
-          </span>
-          <span className="hidden text-left leading-tight xl:block">
-            <span className="block text-xs font-semibold text-foreground">
-              {nome.split(" ")[0]}
-            </span>
-            <span className="block text-[10px] font-medium text-muted-foreground">
-              {USER_ROLE_LABEL[role]}
-            </span>
+            <span className="absolute -bottom-0.5 -right-0.5 size-2 rounded-full border border-background bg-success" />
           </span>
         </button>
       </PopoverTrigger>
@@ -759,10 +641,8 @@ function NavExcesso({
 export function AppShell({ children }: { children: ReactNode }) {
   const { usuario, logout } = useAuth();
   const location = useLocation();
-  const shouldReduceMotion = useReducedMotion();
   const [naoLidasChat, setNaoLidasChat] = useState(0);
   const { ids: modulosHabilitados } = useModulosHabilitados();
-  const navRef = useRef<HTMLElement | null>(null);
   const [desempenhoAberto, setDesempenhoAberto] = useState(false);
   const [rotaDoDiaAberta, setRotaDoDiaAberta] = useState(false);
 
@@ -799,8 +679,6 @@ export function AppShell({ children }: { children: ReactNode }) {
     return ordenarPorPapel(base, usuario?.role);
   }, [usuario, modulosHabilitados]);
 
-  const { cabem, medido: navMedido } = useQuantosCabem(itensNav.length, navRef);
-  const noExcesso = itensNav.slice(cabem);
   // Rodape do celular: se tudo cabe (tecnico, provedor), mostra tudo; senao,
   // as abas fixas do perfil e o resto no "Mais". `soDesktop` nunca entra.
   const doRodape = itensNav.filter((i) => !i.soDesktop);
@@ -844,8 +722,27 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
   });
 
+  const inicio = inicioDoPapel(usuario?.role, usuario?.permissoes);
+
   return (
-    <div className="min-h-svh">
+    <div className="min-h-svh lg:flex">
+      {/*
+        Desktop: menu lateral fixo, agrupado. Abaixo de `lg` ele nao existe
+        (`hidden`, fora da arvore de acessibilidade) e a navegacao e a barra do
+        rodape, la embaixo — nunca os dois ao mesmo tempo.
+      */}
+      {usuario && (
+        <MenuLateral
+          itens={itensNav}
+          caminhoAtual={location.pathname}
+          naoLidasChat={naoLidasChat}
+          inicio={inicio}
+          nome={usuario.nome}
+          papel={usuario.role}
+        />
+      )}
+
+      <div className="flex min-w-0 flex-1 flex-col">
       {/*
         Sem backdrop-blur AQUI de proposito: `backdrop-filter` num ancestral
         cria containing block pra descendentes `position: fixed` (CSS
@@ -853,67 +750,44 @@ export function AppShell({ children }: { children: ReactNode }) {
         header com blur faria ela "grudar" no fim do header (perto do topo)
         em vez do fim da viewport de verdade. O blur fica só na propria nav.
       */}
-      <header className="sticky top-0 z-30 border-b border-border bg-background/95">
-        {/* Fio de marca — um unico detalhe de cor no cabecalho, discreto. */}
-        <div
-          aria-hidden
-          className="h-[2px] w-full brand-gradient-bg opacity-70"
-        />
-        <div className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-3 sm:gap-3 sm:px-4 lg:gap-3">
-          <Link to={inicioDoPapel(usuario?.role, usuario?.permissoes)} className="flex shrink-0 items-center gap-2 pointer-coarse:min-h-11 mr-1">
-            <span className="font-display text-lg font-bold tracking-tight">
-              <span className="brand-gradient-text">ISP</span>
-              <span className="text-foreground">hub</span>
-            </span>
+      <header className="sticky top-0 z-30 border-b border-border bg-background">
+        <div className="flex h-14 items-center gap-2 px-3 sm:gap-3 sm:px-4 lg:px-7">
+          {/* A marca do topo e so do celular: no desktop ela mora no menu lateral. */}
+          <Link to={inicio} className="mr-1 flex shrink-0 items-center gap-2 pointer-coarse:min-h-11 lg:hidden">
+            <LogoIsphub className="size-6.5" />
+            <span className="font-display text-lg font-bold tracking-tight text-foreground">ISPhub</span>
           </Link>
 
           {/*
-            Navegacao unica: aba fixa no rodape abaixo de `lg` (alcance de
-            polegar pro tecnico em campo no celular), pilulas no proprio
-            cabecalho a partir de `lg` organizadas em dock/segmented control.
+            Barra do rodape, SO abaixo de `lg`: alcance de polegar pro tecnico
+            em campo. Quatro abas fixas do papel e o resto em "Mais".
           */}
           {usuario && (
             <nav
-              ref={navRef}
-              className="fixed inset-x-0 bottom-0 z-30 flex items-stretch justify-around border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:static lg:inset-auto lg:z-auto lg:min-w-0 lg:flex-1 lg:items-center lg:justify-start lg:gap-0.5 lg:overflow-x-auto lg:border lg:border-border/40 lg:bg-secondary/40 lg:p-1 lg:rounded-xl lg:shadow-2xs lg:pb-0 lg:backdrop-blur-none lg:scrollbar-none"
+              className="fixed inset-x-0 bottom-0 z-30 flex items-stretch justify-around border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:hidden"
               aria-label="Navegação principal"
-              data-nav-medido={navMedido}
             >
-              {itensNav.map(({ to, label, labelCurto, icon: Icon, soDesktop }, i) => {
-                const ativo = to === "/admin" ? location.pathname.startsWith("/admin") : location.pathname === to;
-                const soNoExcesso = i >= cabem;
+              {itensNav.map(({ to, label, labelCurto, icon: Icon, soDesktop }) => {
+                const ativo = rotaAtiva(to, location.pathname);
                 return (
                   <Link
                     key={to}
                     to={to}
                     title={label}
                     data-nav-item
-                    /*
-                     * `lg:hidden` quando nao coube: some da LINHA e reaparece
-                     * dentro de "Mais". Abaixo de `lg` continua visivel — ali o
-                     * nav e a barra do rodape, com layout proprio.
-                     */
-                    className={cn(navItemClass(ativo), classeVisibilidade(soNoExcesso, !!soDesktop || !fixosRodape.has(to)))}
+                    aria-current={ativo ? "page" : undefined}
+                    className={cn(navItemClass(ativo), (!!soDesktop || !fixosRodape.has(to)) && "hidden")}
                   >
-                    {ativo && (
-                      <NavActivePill
-                        shouldReduceMotion={!!shouldReduceMotion}
-                      />
-                    )}
                     <NavIcon
                       Icon={Icon}
                       ativo={ativo}
                       badge={to === "/chat" ? naoLidasChat : undefined}
                     />
                     {/*
-                      Rotulo curto em TODA largura, nao so no rodape do mobile.
-                      "Administração"/"Provisionar" sozinhos custam ~255px dos
-                      ~780px que a linha tem; como "Admin"/"ONU" custam ~155px,
-                      e a diferenca entre os 8 itens caberem na linha ou dois
-                      deles irem pro menu "Mais" — um clique a mais em algo que
-                      cabia. O nome COMPLETO continua como texto (sr-only) e no
-                      `title`, entao leitor de tela, tooltip e testes nao mudam.
-                      Ver a nota em `labelCurto` sobre por que nao e aria-label.
+                      Rotulo curto na aba (cabem ~53px em 375px). O nome COMPLETO
+                      continua como texto (sr-only) e no `title`, entao leitor de
+                      tela, tooltip e testes nao mudam. Ver a nota em
+                      `labelCurto` sobre por que nao e aria-label.
                     */}
                     <span className="relative" aria-hidden={labelCurto ? true : undefined}>
                       {labelCurto ?? label}
@@ -922,13 +796,6 @@ export function AppShell({ children }: { children: ReactNode }) {
                   </Link>
                 );
               })}
-              {noExcesso.length > 0 && (
-                <NavExcesso
-                  itens={noExcesso}
-                  caminhoAtual={location.pathname}
-                  naoLidasChat={naoLidasChat}
-                />
-              )}
               {maisRodape.length > 0 && (
                 <NavExcesso itens={maisRodape} caminhoAtual={location.pathname} naoLidasChat={naoLidasChat} rodape />
               )}
@@ -992,22 +859,11 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {/* pb extra no mobile: a aba de navegacao fixa no rodape nao pode
           cobrir o final da lista/conteudo. */}
-      <main className="mx-auto max-w-7xl px-4 py-6 pb-24 lg:pb-6">
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 pb-24 lg:px-7 lg:pb-6">
         {children}
       </main>
 
-      <footer className="mx-auto hidden max-w-7xl items-center justify-between px-4 py-4 text-xs text-muted-foreground lg:flex">
-        <span>
-          <span className="brand-gradient-text font-semibold">ISPhub</span> —
-          central de campo multi-provedor
-        </span>
-        <span
-          className="font-mono tabular-nums"
-          title={APP_BUILD_ID ? `Build ${APP_BUILD_ID}` : undefined}
-        >
-          {APP_VERSION_LABEL}
-        </span>
-      </footer>
+      </div>
 
       {usuario?.role === UserRole.TECNICO && (
         <>
